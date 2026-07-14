@@ -1,0 +1,498 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">超级玩具箱</string>
+    <string name="cluster_a11y_description">拦截方向盘按键用于导航投射到仪表盘。手动启用，仅在功能开启时工作。</string>
+    <string name="keepalive_a11y_description">维持超级玩具箱后台服务运行。不读取屏幕内容，不处理界面操作。</string>
+    <string name="keepalive_notification_title">超级玩具箱后台运行中</string>
+    <!-- 设置：仪表盘投射 -->
+    <string name="settings_display_mirror_header">投射到仪表盘</string>
+    <string name="settings_display_mirror_title">方向盘按键投射到仪表盘</string>
+    <string name="settings_display_mirror_desc">短按所选方向盘按键，将所选应用投射到仪表盘或返回屏幕。</string>
+    <string name="settings_display_app_title">投射到仪表盘的应用</string>
+    <string name="settings_display_projection_layout_header">投屏方式</string>
+    <string name="settings_display_projection_layout_independent">独立</string>
+    <string name="settings_display_projection_layout_independent_desc">中控与仪表盘之间切换，仅一处显示</string>
+    <string name="settings_display_projection_layout_duplicate">同步显示</string>
+    <string name="settings_display_projection_layout_duplicate_desc">中控屏正常显示，同时复制到仪表盘</string>
+    <string name="settings_display_duplicate_fullscreen_note">同步显示会自动铺满仪表盘，窗口大小、位置和缩放只对独立投屏生效。</string>
+    <string name="settings_display_size_header">仪表盘窗口大小</string>
+    <string name="settings_display_size_width">宽度</string>
+    <string name="settings_display_size_width_desc">窗口宽度，占仪表盘宽度的百分比</string>
+    <string name="settings_display_size_height">高度</string>
+    <string name="settings_display_size_height_desc">窗口高度，占仪表盘高度的百分比</string>
+    <string name="settings_display_offset_x">水平位置</string>
+    <string name="settings_display_offset_x_desc">窗口位置：0 - 左边缘，50 - 居中，100 - 右边缘</string>
+    <string name="settings_display_offset_y">垂直位置</string>
+    <string name="settings_display_offset_y_desc">窗口位置：0 - 顶部，50 - 居中，100 - 底部</string>
+    <string name="settings_display_scale">缩放</string>
+    <string name="settings_display_scale_desc">界面大小：数值越小，界面元素越小，地图显示越多</string>
+    <string name="cluster_mirror_notification_title">超级玩具箱 仪表盘镜像</string>
+    <string name="cluster_mirror_notification_channel">仪表盘镜像</string>
+    <string name="cluster_mirror_notification_preparing">等待屏幕录制授权…</string>
+    <string name="cluster_mirror_notification_ready">镜像服务就绪</string>
+    <string name="cluster_mirror_notification_active">正在同步中控屏到仪表盘</string>
+
+    <!-- 设置：车辆与电池 -->
+    <string name="settings_battery_section_header">电池与电价</string>
+    <string name="settings_battery_capacity_label">电池容量（千瓦时）</string>
+    <string name="settings_tariff_home_label">家充电价（%1$s/千瓦时）</string>
+    <string name="settings_tariff_dc_label">快充电价（%1$s/千瓦时）</string>
+    <string name="settings_tariff_trip_label">行程电价</string>
+    <string name="settings_tariff_custom_label">自定义电价（%1$s/千瓦时）</string>
+    <string name="settings_save_tariffs_button">保存电价</string>
+    <string name="settings_tariff_future_note">新电价将应用于未来行程。\n已计算的行程不会改变。</string>
+    <string name="settings_recalc_all_button">重新计算所有行程</string>
+    <string name="settings_recalc_note">按当前电价重新计算\n所有行程的费用。</string>
+    <string name="settings_consumption_section_header">能耗阈值</string>
+    <string name="settings_consumption_good_label">良好 &lt; (千瓦时/百公里)</string>
+    <string name="settings_consumption_bad_label">较差 &gt; (千瓦时/百公里)</string>
+
+    <!-- 设置：重新计算确认弹窗 -->
+    <string name="settings_recalc_dialog_title">重新计算费用？</string>
+    <string name="settings_recalc_dialog_text">所有行程将按电价 %1$s %2$s/千瓦时 重新计算。\n已计算的数值将被替换。</string>
+    <string name="settings_recalc_confirm_button">重新计算</string>
+    <string name="settings_cancel_button">取消</string>
+
+    <!-- 设置：地点 -->
+    <string name="settings_places_section_header">地点</string>
+    <string name="settings_places_entry_title">联动地点</string>
+    <string name="settings_places_entry_description">家、公司、常去地点 - "进入地点" / "离开地点" 触发器</string>
+
+    <!-- 设置：应用 -->
+    <string name="settings_record_trip_gps_label">记录 GPS 轨迹</string>
+    <string name="settings_record_trip_gps_description">开启后行驶时保存轨迹点，并自动绑定到原车行程。关闭后不再写入新轨迹。</string>
+    <string name="settings_app_data_header">数据</string>
+    <string name="settings_about_header">关于</string>
+    <string name="settings_copyright">© 2026 超级玩具箱</string>
+    <string name="settings_autostart_recorded">自启动：%1$s</string>
+    <string name="settings_autostart_not_recorded">自启动：未记录</string>
+    <string name="settings_update_check_toggle_label">检查更新</string>
+    <string name="settings_update_check_toggle_description">启动 30 秒后检查更新后台并提示更新</string>
+    <string name="settings_update_check_button">立即检查更新</string>
+
+    <!-- 设置：系统数据连接状态 -->
+
+    <!-- 设置：更新弹窗 -->
+    <string name="settings_update_dialog_title">更新</string>
+    <string name="settings_update_current_version">当前版本：%1$s</string>
+    <string name="settings_update_check_now_button">检查更新</string>
+    <string name="settings_update_checking">检查中…</string>
+    <string name="settings_update_up_to_date">已是最新版本</string>
+    <string name="settings_update_available_version">可用版本：%1$s</string>
+    <string name="settings_update_whats_new_label">更新内容：</string>
+    <string name="settings_update_install_button">下载并安装</string>
+    <string name="settings_update_downloading">正在下载 %1$s</string>
+    <string name="settings_update_error">错误：%1$s</string>
+    <string name="settings_update_retry_button">重试</string>
+    <string name="settings_update_close_button">关闭</string>
+
+    <!-- 行程与充电页共享格式 -->
+    <string name="trips_km_decimal_value">%1$.1f 公里</string>
+    <string name="trips_kwh_decimal_value">%1$.1f 千瓦时</string>
+
+    <!-- 充电页 -->
+    <string name="charges_filter_all">全部</string>
+    <string name="charges_add_button">+ 充电</string>
+    <string name="charges_empty">所选时间段内没有充电记录</string>
+    <string name="charges_col_time">时间</string>
+    <string name="charges_col_kwh">千瓦时</string>
+    <string name="charges_kwh_value">%1$.0f 千瓦时</string>
+    <string name="charges_action_edit">编辑</string>
+    <string name="charges_action_delete">删除</string>
+    <string name="charges_delete_dialog_title">删除充电记录？</string>
+    <string name="charges_delete_dialog_text">%1$s 千瓦时 - 删除后无法恢复。</string>
+    <string name="charges_sentinel_empty_text">您的车型不支持充电统计 - 无法读取诊断数据。健康度也不会显示。</string>
+    <string name="charges_stats_period_label">所选时间段</string>
+    <string name="charges_stats_sessions">次数</string>
+    <string name="charges_stats_cost">费用</string>
+    <string name="charges_stats_lifetime_label">全生命周期（系统数据）</string>
+    <string name="charges_stats_pumped_total">累计充入</string>
+    <string name="charges_stats_equiv_cycles">等效循环</string>
+    <string name="charges_stats_bms_mileage">电池管理系统里程</string>
+    <string name="charges_stats_per100km">/100公里 全生命周期</string>
+    <string name="charges_lifetime_waiting">等待车辆首次响应…</string>
+    <string name="charges_stats_dynamics_label">趋势</string>
+    <string name="charges_chart_cell_delta_title">电芯压差（伏）</string>
+    <string name="charges_chart_cell_delta_placeholder">电芯压差：完成 3 次充电后显示（当前：%1$d）</string>
+    <string name="charges_chart_bat_temp_title">电池温度（摄氏度）</string>
+    <string name="charges_chart_bat_temp_placeholder">温度：完成 3 次充电后显示（当前：%1$d）</string>
+
+    <!-- 充电编辑弹窗 -->
+    <string name="charges_edit_dialog_title">编辑充电记录</string>
+    <string name="charges_edit_type_label">类型：</string>
+    <string name="charges_edit_kwh_label">千瓦时：</string>
+    <string name="charges_edit_kwh_from_soc">按电量计算 × %1$.1f 千瓦时</string>
+    <string name="charges_edit_cost_label">费用：</string>
+    <string name="charges_edit_tariff_label">%1$s/千瓦时：</string>
+    <string name="charges_edit_save_button">保存</string>
+
+    <!-- 筛选按钮 -->
+    <string name="automation_filter_all">全部</string>
+    <string name="automation_filter_active">已启用</string>
+    <string name="automation_filter_disabled">已禁用</string>
+
+    <!-- 顶部按钮 -->
+    <string name="automation_journal_button">日志</string>
+    <string name="automation_create_button">+ 创建</string>
+
+    <!-- 规则卡片菜单 -->
+    <string name="automation_menu_edit">编辑</string>
+    <string name="automation_menu_duplicate">复制</string>
+    <string name="automation_menu_delete">删除</string>
+
+    <!-- 删除确认弹窗 -->
+    <string name="automation_delete_confirm_title">删除规则？</string>
+    <string name="automation_delete_confirm_text">此操作不可撤销。</string>
+    <string name="automation_delete_button">删除</string>
+    <string name="automation_cancel_button">取消</string>
+
+    <!-- 规则卡片统计 -->
+    <string name="automation_rule_triggered_count">已触发：%1$d</string>
+    <string name="automation_rule_last_trigger">最近：%1$s</string>
+    <string name="automation_rule_cooldown">冷却：%1$d 秒</string>
+    <string name="automation_rule_logic_and"> 且 </string>
+    <string name="automation_rule_logic_or"> 或 </string>
+
+    <!-- 编辑弹窗 -->
+    <string name="automation_editor_new_rule_title">新建规则</string>
+    <string name="automation_rule_name_placeholder">规则名称</string>
+    <string name="automation_section_when">当（条件）</string>
+    <string name="automation_section_then">则（动作）</string>
+    <string name="automation_section_on_exit">否则（条件退出时）</string>
+    <string name="automation_section_on_exit_hint">条件从成立变为不成立时执行，适合关闭、停止或还原操作。</string>
+    <string name="automation_section_settings">设置</string>
+    <string name="automation_logic_and">且（并且）</string>
+    <string name="automation_logic_or">或（或者）</string>
+
+    <!-- 编辑器设置区 -->
+    <string name="automation_setting_cooldown">触发间隔</string>
+    <string name="automation_setting_repeat_interval">持续满足时重复间隔</string>
+    <string name="automation_setting_unit_sec">秒</string>
+    <string name="automation_setting_park_only">仅在驻车挡时</string>
+    <string name="automation_setting_confirm_before">执行前询问</string>
+    <string name="automation_setting_once_per_trip">每次行程仅执行一次</string>
+
+    <!-- 编辑器底部按钮 -->
+    <string name="automation_save_button">保存</string>
+
+    <!-- 条件控件 -->
+    <string name="automation_trigger_place_deleted">地点已删除</string>
+    <string name="automation_trigger_place_enter_label">进入</string>
+    <string name="automation_trigger_place_exit_label">离开</string>
+    <string name="automation_trigger_place_enter_prefix">进入</string>
+    <string name="automation_trigger_place_exit_prefix">离开</string>
+    <string name="automation_trigger_place_deleted_placeholder">&lt;已删除&gt;</string>
+    <string name="automation_trigger_time_of_day_label">时段：</string>
+    <string name="automation_trigger_day">白天</string>
+    <string name="automation_trigger_night">夜晚</string>
+    <string name="automation_trigger_dawn">黎明</string>
+    <string name="automation_trigger_dusk">黄昏</string>
+    <string name="automation_trigger_service_start">超级玩具箱 启动</string>
+    <string name="automation_trigger_internet">网络可用</string>
+
+    <!-- 添加条件按钮 -->
+    <string name="automation_add_condition_button">+ 添加条件</string>
+    <string name="automation_trigger_type_param">参数</string>
+    <string name="automation_trigger_type_place">地点</string>
+    <string name="automation_trigger_type_place_empty_hint">请先在设置中创建地点</string>
+    <string name="automation_trigger_type_time_of_day">时段</string>
+    <string name="automation_trigger_type_service_start">超级玩具箱 启动</string>
+    <string name="automation_trigger_type_internet">网络可用</string>
+    <string name="automation_trigger_type_schedule">定时</string>
+    <string name="automation_trigger_type_interval">定时间隔</string>
+    <string name="automation_trigger_type_board_vehicle">上车开门</string>
+
+    <!-- 定时条件控件 -->
+    <string name="automation_schedule_time_label">时间</string>
+    <string name="automation_schedule_days_label">重复</string>
+    <string name="automation_schedule_from">从</string>
+    <string name="automation_schedule_to">至</string>
+    <string name="automation_schedule_mode_exact">精确时间</string>
+    <string name="automation_schedule_mode_range">时间范围</string>
+    <string name="automation_day_mon">一</string>
+    <string name="automation_day_tue">二</string>
+    <string name="automation_day_wed">三</string>
+    <string name="automation_day_thu">四</string>
+    <string name="automation_day_fri">五</string>
+    <string name="automation_day_sat">六</string>
+    <string name="automation_day_sun">日</string>
+
+    <!-- 动作行：延迟 -->
+    <string name="automation_action_delay_label">延迟</string>
+    <string name="automation_delay_0_5s">0.5 秒</string>
+    <string name="automation_delay_1s">1 秒</string>
+    <string name="automation_delay_2s">2 秒</string>
+    <string name="automation_delay_3s">3 秒</string>
+    <string name="automation_delay_5s">5 秒</string>
+    <string name="automation_delay_10s">10 秒</string>
+    <string name="automation_delay_display_name">延迟 %1$s</string>
+
+    <!-- 添加动作按钮 -->
+    <string name="automation_add_action_button">+ 添加动作</string>
+    <string name="automation_action_dplus_command">车辆操作</string>
+    <string name="automation_action_notification_silent">通知（静音）</string>
+    <string name="automation_action_notification_sound">通知（带声音）</string>
+    <string name="automation_action_app_launch">启动应用</string>
+    <string name="automation_action_call">拨打电话</string>
+    <string name="automation_action_navigate">高德地图路线</string>
+    <string name="automation_action_url">打开链接</string>
+    <string name="automation_action_delay">延迟</string>
+    <string name="automation_action_outside_sound">车外播放音效</string>
+    <string name="automation_action_stop_outside_sound">停止车外音效</string>
+    <string name="automation_action_go_home">返回桌面</string>
+    <string name="automation_action_http">HTTP 请求</string>
+    <string name="automation_action_play_music">播放音乐</string>
+    <string name="automation_action_stop_music">暂停播放音乐</string>
+    <string name="automation_action_play_video">播放视频</string>
+    <string name="automation_action_stop_video">结束视频播放</string>
+    <string name="automation_action_sentry_mode">哨兵模式</string>
+    <string name="automation_action_outside_sound_label">车外音效</string>
+    <string name="automation_action_outside_sound_empty">未选择音效</string>
+    <string name="automation_action_auto_door">自动滑门</string>
+    <string name="automation_action_auto_door_label">自动滑门</string>
+
+    <!-- 悬浮窗权限弹窗 -->
+    <string name="automation_overlay_permission_title">需要权限</string>
+    <string name="automation_overlay_permission_text">声音通知以弹窗形式显示在其他应用上方。请打开系统设置，为 超级玩具箱 启用"显示在其他应用上层"。</string>
+    <string name="automation_overlay_open_settings">打开设置</string>
+    <string name="automation_overlay_later">稍后</string>
+
+    <!-- 动作控件：占位提示 -->
+    <string name="automation_tap_to_configure">点击配置…</string>
+    <string name="automation_tap_to_pick_app">点击选择应用…</string>
+    <string name="automation_tap_to_set_phone">点击设置号码…</string>
+    <string name="automation_tap_to_pick_place">点击选择地点…</string>
+    <string name="automation_tap_to_set_url">点击设置链接…</string>
+
+    <!-- 通知编辑弹窗 -->
+    <string name="automation_notification_title_label">标题</string>
+    <string name="automation_notification_body_label">内容（可选）</string>
+
+    <!-- 电话编辑弹窗 -->
+    <string name="automation_call_dialog_title">拨打电话</string>
+    <string name="automation_call_name_label">姓名（可选）</string>
+    <string name="automation_call_phone_label">电话号码</string>
+    <string name="automation_call_auto_dial_label">自动拨打</string>
+    <string name="automation_call_auto_dial_hint">无需按绿色按钮</string>
+
+    <!-- 导航编辑弹窗 -->
+    <string name="automation_navigate_dialog_title">高德地图路线</string>
+    <string name="automation_navigate_no_places_hint">请先在 设置 → 地点 中添加地点</string>
+    <string name="automation_navigate_pick_place_placeholder">选择地点…</string>
+
+    <!-- 链接编辑弹窗 -->
+    <string name="automation_url_dialog_title">打开链接</string>
+    <string name="automation_url_field_label">链接</string>
+    <string name="automation_url_minimize_label">启动后最小化（3 秒后）</string>
+
+
+    <!-- 日志弹窗 -->
+    <string name="automation_journal_title">触发日志</string>
+    <string name="automation_journal_empty">日志为空</string>
+
+    <!-- 日志相对时间 -->
+    <string name="automation_time_yesterday">昨天 %1$s</string>
+
+    <!-- 地点页 -->
+    <string name="places_tab_title">地点</string>
+    <string name="places_back_content_description">返回</string>
+    <string name="places_add_button">+ 添加</string>
+    <string name="places_empty">暂无地点。点击"+ 添加"创建一个。</string>
+    <string name="places_row_coords">%1$.5f, %2$.5f · %3$d 米</string>
+    <string name="places_row_in_use">在 %1$d 条规则中使用</string>
+    <string name="places_edit_content_description">编辑</string>
+    <string name="places_delete_content_description">删除</string>
+    <string name="places_delete_blocked_message">该地点在 %1$d 条智能联动规则中使用。请先删除规则。</string>
+
+    <!-- 地点编辑弹窗 -->
+    <string name="place_edit_dialog_title_new">新建地点</string>
+    <string name="place_edit_dialog_title_edit">编辑地点</string>
+    <string name="place_edit_name_label">名称</string>
+    <string name="place_edit_lat_label">纬度</string>
+    <string name="place_edit_lon_label">经度</string>
+    <string name="place_edit_radius_label">半径（米）</string>
+    <string name="place_edit_error_min_radius">最小半径为 20 米</string>
+
+    <!-- 欢迎引导 -->
+
+    <!-- 服务与通知 -->
+    <string name="service_foreground_content_starting">启动中…</string>
+    <string name="service_notification_soc_line">续航：%1$s%2$s%3$s</string>
+    <string name="service_notification_range_suffix"> ~%1$.0f 公里</string>
+    <string name="service_notification_bat_temp_suffix"> | 电池温度：%1$d 摄氏度</string>
+    <string name="service_notification_voltage">车载电源：%1$.1f 伏</string>
+    <string name="service_confirm_action_yes">执行</string>
+    <string name="service_confirm_action_no">取消</string>
+
+    <!-- 悬浮小组件 -->
+    <string name="widget_unit_km">公里</string>
+    <string name="widget_duration_hours">%1$d小时 %2$d分</string>
+    <string name="widget_duration_minutes">%1$d 分钟</string>
+    <string name="widget_trip_km_value">%1$.1f 公里</string>
+    <string name="widget_voltage_value">%1$.1f 伏</string>
+    <string name="widget_toast_hidden">小组件已隐藏。打开超级玩具箱即可恢复。</string>
+    <string name="widget_trash_release">松手 - 隐藏小组件</string>
+    <string name="widget_trash_hint">拖到这里隐藏</string>
+    <string name="widget_km_per_percent">%1$.1f</string>
+
+    <!-- 首页 -->
+    <string name="dashboard_vehicle_data_offline">未收到车辆数据</string>
+    <string name="dashboard_adb_offline">调试连接无响应</string>
+    <string name="dashboard_status_online">在线</string>
+    <string name="dashboard_status_offline">离线</string>
+
+    <string name="dashboard_unit_km">公里</string>
+    <string name="dashboard_unit_kwh">千瓦时</string>
+    <string name="dashboard_range_label">预估续航</string>
+    <string name="dashboard_idle_time_min">%1$.0f 分钟</string>
+    <string name="dashboard_idle_time_hours">%1$.1f 小时</string>
+
+    <!-- 停车能耗卡片 -->
+    <string name="dashboard_idle_drain_parking_label">停车</string>
+    <string name="dashboard_idle_drain_title">停车能耗</string>
+    <string name="dashboard_idle_drain_rate_label">速率</string>
+    <string name="dashboard_idle_drain_rate_value">%1$.2f 千瓦时/小时</string>
+    <string name="dashboard_idle_drain_week_label">近 7 天</string>
+    <string name="dashboard_idle_drain_week_value">%1$.1f 千瓦时</string>
+    <string name="dashboard_idle_drain_avg_day_label">日均</string>
+
+    <!-- 电池卡片 -->
+    <string name="dashboard_battery_temp_label">电池温度</string>
+    <string name="dashboard_battery_voltage_label">车载电源</string>
+
+    <!-- 时间范围按钮 -->
+    <string name="dashboard_period_day">日</string>
+    <string name="dashboard_period_week">周</string>
+    <string name="dashboard_period_month">月</string>
+    <string name="dashboard_period_year">年</string>
+    <string name="dashboard_period_all">全部</string>
+
+    <!-- 统计卡片 -->
+    <string name="dashboard_stat_distance">里程</string>
+    <string name="dashboard_stat_energy">能耗</string>
+    <string name="dashboard_trip_count">%1$d 次行程</string>
+
+    <!-- 最近行程 -->
+    <string name="dashboard_recent_trips_title">最近行程</string>
+    <string name="dashboard_empty_no_trips">暂无行程</string>
+
+    <string name="dashboard_stat_km_value">%1$.1f 公里</string>
+    <string name="dashboard_stat_kwh_value">%1$.1f 千瓦时</string>
+    <string name="dashboard_voltage_value">%1$.1f 伏</string>
+
+    <!-- 安装后自启动提示弹窗 -->
+
+    <!-- 应用选择弹窗 -->
+    <string name="applauncher_title">选择应用</string>
+    <string name="applauncher_search_label">搜索</string>
+    <string name="applauncher_minimize_label">启动后最小化（3 秒后）</string>
+    <string name="applauncher_empty">未找到结果</string>
+    <string name="applauncher_close_button">关闭</string>
+
+    <!-- 电量环：充电图标说明 -->
+    <string name="battery_health_charging_cd">充电中</string>
+
+    <!-- 电池健康弹窗 -->
+    <string name="battery_health_dialog_title">电池健康</string>
+    <string name="battery_health_now_header">当前（车辆实时数据）</string>
+    <string name="battery_health_lifetime_header">全生命周期（系统数据）</string>
+    <string name="battery_health_cell_delta_value">%1$.3f 伏</string>
+    <string name="battery_health_banks_header">电池组</string>
+    <string name="battery_health_cell_voltage_value">%1$.3f 伏</string>
+    <string name="battery_health_bat_temp_label">电池温度</string>
+    <string name="battery_health_12v_label">车载电源</string>
+    <string name="battery_health_12v_value">%1$.1f 伏</string>
+    <string name="battery_health_bms_mileage_label">电池管理系统里程</string>
+    <string name="battery_health_bms_mileage_value">%1$.1f 公里</string>
+    <string name="battery_health_pumped_label">累计充入</string>
+    <string name="battery_health_pumped_value">%1$.0f 千瓦时</string>
+    <string name="battery_health_disabled_title">系统数据已禁用</string>
+    <string name="battery_health_disabled_hint">在设置中启用"系统数据"，以查看健康度、电池管理系统里程和车辆累计充入量。</string>
+
+    <!-- 通用汇总行 -->
+    <string name="summary_unit_km">公里</string>
+    <string name="summary_label_mileage">里程</string>
+    <string name="summary_unit_kwh">千瓦时</string>
+    <string name="summary_label_energy">能耗</string>
+    <string name="summary_unit_kwh_per_100km">千瓦时/百公里</string>
+    <string name="summary_label_consumption">百公里电耗</string>
+    <string name="summary_label_cost">费用</string>
+
+    <!-- 设置：单位按钮 -->
+    <string name="settings_tariff_trip_custom_chip">自定义</string>
+
+    <!-- 设置：状态文本 -->
+    <string name="settings_saved">已保存</string>
+    <string name="settings_recalc_done">已重新计算：%1$d 次行程</string>
+    <string name="settings_export_in_progress">导出中…</string>
+    <string name="settings_export_done">已导出：%1$d 次行程，%2$d 次充电，%3$d 个轨迹点，%4$d 次怠速耗电</string>
+    <string name="settings_error_with_message">错误：%1$s</string>
+    <string name="settings_error_prefix">错误</string>
+    <string name="settings_log_recording_started">录制中（2 小时后自动停止）… - %1$s</string>
+    <string name="settings_log_saved">已保存：%1$s（%2$d 千字节）</string>
+    <string name="settings_log_error_no_fs_access">错误：无法访问文件系统</string>
+    <string name="settings_update_check_in_progress">检查中…</string>
+    <string name="settings_update_available_short">可更新至 %1$s</string>
+
+    <!-- 更新下载进度文本 -->
+    <string name="update_downloading_progress">下载中：%1$d%%</string>
+    <string name="update_downloading_done">已下载。正在安装…</string>
+    <string name="update_downloading_paused">已暂停…</string>
+    <string name="update_download_error">下载错误（代码 %1$d）</string>
+    <string name="update_download_notification_description">超级玩具箱 更新</string>
+    <string name="update_downloading_start">下载中：0%%</string>
+
+    <!-- 充电：日期分组 -->
+    <string name="charges_day_today">今天（%1$s）</string>
+    <string name="charges_day_yesterday">昨天</string>
+
+    <!-- 通用时长格式 -->
+    <string name="common_duration_hours_minutes">%1$d 小时 %2$d 分钟</string>
+    <string name="common_duration_minutes">%1$d 分钟</string>
+
+    <!-- 智能联动确认悬浮按钮 -->
+    <string name="confirm_overlay_cancel">取消</string>
+    <string name="confirm_overlay_run">执行</string>
+
+    <!-- 备份、方向盘按键、媒体音量等功能文案 -->
+    <string name="automation_action_media_volume">媒体音量</string>
+    <string name="automation_action_media_volume_label">音量</string>
+    <string name="learn_button_again">重新学习</string>
+    <string name="learn_button_cancel">取消</string>
+    <string name="learn_button_captured">已识别按键：</string>
+    <string name="learn_button_dialog_title">分配按键</string>
+    <string name="learn_button_rejected">无法分配此按键，请按其他按键。</string>
+    <string name="learn_button_save">保存</string>
+    <string name="learn_button_timeout">未识别到按键，可能未传递给系统，请尝试其他按键。</string>
+    <string name="learn_button_waiting">请按方向盘按键…</string>
+    <string name="settings_config_export_button">导出配置</string>
+    <string name="settings_config_export_done">备份已保存：%1$s</string>
+    <string name="settings_config_restore_button">恢复配置</string>
+    <string name="settings_config_restore_confirm_body">当前所有数据和设置将被备份内容完全替换，此操作无法撤销。</string>
+    <string name="settings_config_restore_confirm_cancel">取消</string>
+    <string name="settings_config_restore_confirm_ok">恢复</string>
+    <string name="settings_config_restore_confirm_title">恢复配置？</string>
+    <string name="settings_display_button_change">更改</string>
+    <string name="settings_display_button_title">触发按键</string>
+    <string name="steering_button_aux_left">左侧辅助键</string>
+    <string name="steering_button_aux_left_long">左侧辅助键长按</string>
+    <string name="steering_button_aux_right">右侧辅助键</string>
+    <string name="steering_button_aux_right_long">右侧辅助键长按</string>
+    <string name="steering_button_carousel">仪表轮播</string>
+    <string name="steering_button_left">左键</string>
+    <string name="steering_button_left_long">左键长按</string>
+    <string name="steering_button_left_star">左星键</string>
+    <string name="steering_button_mode">模式键</string>
+    <string name="steering_button_right">右键</string>
+    <string name="steering_button_right_long">右键长按</string>
+    <string name="steering_button_right_star">右星键</string>
+    <string name="steering_button_right_star_long">右星键长按</string>
+    <string name="steering_button_surround_view">360°全景</string>
+    <string name="steering_button_unknown">按键（代码 %1$d）</string>
+    <string name="steering_button_voice">语音助手</string>
+    <string name="steering_button_voice_long">语音助手长按</string>
+    <string name="steering_button_wheel_center">滚轮中键</string>
+    <string name="steering_button_wheel_down">滚轮下</string>
+    <string name="steering_button_wheel_up">滚轮上</string>
+    <string name="widget_button_no_rules">桌面按钮 %1$d 未绑定智能联动</string>
+</resources>
