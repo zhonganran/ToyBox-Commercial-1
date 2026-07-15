@@ -34,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,6 +53,8 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.byd.wjx.R
+import com.byd.wjx.data.autoservice.ChargeGunState
+import com.byd.wjx.data.autoservice.ChargingReading
 import com.byd.wjx.data.local.dao.ChargeSummary
 import com.byd.wjx.data.local.entity.ChargeEntity
 import com.byd.wjx.ui.pro.ProPageHeader
@@ -66,6 +69,10 @@ fun ChargesScreen(
     viewModel: ChargesViewModel = hiltViewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    DisposableEffect(viewModel) {
+        viewModel.setLiveTelemetryActive(true)
+        onDispose { viewModel.setLiveTelemetryActive(false) }
+    }
 
     Column(
         modifier = Modifier
@@ -97,6 +104,11 @@ fun ChargesScreen(
         if (state.autoserviceAllSentinel) {
             SentinelEmptyState()
             return@Column
+        }
+
+        state.liveCharging?.let { reading ->
+            LiveChargingCard(reading)
+            Spacer(modifier = Modifier.height(8.dp))
         }
 
         Row(
@@ -302,6 +314,98 @@ private fun SentinelEmptyState() {
                 lineHeight = 20.sp
             )
         }
+    }
+}
+
+@Composable
+private fun LiveChargingCard(reading: ChargingReading) {
+    val status = when (reading.bmsState) {
+        1 -> "充电中"
+        13 -> "充电暂停"
+        else -> "充电枪已连接"
+    }
+    val type = when (reading.gunConnectState) {
+        ChargeGunState.AC -> "交流慢充"
+        ChargeGunState.DC, ChargeGunState.AC_DC -> "直流快充"
+        else -> when (reading.chargingType) {
+            2 -> "交流慢充"
+            4, 5 -> "直流快充"
+            else -> "充电"
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(CardSurface, RoundedCornerShape(10.dp))
+            .border(1.dp, AccentGreen.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(28.dp),
+        ) {
+            Column(modifier = Modifier.width(132.dp)) {
+                Text("实时充电", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Text("$type · $status", color = AccentGreen, fontSize = 12.sp)
+            }
+            LiveChargingMetric(
+                label = "功率",
+                value = reading.chargePowerKw?.let { "%.1f kW".format(it) } ?: "—",
+            )
+            LiveChargingMetric(
+                label = "电流",
+                value = reading.chargeCurrentA?.let { "$it A" } ?: "—",
+            )
+            LiveChargingMetric(
+                label = "电压",
+                value = reading.chargeBatteryVoltV?.let { "$it V" } ?: "—",
+            )
+            LiveChargingMetric(
+                label = "本次电量",
+                value = reading.chargingCapacityKwh?.let { "%.2f kWh".format(it) } ?: "—",
+            )
+        }
+        HorizontalDivider(color = CardBorder.copy(alpha = 0.45f), thickness = 0.5.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(28.dp),
+        ) {
+            Spacer(modifier = Modifier.width(132.dp))
+            LiveChargingMetric(
+                label = "允许充电功率",
+                value = reading.batteryMaxChargePowerKw?.let { "$it kW" } ?: "—",
+            )
+            LiveChargingMetric(
+                label = "允许放电功率",
+                value = reading.batteryMaxDischargePowerKw?.let { "$it kW" } ?: "—",
+            )
+            LiveChargingMetric(
+                label = "绝缘电阻",
+                value = reading.batteryInsulationKohm?.let { "$it kΩ" } ?: "—",
+            )
+            LiveChargingMetric(
+                label = "停止 SOC",
+                value = reading.chargeStopSoc?.let { "$it%" } ?: "—",
+            )
+        }
+    }
+}
+
+@Composable
+private fun LiveChargingMetric(label: String, value: String) {
+    Column(horizontalAlignment = Alignment.End) {
+        Text(label, color = TextMuted, fontSize = 11.sp)
+        Text(
+            value,
+            color = TextPrimary,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold,
+            fontFamily = FontFamily.Monospace,
+        )
     }
 }
 
@@ -751,6 +855,7 @@ private fun MiniLineChart(
                 }
             }
             Spacer(modifier = Modifier.width(6.dp))
+            val chartGridColor = ChartGrid
             Canvas(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -762,13 +867,13 @@ private fun MiniLineChart(
 
                 // Top + bottom grid lines so the chart has a clear frame.
                 drawLine(
-                    color = ChartGrid,
+                    color = chartGridColor,
                     start = Offset(pad, pad),
                     end = Offset(w - pad, pad),
                     strokeWidth = 0.5.dp.toPx()
                 )
                 drawLine(
-                    color = ChartGrid,
+                    color = chartGridColor,
                     start = Offset(pad, h - pad),
                     end = Offset(w - pad, h - pad),
                     strokeWidth = 0.5.dp.toPx()

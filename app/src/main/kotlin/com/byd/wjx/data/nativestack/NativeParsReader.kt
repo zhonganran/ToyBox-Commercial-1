@@ -2,18 +2,24 @@ package com.byd.wjx.data.nativestack
 
 import com.byd.wjx.data.remote.DiParsData
 import com.byd.wjx.data.repository.SettingsRepository
+import com.byd.wjx.data.vehicle.VehicleBatchRead
 import com.byd.wjx.data.vehicle.VehicleGateway
 import com.byd.wjx.data.vehicle.VehicleReadSpec
 import com.byd.wjx.data.vehicle.VehicleSnapshot
 import com.byd.wjx.data.vehicle.VehicleSnapshotKind
 import com.byd.wjx.log.WjxFileLogger
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.roundToInt
 
 /**
- * Parses live vehicle parameters from the unified [VehicleGateway]. Production reads use one
- * helper Binder batch and never issue a duplicate ADB vehicle read.
+ * Parses live vehicle parameters from the unified [VehicleGateway]. Production reads use bounded
+ * helper Binder batches and never issue a duplicate ADB vehicle read. The first full snapshot
+ * loads the complete regular catalog; feature telemetry remains in explicit page/action profiles.
+ * Later driving ticks refresh the lifecycle-critical core every time and reuse detail values for
+ * at most a short interval.
  *
  * Returns null if the vehicle service is unavailable or all primary FIDs return sentinels.
  */
@@ -22,42 +28,136 @@ class NativeParsReader @Inject constructor(
     private val gateway: VehicleGateway,
     private val settings: SettingsRepository,
     private val actionSnapshotFieldProvider: ActionSnapshotFieldProvider,
-) : ParsReader {
+) : ParsReader, OnDemandVehicleTelemetryReader {
 
     override suspend fun fetch(): DiParsData? = fetchVehicleSnapshot()?.data
 
     override suspend fun fetchAction(): DiParsData? = fetchActionVehicleSnapshot()?.data
 
-    override suspend fun fetchVehicleSnapshot(): VehicleSnapshot? =
-        fetchEntries(FidMap.entries, VehicleSnapshotKind.FULL)
+    override suspend fun fetchVehicleSnapshot(): VehicleSnapshot? = fullReadMutex.withLock {
+        fetchTieredFullSnapshot()
+    }
 
     override suspend fun fetchActionVehicleSnapshot(): VehicleSnapshot? {
-        val selectedFields = CoreActionFieldNames + actionSnapshotFieldProvider.additionalFields()
-        return fetchEntries(actionEntries(selectedFields), VehicleSnapshotKind.ACTION)
+        val selectedFields = VehicleReadProfiles.actionCoreFields +
+            actionSnapshotFieldProvider.additionalFields()
+        return fetchPlan(actionPlan(selectedFields), VehicleSnapshotKind.ACTION)
     }
 
     override suspend fun fetchLedVehicleSnapshot(): VehicleSnapshot? =
-        fetchEntries(LedFastEntries, VehicleSnapshotKind.ACTION)
+        fetchPlan(LedFastReadPlan, VehicleSnapshotKind.ACTION)
 
-    @Volatile private var cachedActionSelection = ActionSelection(emptySet(), emptyList())
+    override suspend fun readTireTelemetry(): DiParsData? =
+        fetchPlan(TireTelemetryReadPlan, VehicleSnapshotKind.ACTION)?.data
 
-    private fun actionEntries(fields: Set<String>): List<FidEntry> {
-        cachedActionSelection.takeIf { it.fields == fields }?.let { return it.entries }
-        return FidMap.entries.filter { it.field in fields }.also { entries ->
-            cachedActionSelection = ActionSelection(fields.toSet(), entries)
-            WjxFileLogger.i(
-                TAG,
-                "action batch selected count=${entries.size} fields=${entries.joinToString(",") { it.field }}",
-            )
+    override suspend fun readAdasTelemetry(): DiParsData? =
+        fetchPlan(AdasTelemetryReadPlan, VehicleSnapshotKind.ACTION)?.data
+
+    override suspend fun readPowertrainTelemetry(): DiParsData? =
+        fetchPlan(PowertrainTelemetryReadPlan, VehicleSnapshotKind.ACTION)?.data
+
+    @Volatile private var cachedActionSelection = ActionSelection(emptySet(), ReadPlan(emptyList()))
+    private val fullReadMutex = Mutex()
+    private val fullRawCache = HashMap<VehicleReadSpec, com.byd.wjx.data.vehicle.VehicleRawRead>()
+    private var fullCacheInitialized = false
+    private var lastDetailAttemptAtNanos = 0L
+    internal var monotonicNanos: () -> Long = System::nanoTime
+
+    private suspend fun fetchTieredFullSnapshot(): VehicleSnapshot? {
+        val nowNanos = monotonicNanos()
+        if (!fullCacheInitialized) {
+            val batch = gateway.readBatch(FullReadPlan.specs) ?: return null
+            cacheBatch(batch)
+            val snapshot = parsePlan(FullReadPlan, VehicleSnapshotKind.FULL, batch)
+            if (snapshot != null) {
+                fullCacheInitialized = true
+                lastDetailAttemptAtNanos = nowNanos
+            }
+            return snapshot
+        }
+
+        val coreBatch = gateway.readBatch(CoreFullReadPlan.specs) ?: return null
+        cacheBatch(coreBatch)
+
+        var requestedCount = coreBatch.specs.size
+        var acceptedCount = coreBatch.acceptedCount
+        var readStartedAtMs = coreBatch.startedAtMs
+        var readCompletedAtMs = coreBatch.completedAtMs
+
+        if (detailRefreshDue(nowNanos)) {
+            lastDetailAttemptAtNanos = nowNanos
+            val detailBatch = gateway.readBatch(DetailFullReadPlan.specs)
+            requestedCount += DetailFullReadPlan.specs.size
+            if (detailBatch != null) {
+                cacheBatch(detailBatch)
+                acceptedCount += detailBatch.acceptedCount
+                readStartedAtMs = minOf(readStartedAtMs, detailBatch.startedAtMs)
+                readCompletedAtMs = maxOf(readCompletedAtMs, detailBatch.completedAtMs)
+            } else {
+                // Do not present indefinitely stale detail values after a failed refresh.
+                DetailFullReadPlan.specs.forEach { spec ->
+                    fullRawCache[spec] = UNAVAILABLE_RAW_READ
+                }
+            }
+        }
+
+        val mergedBatch = VehicleBatchRead(
+            specs = FullReadPlan.specs,
+            values = FullReadPlan.specs.map { spec ->
+                fullRawCache[spec] ?: UNAVAILABLE_RAW_READ
+            },
+            source = coreBatch.source,
+            startedAtMs = readStartedAtMs,
+            completedAtMs = readCompletedAtMs,
+        )
+        return parsePlan(
+            plan = FullReadPlan,
+            kind = VehicleSnapshotKind.FULL,
+            batch = mergedBatch,
+            requestedFieldCount = requestedCount,
+            transportSuccessCount = acceptedCount,
+        )
+    }
+
+    private fun detailRefreshDue(nowNanos: Long): Boolean {
+        val elapsed = nowNanos - lastDetailAttemptAtNanos
+        return elapsed < 0L || elapsed >= DETAIL_REFRESH_INTERVAL_NANOS
+    }
+
+    private fun cacheBatch(batch: VehicleBatchRead) {
+        batch.specs.forEachIndexed { index, spec ->
+            fullRawCache[spec] = batch.values[index]
         }
     }
 
-    private suspend fun fetchEntries(
-        entries: List<FidEntry>,
+    private fun actionPlan(fields: Set<String>): ReadPlan {
+        cachedActionSelection.takeIf { it.fields == fields }?.let { return it.plan }
+        val entries = FidMap.entries.filter { it.field in fields }
+        val plan = ReadPlan(entries)
+        cachedActionSelection = ActionSelection(fields.toSet(), plan)
+        WjxFileLogger.i(
+            TAG,
+            "action batch selected count=${entries.size} fields=${entries.joinToString(",") { it.field }}",
+        )
+        return plan
+    }
+
+    private suspend fun fetchPlan(
+        plan: ReadPlan,
         kind: VehicleSnapshotKind,
     ): VehicleSnapshot? {
-        val specs = entries.map { VehicleReadSpec(it.transact, it.device, it.fid) }
-        val batch = gateway.readBatch(specs) ?: return null
+        val batch = gateway.readBatch(plan.specs) ?: return null
+        return parsePlan(plan, kind, batch)
+    }
+
+    private suspend fun parsePlan(
+        plan: ReadPlan,
+        kind: VehicleSnapshotKind,
+        batch: VehicleBatchRead,
+        requestedFieldCount: Int = batch.specs.size,
+        transportSuccessCount: Int = batch.acceptedCount,
+    ): VehicleSnapshot? {
+        val entries = plan.entries
         if (batch.values.size != entries.size) return null
 
         // Decoded values keyed by FidEntry.field.
@@ -101,6 +201,9 @@ class NativeParsReader @Inject constructor(
         fun consumptionField(name: String): Double? = doubleField(name)?.takeIf { it in 0.0..100.0 }
         fun tripEnergyField(name: String): Double? = doubleField(name)?.takeIf { it in 0.0..500.0 }
         fun speedField(name: String): Int? = intField(name)?.takeIf { it in 0..260 }
+        fun rpmField(name: String): Int? = intField(name)?.takeIf { it in -50_000..50_000 }
+        fun motorCurrentField(name: String): Double? =
+            doubleField(name)?.takeIf { it in -2_000.0..2_000.0 }
 
         val maxCellVoltage = field<Double>("maxCellVoltage")?.takeIf { it > 0.5 }
         val minCellVoltage = field<Double>("minCellVoltage")?.takeIf { it > 0.5 }
@@ -134,14 +237,15 @@ class NativeParsReader @Inject constructor(
 
         val data = DiParsData(
             soc                 = soc,
+            soh                 = percentField("soh"),
             speed               = doubleField("speed")?.toInt(),
             mileage             = mileage,
             power               = intField("power")?.toDouble(),
-            chargeGunState      = intField("chargeGunState"),
+            chargeGunState      = intField("chargeGunState")?.takeIf { it in 1..5 },
             maxBatTemp          = maxBatTemp,
             avgBatTemp          = avgBatTemp,
             minBatTemp          = minBatTemp,
-            chargingStatus      = intField("chargingStatus"),
+            chargingStatus      = intField("chargingStatus")?.takeIf { it in 0..13 },
             batteryCapacityKwh  = batteryCapacityKwh,
             totalElecConsumption = doubleField("totalElecConsumption"),
             voltage12v          = voltage12v,
@@ -149,7 +253,7 @@ class NativeParsReader @Inject constructor(
             minCellVoltage      = minCellVoltage,
             exteriorTemp        = intField("exteriorTemp"),
             gear                = intField("gear"),
-            powerState          = intField("powerState"),
+            powerState          = intField("powerState")?.takeIf { it in 0..4 },
             insideTemp          = intField("insideTemp"),
             acStatus            = intField("acStatus"),
             acTemp              = intField("acTemp"),
@@ -163,16 +267,16 @@ class NativeParsReader @Inject constructor(
             windowFR            = percentField("windowFR"),
             windowRL            = percentField("windowRL"),
             windowRR            = percentField("windowRR"),
-            sunroof             = null,  // removed from FidMap: fid returns enum(1=open,2=closed,5=vent) not percent
-            trunk               = intField("trunk"),
+            sunroof             = percentField("sunroof"),
+            trunk               = intField("trunk")?.takeIf { it in 1..3 },
             hood                = intField("hood"),
             seatbeltFL          = intField("seatbeltFL"),
-            lockFL              = intField("lockFL"),
+            lockFL              = intField("lockFL")?.takeIf { it in 1..2 },
             tirePressFL         = intField("tirePressFL"),
             tirePressFR         = intField("tirePressFR"),
             tirePressRL         = intField("tirePressRL"),
             tirePressRR         = intField("tirePressRR"),
-            driveMode           = intField("driveMode"),
+            driveMode           = intField("driveMode")?.takeIf { it in 1..6 },
             workMode            = intField("workMode"),
             autoPark            = null,  // not in FidMap (unknown source)
             rain                = null,  // not in FidMap (user setting, no live sensor fid)
@@ -186,14 +290,14 @@ class NativeParsReader @Inject constructor(
             fuelConPer100km     = consumptionField("fuelConPer100km"),
             currentTripElecKwh  = tripEnergyField("currentTripElecKwh"),
             currentTripFuelL    = tripEnergyField("currentTripFuelL"),
-            chargingCapCover    = intField("chargingCapCover"),
-            fuelCap             = intField("fuelCap"),
+            chargingCapCover    = intField("chargingCapCover")?.takeIf { it in 1..2 },
+            fuelCap             = intField("fuelCap")?.takeIf { it in 1..2 },
             seatbeltFR          = intField("seatbeltFR"),
             seatbeltRL          = intField("seatbeltRL"),
             seatbeltRR          = intField("seatbeltRR"),
-            lockFR              = intField("lockFR"),
-            lockRL              = intField("lockRL"),
-            lockRR              = intField("lockRR"),
+            lockFR              = intField("lockFR")?.takeIf { it in 1..2 },
+            lockRL              = intField("lockRL")?.takeIf { it in 1..2 },
+            lockRR              = intField("lockRR")?.takeIf { it in 1..2 },
             lightHigh           = intField("lightHigh"),
             hazardLights        = intField("hazardLights"),
             turnSignalFlash     = intField("turnSignalFlash"),
@@ -206,6 +310,50 @@ class NativeParsReader @Inject constructor(
             brakePedalDepth     = percentField("brakePedalDepth"),
             turnSignalLeft      = intField("turnSignalLeft"),
             turnSignalRight     = intField("turnSignalRight"),
+            acCtrlMode          = intField("acCtrlMode"),
+            acDefrostFront      = intField("acDefrostFront"),
+            acWindMode          = intField("acWindMode"),
+            seatHeatD           = intField("seatHeatD")?.takeIf { it in 0..5 },
+            seatVentD           = intField("seatVentD")?.takeIf { it in 0..5 },
+            seatHeatP           = intField("seatHeatP")?.takeIf { it in 0..5 },
+            seatVentP           = intField("seatVentP")?.takeIf { it in 0..5 },
+            lightSide           = intField("lightSide"),
+            tireTempFL          = intField("tireTempFL"),
+            tireTempFR          = intField("tireTempFR"),
+            tireTempRL          = intField("tireTempRL"),
+            tireTempRR          = intField("tireTempRR"),
+            lightFrontFog       = intField("lightFrontFog"),
+            lightRearFog        = intField("lightRearFog"),
+            lightBrake          = intField("lightBrake"),
+            lightReversing      = intField("lightReversing"),
+            accelPedalDepth     = percentField("accelPedalDepth"),
+            epbState            = intField("epbState"),
+            brakeState          = intField("brakeState"),
+            ePedalMode          = intField("ePedalMode"),
+            acDefrostRear       = intField("acDefrostRear"),
+            steeringHeat        = intField("steeringHeat"),
+            sunshadePos         = percentField("sunshadePos"),
+            mirrorFoldState     = intField("mirrorFoldState"),
+            adasAebState        = intField("adasAebState"),
+            adasAvhState        = intField("adasAvhState"),
+            adasBsdState        = intField("adasBsdState"),
+            adasEspState        = intField("adasEspState"),
+            adasAccGrayState    = intField("adasAccGrayState"),
+            adasNoaGrayState    = intField("adasNoaGrayState"),
+            adasMnoaStatus      = intField("adasMnoaStatus"),
+            adasExecSpeed       = speedField("adasExecSpeed"),
+            frontMotorSpeed     = rpmField("frontMotorSpeed"),
+            rearMotorSpeed      = rpmField("rearMotorSpeed"),
+            frontMotorTemp      = intField("frontMotorTemp"),
+            rearMotorTemp       = intField("rearMotorTemp"),
+            frontMotorCurrent   = motorCurrentField("frontMotorCurrent"),
+            rearMotorCurrent    = motorCurrentField("rearMotorCurrent"),
+            engineRpm           = rpmField("engineRpm"),
+            waterTemp           = intField("waterTemp"),
+            tireStateFL         = intField("tireStateFL"),
+            tireStateFR         = intField("tireStateFR"),
+            tireStateRL         = intField("tireStateRL"),
+            tireStateRR         = intField("tireStateRR"),
         )
         return VehicleSnapshot(
             data = data,
@@ -213,34 +361,37 @@ class NativeParsReader @Inject constructor(
             source = batch.source,
             readStartedAtMs = batch.startedAtMs,
             readCompletedAtMs = System.currentTimeMillis(),
-            requestedFieldCount = entries.size,
-            transportSuccessCount = batch.acceptedCount,
+            requestedFieldCount = requestedFieldCount,
+            transportSuccessCount = transportSuccessCount,
             decodedFieldCount = decoded.values.count { it != null },
         )
     }
 
     private companion object {
         private const val TAG = "NativeParsReader"
-        private val CoreActionFieldNames = setOf(
-            "soc",
-            "speed",
-            "gear",
-            "chargeGunState",
-            "powerState",
-            "adasApaParkingStatus",
+        private const val DETAIL_REFRESH_INTERVAL_NANOS = 3_000_000_000L
+        private val UNAVAILABLE_RAW_READ = com.byd.wjx.data.vehicle.VehicleRawRead(
+            status = -1,
+            value = 0,
         )
-        private val LedFastFieldNames = listOf(
-            "turnSignalLeft",
-            "turnSignalRight",
-            "hazardLights",
-            "gear",
-            "brakePedalDepth",
-        )
-        private val LedFastEntries = FidMap.entries.filter { it.field in LedFastFieldNames }
+        private val FullReadPlan = ReadPlan(VehicleReadProfiles.regularFull)
+        private val CoreFullReadPlan = ReadPlan(VehicleReadProfiles.coreFull)
+        private val DetailFullReadPlan = ReadPlan(VehicleReadProfiles.detailFull)
+        private val LedFastReadPlan = ReadPlan(VehicleReadProfiles.ledFast)
+        private val TireTelemetryReadPlan = ReadPlan(VehicleReadProfiles.tireTelemetry)
+        private val AdasTelemetryReadPlan = ReadPlan(VehicleReadProfiles.adasTelemetry)
+        private val PowertrainTelemetryReadPlan = ReadPlan(VehicleReadProfiles.powertrainTelemetry)
     }
 
     private data class ActionSelection(
         val fields: Set<String>,
+        val plan: ReadPlan,
+    )
+
+    private data class ReadPlan(
         val entries: List<FidEntry>,
+        val specs: List<VehicleReadSpec> = entries.map {
+            VehicleReadSpec(it.transact, it.device, it.fid)
+        },
     )
 }

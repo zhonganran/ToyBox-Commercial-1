@@ -31,7 +31,7 @@ class SharedFlowConcurrencyTest {
                 soc = ++counter,
                 voltage12v = 12.5,
                 mileage = 1.0,
-                powerState = 2,
+                powerState = 3,
                 speed = 30,
             )
         }

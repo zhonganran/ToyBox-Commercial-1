@@ -4,7 +4,6 @@ import android.content.Context
 import android.graphics.PixelFormat
 import android.graphics.Point
 import android.hardware.display.DisplayManager
-import android.os.Build
 import android.os.SystemClock
 import android.view.Display
 import android.view.Gravity
@@ -181,13 +180,7 @@ class ClusterLyricOverlayController(
         return display
     }
 
-    private fun overlayType(): Int =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            @Suppress("DEPRECATION")
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
+    private fun overlayType(): Int = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
 
     companion object {
         private const val TAG = "ClusterLyricOverlay"

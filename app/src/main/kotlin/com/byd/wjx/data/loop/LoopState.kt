@@ -1,6 +1,7 @@
 package com.byd.wjx.data.loop
 
 import com.byd.wjx.data.autoservice.ChargeGunState
+import com.byd.wjx.data.nativestack.BydSignalSemantics
 
 enum class LoopState { DRIVE, CHARGE, PARKED, IDLE }
 
@@ -31,13 +32,13 @@ data class CadenceConfig(
 }
 
 object LoopFsm {
-    // powerState (DiParsData.kt:21): 0=OFF, 1=ON, 2=DRIVE. gear (DiParsData.kt:20): 1=P, 4=D.
-    // speed (DiParsData.kt:5): Int? km/h.
+    // powerState: BYD BODYWORK_POWER_LEVEL 0=OFF, 1=ACC, 2=ON, 3=OK, 4=FAKE_OK.
+    // gear: 1=P, 4=D. speed: Int? km/h.
     fun classify(data: com.byd.wjx.data.remote.DiParsData): LoopState {
         if (ChargeGunState.isConnected(data.chargeGunState)) return LoopState.CHARGE
         if (data.powerState == null && data.gear == 1) return LoopState.PARKED
         val ignitionActive = when {
-            data.powerState != null -> data.powerState in 1..2
+            data.powerState != null -> BydSignalSemantics.isPowered(data.powerState)
             else -> data.gear == 4 || ((data.speed ?: 0) > 0)
         }
         if (!ignitionActive) return LoopState.IDLE

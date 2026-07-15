@@ -4,7 +4,6 @@ import android.app.Activity
 import android.app.Application
 import android.app.Application.ActivityLifecycleCallbacks
 import android.content.Context
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import org.lsposed.hiddenapibypass.HiddenApiBypass
@@ -23,11 +22,9 @@ import com.byd.wjx.service.ProcessRevivalReceiver
 import com.byd.wjx.ui.widget.WidgetController
 import com.byd.wjx.ui.widget.WidgetPreferences
 import dagger.hilt.android.HiltAndroidApp
-import org.osmdroid.config.Configuration as OsmdroidConfig
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.MapTileIndex
-import java.io.File
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
@@ -52,15 +49,13 @@ class SuperToyBoxApp : Application(), Configuration.Provider {
         // Guarded: under JVM/Robolectric unit tests the HiddenApiBypass static initializer throws
         // (no Android ART runtime), which would otherwise crash onCreate for every test that
         // instantiates this Application. Swallow there; on a real device the call succeeds.
-        if (Build.VERSION.SDK_INT >= 28) {
-            runCatching {
-                HiddenApiBypass.addHiddenApiExemptions(
-                    "Landroid/os/ServiceManager;",
-                    "Landroid/os/SystemProperties;",
-                )
-            }.onFailure {
-                WjxFileLogger.w("SuperToyBoxApp", "hidden-api exemption unavailable", it)
-            }
+        runCatching {
+            HiddenApiBypass.addHiddenApiExemptions(
+                "Landroid/os/ServiceManager;",
+                "Landroid/os/SystemProperties;",
+            )
+        }.onFailure {
+            WjxFileLogger.w("SuperToyBoxApp", "hidden-api exemption unavailable", it)
         }
         ProcessRevivalReceiver.schedule(this)
         if (BootState.isUserUnlocked(this)) {
@@ -74,7 +69,6 @@ class SuperToyBoxApp : Application(), Configuration.Provider {
     fun ensureUnlockedRuntime() {
         if (unlockedRuntimeInitialized || !BootState.isUserUnlocked(this)) return
         activationManager.ensureStarted()
-        initOsmdroid()
         scheduleDataThinning()
         registerActivityLifecycleCallbacks(WidgetLifecycleCallbacks(this))
         unlockedRuntimeInitialized = true
@@ -92,21 +86,6 @@ class SuperToyBoxApp : Application(), Configuration.Provider {
                 throwable,
             )
             previous?.uncaughtException(thread, throwable)
-        }
-    }
-
-    private fun initOsmdroid() {
-        OsmdroidConfig.getInstance().apply {
-            userAgentValue = packageName
-            val basePath = File(filesDir, "osmdroid")
-            basePath.mkdirs()
-            osmdroidBasePath = basePath
-            val tilePath = File(basePath, "tiles")
-            tilePath.mkdirs()
-            osmdroidTileCache = tilePath
-            tileFileSystemCacheMaxBytes = 100L * 1024 * 1024
-            tileFileSystemCacheTrimBytes = 80L * 1024 * 1024
-            load(this@SuperToyBoxApp, getSharedPreferences("osmdroid", MODE_PRIVATE))
         }
     }
 

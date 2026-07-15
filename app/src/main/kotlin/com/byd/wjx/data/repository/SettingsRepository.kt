@@ -19,10 +19,14 @@ open class SettingsRepository @Inject constructor(
     private val settingsDao: SettingsDao,
 ) {
     @Volatile private var cachedBatteryCapacity: Double? = null
+    @Volatile private var cachedFuelTankCapacity: Double? = null
+    @Volatile private var hasCachedFuelTankCapacity: Boolean = false
     @Volatile private var cachedTripGpsRecordingEnabled: Boolean? = null
 
     companion object {
         const val KEY_BATTERY_CAPACITY = "battery_capacity_kwh"
+        const val KEY_FUEL_TANK_CAPACITY = "fuel_tank_capacity_liters"
+        const val KEY_THEME_MODE = "theme_mode"
         const val KEY_HOME_TARIFF = "home_tariff"
         const val KEY_DC_TARIFF = "dc_tariff"
         const val KEY_UNITS = "units" // "km" or "miles"
@@ -51,6 +55,8 @@ open class SettingsRepository @Inject constructor(
         const val KEY_CATCHUP_JOURNAL = "catchup_journal"
 
         const val DEFAULT_BATTERY_CAPACITY = "72.9"
+        const val DEFAULT_FUEL_TANK_CAPACITY = ""
+        const val DEFAULT_THEME_MODE = "system"
         const val DEFAULT_HOME_TARIFF = "0.60"
         const val DEFAULT_DC_TARIFF = "1.20"
         const val DEFAULT_UNITS = "km"
@@ -90,6 +96,35 @@ open class SettingsRepository @Inject constructor(
         return (getString(KEY_BATTERY_CAPACITY, DEFAULT_BATTERY_CAPACITY)
             .parseNumericSetting() ?: 72.9).also { cachedBatteryCapacity = it }
     }
+
+    fun observeBatteryCapacity(): Flow<Double?> =
+        observeString(KEY_BATTERY_CAPACITY).map { raw ->
+            (raw ?: DEFAULT_BATTERY_CAPACITY).parsePositiveCapacity()
+        }
+
+    suspend fun getFuelTankCapacity(): Double? {
+        if (hasCachedFuelTankCapacity) return cachedFuelTankCapacity
+        return getString(KEY_FUEL_TANK_CAPACITY, DEFAULT_FUEL_TANK_CAPACITY)
+            .parsePositiveCapacity()
+            .also {
+                cachedFuelTankCapacity = it
+                hasCachedFuelTankCapacity = true
+            }
+    }
+
+    fun observeFuelTankCapacity(): Flow<Double?> =
+        observeString(KEY_FUEL_TANK_CAPACITY).map { raw ->
+            (raw ?: DEFAULT_FUEL_TANK_CAPACITY).parsePositiveCapacity()
+        }
+
+    suspend fun getThemeMode(): String =
+        normalizeThemeMode(getString(KEY_THEME_MODE, DEFAULT_THEME_MODE))
+
+    fun observeThemeMode(): Flow<String> =
+        observeString(KEY_THEME_MODE).map { normalizeThemeMode(it) }
+
+    suspend fun setThemeMode(mode: String) =
+        setString(KEY_THEME_MODE, normalizeThemeMode(mode))
 
     suspend fun getHomeTariff(): Double =
         getString(KEY_HOME_TARIFF, DEFAULT_HOME_TARIFF).parseNumericSetting()
@@ -177,6 +212,10 @@ open class SettingsRepository @Inject constructor(
             KEY_BATTERY_CAPACITY -> {
                 cachedBatteryCapacity = value.parseNumericSetting() ?: 72.9
             }
+            KEY_FUEL_TANK_CAPACITY -> {
+                cachedFuelTankCapacity = value.parsePositiveCapacity()
+                hasCachedFuelTankCapacity = true
+            }
             KEY_RECORD_TRIP_GPS -> {
                 cachedTripGpsRecordingEnabled = value.toBooleanStrictOrNull() ?: true
             }
@@ -201,4 +240,12 @@ open class SettingsRepository @Inject constructor(
     suspend fun setLastStateTs(ts: Long) =
         setString(KEY_LAST_STATE_TS, ts.toString())
 
+}
+
+private fun String.parsePositiveCapacity(): Double? =
+    parseNumericSetting()?.takeIf { it.isFinite() && it > 0.0 }
+
+private fun normalizeThemeMode(value: String?): String = when (value) {
+    "light", "dark", "system" -> value
+    else -> SettingsRepository.DEFAULT_THEME_MODE
 }

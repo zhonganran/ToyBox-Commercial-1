@@ -1,5 +1,6 @@
 package com.byd.wjx.domain.tracker
 
+import com.byd.wjx.data.nativestack.BydSignalSemantics
 import com.byd.wjx.data.remote.DiParsData
 import com.byd.wjx.data.repository.LastSessionRepository
 import com.byd.wjx.data.repository.TripRepository
@@ -86,7 +87,7 @@ class DriveSessionCoordinator @Inject constructor(
         data: DiParsData,
         trackerDriving: Boolean,
     ): DriveSessionUpdate {
-        val powerOn = (data.powerState ?: 0) >= 1
+        val powerOn = BydSignalSemantics.isPowered(data.powerState)
         val active = powerOn || trackerDriving
         var transition = DriveSessionTransition.NONE
 

@@ -17,7 +17,6 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -80,9 +79,7 @@ class AutoDoorFloatingService : Service() {
         settings = AutoDoorFloatingSettings(applicationContext)
         windowManager = getSystemService(WindowManager::class.java)
         createNotificationChannel()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForeground(NOTIFICATION_ID, buildNotification("自动门小组件待命"))
-        }
+        startForeground(NOTIFICATION_ID, buildNotification("自动门小组件待命"))
         startDesktopVisibilityController()
         WjxFileLogger.i(TAG, "onCreate")
     }
@@ -501,13 +498,7 @@ class AutoDoorFloatingService : Service() {
         }.getOrDefault(resourceMetrics)
     }
 
-    private fun overlayType(): Int =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            @Suppress("DEPRECATION")
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
+    private fun overlayType(): Int = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
 
     private fun overlayFlags(): Int =
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -575,7 +566,6 @@ class AutoDoorFloatingService : Service() {
         (this and 0x00FFFFFF) or ((alpha.coerceIn(0, 255)) shl 24)
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL_ID, "自动门小组件", NotificationManager.IMPORTANCE_LOW).apply {
@@ -588,12 +578,7 @@ class AutoDoorFloatingService : Service() {
     }
 
     private fun buildNotification(text: String): Notification {
-        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(this, CHANNEL_ID)
-        } else {
-            Notification.Builder(this)
-        }
-        return builder
+        return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_upload)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(text)

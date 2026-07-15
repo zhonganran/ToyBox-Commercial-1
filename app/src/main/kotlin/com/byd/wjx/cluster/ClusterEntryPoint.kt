@@ -1,6 +1,7 @@
 package com.byd.wjx.cluster
 
 import com.byd.wjx.activation.ActivationManager
+import com.byd.wjx.audio.LockSoundConfigSync
 import com.byd.wjx.data.automation.AutomationButtonDispatcher
 import com.byd.wjx.data.vehicle.HelperBootstrap
 import com.byd.wjx.data.vehicle.HelperClient
@@ -19,6 +20,7 @@ interface ClusterEntryPoint {
     fun helperClient(): HelperClient
     fun helperBootstrap(): HelperBootstrap
     fun activationManager(): ActivationManager
+    fun lockSoundConfigSync(): LockSoundConfigSync
     fun carProfileDetector(): CarProfileDetector
     fun automationButtonDispatcher(): AutomationButtonDispatcher
 }

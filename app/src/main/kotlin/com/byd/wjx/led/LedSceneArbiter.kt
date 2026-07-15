@@ -1,5 +1,7 @@
 package com.byd.wjx.led
 
+import com.byd.wjx.data.nativestack.BydSignalSemantics
+
 /**
  * Converts noisy vehicle samples into one stable LED scene.
  *
@@ -39,12 +41,13 @@ class LedSceneArbiter(
         }
 
         val enteredPark = previousGear != null && previousGear != 1 && signals.gear == 1
-        if (enteredPark && signals.powerState != 0) {
+        if (enteredPark && BydSignalSemantics.isPowered(signals.powerState)) {
             temporaryStopUntil = now + oneShotDurationMs
         }
 
         val driverDoorOpened = previousDriverDoor != null && previousDriverDoor != 1 && signals.driverDoor == 1
-        val poweredDown = previousPowerState != null && previousPowerState != 0 && signals.powerState == 0
+        val poweredDown = BydSignalSemantics.isPowered(previousPowerState) &&
+            signals.powerState == BydSignalSemantics.POWER_OFF
         if ((driverDoorOpened && signals.gear == 1) || poweredDown) {
             exitVehicleUntil = now + oneShotDurationMs
         }
@@ -57,7 +60,8 @@ class LedSceneArbiter(
 
         val candidates = buildList {
             if (isRecent(lastHazardAt, now, turnHoldMs)) add(LedScene.HAZARD)
-            if (signals.gear == 2) add(LedScene.REVERSE_PARKING)
+            val reversing = signals.lightReversing?.let { it == 1 } ?: (signals.gear == 2)
+            if (reversing) add(LedScene.REVERSE_PARKING)
             if (isRecent(lastLeftAt, now, turnHoldMs)) add(LedScene.LEFT_TURN)
             if (isRecent(lastRightAt, now, turnHoldMs)) add(LedScene.RIGHT_TURN)
             if (isAutopilotActive(signals)) add(LedScene.AUTOPILOT)
@@ -89,6 +93,17 @@ class LedSceneArbiter(
         if ((signals.speed ?: 0) <= 0) {
             keepDistanceBraking = false
             keepDistanceUntil = Long.MIN_VALUE
+            return
+        }
+
+        signals.lightBrake?.let { light ->
+            if (light == 1) {
+                keepDistanceBraking = true
+                keepDistanceUntil = Long.MIN_VALUE
+            } else if (keepDistanceBraking) {
+                keepDistanceBraking = false
+                keepDistanceUntil = now + keepDistanceReleaseHoldMs
+            }
             return
         }
 

@@ -15,10 +15,12 @@ open class FakeVehicleGateway(
 ) : VehicleGateway {
 
     var lastBatchSpecs: List<VehicleReadSpec> = emptyList()
+    val batchHistory: MutableList<List<VehicleReadSpec>> = mutableListOf()
 
     override suspend fun readBatch(specs: List<VehicleReadSpec>): VehicleBatchRead? {
         if (!available) return null
         lastBatchSpecs = specs
+        batchHistory += specs
         val startedAtMs = System.currentTimeMillis()
         val values = specs.map { spec ->
             val rawValue = when (spec.transaction) {
@@ -45,7 +47,9 @@ open class FakeVehicleGateway(
 
     override suspend fun readBatterySnapshot(): BatteryReading? = battery.takeIf { available }
 
-    override suspend fun readChargingSnapshot(): ChargingReading? = charging.takeIf { available }
+    override suspend fun readChargingSnapshot(
+        includeElectricalTelemetry: Boolean,
+    ): ChargingReading? = charging.takeIf { available }
 
     override suspend fun getEnginePowerKw(): Int? = enginePowerKw.takeIf { available }
 }

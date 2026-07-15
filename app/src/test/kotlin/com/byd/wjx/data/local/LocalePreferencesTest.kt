@@ -54,9 +54,9 @@ class LocalePreferencesTest {
         val (ctx, prefs) = mockSetup(emptyMap())
         val editor = prefs.edit()  // capture the editor
         LocalePreferences(ctx).setLanguage("en")
-        // Verify write happened synchronously (commit, not apply)
+        // apply() updates the in-memory value immediately and persists without blocking the UI.
         verify { editor.putString("app_language", "en") }
-        verify { editor.commit() }
+        verify { editor.apply() }
     }
 
 }

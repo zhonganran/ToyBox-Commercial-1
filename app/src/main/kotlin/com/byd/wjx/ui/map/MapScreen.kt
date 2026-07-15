@@ -69,8 +69,6 @@ fun MapScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var fitRequest by remember { mutableIntStateOf(0) }
 
-    // osmdroid Configuration is initialized once in SuperToyBoxApp.onCreate()
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -359,13 +357,13 @@ private fun SelectedTripSummary(trip: TripEntity, onShowAll: () -> Unit) {
 }
 
 @Composable
-private fun StatLine(label: String, value: String, valueColor: Color = TextPrimary) {
+private fun StatLine(label: String, value: String, valueColor: Color? = null) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text(label, color = TextSecondary, fontSize = 13.sp)
-        Text(value, color = valueColor, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        Text(value, color = valueColor ?: TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -433,6 +431,7 @@ private fun OsmdroidMapView(state: MapUiState, fitRequest: Int) {
     val center = lastPoint ?: defaultCenter
 
     val mapView = remember(state.tileSource) {
+        OsmdroidRuntime.ensureInitialized(context)
         MapView(context).apply {
             setTileSource(
                 if (state.tileSource == "amap") SuperToyBoxApp.AmapTileSource else TileSourceFactory.MAPNIK

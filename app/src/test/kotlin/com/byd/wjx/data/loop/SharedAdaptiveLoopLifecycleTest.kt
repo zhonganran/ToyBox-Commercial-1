@@ -9,12 +9,14 @@ import io.mockk.every
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -57,7 +59,7 @@ class SharedAdaptiveLoopLifecycleTest {
                 soc = ++n,
                 mileage = 100.0,
                 voltage12v = 12.5,
-                powerState = 2,
+                powerState = 3,
                 speed = 20,
             )
         }
@@ -90,7 +92,7 @@ class SharedAdaptiveLoopLifecycleTest {
                     soc = ++reads,
                     mileage = 100.0,
                     voltage12v = 12.5,
-                    powerState = 2,
+                    powerState = 3,
                     speed = 20,
                 )
             }
@@ -123,7 +125,7 @@ class SharedAdaptiveLoopLifecycleTest {
                 soc = 80,
                 mileage = 100.0,
                 voltage12v = 12.5,
-                powerState = if (fullReads++ == 0) 0 else 2,
+                powerState = if (fullReads++ == 0) 0 else 3,
                 speed = if (fullReads == 1) 0 else 20,
             )
 
@@ -131,7 +133,7 @@ class SharedAdaptiveLoopLifecycleTest {
                 soc = 80,
                 mileage = 100.0,
                 voltage12v = 12.5,
-                powerState = 2,
+                powerState = 3,
                 speed = 20,
             )
         }
@@ -145,9 +147,9 @@ class SharedAdaptiveLoopLifecycleTest {
                 advanceTimeBy(1)
                 assertEquals(0, awaitItem().powerState)
 
-                // The 300 ms action sample sees DRIVE and forces a full read immediately.
+                // The 300 ms action sample sees power level OK and forces a full read immediately.
                 advanceTimeBy(300)
-                assertEquals(2, awaitItem().powerState)
+                assertEquals(3, awaitItem().powerState)
                 assertEquals(2, fullReads)
             }
         } finally {
@@ -170,6 +172,53 @@ class SharedAdaptiveLoopLifecycleTest {
         j1.cancel()
     }
 
+    @Test fun `restart waits for the previous poller to release ownership`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        var activeFetches = 0
+        var maxActiveFetches = 0
+        var totalFetches = 0
+        val reader = object : ParsReader {
+            override suspend fun fetch(): com.byd.wjx.data.remote.DiParsData? {
+                activeFetches++
+                totalFetches++
+                maxActiveFetches = maxOf(maxActiveFetches, activeFetches)
+                try {
+                    delay(Long.MAX_VALUE)
+                } finally {
+                    // Model a Binder call that needs a short non-cancellable unwind.
+                    withContext(NonCancellable) { delay(1_000L) }
+                    activeFetches--
+                }
+                return null
+            }
+        }
+        val loop = SharedAdaptiveLoop(
+            reader,
+            mockk(relaxed = true),
+            mockk(relaxed = true),
+            dispatcher,
+        )
+
+        val first = loop.start(TestScope(dispatcher))
+        runCurrent()
+        assertEquals(1, activeFetches)
+
+        first.cancel()
+        val second = loop.start(TestScope(dispatcher))
+        runCurrent()
+        assertEquals(1, maxActiveFetches)
+        assertEquals(1, totalFetches)
+
+        advanceTimeBy(1_000L)
+        runCurrent()
+        assertEquals(1, maxActiveFetches)
+        assertEquals(2, totalFetches)
+
+        second.cancel()
+        advanceTimeBy(1_000L)
+        runCurrent()
+    }
+
     @Test fun `stop clears connected state`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val reader = object : ParsReader {
@@ -177,7 +226,7 @@ class SharedAdaptiveLoopLifecycleTest {
                 soc = 80,
                 mileage = 100.0,
                 voltage12v = 12.5,
-                powerState = 2,
+                powerState = 3,
             )
         }
         val loop = SharedAdaptiveLoop(
@@ -204,7 +253,7 @@ class SharedAdaptiveLoopLifecycleTest {
                 soc = ++reads,
                 mileage = 100.0,
                 voltage12v = 12.5,
-                powerState = 2,
+                powerState = 3,
                 speed = 20,
             )
         }

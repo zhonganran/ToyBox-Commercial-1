@@ -9,8 +9,9 @@ class LocalePreferences(context: Context) {
     fun getLanguage(): String? = prefs.getString(KEY_LANG, null)
 
     fun setLanguage(lang: String) {
-        // commit = true: synchronous write so bootstrap never races with a read.
-        prefs.edit().putString(KEY_LANG, lang).commit()
+        // SharedPreferences updates its in-memory value before scheduling the disk write,
+        // so same-process locale bootstrap reads the new language immediately.
+        prefs.edit().putString(KEY_LANG, lang).apply()
     }
 
     companion object {

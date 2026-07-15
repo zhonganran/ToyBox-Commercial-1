@@ -1,36 +1,20 @@
 package com.byd.wjx.di
 
 import android.content.Context
-import androidx.room.Room
 import com.byd.wjx.data.backup.BackupManager
 import com.byd.wjx.data.backup.BackupPreferencesRegistry
-import com.byd.wjx.data.automation.AutomationActionSnapshotFieldProvider
-import com.byd.wjx.data.automation.AutomationConfigRepository
-import com.byd.wjx.data.automation.RoomAutomationConfigRepository
-import com.byd.wjx.data.local.dao.BatterySnapshotDao
-import com.byd.wjx.data.local.dao.ChargeDao
-import com.byd.wjx.data.local.dao.ChargePointDao
-import com.byd.wjx.data.local.dao.IdleDrainDao
 import com.byd.wjx.data.local.dao.OdometerSampleDao
-import com.byd.wjx.data.local.dao.PlaceDao
-import com.byd.wjx.data.local.dao.RuleDao
-import com.byd.wjx.data.local.dao.RuleLogDao
-import com.byd.wjx.data.local.dao.SettingsDao
 import com.byd.wjx.data.local.dao.TripDao
 import com.byd.wjx.data.local.dao.TripPointDao
-import com.byd.wjx.data.local.dao.VehicleWriteLogDao
 import com.byd.wjx.data.local.database.AppDatabase
 import com.byd.wjx.data.local.EnergyDataReader
 import com.byd.wjx.data.local.LocalePreferences
 import com.byd.wjx.data.local.dao.LastStateDao
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.data.repository.DefaultVehicleStateRepository
-import com.byd.wjx.data.repository.TrackingStateRepository
-import com.byd.wjx.data.repository.TrackingStateStore
 import com.byd.wjx.data.repository.VehicleStateRepository
 import com.byd.wjx.data.loop.CadenceConfig
 import com.byd.wjx.data.loop.SharedAdaptiveLoop
-import com.byd.wjx.data.nativestack.ActionSnapshotFieldProvider
 import com.byd.wjx.data.nativestack.ParsReader
 import com.byd.wjx.data.trips.TripRecorder
 import com.byd.wjx.domain.calculator.OdometerConsumptionBuffer
@@ -60,37 +44,6 @@ object AppModule {
     @ApplicationScope
     fun provideApplicationScope(): CoroutineScope =
         CoroutineScope(SupervisorJob() + Dispatchers.Default)
-
-    @Provides
-    @Singleton
-    fun provideDatabase(@ApplicationContext context: Context): AppDatabase {
-        return Room.databaseBuilder(
-            context,
-            AppDatabase::class.java,
-            "wjx.db"
-        )
-            // Schema 17 is the fresh-install commercial baseline. Every future schema change
-            // must provide an explicit migration so upgrades of this product preserve user data.
-            .addMigrations(AppDatabase.MIGRATION_17_18)
-            .build()
-    }
-
-    @Provides fun provideTripDao(db: AppDatabase): TripDao = db.tripDao()
-    @Provides fun provideTripPointDao(db: AppDatabase): TripPointDao = db.tripPointDao()
-    @Provides fun provideChargeDao(db: AppDatabase): ChargeDao = db.chargeDao()
-    @Provides fun provideChargePointDao(db: AppDatabase): ChargePointDao = db.chargePointDao()
-    @Provides fun provideSettingsDao(db: AppDatabase): SettingsDao = db.settingsDao()
-    @Provides fun provideIdleDrainDao(db: AppDatabase): IdleDrainDao = db.idleDrainDao()
-    @Provides fun provideBatterySnapshotDao(db: AppDatabase): BatterySnapshotDao = db.batterySnapshotDao()
-    @Provides fun provideRuleDao(db: AppDatabase): RuleDao = db.ruleDao()
-    @Provides fun provideRuleLogDao(db: AppDatabase): RuleLogDao = db.ruleLogDao()
-    @Provides fun providePlaceDao(db: AppDatabase): PlaceDao = db.placeDao()
-    @Provides fun provideOdometerSampleDao(db: AppDatabase): OdometerSampleDao = db.odometerSampleDao()
-    @Provides @Singleton
-    fun provideLastStateDao(db: AppDatabase): LastStateDao = db.lastStateDao()
-
-    @Provides
-    fun provideVehicleWriteLogDao(db: AppDatabase): VehicleWriteLogDao = db.vehicleWriteLogDao()
 
     @Provides
     @Singleton
@@ -142,21 +95,6 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideAdbOnDeviceClient(
-        @ApplicationContext context: Context,
-        keyStore: com.byd.wjx.data.autoservice.AdbKeyStore
-    ): com.byd.wjx.data.autoservice.AdbOnDeviceClient =
-        com.byd.wjx.data.autoservice.AdbOnDeviceClientImpl(context, keyStore)
-
-    @Provides
-    @Singleton
-    fun provideVehicleGateway(
-        helper: com.byd.wjx.data.vehicle.HelperClient,
-    ): com.byd.wjx.data.vehicle.VehicleGateway =
-        com.byd.wjx.data.vehicle.HelperVehicleGateway(helper)
-
-    @Provides
-    @Singleton
     fun provideSharedAdaptiveLoop(
         parsReader: ParsReader,
         lastStateDao: LastStateDao,
@@ -179,24 +117,6 @@ object AppModule {
         connected = sharedAdaptiveLoop.connected,
         applicationScope = applicationScope,
     )
-
-    @Provides
-    @Singleton
-    fun provideTrackingStateRepository(
-        store: TrackingStateStore,
-    ): TrackingStateRepository = store
-
-    @Provides
-    @Singleton
-    fun provideAutomationConfigRepository(
-        repository: RoomAutomationConfigRepository,
-    ): AutomationConfigRepository = repository
-
-    @Provides
-    @Singleton
-    fun provideActionSnapshotFieldProvider(
-        provider: AutomationActionSnapshotFieldProvider,
-    ): ActionSnapshotFieldProvider = provider
 
     @Provides
     @Singleton
@@ -225,11 +145,6 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideHelperClient(): com.byd.wjx.data.vehicle.HelperClient =
-        com.byd.wjx.data.vehicle.HelperClientImpl()
-
-    @Provides
-    @Singleton
     fun provideCarProfileDetector(): com.byd.wjx.vehicle.CarProfileDetector =
         com.byd.wjx.vehicle.CarProfileDetector()
 
@@ -252,23 +167,6 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideVehicleApi(
-        parsReader: com.byd.wjx.data.nativestack.ParsReader,
-        gateway: com.byd.wjx.data.vehicle.VehicleGateway,
-        allowlist: com.byd.wjx.data.vehicle.WriteAllowlist,
-        writeLogDao: VehicleWriteLogDao,
-        seatChannelStore: com.byd.wjx.data.vehicle.SeatChannelStore,
-    ): com.byd.wjx.data.vehicle.VehicleApi =
-        com.byd.wjx.data.vehicle.VehicleApiImpl(
-            parsReader,
-            gateway,
-            allowlist,
-            writeLogDao,
-            seatChannelStore,
-        )
-
-    @Provides
-    @Singleton
     fun provideBackupManager(
         @ApplicationContext ctx: Context,
         db: AppDatabase,
@@ -279,13 +177,5 @@ object AppModule {
         deviceProtectedPrefsFileNames =
             BackupPreferencesRegistry.DEVICE_PROTECTED_USER_CONFIGURATION_FILES,
     )
-
-    @Provides
-    @Singleton
-    fun provideHelperBootstrap(
-        adb: com.byd.wjx.data.autoservice.AdbOnDeviceClient,
-        helper: com.byd.wjx.data.vehicle.HelperClient,
-    ): com.byd.wjx.data.vehicle.HelperBootstrap =
-        com.byd.wjx.data.vehicle.HelperBootstrap(adb, helper)
 
 }

@@ -5,7 +5,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.net.Uri
-import android.os.Build
 import java.io.File
 import kotlin.math.max
 
@@ -146,7 +145,6 @@ class SoundFloatingSettings(context: Context) {
 
         private fun storageContext(context: Context): Context {
             val appContext = context.applicationContext
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return appContext
             return appContext.createDeviceProtectedStorageContext()
         }
     }

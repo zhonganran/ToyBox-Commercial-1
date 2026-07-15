@@ -12,6 +12,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -33,6 +34,8 @@ import com.byd.wjx.ui.components.ConsumptionThresholds
 import com.byd.wjx.ui.components.LocalConsumptionThresholds
 import com.byd.wjx.ui.navigation.AppNavigation
 import com.byd.wjx.ui.theme.SuperToyBoxTheme
+import com.byd.wjx.ui.theme.LocalSuperToyBoxDarkTheme
+import com.byd.wjx.ui.theme.ThemeMode
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
 import javax.inject.Inject
@@ -69,6 +72,9 @@ class MainActivity : AppCompatActivity() {
         requestPermissionsIfNeeded()
 
         setContent {
+            val storedThemeMode by produceState(initialValue = SettingsRepository.DEFAULT_THEME_MODE) {
+                settingsRepository.observeThemeMode().collect { value = it }
+            }
             val thresholds by produceState(initialValue = ConsumptionThresholds.Default) {
                 settingsRepository.observeConsumptionThresholds().collect { (good, bad) ->
                     value = ConsumptionThresholds(good = good, bad = bad)
@@ -113,7 +119,14 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            SuperToyBoxTheme {
+            SuperToyBoxTheme(themeMode = ThemeMode.fromStored(storedThemeMode)) {
+                val darkTheme = LocalSuperToyBoxDarkTheme.current
+                SideEffect {
+                    WindowInsetsControllerCompat(window, window.decorView).apply {
+                        isAppearanceLightStatusBars = !darkTheme
+                        isAppearanceLightNavigationBars = !darkTheme
+                    }
+                }
                 CompositionLocalProvider(
                     LocalConfiguration provides localizedConfig,
                     LocalConsumptionThresholds provides thresholds,
@@ -185,8 +198,7 @@ class MainActivity : AppCompatActivity() {
      * foreground service GPS does not work when the activity is not visible.
      */
     private fun requestBackgroundLocationIfNeeded() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
             != PackageManager.PERMISSION_GRANTED
         ) {
             WjxFileLogger.d(TAG, "Requesting ACCESS_BACKGROUND_LOCATION separately")

@@ -46,6 +46,7 @@ import com.byd.wjx.ui.theme.TextMuted
 import com.byd.wjx.ui.theme.TextPrimary
 import com.byd.wjx.ui.theme.TextSecondary
 import com.byd.wjx.SuperToyBoxApp
+import com.byd.wjx.ui.map.OsmdroidRuntime
 import com.byd.wjx.util.Gcj02Converter
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -273,6 +274,7 @@ private fun PlacePickerMap(
     val (displayLat, displayLon) = if (isAmap) Gcj02Converter.wgs84ToGcj02(lat, lon) else lat to lon
 
     val mapView = remember(tileSource) {
+        OsmdroidRuntime.ensureInitialized(context)
         MapView(context).apply {
             setTileSource(
                 if (isAmap) SuperToyBoxApp.AmapTileSource else TileSourceFactory.MAPNIK

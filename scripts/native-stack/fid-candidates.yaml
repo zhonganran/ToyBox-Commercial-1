@@ -152,6 +152,7 @@
   unit: "A"
   status: candidate
   source: reference-catalog
+  note: "Production conditional read: charging page visible + active AC/DC session only."
 
 # ── Gear + state ─────────────────────────────────────────────────────────
 
@@ -180,24 +181,46 @@
 - param: ChargingStatus
   diplus_key: ChargingStatus
   device: 1009
+  fid: 876609560
+  transact: 5
+  decoder: int_enum
+  unit: ""
+  status: validated
+  source: fid-registry
+  note: "CHARGING_BATTERRY_DEVICE_STATE. Live BMS enum: 0=ready, 1=charging, 2=finished, 3=discharge, 4=terminated, 5..8=faults, 9=schedule, 10=CBU discharge, 11=timeout, 12=discharge finished, 13=paused."
+
+- param: ChargingFunctionEnabled
+  diplus_key: null
+  device: 1009
   fid: 1231032336
   transact: 5
   decoder: int_enum
   unit: ""
-  status: deferred
-  source: reference-catalog
-  note: "Replaces old 876609560 (stuck=15). Validate during S5 charging snap."
+  status: imported
+  source: autoservice-catalog
+  note: "CHARGING_STATE: 0=enabled, 1=disabled. AutoTark labels this chargingStatus, but it is not the live charging phase."
 
 - param: PowerState
   diplus_key: PowerState
+  device: 1001
+  fid: 315621418
+  transact: 5
+  decoder: int_enum
+  unit: ""
+  status: candidate
+  source: autoservice-catalog
+  note: "BODYWORK_POWER_LEVEL: 0=OFF, 1=ACC, 2=ON, 3=OK, 4=FAKE_OK, 255=invalid."
+
+- param: VehicleStateChangeSource
+  diplus_key: null
   device: 1023
   fid: 315621408
   transact: 5
   decoder: int_enum
   unit: ""
-  status: candidate
-  source: reference-catalog
-  note: "vehicle_state from reference."
+  status: dropped
+  source: autoservice-catalog
+  note: "SET_VEHICLE_STATE. AutoTark mislabels it powerState; it is not BODYWORK_POWER_LEVEL."
 
 - param: DriveMode
   diplus_key: DriveMode
@@ -275,6 +298,7 @@
   unit: ""
   status: validated
   source: reference-catalog
+  note: "Production catalog: on-demand automation read; excluded from regular full profile."
 
 - param: ACDefrostRear
   diplus_key: null
@@ -285,6 +309,7 @@
   unit: ""
   status: candidate
   source: reference-catalog
+  note: "Production on-demand automation read; unsupported trims return null."
 
 - param: ACWindMode
   diplus_key: null
@@ -295,7 +320,7 @@
   unit: ""
   status: validated
   source: reference-catalog
-  note: "Live S4: 2 default → 5 on defrost front."
+  note: "Live S4: 2 default → 5 on defrost front. Production on-demand only."
 
 - param: ACCtrlMode
   diplus_key: null
@@ -306,7 +331,7 @@
   unit: ""
   status: validated
   source: reference-catalog
-  note: "0=auto, 1=manual."
+  note: "0=auto, 1=manual. Production on-demand only."
 
 - param: SteeringHeat
   diplus_key: null
@@ -317,7 +342,7 @@
   unit: ""
   status: candidate
   source: reference-catalog
-  note: "Leopard 3 operator car has no steering heat. Live verify on equipped trim."
+  note: "Production on-demand automation read. Leopard 3 operator car has no steering heat; verify on equipped trim."
 
 - param: InsideTemp
   diplus_key: InsideTemp
@@ -350,7 +375,7 @@
   unit: ""
   status: validated
   source: logcat-probe
-  note: "0=off, 1..5=levels. Toggle confirmed live."
+  note: "0=off, 1..5=levels. Toggle confirmed live. Production on-demand only."
 
 - param: SeatVentD
   diplus_key: null
@@ -361,6 +386,7 @@
   unit: ""
   status: validated
   source: logcat-probe
+  note: "Production on-demand only."
 
 - param: SeatHeatP
   diplus_key: null
@@ -371,7 +397,7 @@
   unit: ""
   status: validated
   source: logcat-probe
-  note: "Default ON level = 3 (not 1)."
+  note: "Default ON level = 3 (not 1). Production on-demand only."
 
 - param: SeatVentP
   diplus_key: null
@@ -382,6 +408,7 @@
   unit: ""
   status: validated
   source: logcat-probe
+  note: "Production on-demand only."
 
 # ── Body dev=1001 ────────────────────────────────────────────────────────
 
@@ -399,13 +426,13 @@
 - param: Sunroof
   diplus_key: Sunroof
   device: 1001
-  fid: 1101004848
+  fid: 1101004808
   transact: 5
   decoder: int_percent
   unit: "%"
   status: candidate
-  source: reference-catalog
-  note: "sunroof_pos = 0-100%. Swapped from old 1101004832 (binary closed=1). Percent gives finer UX."
+  source: autoservice-catalog
+  note: "BODYWORK_MOON_ROOF_OPEN_PERCENT (0x41A00008), 0-100. Official Settings reads it directly and renders raw × 0.01."
 
 - param: SunshadePos
   diplus_key: null
@@ -416,6 +443,7 @@
   unit: "%"
   status: candidate
   source: reference-catalog
+  note: "Production on-demand automation read, 0-100%."
 
 - param: Trunk
   diplus_key: Trunk
@@ -426,7 +454,29 @@
   unit: ""
   status: candidate
   source: autoservice-catalog
-  note: "Closed=2. Alternative 692060186 (trunk_open binary) candidate."
+  note: "BODYWORK_BACKDOOR_CURRENT_POSITION: 1=open, 2=closed, 3=intermediate/paused."
+
+- param: FuelCap
+  diplus_key: FuelCap
+  device: 1009
+  fid: 1081081896
+  transact: 5
+  decoder: int_enum
+  unit: ""
+  status: candidate
+  source: autoservice-catalog
+  note: "CHARGING_LEFT_COVER_STATE: 1=closed, 2=open. Left flap is the fuel port on the supported PHEV layout."
+
+- param: ChargingCap
+  diplus_key: ChargingCap
+  device: 1009
+  fid: 1081081898
+  transact: 5
+  decoder: int_enum
+  unit: ""
+  status: candidate
+  source: autoservice-catalog
+  note: "CHARGING_RIGHT_COVER_STATE: 1=closed, 2=open."
 
 - param: DoorFL
   diplus_key: DoorFL
@@ -545,12 +595,13 @@
 - param: WindowRR
   diplus_key: WindowRR
   device: 1001
-  fid: 947912752
+  fid: 1267728408
   transact: 5
   decoder: int_percent
   unit: "%"
   status: candidate
-  source: reference-catalog
+  source: autoservice-catalog
+  note: "BODYWORK_WINDOW_RIGHT_REAR_PERCENT (0x4B900018); official Settings reads this value. AutoTark's 0x38800030 is absent from the official catalog."
 
 # ── Seatbelts (4 belts, dev=1042) ────────────────────────────────────────
 
@@ -576,35 +627,38 @@
   source: reference-catalog
   note: "Alternative belt-driver fid; cross-check with SeatbeltFL."
 
-- param: BeltPassenger
-  diplus_key: null
+- param: SeatbeltFR
+  diplus_key: SeatbeltFR
   device: 1042
-  fid: 315621439
+  fid: 824180744
   transact: 5
   decoder: int_enum
   unit: ""
   status: candidate
-  source: reference-catalog
+  source: autoservice-catalog
+  note: "SAFETY_BELT_STATUS_PASSENGER_FRONT_ROW_SEAT_RIGHT: 0=unbuckled, 1=buckled, 2=invalid."
 
-- param: BeltRearLeft
-  diplus_key: null
+- param: SeatbeltRL
+  diplus_key: SeatbeltRL
   device: 1042
-  fid: 755989
+  fid: 824180746
   transact: 5
   decoder: int_enum
   unit: ""
   status: candidate
-  source: reference-catalog
+  source: autoservice-catalog
+  note: "SAFETY_BELT_STATUS_SECOND_ROW_SEAT_LEFT."
 
-- param: BeltRearRight
-  diplus_key: null
+- param: SeatbeltRR
+  diplus_key: SeatbeltRR
   device: 1042
-  fid: 1196425242
+  fid: 824180748
   transact: 5
   decoder: int_enum
   unit: ""
   status: candidate
-  source: reference-catalog
+  source: autoservice-catalog
+  note: "SAFETY_BELT_STATUS_SECOND_ROW_SEAT_RIGHT."
 
 # ── Tires dev=1016 (pressure) + dev=1007 (temp) ──────────────────────────
 
@@ -657,6 +711,7 @@
   unit: "°C"
   status: candidate
   source: reference-catalog
+  note: "Production four-FID home-screen profile; polls every 10 s only while home is visible."
 
 - param: TireTempFR
   diplus_key: null
@@ -667,6 +722,7 @@
   unit: "°C"
   status: candidate
   source: reference-catalog
+  note: "Production four-FID home-screen profile; polls every 10 s only while home is visible."
 
 - param: TireTempRL
   diplus_key: null
@@ -677,6 +733,7 @@
   unit: "°C"
   status: candidate
   source: reference-catalog
+  note: "Production four-FID home-screen profile; polls every 10 s only while home is visible."
 
 - param: TireTempRR
   diplus_key: null
@@ -687,6 +744,7 @@
   unit: "°C"
   status: candidate
   source: reference-catalog
+  note: "Production four-FID home-screen profile; polls every 10 s only while home is visible."
 
 # ── Lights dev=1004 + ambient dev=1043 ───────────────────────────────────
 
@@ -710,6 +768,7 @@
   unit: ""
   status: validated
   source: reference-catalog
+  note: "LIGHT_SIDE_LIGHT; matches AutoTark 3.7.2. Production on-demand only."
 
 - param: LightHigh
   diplus_key: null
@@ -791,9 +850,9 @@
   transact: 5
   decoder: int_percent
   unit: "%"
-  status: imported
-  source: reference-catalog
-  note: "Statistic battery health. Already in FidRegistry.kt as FID_SOH."
+  status: validated
+  source: settings-apk+autotark+production-fid-registry
+  note: "Statistic battery health. Shared regular full-snapshot field."
 
 - param: SOC_BMS
   diplus_key: null
@@ -856,7 +915,7 @@
   unit: "kW"
   status: imported
   source: reference-catalog
-  note: "Live during charging only — S5 deferred."
+  note: "Production conditional charging-page diagnostic; active AC/DC session only."
 
 - param: BatteryMaxDischargePower
   diplus_key: null
@@ -867,6 +926,7 @@
   unit: "kW"
   status: imported
   source: reference-catalog
+  note: "Production conditional charging-page diagnostic; active AC/DC session only."
 
 - param: BatteryInsulation
   diplus_key: null
@@ -877,6 +937,7 @@
   unit: "kΩ"
   status: imported
   source: reference-catalog
+  note: "Production conditional charging-page diagnostic; active AC/DC session only."
 
 # ── Motor dev=1009/1012/1039 ─────────────────────────────────────────────
 
@@ -889,7 +950,7 @@
   unit: "°C"
   status: imported
   source: reference-catalog
-  note: "May be 0 on RWD trim."
+  note: "Production powertrain diagnostic read; may be 0 on RWD trim."
 
 - param: RearMotorTemp
   diplus_key: null
@@ -900,6 +961,7 @@
   unit: "°C"
   status: imported
   source: reference-catalog
+  note: "Production powertrain diagnostic read."
 
 - param: FrontMotorCurrent
   diplus_key: null
@@ -911,6 +973,7 @@
   unit: "A"
   status: imported
   source: reference-catalog
+  note: "Production powertrain diagnostic read; signed value scaled by 0.1 A."
 
 - param: RearMotorCurrent
   diplus_key: null
@@ -922,6 +985,7 @@
   unit: "A"
   status: imported
   source: reference-catalog
+  note: "Production powertrain diagnostic read; signed value scaled by 0.1 A."
 
 - param: FrontMotorSpeed
   diplus_key: null
@@ -932,6 +996,7 @@
   unit: "rpm"
   status: imported
   source: reference-catalog
+  note: "Production powertrain diagnostic read."
 
 - param: RearMotorSpeed
   diplus_key: null
@@ -942,6 +1007,7 @@
   unit: "rpm"
   status: imported
   source: reference-catalog
+  note: "Production powertrain diagnostic read."
 
 - param: EngineRPM
   diplus_key: null
@@ -952,7 +1018,7 @@
   unit: "rpm"
   status: imported
   source: reference-catalog
-  note: "Pure EV — likely sentinel/0. Verify on sweep."
+  note: "Production powertrain diagnostic read. Pure EV likely reports sentinel/0."
 
 # ── AC extended dev=1000 ─────────────────────────────────────────────────
 
@@ -1199,14 +1265,38 @@
 - param: LightFrontFog
   diplus_key: null
   device: 1004
+  fid: 1011875870
+  transact: 5
+  decoder: int_enum
+  unit: ""
+  status: imported
+  source: autoservice-catalog
+  note: "LIGHT_FRONT_FOG_LAMP_STATUS; matches AutoTark 3.7.2. Production on-demand automation read."
+
+- param: LightRearFog
+  diplus_key: null
+  device: 1004
+  fid: 950009872
+  transact: 5
+  decoder: int_enum
+  unit: ""
+  status: imported
+  source: autoservice-catalog
+  note: "Matches AutoTark 3.7.2. Production on-demand automation read."
+  note: "LIGHT_REAR_FOG_LAMPS; matches AutoTark 3.7.2."
+
+- param: LightFrontFogIndicator
+  diplus_key: null
+  device: 1004
   fid: 321912846
   transact: 5
   decoder: int_enum
   unit: ""
   status: imported
-  source: reference-catalog
+  source: autoservice-catalog
+  note: "LIGHT_FRONT_FOG_LIGHT indicator/readback; retained as a distinct alias, not the lamp-status field."
 
-- param: LightRearFog
+- param: LightRearFogIndicator
   diplus_key: null
   device: 1004
   fid: 321912847
@@ -1214,7 +1304,8 @@
   decoder: int_enum
   unit: ""
   status: imported
-  source: reference-catalog
+  source: autoservice-catalog
+  note: "LIGHT_REAR_FOG_LIGHT indicator/readback; retained as a distinct alias."
 
 - param: LightBrake
   diplus_key: null
@@ -1225,6 +1316,7 @@
   unit: ""
   status: imported
   source: reference-catalog
+  note: "Production automation read and LED fast signal; LED profile runs only while connected."
 
 - param: LightReversing
   diplus_key: null
@@ -1235,6 +1327,7 @@
   unit: ""
   status: imported
   source: reference-catalog
+  note: "Production automation read and LED fast signal; gear remains the null fallback."
 
 - param: LightHazard
   diplus_key: null
@@ -1246,6 +1339,88 @@
   status: imported
   source: reference-catalog
 
+# ── AutoTark optional reads confirmed by the official feature catalog ───
+# These addresses are semantically correct, but remain outside production FidMap
+# until a feature consumes them. Keeping them out avoids 7 unused Binder reads per
+# detail refresh.
+
+- param: DriveModeIndicator
+  diplus_key: null
+  device: 1007
+  fid: 710934584
+  transact: 5
+  decoder: int_enum
+  unit: ""
+  status: imported
+  source: autoservice-catalog
+  note: "INSTRUMENT_MODE_INDICATOR_LIGHT; matches AutoTark 3.7.2."
+
+- param: EnergyState
+  diplus_key: null
+  device: 1006
+  fid: 873463832
+  transact: 5
+  decoder: int_enum
+  unit: ""
+  status: imported
+  source: autoservice-catalog
+  note: "ENERGY_STATE; detailed power-flow state, matches AutoTark 3.7.2."
+
+- param: AdasAccGrayState
+  diplus_key: null
+  device: 1038
+  fid: 535826448
+  transact: 5
+  decoder: int_enum
+  unit: ""
+  status: imported
+  source: autoservice-catalog
+  note: "Production on-demand ADAS read; ADAS_ACC_GRAY_STATE; matches AutoTark 3.7.2."
+
+- param: AdasNoaGrayState
+  diplus_key: null
+  device: 1038
+  fid: 535826458
+  transact: 5
+  decoder: int_enum
+  unit: ""
+  status: imported
+  source: autoservice-catalog
+  note: "Production on-demand ADAS read; ADAS_NOA_GRAY_STATE; matches AutoTark 3.7.2."
+
+- param: AdasMnoaStatus
+  diplus_key: null
+  device: 1038
+  fid: 790643093
+  transact: 5
+  decoder: int_enum
+  unit: ""
+  status: imported
+  source: autoservice-catalog
+  note: "Production on-demand ADAS read; ADAS_MNOA_STATUS_DISPLAY; matches AutoTark 3.7.2."
+
+- param: AdasExecSpeed
+  diplus_key: null
+  device: 1038
+  fid: 513807420
+  transact: 5
+  decoder: int_raw
+  unit: "km/h"
+  status: imported
+  source: autoservice-catalog
+  note: "Production on-demand ADAS read; ADAS_ACTUAL_EXECUTION_SPEED; matches AutoTark 3.7.2."
+
+- param: AccSpeed
+  diplus_key: null
+  device: 1007
+  fid: 597688328
+  transact: 5
+  decoder: int_raw
+  unit: "km/h"
+  status: imported
+  source: autoservice-catalog
+  note: "INSTRUMENT_DD_ACC_SPEED; matches AutoTark 3.7.2."
+
 # ── Pedals + brake state + e-pedal dev=1011/1013 ─────────────────────────
 
 - param: AccelPedal
@@ -1256,7 +1431,9 @@
   decoder: int_percent
   unit: "%"
   status: imported
-  source: reference-catalog
+  source: autoservice-catalog
+  note: "Production on-demand automation read; matches AutoTark 3.7.2."
+  note: "SPEED_ACCELERATOR_S; matches AutoTark 3.7.2."
 
 - param: BrakePedal
   diplus_key: null
@@ -1277,7 +1454,7 @@
   unit: ""
   status: imported
   source: reference-catalog
-  note: "Electronic parking brake state."
+  note: "Electronic parking brake state. Production on-demand automation read."
 
 - param: BrakeState
   diplus_key: null
@@ -1288,6 +1465,7 @@
   unit: ""
   status: imported
   source: reference-catalog
+  note: "Production on-demand automation read."
 
 - param: EpedalMode
   diplus_key: null
@@ -1298,6 +1476,20 @@
   unit: ""
   status: imported
   source: reference-catalog
+  note: "Production on-demand automation read."
+
+# ── CPU temperature candidate (not an AutoTark vehicle FID) ─────────────
+
+- param: CpuTemperature
+  diplus_key: null
+  device: 1030
+  fid: 75503
+  transact: 5
+  decoder: int_temp_c
+  unit: "°C"
+  status: deferred
+  source: autoservice-catalog
+  note: "BYDAutoFeatureIds.CPU_TEMPRATURE. Official SDK surface is write-oriented and Settings does not read it. AutoTark measures host CPU via /proc and /sys, not this FID; keep out of production until a real getInt probe succeeds."
 
 # ── Tyre state dev=1016 ──────────────────────────────────────────────────
 
@@ -1310,6 +1502,7 @@
   unit: ""
   status: imported
   source: reference-catalog
+  note: "Production tire telemetry read; raw platform enum retained."
 
 - param: TyreStateFR
   diplus_key: null
@@ -1320,6 +1513,7 @@
   unit: ""
   status: imported
   source: reference-catalog
+  note: "Production tire telemetry read; raw platform enum retained."
 
 - param: TyreStateRL
   diplus_key: null
@@ -1330,6 +1524,7 @@
   unit: ""
   status: imported
   source: reference-catalog
+  note: "Production tire telemetry read; raw platform enum retained."
 
 - param: TyreStateRR
   diplus_key: null
@@ -1340,6 +1535,7 @@
   unit: ""
   status: imported
   source: reference-catalog
+  note: "Production tire telemetry read; raw platform enum retained."
 
 # ── GPS dev=1017 ─────────────────────────────────────────────────────────
 # May be redundant — we already use Android LocationManager. Sweep first.
@@ -1497,6 +1693,7 @@
   unit: ""
   status: imported
   source: reference-catalog
+  note: "Production on-demand ADAS read; raw platform enum retained."
 
 - param: AdasAebState
   diplus_key: null
@@ -1507,6 +1704,7 @@
   unit: ""
   status: imported
   source: reference-catalog
+  note: "Production on-demand ADAS read; raw platform enum retained."
 
 - param: AdasAvhState
   diplus_key: null
@@ -1517,6 +1715,7 @@
   unit: ""
   status: imported
   source: reference-catalog
+  note: "Production on-demand ADAS read; raw platform enum retained."
 
 - param: AdasLksMode
   diplus_key: null
@@ -1537,6 +1736,7 @@
   unit: ""
   status: imported
   source: reference-catalog
+  note: "Production on-demand ADAS read; raw platform enum retained."
 
 - param: AdasTjaState
   diplus_key: null
@@ -1580,6 +1780,7 @@
   unit: ""
   status: imported
   source: reference-catalog
+  note: "Production on-demand automation read; verify enum on equipped trim."
   note: "Whole-car mirror fold state. Operator will toggle in S10."
 
 - param: AlarmState
@@ -1612,7 +1813,7 @@
   unit: "°C"
   status: imported
   source: reference-catalog
-  note: "Coolant temp. Likely 0 or sentinel on pure EV."
+  note: "Production powertrain diagnostic read. Likely 0 or sentinel on pure EV."
 
 - param: FuelRange
   diplus_key: null
@@ -1647,16 +1848,16 @@
 
 # ── Charging extended dev=1009 (S5 deferred — needs charger) ─────────────
 
-- param: ChargingPower
+- param: ChargingPowerLegacy
   diplus_key: null
   device: 1009
   fid: 740506
   transact: 5
   decoder: int_raw
   unit: "kW"
-  status: imported
+  status: deferred
   source: reference-catalog
-  note: "Live charging power. Compare with ChargingPowerDD (842006552) on S5."
+  note: "Legacy candidate with no match in the official Settings feature catalog. Do not use unless a real-car probe proves it."
 
 - param: ChargingPowerDD
   diplus_key: null
@@ -1665,9 +1866,9 @@
   transact: 7
   decoder: float_kw
   unit: "kW"
-  status: imported
-  source: reference-catalog
-  note: "Precise float kW. Already in memory `reference_charging_power_dd_fid`."
+  status: candidate
+  source: autoservice-catalog
+  note: "CHARGING_CHARGE_POWER_DD (0x32300018). Official SDK returns double; production reads it only while the charging page is visible and an active AC/DC session is confirmed."
 
 - param: ChargingCapacity
   diplus_key: null
@@ -1699,4 +1900,5 @@
   unit: "%"
   status: imported
   source: reference-catalog
+  note: "Production conditional charging-page diagnostic; active AC/DC session only."
   note: "User-set SOC limit for charge stop."

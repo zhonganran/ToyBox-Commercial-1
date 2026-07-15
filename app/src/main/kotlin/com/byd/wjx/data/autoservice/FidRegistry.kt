@@ -17,6 +17,7 @@ object FidRegistry {
     const val DEV_CHARGING = 1009    // Charging gun + charger state
     const val DEV_BODYWORK = 1001    // 12V battery voltage on bodywork
     const val DEV_ENGINE = 1012      // Engine controller (live battery power)
+    const val DEV_BATTERY_MGMT = 1039 // Battery safety / insulation controller
 
     // === Statistic fids (dev=1014) ===
     /** BMS State of Health, percent (transact 5=int, raw 0..100). */
@@ -29,6 +30,10 @@ object FidRegistry {
     const val FID_LIFETIME_MILEAGE = 1246765072
     /** Current SOC, percent (transact 7=float). */
     const val FID_SOC = 1246777400
+    /** BMS maximum permitted charging power, kW (int); meaningful during charging. */
+    const val FID_BATTERY_MAX_CHARGE_POWER = 877658136
+    /** BMS maximum permitted discharge power, kW (int). */
+    const val FID_BATTERY_MAX_DISCHARGE_POWER = 1145045048
 
     // === Charging fids (dev=1009) ===
     // Validated against live AC-charging probe. The legacy `-1442840xxx` group
@@ -39,9 +44,12 @@ object FidRegistry {
     const val FID_GUN_CONNECT_STATE = 876609586
     /** Charging type after handshake: 1=DEFAULT, 2=AC, 3=VTOG, 4=GB_DC, 5=GB_NON_DC. */
     const val FID_CHARGING_TYPE = 876609592
-    /** Charger HV voltage, V (int). Catalog mapping not yet confirmed — kept stale.
-     *  TODO 2026-04-30: locate canonical fid via catalog before relying on it. */
-    const val FID_CHARGE_BATTERY_VOLT = -1442840491
+    /** Charger HV battery voltage, V (int). CHARGING_CHARGE_BATTERY_VOLT. */
+    const val FID_CHARGE_BATTERY_VOLT = 1145045000
+    /** Charger current, A (int). Read only by the visible live-charging panel after active charge confirmation. */
+    const val FID_CHARGE_CURRENT = 1145045016
+    /** Live charging power, kW (float). Read only by the visible live-charging panel. */
+    const val FID_CHARGE_POWER = 842006552
     /** Battery type: 0=LEAD_ACID, 1=IRON/LFP, 65535=INVALID. */
     const val FID_BATTERY_TYPE = -1728053169
     /** Per-session charged energy, kWh (transact 7=float). Persists across DiLink
@@ -50,6 +58,12 @@ object FidRegistry {
     /** BMS charging state: 1=CHARGING, 2=FINISH, 13=PAUSE (other values observed
      *  but not used). transact 5 (int). */
     const val FID_CHARGING_BMS_STATE = 876609560
+    /** Configured charging stop SOC, percent (int). */
+    const val FID_CHARGE_STOP_SOC = 1132462120
+
+    // === Battery safety fids (dev=1039) ===
+    /** High-voltage battery insulation resistance, kΩ (int). */
+    const val FID_BATTERY_INSULATION = 1134559256
 
     // === Bodywork fids (dev=1001) ===
     /** 12V auxiliary battery voltage, V (transact 7=float). */

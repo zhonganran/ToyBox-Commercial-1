@@ -10,6 +10,7 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -205,6 +206,45 @@ class NativeParsReaderTest {
         assertEquals("avgBatTemp restored as mean of max/min", 11, data.avgBatTemp)
     }
 
+    @Test
+    fun `official BYD enum values pass through without legacy remapping`() = runTest {
+        fun entry(field: String) = FidMap.entries.single { it.field == field }
+        val gateway = FakeVehicleGateway().apply {
+            // Liveness gate.
+            intValues[1014 to 1246765072] = 10_000
+            listOf(
+                "powerState" to 3,
+                "chargingStatus" to 13,
+                "chargeGunState" to 2,
+                "trunk" to 3,
+                "chargingCapCover" to 2,
+                "fuelCap" to 1,
+                "lockFL" to 2,
+                "lockFR" to 1,
+                "driveMode" to 1,
+                "sunroof" to 44,
+            ).forEach { (field, value) ->
+                val fid = entry(field)
+                intValues[fid.device to fid.fid] = value
+            }
+        }
+        val settings = mockk<SettingsRepository>()
+        coEvery { settings.getBatteryCapacity() } returns 72.9
+
+        val data = NativeParsReader(gateway, settings, noAdditionalActionFields).fetch()
+
+        assertEquals(3, data?.powerState)
+        assertEquals(13, data?.chargingStatus)
+        assertEquals(2, data?.chargeGunState)
+        assertEquals(3, data?.trunk)
+        assertEquals(2, data?.chargingCapCover)
+        assertEquals(1, data?.fuelCap)
+        assertEquals(2, data?.lockFL)
+        assertEquals(1, data?.lockFR)
+        assertEquals(1, data?.driveMode)
+        assertEquals(44, data?.sunroof)
+    }
+
     /**
      * Liveness gate: when autoservice is available but all primary signals (soc,
      * mileage, voltage12v) return null, fetch() must return null so the caller
@@ -254,18 +294,100 @@ class NativeParsReaderTest {
     }
 
     @Test
+    fun `validated comfort fid is read only when an automation requests it`() = runTest {
+        val seatHeat = FidMap.entries.single { it.field == "seatHeatD" }
+        val gateway = FakeVehicleGateway().apply {
+            intValues[seatHeat.device to seatHeat.fid] = 3
+        }
+        val settings = mockk<SettingsRepository>(relaxed = true)
+        val provider = ActionSnapshotFieldProvider { setOf("seatHeatD") }
+
+        val data = NativeParsReader(gateway, settings, provider).fetchAction()
+
+        assertNotNull(data)
+        assertEquals(3, data?.seatHeatD)
+        assertEquals(
+            VehicleReadProfiles.actionCoreFields.size + 1,
+            gateway.lastBatchSpecs.size,
+        )
+        assertTrue(
+            gateway.lastBatchSpecs.any {
+                it.device == seatHeat.device && it.fid == seatHeat.fid
+            },
+        )
+        assertTrue(VehicleReadProfiles.regularFull.none { it.field == "seatHeatD" })
+    }
+
+    @Test
+    fun `full snapshot refreshes core every tick and reuses detail for three seconds`() = runTest {
+        val soc = FidMap.entries.single { it.field == "soc" }
+        val soh = FidMap.entries.single { it.field == "soh" }
+        val insideTemp = FidMap.entries.single { it.field == "insideTemp" }
+        val gateway = FakeVehicleGateway().apply {
+            floatValues[soc.device to soc.fid] = 50f
+            intValues[soh.device to soh.fid] = 96
+            intValues[insideTemp.device to insideTemp.fid] = 18
+        }
+        val settings = mockk<SettingsRepository>()
+        coEvery { settings.getBatteryCapacity() } returns 72.9
+        var nowNanos = 0L
+        val reader = NativeParsReader(gateway, settings, noAdditionalActionFields).apply {
+            monotonicNanos = { nowNanos }
+        }
+
+        val initial = reader.fetchVehicleSnapshot()
+        assertNotNull(initial)
+        assertEquals(50, initial?.data?.soc)
+        assertEquals(96, initial?.data?.soh)
+        assertEquals(18, initial?.data?.insideTemp)
+        assertEquals(1, gateway.batchHistory.size)
+        assertEquals(VehicleReadProfiles.regularFull.size, gateway.batchHistory.single().size)
+        assertEquals(70, gateway.batchHistory.single().size)
+        assertTrue(
+            gateway.batchHistory.single().none { spec ->
+                FidMap.entries.any {
+                    it.field in VehicleReadProfiles.onDemandFields &&
+                        it.device == spec.device && it.fid == spec.fid
+                }
+            },
+        )
+
+        gateway.floatValues[soc.device to soc.fid] = 51f
+        gateway.intValues[soh.device to soh.fid] = 95
+        gateway.intValues[insideTemp.device to insideTemp.fid] = 19
+        val coreOnly = reader.fetchVehicleSnapshot()
+        assertEquals(51, coreOnly?.data?.soc)
+        assertEquals(96, coreOnly?.data?.soh)
+        assertEquals(18, coreOnly?.data?.insideTemp)
+        assertEquals(VehicleReadProfiles.coreFull.size, gateway.lastBatchSpecs.size)
+        assertEquals(2, gateway.batchHistory.size)
+
+        nowNanos = 3_000_000_000L
+        val detailRefreshed = reader.fetchVehicleSnapshot()
+        assertEquals(51, detailRefreshed?.data?.soc)
+        assertEquals(95, detailRefreshed?.data?.soh)
+        assertEquals(19, detailRefreshed?.data?.insideTemp)
+        assertEquals(4, gateway.batchHistory.size)
+        assertEquals(VehicleReadProfiles.detailFull.size, gateway.lastBatchSpecs.size)
+    }
+
+    @Test
     fun `LED fast snapshot reads independent turn hazard gear and brake fields`() = runTest {
         val turnLeft = FidMap.entries.single { it.field == "turnSignalLeft" }
         val turnRight = FidMap.entries.single { it.field == "turnSignalRight" }
         val hazard = FidMap.entries.single { it.field == "hazardLights" }
         val gear = FidMap.entries.single { it.field == "gear" }
         val brake = FidMap.entries.single { it.field == "brakePedalDepth" }
+        val brakeLight = FidMap.entries.single { it.field == "lightBrake" }
+        val reverseLight = FidMap.entries.single { it.field == "lightReversing" }
         val gateway = FakeVehicleGateway().apply {
             intValues[turnLeft.device to turnLeft.fid] = 1
             intValues[turnRight.device to turnRight.fid] = 0
             intValues[hazard.device to hazard.fid] = 0
             intValues[gear.device to gear.fid] = 4
             intValues[brake.device to brake.fid] = 28
+            intValues[brakeLight.device to brakeLight.fid] = 1
+            intValues[reverseLight.device to reverseLight.fid] = 0
         }
         val settings = mockk<SettingsRepository>(relaxed = true)
 
@@ -278,7 +400,109 @@ class NativeParsReaderTest {
         assertEquals(0, snapshot?.data?.hazardLights)
         assertEquals(4, snapshot?.data?.gear)
         assertEquals(28, snapshot?.data?.brakePedalDepth)
-        assertEquals(5, gateway.lastBatchSpecs.size)
+        assertEquals(1, snapshot?.data?.lightBrake)
+        assertEquals(0, snapshot?.data?.lightReversing)
+        assertEquals(7, gateway.lastBatchSpecs.size)
+        coVerify(exactly = 0) { settings.getBatteryCapacity() }
+    }
+
+    @Test
+    fun `tire telemetry profile reads temperatures and raw states only`() = runTest {
+        val fields = VehicleReadProfiles.tireTelemetry
+        val gateway = FakeVehicleGateway().apply {
+            fields.forEach { entry ->
+                intValues[entry.device to entry.fid] = when (entry.field) {
+                    "tireTempFL" -> 31
+                    "tireTempFR" -> 32
+                    "tireTempRL" -> 33
+                    "tireTempRR" -> 34
+                    "tireStateFL" -> 0
+                    "tireStateFR" -> 1
+                    "tireStateRL" -> 2
+                    "tireStateRR" -> 3
+                    else -> error("Unexpected tire field ${entry.field}")
+                }
+            }
+        }
+        val settings = mockk<SettingsRepository>(relaxed = true)
+
+        val data = NativeParsReader(gateway, settings, noAdditionalActionFields)
+            .readTireTelemetry()
+
+        assertEquals(31, data?.tireTempFL)
+        assertEquals(34, data?.tireTempRR)
+        assertEquals(0, data?.tireStateFL)
+        assertEquals(3, data?.tireStateRR)
+        assertEquals(8, gateway.lastBatchSpecs.size)
+        assertEquals(
+            fields.map { it.device to it.fid }.toSet(),
+            gateway.lastBatchSpecs.map { it.device to it.fid }.toSet(),
+        )
+    }
+
+    @Test
+    fun `ADAS telemetry profile retains official raw enums and execution speed`() = runTest {
+        val fields = VehicleReadProfiles.adasTelemetry
+        val values = mapOf(
+            "adasAebState" to 1,
+            "adasAvhState" to 2,
+            "adasBsdState" to 3,
+            "adasEspState" to 4,
+            "adasAccGrayState" to 5,
+            "adasNoaGrayState" to 6,
+            "adasMnoaStatus" to 7,
+            "adasExecSpeed" to 88,
+        )
+        val gateway = FakeVehicleGateway().apply {
+            fields.forEach { entry ->
+                intValues[entry.device to entry.fid] = checkNotNull(values[entry.field])
+            }
+        }
+        val settings = mockk<SettingsRepository>(relaxed = true)
+
+        val data = NativeParsReader(gateway, settings, noAdditionalActionFields)
+            .readAdasTelemetry()
+
+        assertEquals(1, data?.adasAebState)
+        assertEquals(4, data?.adasEspState)
+        assertEquals(7, data?.adasMnoaStatus)
+        assertEquals(88, data?.adasExecSpeed)
+        assertEquals(8, gateway.lastBatchSpecs.size)
+        coVerify(exactly = 0) { settings.getBatteryCapacity() }
+    }
+
+    @Test
+    fun `powertrain telemetry scales signed currents and accepts diagnostic temperatures`() = runTest {
+        val fields = VehicleReadProfiles.powertrainTelemetry
+        val values = mapOf(
+            "frontMotorSpeed" to 12_345,
+            "rearMotorSpeed" to -8_765,
+            "frontMotorTemp" to 96,
+            "rearMotorTemp" to 104,
+            "frontMotorCurrent" to 123,
+            "rearMotorCurrent" to -456,
+            "engineRpm" to 1_850,
+            "waterTemp" to 92,
+        )
+        val gateway = FakeVehicleGateway().apply {
+            fields.forEach { entry ->
+                intValues[entry.device to entry.fid] = checkNotNull(values[entry.field])
+            }
+        }
+        val settings = mockk<SettingsRepository>(relaxed = true)
+
+        val data = NativeParsReader(gateway, settings, noAdditionalActionFields)
+            .readPowertrainTelemetry()
+
+        assertEquals(12_345, data?.frontMotorSpeed)
+        assertEquals(-8_765, data?.rearMotorSpeed)
+        assertEquals(96, data?.frontMotorTemp)
+        assertEquals(104, data?.rearMotorTemp)
+        assertEquals(12.3, data?.frontMotorCurrent ?: 0.0, 0.001)
+        assertEquals(-45.6, data?.rearMotorCurrent ?: 0.0, 0.001)
+        assertEquals(1_850, data?.engineRpm)
+        assertEquals(92, data?.waterTemp)
+        assertEquals(8, gateway.lastBatchSpecs.size)
         coVerify(exactly = 0) { settings.getBatteryCapacity() }
     }
 }

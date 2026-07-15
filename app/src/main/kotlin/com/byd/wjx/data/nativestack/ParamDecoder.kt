@@ -9,6 +9,7 @@ enum class Decoder {
     INT_PERCENT,
     INT_ENUM,
     INT_TEMP_C,
+    INT_TEMP_C_WIDE,
     INT_TEMP_C_OFS40,
     INT_KPA,
     FLOAT_VOLT,
@@ -25,6 +26,7 @@ object ParamDecoder {
             Decoder.INT_RAW, Decoder.INT_ENUM, Decoder.INT_KPA -> cleaned
             Decoder.INT_PERCENT -> cleaned.takeIf { it in 0..100 }
             Decoder.INT_TEMP_C -> cleaned.takeIf { it in -50..80 }
+            Decoder.INT_TEMP_C_WIDE -> cleaned.takeIf { it in -50..200 }
             // Battery temp fids (dev=1014) encode °C with a -40 CAN offset.
             Decoder.INT_TEMP_C_OFS40 -> (cleaned - 40).takeIf { it in -50..80 }
             // INT_DIV10 is a float-producing decoder — callers should use decodeFloat

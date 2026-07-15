@@ -11,6 +11,7 @@ import android.view.accessibility.AccessibilityManager
 import com.byd.wjx.activation.ActivationManager
 import com.byd.wjx.activation.PremiumFeature
 import com.byd.wjx.cluster.ClusterProjectionManager
+import com.byd.wjx.cluster.ClusterProjectionPreferences
 import com.byd.wjx.cluster.KeyShortcutSettings
 import com.byd.wjx.cluster.SteeringWheelKeyService
 import com.byd.wjx.data.vehicle.HelperBootstrap
@@ -32,6 +33,7 @@ class SteeringWheelRuntimeCoordinator @Inject constructor(
     private val helperClient: HelperClient,
     private val activationManager: ActivationManager,
 ) {
+    private val projectionPreferences = ClusterProjectionPreferences(context)
     private var scope: CoroutineScope? = null
     private var receiverRegistered = false
 
@@ -75,8 +77,7 @@ class SteeringWheelRuntimeCoordinator @Inject constructor(
     }
 
     private suspend fun ensureRunning(reason: String) {
-        val prefs = context.getSharedPreferences(ClusterProjectionManager.PREFS_NAME, Context.MODE_PRIVATE)
-        val mirrorEnabled = prefs.getBoolean(ClusterProjectionManager.KEY_MIRROR_ENABLED, false)
+        val mirrorEnabled = projectionPreferences.isEnabled()
         val mirrorAllowed = mirrorEnabled && activationManager.canUse(PremiumFeature.CLUSTER_PROJECTION)
         val shortcutAllowed = KeyShortcutSettings(context).loadEnabled().isNotEmpty() &&
             activationManager.canUse(PremiumFeature.KEY_SHORTCUT_ACTIONS)

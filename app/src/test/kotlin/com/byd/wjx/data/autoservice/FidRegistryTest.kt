@@ -49,6 +49,17 @@ class FidRegistryTest {
     }
 
     @Test
+    fun `charging electrical fids match the BYD Settings feature catalog`() {
+        assertEquals(1145045000, FidRegistry.FID_CHARGE_BATTERY_VOLT)
+        assertEquals(1145045016, FidRegistry.FID_CHARGE_CURRENT)
+        assertEquals(842006552, FidRegistry.FID_CHARGE_POWER)
+        assertEquals(877658136, FidRegistry.FID_BATTERY_MAX_CHARGE_POWER)
+        assertEquals(1145045048, FidRegistry.FID_BATTERY_MAX_DISCHARGE_POWER)
+        assertEquals(1134559256, FidRegistry.FID_BATTERY_INSULATION)
+        assertEquals(1132462120, FidRegistry.FID_CHARGE_STOP_SOC)
+    }
+
+    @Test
     fun `SOC fid matches Fangchengbao Bao 3 validation`() {
         assertEquals(1246777400, FidRegistry.FID_SOC)
     }

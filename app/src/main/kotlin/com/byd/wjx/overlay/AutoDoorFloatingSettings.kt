@@ -1,7 +1,6 @@
 package com.byd.wjx.overlay
 
 import android.content.Context
-import android.os.Build
 
 class AutoDoorFloatingSettings(context: Context) {
     private val prefs = storageContext(context).getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -69,7 +68,6 @@ class AutoDoorFloatingSettings(context: Context) {
 
         private fun storageContext(context: Context): Context {
             val appContext = context.applicationContext
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return appContext
             return appContext.createDeviceProtectedStorageContext()
         }
     }

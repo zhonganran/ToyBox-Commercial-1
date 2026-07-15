@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -60,13 +62,17 @@ class SharedAdaptiveLoop constructor(
     val actionSnapshot: StateFlow<VehicleSnapshot?> = _actionSnapshot.asStateFlow()
 
     private var job: Job? = null
+    private val loopOwnership = Mutex()
+    private val persistenceGate = SnapshotPersistenceGate()
 
     @Synchronized
     fun start(scope: CoroutineScope): Job {
         job?.takeIf { it.isActive }?.let { return it }
         job = scope.launch(dispatcher) {
             try {
-                runLoop()
+                // A cancelled Binder transaction can take a short time to unwind. Serializing
+                // ownership here prevents a restarted service from briefly running two pollers.
+                loopOwnership.withLock { runLoop() }
             } finally {
                 _connected.value = false
             }
@@ -80,6 +86,7 @@ class SharedAdaptiveLoop constructor(
         return job!!
     }
 
+    @Synchronized
     fun stop() {
         job?.cancel()
         job = null
@@ -161,7 +168,17 @@ class SharedAdaptiveLoop constructor(
 
     private suspend fun persistSnapshot(data: DiParsData) {
         val now = System.currentTimeMillis()
-        val energydataAvailable = if (energyDataReader.isAvailable()) 1 else 0
+        val energyDataAvailable = energyDataReader.isAvailable()
+        val sample = SnapshotPersistenceSample(
+            soc = data.soc,
+            mileageKm = data.mileage,
+            totalEnergyKwh = data.totalElecConsumption,
+            ignition = data.powerState,
+            energyDataAvailable = energyDataAvailable,
+        )
+        if (!persistenceGate.shouldPersist(sample, now)) return
+
+        val energydataAvailable = if (energyDataAvailable) 1 else 0
         val updated = lastStateDao.updateSnapshot(
             ts = now,
             soc = data.soc,
@@ -183,6 +200,7 @@ class SharedAdaptiveLoop constructor(
                 )
             )
         }
+        persistenceGate.markPersisted(sample, now)
     }
 
     private fun pow15(n: Int): Long {

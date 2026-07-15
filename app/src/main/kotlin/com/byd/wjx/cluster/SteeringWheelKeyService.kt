@@ -6,7 +6,6 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.content.SharedPreferences
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -40,9 +39,7 @@ class SteeringWheelKeyService : AccessibilityService() {
 
     private var cachedEntryPoint: ClusterEntryPoint? = null
     private val handler = Handler(Looper.getMainLooper())
-    private val prefs: SharedPreferences by lazy {
-        applicationContext.getSharedPreferences(ClusterProjectionManager.PREFS_NAME, Context.MODE_PRIVATE)
-    }
+    private val projectionPreferences by lazy { ClusterProjectionPreferences(applicationContext) }
     private val shortcutSettings: KeyShortcutSettings by lazy { KeyShortcutSettings(applicationContext) }
     private val hailingSettings: ExteriorHailingSettings by lazy { ExteriorHailingSettings(applicationContext) }
     private var pendingDoubleKeyCode: Int? = null
@@ -85,8 +82,8 @@ class SteeringWheelKeyService : AccessibilityService() {
             }
         }
         handleKeyShortcut(event)?.let { return it }
-        val enabled = prefs.getBoolean(ClusterProjectionManager.KEY_MIRROR_ENABLED, false)
-        val trigger = prefs.getInt(ClusterProjectionManager.KEY_TRIGGER_KEYCODE, DEFAULT_TRIGGER_KEYCODE)
+        val enabled = projectionPreferences.isEnabled()
+        val trigger = projectionPreferences.triggerKeyCode()
         val ep = if (enabled) entryPoint() else null
         val activationAllowed = ep?.activationManager()?.canUse(PremiumFeature.CLUSTER_PROJECTION) ?: enabled
         return when (starDecision(event.keyCode, isDown, enabled && activationAllowed, trigger)) {

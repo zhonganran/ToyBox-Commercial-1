@@ -63,6 +63,8 @@ data class LedVehicleSignals(
     val adasTjaState: Int? = null,
     val laneKeepState: Int? = null,
     val brakePedalDepth: Int? = null,
+    val lightBrake: Int? = null,
+    val lightReversing: Int? = null,
 )
 
 data class LedRuntimeState(

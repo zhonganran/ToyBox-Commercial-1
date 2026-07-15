@@ -2,9 +2,6 @@ package com.byd.wjx.service
 
 import android.content.Context
 import com.byd.wjx.log.WjxFileLogger
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * Persistent chain log for autostart diagnostics — survives logcat rollover
@@ -13,22 +10,11 @@ import java.util.Locale
  */
 object ChainLog {
     private const val TAG = "ChainLog"
-    private const val MAX_ENTRIES = 20
 
     fun append(context: Context, entry: String) {
-        try {
-            val sdf = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
-            val ts = sdf.format(Date())
-            val prefs = BootState.deviceProtectedContext(context).getSharedPreferences(
-                BootReceiver.PREFS_NAME, Context.MODE_PRIVATE
-            )
-            val existing = prefs.getString(BootReceiver.KEY_CHAIN_LOG, "") ?: ""
-            val lines = existing.lines().takeLast(MAX_ENTRIES - 1)
-            val updated = (lines + "$ts $entry").joinToString("\n")
-            prefs.edit().putString(BootReceiver.KEY_CHAIN_LOG, updated).apply()
-            WjxFileLogger.i(TAG, entry)
-        } catch (e: Exception) {
-            WjxFileLogger.w(TAG, "Failed to append chain log: ${e.message}", e)
+        if (!BootDiagnosticsStore.appendChainEntry(context, entry)) {
+            WjxFileLogger.w(TAG, "Failed to append chain log")
         }
+        WjxFileLogger.i(TAG, entry)
     }
 }

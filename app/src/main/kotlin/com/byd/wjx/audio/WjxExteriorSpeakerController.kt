@@ -4,7 +4,6 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import kotlin.math.max
@@ -50,6 +49,21 @@ class WjxExteriorSpeakerController(private val context: Context) {
         )
     }
 
+    fun reinforce(
+        channel: ExteriorChannel,
+        volumePercent: Int = 100,
+        fallbackVolume: Int = CHANNEL0_PLAYBACK_PRESET_VOLUME,
+        scaleFromMax: Boolean = false,
+    ): Boolean {
+        applyStreamVolume(
+            streamType = channel.streamType,
+            volumePercent = volumePercent,
+            fallbackVolume = if (channel == ExteriorChannel.Channel0) fallbackVolume else -1,
+            scaleFromMax = scaleFromMax,
+        )
+        return channel != ExteriorChannel.Channel0 || requestNaviFocus()
+    }
+
     fun release(channel: ExteriorChannel) {
         acquiredCount = max(0, acquiredCount - 1)
         if (acquiredCount > 0) return
@@ -76,28 +90,22 @@ class WjxExteriorSpeakerController(private val context: Context) {
                 it.invoke(audioManager)
             }
         }
-        return if (Build.VERSION.SDK_INT >= 26) {
-            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .setLegacyStreamType(ExteriorChannel.Channel0.streamType)
-                        .build()
-                )
-                .setOnAudioFocusChangeListener(naviFocusListener)
-                .build()
-            val ok = audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-            if (ok) naviFocus = request
-            ok
-        } else {
-            @Suppress("DEPRECATION")
-            audioManager.requestAudioFocus(
-                null,
-                ExteriorChannel.Channel0.streamType,
-                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE
-            ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        naviFocus?.let { current ->
+            return audioManager.requestAudioFocus(current) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         }
+        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .setLegacyStreamType(ExteriorChannel.Channel0.streamType)
+                    .build()
+            )
+            .setOnAudioFocusChangeListener(naviFocusListener)
+            .build()
+        val granted = audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        if (granted) naviFocus = request
+        return granted
     }
 
     private fun abandonNaviFocus() {
@@ -113,12 +121,7 @@ class WjxExteriorSpeakerController(private val context: Context) {
             }
         }
         runCatching {
-            if (Build.VERSION.SDK_INT >= 26) {
-                naviFocus?.let { audioManager.abandonAudioFocusRequest(it) }
-            } else {
-                @Suppress("DEPRECATION")
-                audioManager.abandonAudioFocus(null)
-            }
+            naviFocus?.let { audioManager.abandonAudioFocusRequest(it) }
         }
         naviFocus = null
     }

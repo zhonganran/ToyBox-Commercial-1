@@ -4,7 +4,6 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteException
 import android.net.Uri
-import android.os.Build
 import android.os.Environment
 import android.util.Log
 import com.byd.wjx.log.WjxFileLogger
@@ -211,7 +210,7 @@ class BackupManager(
 
         // 4. Build manifest
         val versionCode = try {
-            context.packageManager.getPackageInfo(context.packageName, 0).versionCode
+            context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode.toInt()
         } catch (_: Exception) { 0 }
         val manifest = BackupManifest(
             appVersionCode = versionCode,
@@ -397,7 +396,7 @@ class BackupManager(
     }
 
     private fun preferencesContext(fileName: String): Context {
-        if (fileName !in deviceProtectedPrefsFileNames || Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+        if (fileName !in deviceProtectedPrefsFileNames) {
             return context
         }
         return context.createDeviceProtectedStorageContext()

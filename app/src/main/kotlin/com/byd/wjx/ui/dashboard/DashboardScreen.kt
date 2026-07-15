@@ -31,6 +31,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
@@ -73,6 +74,10 @@ fun DashboardScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    DisposableEffect(viewModel) {
+        viewModel.setPowertrainTelemetryActive(true)
+        onDispose { viewModel.setPowertrainTelemetryActive(false) }
+    }
 
     Column(
         modifier = Modifier
@@ -288,6 +293,15 @@ fun DashboardScreen(
                                 onClick = { viewModel.toggleIdleDrainExpanded() }
                             )
                         }
+                        CompactCard(
+                            leftValue = state.frontMotorSpeed?.let(::formatRpm) ?: "—",
+                            leftLabel = "前电机转速",
+                            rightValue = state.rearMotorSpeed?.let(::formatRpm) ?: "—",
+                            rightLabel = "后电机转速",
+                            borderColor = AccentBlue,
+                            hasData = state.frontMotorSpeed != null || state.rearMotorSpeed != null,
+                            onClick = { viewModel.togglePowertrainDiagnosticsExpanded() },
+                        )
                     }
 
                     // Pop-up dialogs
@@ -334,6 +348,22 @@ fun DashboardScreen(
                             if (state.idleDrainKwhWeek > 0) {
                                 DetailRow(stringResource(R.string.dashboard_idle_drain_avg_day_label), stringResource(R.string.dashboard_idle_drain_week_value, state.idleDrainKwhWeek / 7.0), TextPrimary)
                             }
+                        }
+                    }
+                    if (state.powertrainDiagnosticsExpanded) {
+                        CardDetailDialog(
+                            title = "电驱与动力诊断",
+                            borderColor = AccentBlue,
+                            onDismiss = { viewModel.togglePowertrainDiagnosticsExpanded() },
+                        ) {
+                            DetailRow("前电机转速", state.frontMotorSpeed?.let(::formatRpm) ?: "--", TextPrimary)
+                            DetailRow("后电机转速", state.rearMotorSpeed?.let(::formatRpm) ?: "--", TextPrimary)
+                            DetailRow("前电机温度", state.frontMotorTemp?.let { "$it °C" } ?: "--", TextPrimary)
+                            DetailRow("后电机温度", state.rearMotorTemp?.let { "$it °C" } ?: "--", TextPrimary)
+                            DetailRow("前电机电流", state.frontMotorCurrent?.let { "%.1f A".format(it) } ?: "--", TextPrimary)
+                            DetailRow("后电机电流", state.rearMotorCurrent?.let { "%.1f A".format(it) } ?: "--", TextPrimary)
+                            DetailRow("发动机转速", state.engineRpm?.let(::formatRpm) ?: "--", TextPrimary)
+                            DetailRow("冷却液温度", state.waterTemp?.let { "$it °C" } ?: "--", TextPrimary)
                         }
                     }
                 }
@@ -483,6 +513,8 @@ private fun dashboardTripDuration(durationMs: Long): String {
     val minutes = totalMinutes % 60
     return if (hours > 0) "${hours}小时${minutes}分" else "${minutes}分钟"
 }
+
+private fun formatRpm(value: Int): String = "$value rpm"
 
 // ============================================================================
 // Compact card — same look for dashboard health summaries

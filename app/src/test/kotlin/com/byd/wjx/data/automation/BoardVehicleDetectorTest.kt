@@ -18,7 +18,7 @@ class BoardVehicleDetectorTest {
     fun `opening door to exit after driving is not boarding`() {
         val detector = BoardVehicleDetector()
         detector.onSample(diParsData(powerState = 0, gear = 1, doorFL = 0))
-        detector.onSample(diParsData(powerState = 2, gear = 4, speed = 30, doorFL = 0))
+        detector.onSample(diParsData(powerState = 3, gear = 4, speed = 30, doorFL = 0))
         assertFalse(detector.onSample(diParsData(powerState = 0, gear = 1, speed = 0, doorFL = 1)))
         assertFalse(detector.onSample(diParsData(powerState = 0, gear = 1, speed = 0, doorFL = 0)))
         assertTrue(detector.onSample(diParsData(powerState = 0, gear = 1, speed = 0, doorFL = 1)))

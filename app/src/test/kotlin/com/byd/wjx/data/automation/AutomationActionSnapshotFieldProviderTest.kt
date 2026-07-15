@@ -37,6 +37,98 @@ class AutomationActionSnapshotFieldProviderTest {
         assertFalse("speed" in fields)
     }
 
+    @Test
+    fun `comfort triggers select their on demand fields`() {
+        val fields = requiredAutomationVehicleFields(
+            listOf(
+                rule(
+                    TriggerDef("ACCtrlMode", "空调控制模式", "==", "0", "空调控制模式"),
+                    TriggerDef("ACDefrostFront", "前挡除霜", "==", "1", "前挡除霜"),
+                    TriggerDef("ACWindMode", "空调出风模式", "==", "5", "空调出风模式"),
+                    TriggerDef("SeatHeatD", "主驾座椅加热", ">", "0", "主驾座椅加热"),
+                    TriggerDef("SeatVentD", "主驾座椅通风", ">", "0", "主驾座椅通风"),
+                    TriggerDef("SeatHeatP", "副驾座椅加热", ">", "0", "副驾座椅加热"),
+                    TriggerDef("SeatVentP", "副驾座椅通风", ">", "0", "副驾座椅通风"),
+                    TriggerDef("LightSide", "位置灯", "==", "1", "位置灯"),
+                ),
+            ),
+        )
+
+        assertEquals(
+            setOf(
+                "acCtrlMode",
+                "acDefrostFront",
+                "acWindMode",
+                "seatHeatD",
+                "seatVentD",
+                "seatHeatP",
+                "seatVentP",
+                "lightSide",
+            ),
+            fields,
+        )
+    }
+
+    @Test
+    fun `extended vehicle triggers select only their requested fields`() {
+        val fields = requiredAutomationVehicleFields(
+            listOf(
+                rule(
+                    TriggerDef("TireTempFL", "左前轮胎温度", ">", "50", "左前轮胎温度"),
+                    TriggerDef("LightBrake", "刹车灯", "==", "1", "刹车灯"),
+                    TriggerDef("LightReversing", "倒车灯", "==", "1", "倒车灯"),
+                    TriggerDef("AccelPedal", "加速踏板", ">", "20", "加速踏板"),
+                    TriggerDef("EpbState", "电子手刹", "==", "1", "电子手刹"),
+                    TriggerDef("EpedalMode", "单踏板", "==", "1", "单踏板"),
+                    TriggerDef("ACDefrostRear", "后挡除霜", "==", "1", "后挡除霜"),
+                    TriggerDef("SunshadePos", "遮阳帘位置", ">", "50", "遮阳帘位置"),
+                    TriggerDef("MirrorFoldState", "后视镜折叠", "==", "1", "后视镜折叠"),
+                ),
+            ),
+        )
+
+        assertEquals(
+            setOf(
+                "tireTempFL",
+                "lightBrake",
+                "lightReversing",
+                "accelPedalDepth",
+                "epbState",
+                "ePedalMode",
+                "acDefrostRear",
+                "sunshadePos",
+                "mirrorFoldState",
+            ),
+            fields,
+        )
+    }
+
+    @Test
+    fun `ADAS powertrain and tire state triggers stay field scoped`() {
+        val fields = requiredAutomationVehicleFields(
+            listOf(
+                rule(
+                    TriggerDef("AdasAebState", "AEB", "!=", "0", "AEB"),
+                    TriggerDef("AdasExecSpeed", "智驾执行速度", ">", "80", "智驾执行速度"),
+                    TriggerDef("FrontMotorCurrent", "前电机电流", ">", "100", "前电机电流"),
+                    TriggerDef("WaterTemp", "冷却液温度", ">", "100", "冷却液温度"),
+                    TriggerDef("TireStateRR", "右后轮胎状态", "!=", "0", "右后轮胎状态"),
+                ),
+            ),
+        )
+
+        assertEquals(
+            setOf(
+                "adasAebState",
+                "adasExecSpeed",
+                "frontMotorCurrent",
+                "waterTemp",
+                "tireStateRR",
+            ),
+            fields,
+        )
+    }
+
     private fun rule(vararg triggers: TriggerDef) = RuleEntity(
         id = 1,
         name = "test",

@@ -363,5 +363,6 @@ private fun severity(s: Status): Int = when (s) {
 // Was a private widget-local function with different thresholds (>=30 green,
 // >=15 yellow) — split coloring between the two surfaces was confusing because
 // the same SOC value rendered green on the widget but yellow on the dashboard.
+@Composable
 private fun socColor(soc: Int?): Color =
     if (soc == null) TextMuted else componentsSocColor(soc)

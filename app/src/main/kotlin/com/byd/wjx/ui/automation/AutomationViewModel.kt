@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.byd.wjx.activation.ActivationManager
 import com.byd.wjx.activation.PremiumFeature
+import com.byd.wjx.data.automation.AutomationPreferences
 import com.byd.wjx.data.local.dao.RuleDao
 import com.byd.wjx.data.local.dao.RuleLogDao
 import com.byd.wjx.data.local.entity.ActionDef
@@ -73,6 +74,15 @@ fun ActionOption.localizedName(context: Context): String =
 fun ActionOption.localizedCategory(context: Context): String =
     chineseCategory
 
+private val seatComfortLevels = listOf(
+    "0" to "关闭",
+    "1" to "1档",
+    "2" to "2档",
+    "3" to "3档",
+    "4" to "4档",
+    "5" to "5档",
+)
+
 val TRIGGER_PARAMS = listOf(
     TriggerParamOption("Speed", "车速", "车速", "车速", "公里/小时", "行驶", "行驶", "行驶"),
     TriggerParamOption("Gear", "档位", "档位", "档位", "", "行驶", "行驶", "行驶",
@@ -89,16 +99,59 @@ val TRIGGER_PARAMS = listOf(
             "7" to "选车位"
         )),
     TriggerParamOption("DriveMode", "整车运行模式", "整车运行模式", "整车运行模式", "", "行驶", "行驶", "行驶",
-        enumValues = listOf("0" to "普通", "1" to "节能", "2" to "运动", "4" to "雪地")),
+        enumValues = listOf(
+            "1" to "标准",
+            "2" to "节能",
+            "3" to "运动",
+            "4" to "雪地",
+            "5" to "泥地",
+            "6" to "沙地",
+        )),
+    TriggerParamOption("FrontMotorSpeed", "前电机转速", "前电机转速", "前电机转速", "rpm", "电驱", "电驱", "电驱"),
+    TriggerParamOption("RearMotorSpeed", "后电机转速", "后电机转速", "后电机转速", "rpm", "电驱", "电驱", "电驱"),
+    TriggerParamOption("FrontMotorTemp", "前电机温度", "前电机温度", "前电机温度", "摄氏度", "电驱", "电驱", "电驱"),
+    TriggerParamOption("RearMotorTemp", "后电机温度", "后电机温度", "后电机温度", "摄氏度", "电驱", "电驱", "电驱"),
+    TriggerParamOption("FrontMotorCurrent", "前电机电流", "前电机电流", "前电机电流", "安", "电驱", "电驱", "电驱"),
+    TriggerParamOption("RearMotorCurrent", "后电机电流", "后电机电流", "后电机电流", "安", "电驱", "电驱", "电驱"),
+    TriggerParamOption("EngineRPM", "发动机转速", "发动机转速", "发动机转速", "rpm", "电驱", "电驱", "电驱"),
+    TriggerParamOption("WaterTemp", "冷却液温度", "冷却液温度", "冷却液温度", "摄氏度", "电驱", "电驱", "电驱"),
     TriggerParamOption("SOC", "电量百分比", "电量百分比", "电量百分比", "%", "能源", "能源", "能源"),
     TriggerParamOption("ChargingStatus", "充电状态", "充电状态", "充电状态", "", "能源", "能源", "能源",
-        enumValues = listOf("0" to "未连接", "1" to "已连接", "2" to "充电中")),
+        enumValues = listOf(
+            "0" to "就绪",
+            "1" to "充电中",
+            "2" to "充电完成",
+            "3" to "放电中",
+            "4" to "充电终止",
+            "5" to "C10 故障",
+            "6" to "充电枪故障",
+            "7" to "充电机故障",
+            "8" to "交流充电故障",
+            "9" to "预约等待",
+            "10" to "车身放电中",
+            "11" to "充电超时",
+            "12" to "放电完成",
+            "13" to "充电暂停",
+        )),
     TriggerParamOption("ChargeGunState", "充电枪", "充电枪", "充电枪", "", "能源", "能源", "能源",
         enumValues = listOf("1" to "未插枪", "2" to "交流慢充", "3" to "直流快充", "4" to "交直流", "5" to "外放电")),
     TriggerParamOption("PowerState", "电源状态", "电源状态", "电源状态", "", "能源", "能源", "能源",
-        enumValues = listOf("0" to "关闭", "1" to "开启", "2" to "行驶")),
+        enumValues = listOf(
+            "0" to "OFF",
+            "1" to "ACC",
+            "2" to "ON",
+            "3" to "OK",
+            "4" to "FAKE OK",
+        )),
     TriggerParamOption("WorkMode", "整车工作模式", "整车工作模式", "整车工作模式", "", "能源", "能源", "能源",
-        enumValues = listOf("0" to "停止", "1" to "纯电", "2" to "强制纯电", "3" to "混动")),
+        enumValues = listOf(
+            "0" to "停止",
+            "1" to "纯电",
+            "2" to "强制纯电",
+            "3" to "混动",
+            "4" to "燃油",
+            "5" to "保持",
+        )),
     TriggerParamOption("Voltage12V", "蓄电池电压", "蓄电池电压", "蓄电池电压", "伏", "能源", "能源", "能源"),
     TriggerParamOption("MinCellVoltage", "单体最低电压", "单体最低电压", "单体最低电压", "伏", "能源", "能源", "能源"),
     TriggerParamOption("MaxCellVoltage", "单体最高电压", "单体最高电压", "单体最高电压", "伏", "能源", "能源", "能源"),
@@ -121,25 +174,62 @@ val TRIGGER_PARAMS = listOf(
     TriggerParamOption("Hood", "引擎盖", "引擎盖", "引擎盖", "", "车身", "车身", "车身",
         enumValues = listOf("0" to "关闭", "1" to "打开")),
     TriggerParamOption("LockFL", "主驾车门锁", "主驾车门锁", "主驾车门锁", "", "车身", "车身", "车身",
-        enumValues = listOf("0" to "解锁", "1" to "上锁")),
+        enumValues = listOf("1" to "解锁", "2" to "上锁")),
     TriggerParamOption("Trunk", "后备箱门", "后备箱门", "后备箱门", "", "车身", "车身", "车身",
-        enumValues = listOf("0" to "关闭", "1" to "打开")),
+        enumValues = listOf("1" to "打开", "2" to "关闭", "3" to "中间/暂停")),
     TriggerParamOption("FuelCap", "油箱盖", "油箱盖", "油箱盖", "", "车身", "车身", "车身",
-        enumValues = listOf("0" to "关闭", "1" to "打开")),
+        enumValues = listOf("1" to "关闭", "2" to "打开")),
     TriggerParamOption("ChargingCap", "充电盖", "充电盖", "充电盖", "", "车身", "车身", "车身",
-        enumValues = listOf("0" to "关闭", "1" to "打开")),
+        enumValues = listOf("1" to "关闭", "2" to "打开")),
     TriggerParamOption("ACStatus", "空调状态", "空调状态", "空调状态", "", "空调", "空调", "空调"),
     TriggerParamOption("ACCirc", "空调循环方式", "空调循环方式", "空调循环方式", "", "空调", "空调", "空调",
         enumValues = listOf("0" to "外循环", "1" to "内循环")),
     TriggerParamOption("ACTemp", "主驾驶空调温度", "主驾驶空调温度", "主驾驶空调温度", "摄氏度", "空调", "空调", "空调"),
     TriggerParamOption("FanLevel", "风量档位", "风量档位", "风量档位", "", "空调", "空调", "空调"),
+    TriggerParamOption("ACCtrlMode", "空调控制模式", "空调控制模式", "空调控制模式", "", "空调", "空调", "空调",
+        enumValues = listOf("0" to "自动", "1" to "手动")),
+    TriggerParamOption("ACDefrostFront", "前挡除霜", "前挡除霜", "前挡除霜", "", "空调", "空调", "空调",
+        enumValues = listOf("0" to "关闭", "1" to "开启")),
+    TriggerParamOption("ACWindMode", "空调出风模式", "空调出风模式", "空调出风模式", "原始值", "空调", "空调", "空调"),
+    TriggerParamOption("SeatHeatD", "主驾座椅加热档位", "主驾座椅加热档位", "主驾座椅加热档位", "档", "座椅", "座椅", "座椅",
+        enumValues = seatComfortLevels),
+    TriggerParamOption("SeatVentD", "主驾座椅通风档位", "主驾座椅通风档位", "主驾座椅通风档位", "档", "座椅", "座椅", "座椅",
+        enumValues = seatComfortLevels),
+    TriggerParamOption("SeatHeatP", "副驾座椅加热档位", "副驾座椅加热档位", "副驾座椅加热档位", "档", "座椅", "座椅", "座椅",
+        enumValues = seatComfortLevels),
+    TriggerParamOption("SeatVentP", "副驾座椅通风档位", "副驾座椅通风档位", "副驾座椅通风档位", "档", "座椅", "座椅", "座椅",
+        enumValues = seatComfortLevels),
+    TriggerParamOption("ACDefrostRear", "后挡除霜", "后挡除霜", "后挡除霜", "", "空调", "空调", "空调",
+        enumValues = listOf("0" to "关闭", "1" to "开启")),
+    TriggerParamOption("SteeringHeat", "方向盘加热", "方向盘加热", "方向盘加热", "", "座椅", "座椅", "座椅",
+        enumValues = listOf("0" to "关闭", "1" to "开启")),
+    TriggerParamOption("SunshadePos", "遮阳帘位置", "遮阳帘位置", "遮阳帘位置", "%", "车身", "车身", "车身"),
+    TriggerParamOption("MirrorFoldState", "后视镜折叠状态", "后视镜折叠状态", "后视镜折叠状态", "原始值", "车身", "车身", "车身"),
     TriggerParamOption("SeatbeltFL", "主驾驶安全带状态", "主驾驶安全带状态", "主驾驶安全带状态", "", "安全", "安全", "安全",
         enumValues = listOf("0" to "未系", "1" to "已系")),
     TriggerParamOption("TirePressFL", "左前轮气压", "左前轮气压", "左前轮气压", "千帕", "安全", "安全", "安全"),
     TriggerParamOption("TirePressFR", "右前轮气压", "右前轮气压", "右前轮气压", "千帕", "安全", "安全", "安全"),
     TriggerParamOption("TirePressRL", "左后轮气压", "左后轮气压", "左后轮气压", "千帕", "安全", "安全", "安全"),
     TriggerParamOption("TirePressRR", "右后轮气压", "右后轮气压", "右后轮气压", "千帕", "安全", "安全", "安全"),
+    TriggerParamOption("TireTempFL", "左前轮胎温度", "左前轮胎温度", "左前轮胎温度", "摄氏度", "安全", "安全", "安全"),
+    TriggerParamOption("TireTempFR", "右前轮胎温度", "右前轮胎温度", "右前轮胎温度", "摄氏度", "安全", "安全", "安全"),
+    TriggerParamOption("TireTempRL", "左后轮胎温度", "左后轮胎温度", "左后轮胎温度", "摄氏度", "安全", "安全", "安全"),
+    TriggerParamOption("TireTempRR", "右后轮胎温度", "右后轮胎温度", "右后轮胎温度", "摄氏度", "安全", "安全", "安全"),
+    TriggerParamOption("TireStateFL", "左前轮胎状态", "左前轮胎状态", "左前轮胎状态", "原始值", "安全", "安全", "安全"),
+    TriggerParamOption("TireStateFR", "右前轮胎状态", "右前轮胎状态", "右前轮胎状态", "原始值", "安全", "安全", "安全"),
+    TriggerParamOption("TireStateRL", "左后轮胎状态", "左后轮胎状态", "左后轮胎状态", "原始值", "安全", "安全", "安全"),
+    TriggerParamOption("TireStateRR", "右后轮胎状态", "右后轮胎状态", "右后轮胎状态", "原始值", "安全", "安全", "安全"),
     TriggerParamOption("LightLow", "近光灯", "近光灯", "近光灯", "", "灯光", "灯光", "灯光",
+        enumValues = listOf("0" to "关", "1" to "开")),
+    TriggerParamOption("LightSide", "位置灯", "位置灯", "位置灯", "", "灯光", "灯光", "灯光",
+        enumValues = listOf("0" to "关", "1" to "开")),
+    TriggerParamOption("LightFrontFog", "前雾灯", "前雾灯", "前雾灯", "", "灯光", "灯光", "灯光",
+        enumValues = listOf("0" to "关", "1" to "开")),
+    TriggerParamOption("LightRearFog", "后雾灯", "后雾灯", "后雾灯", "", "灯光", "灯光", "灯光",
+        enumValues = listOf("0" to "关", "1" to "开")),
+    TriggerParamOption("LightBrake", "刹车灯", "刹车灯", "刹车灯", "", "灯光", "灯光", "灯光",
+        enumValues = listOf("0" to "关", "1" to "开")),
+    TriggerParamOption("LightReversing", "倒车灯", "倒车灯", "倒车灯", "", "灯光", "灯光", "灯光",
         enumValues = listOf("0" to "关", "1" to "开")),
     TriggerParamOption("DRL", "日行灯", "日行灯", "日行灯", "", "灯光", "灯光", "灯光",
         enumValues = listOf("0" to "无", "1" to "开", "2" to "关")),
@@ -156,9 +246,21 @@ val TRIGGER_PARAMS = listOf(
     TriggerParamOption("AccCruiseState", "ACC巡航状态", "ACC巡航状态", "ACC巡航状态", "", "智驾", "智驾", "智驾",
         enumValues = listOf("0" to "关闭", "1" to "开启", "2" to "激活")),
     TriggerParamOption("AccCruisingSpeed", "ACC设定速度", "ACC设定速度", "ACC设定速度", "公里/小时", "智驾", "智驾", "智驾"),
+    TriggerParamOption("AdasAebState", "AEB状态", "AEB状态", "AEB状态", "原始值", "智驾", "智驾", "智驾"),
+    TriggerParamOption("AdasAvhState", "AVH状态", "AVH状态", "AVH状态", "原始值", "智驾", "智驾", "智驾"),
+    TriggerParamOption("AdasBsdState", "BSD状态", "BSD状态", "BSD状态", "原始值", "智驾", "智驾", "智驾"),
+    TriggerParamOption("AdasEspState", "ESP状态", "ESP状态", "ESP状态", "原始值", "智驾", "智驾", "智驾"),
+    TriggerParamOption("AdasAccGrayState", "ACC灰态", "ACC灰态", "ACC灰态", "原始值", "智驾", "智驾", "智驾"),
+    TriggerParamOption("AdasNoaGrayState", "NOA灰态", "NOA灰态", "NOA灰态", "原始值", "智驾", "智驾", "智驾"),
+    TriggerParamOption("AdasMnoaStatus", "MNOA状态", "MNOA状态", "MNOA状态", "原始值", "智驾", "智驾", "智驾"),
+    TriggerParamOption("AdasExecSpeed", "智驾执行速度", "智驾执行速度", "智驾执行速度", "公里/小时", "智驾", "智驾", "智驾"),
     TriggerParamOption("AutoPark", "自动驻车", "自动驻车", "自动驻车", "", "智驾", "智驾", "智驾",
         enumValues = listOf("0" to "关闭", "1" to "待激活", "2" to "激活")),
-    TriggerParamOption("BrakePedal", "刹车深度", "刹车深度", "刹车深度", "%", "行驶", "行驶", "行驶")
+    TriggerParamOption("BrakePedal", "刹车深度", "刹车深度", "刹车深度", "%", "行驶", "行驶", "行驶"),
+    TriggerParamOption("AccelPedal", "加速踏板深度", "加速踏板深度", "加速踏板深度", "%", "行驶", "行驶", "行驶"),
+    TriggerParamOption("EpbState", "电子手刹状态", "电子手刹状态", "电子手刹状态", "原始值", "行驶", "行驶", "行驶"),
+    TriggerParamOption("BrakeState", "制动状态", "制动状态", "制动状态", "原始值", "行驶", "行驶", "行驶"),
+    TriggerParamOption("EpedalMode", "单踏板模式", "单踏板模式", "单踏板模式", "原始值", "行驶", "行驶", "行驶"),
 )
 
 val ACTION_COMMANDS = listOf(
@@ -271,6 +373,7 @@ class AutomationViewModel @Inject constructor(
     private val placeRepository: PlaceRepository,
     private val vehicleApi: VehicleApi,
     private val activationManager: ActivationManager,
+    private val automationPreferences: AutomationPreferences,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -534,15 +637,11 @@ class AutomationViewModel @Inject constructor(
     fun hideJournal() { _uiState.update { it.copy(showJournal = false) } }
 
     private suspend fun cleanupStarterTemplatesIfNeeded() {
-        val prefs = context.getSharedPreferences("automation", Context.MODE_PRIVATE)
-        if (prefs.getBoolean("starter_templates_cleanup_done", false)) return
+        if (automationPreferences.isStarterTemplateCleanupComplete()) return
         ruleDao.deleteUnusedStarterTemplates(
             listOf("高速关窗", "冬季启动", "低电量节能", "夏季制冷", "行驶开遮阳帘", "充电时空调")
         )
-        prefs.edit()
-            .putBoolean("starter_templates_cleanup_done", true)
-            .putBoolean("templates_inserted", true)
-            .apply()
+        automationPreferences.markStarterTemplateCleanupComplete()
     }
 }
 

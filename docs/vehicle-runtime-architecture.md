@@ -18,6 +18,22 @@ service fields or issuing ad-hoc ADB commands.
 6. `VehicleStateRepository` is the canonical process-level vehicle state consumed by UI and
    business features.
 
+The normal and action streams have one polling owner. Direct reads are limited to bounded,
+explicit exceptions:
+
+- the LED fast-signal loop runs only while LED control is enabled and connected;
+- the home screen owns one serialized on-demand loop: ADAS every 2 seconds and tire
+  temperature/status every 10 seconds; leaving home cancels it;
+- the vehicle-data screen reads the eight powertrain diagnostic FIDs every 2 seconds and cancels
+  the profile immediately when the page leaves composition;
+- charging catch-up performs event-driven battery/charging reads at startup, retry and gun edges;
+- battery health and local insight screens may perform a one-shot refresh when no shared snapshot
+  is available.
+
+Do not add feature-owned periodic vehicle-read loops. New live consumers subscribe to
+`VehicleStateRepository`; a genuinely faster hardware signal must be added as an explicit polling
+profile with a documented enable/disable condition.
+
 ADB remains available for narrow runtime jobs that actually require shell privileges, including
 helper bootstrap, accessibility/appops setup and media-session diagnostics. It must not be used to
 read vehicle FIDs.
@@ -28,11 +44,32 @@ read vehicle FIDs.
 - Driving full snapshot: 1 second.
 - Charging and parked full snapshot: 3 seconds.
 - Idle full snapshot: 30 seconds.
+- The selectable production catalog contains 114 FIDs. The first successful regular full snapshot
+  reads only 70 so every dashboard/trip consumer receives a complete initial state, including SOH, without
+  paying for the 44 feature-specific fields that are on-demand.
+- Later full snapshots refresh the 12 lifecycle-critical core FIDs at the regular cadence. The
+  other 58 detail FIDs are eligible for refresh every 3 seconds and are merged from the reader's
+  raw-value cache between refreshes. In 30-second idle mode they refresh on the next regular tick.
+- A failed detail refresh clears the cached detail values to unavailable instead of presenting
+  stale data indefinitely. A failed core batch fails the whole sample and enters normal backoff.
 - An action snapshot that observes a cadence-state transition forces an immediate full snapshot,
   so ignition or charging wake-up never waits for the previous 30-second idle timer.
 - The 300 ms batch always contains only the cadence/safety core fields. Parameter fields are added
   from the currently enabled automation rules, so an unused temperature, tire or window trigger
   does not consume autoservice bandwidth on every tick.
+- All 44 AC/seat/tire/light/driving/ADAS/powertrain reads are absent from both regular core and
+  detail profiles. Most enter the action batch only while an enabled rule references them. Home
+  serializes an eight-FID ADAS profile every 2 seconds and an eight-FID tire temperature/status
+  profile every 10 seconds. The vehicle-data page owns the eight-FID powertrain profile at 2 seconds.
+  Actual brake/reverse lamp status joins the 100 ms LED profile only when LED linkage is enabled and
+  connected.
+- Charging current/power, BMS maximum charge/discharge power, insulation resistance and stop SOC
+  belong to a separate UI-owned telemetry path. The ordinary catch-up snapshot does not read them;
+  the charging page first reads its base metadata and adds the six diagnostic FIDs only after AC/DC
+  gun or BMS charging state is active. Leaving the page cancels the poller immediately.
+- Decoded BYD enums remain in their official encoding through `DiParsData`. Shared predicates in
+  `BydSignalSemantics` own power, charging, cover, lock and trunk interpretation; UI and state
+  machines must not create local remapped 0/1/2 variants.
 
 ## Runtime State
 
@@ -73,6 +110,88 @@ automation and overlays must not call autoservice or shell commands directly.
 
 - Do not query Room from the 300 ms action path.
 - Do not persist unchanged state on every vehicle tick.
+- `last_state` is a recovery checkpoint. Meaningful SOC, ignition, storage-mode and vehicle-value
+  changes persist immediately; otherwise writes are coalesced behind a short heartbeat.
 - Keep action consumers sequential so a slow operation cannot create an unbounded job queue.
 - Add new FIDs to the appropriate snapshot map and consume them from the repository snapshot.
 - Keep optional vehicle-model and Android-platform fallbacks outside the production vehicle-read path.
+
+## Process Initialization
+
+- osmdroid is initialized on the first map view, not from `Application.onCreate`. Background-only
+  vehicle sessions therefore do not load map preferences or touch the tile cache.
+- Replaceable asynchronous operations must keep one explicit latest owner. The network reachability
+  monitor uses generation ownership so completion of an old cancelled probe cannot clear the state
+  of a newer probe.
+
+## UI and Feature Boundaries
+
+- Large Compose pages are split by feature section. Page entry files own navigation, observable
+  state and side-effect callbacks; extracted panels render state and emit actions without starting
+  services or interpreting persistence keys.
+- `SettingsScreen.kt` composes display, shortcut, authorization, vehicle-sound and app-maintenance
+  sections. `SettingsViewModel` delegates logcat lifecycle to `SettingsLogRecorder`.
+- `DesktopWidgetsScreen.kt` owns the screen-local state mirror and service callbacks.
+  `DesktopWidgetsSettingsPanels.kt` contains only the sound, lyric, battery and door settings UI;
+  `DesktopWidgetsControls.kt` owns previews and shared controls.
+- `SoundScreen.kt` is the page shell. Local-library and online-catalog behavior live in
+  `SoundLocalTab.kt` and `SoundOnlineTab.kt`.
+- Android Services remain lifecycle shells. Realtime hailing capture/playback lives in
+  `RealtimeHailingEngine`, while sample conversion and framing live in `HailingAudioProcessor`.
+
+## Preference and Diagnostic Ownership
+
+- `BackupPreferencesRegistry.FILE_POLICIES` is the canonical inventory of every preference file,
+  its single schema owner, backup policy and credential/device-protected storage scope. New files
+  must be registered there before release.
+- UI code must use typed owners such as `ClusterProjectionPreferences`, `WidgetPreferences`,
+  `DesktopWidgetPanelPreferences`, `AutomationPreferences` and `ServiceQrCache`; it must not copy
+  preference keys or defaults.
+- `BootDiagnosticsStore` is the only owner of the device-protected `boot_log` schema. BootReceiver
+  writes through it, ChainLog performs synchronized bounded appends through it, and Settings reads
+  the same storage context through it.
+- `SettingsLogRecorder` is the only owner of the diagnostic logcat process and pipe. It stops on
+  explicit user action, ViewModel disposal, the two-hour duration limit or the file-size limit.
+
+## Android Platform Floor
+
+The production APK has `minSdk = 29`. Code must use the Android 10 notification, overlay,
+device-protected storage and audio-focus APIs directly instead of carrying unreachable pre-29
+branches. This does not authorize replacing BYD private APIs or fixed vehicle storage paths.
+
+## Dependency Injection Boundaries
+
+- `DatabaseModule` owns Room construction and DAO exposure.
+- `AppBindingsModule` owns interface-to-implementation bindings.
+- `AppModule` is limited to process scope and runtime objects that require explicit factories or
+  lambda configuration.
+- Framework-created Hilt services must inject process singletons instead of constructing a second
+  instance manually.
+- SharedPreferences schemas with multiple runtime consumers use a single typed owner. Cluster
+  projection reads one `ClusterProjectionPreferenceSnapshot`, and grouped geometry writes are
+  committed through `ClusterProjectionPreferences` rather than duplicating keys and defaults.
+- The helper Binder entry stays in `HelperDaemon.kt`; shell execution, task/display reflection,
+  VIN platform access and helper-side file logging live in `HelperDaemonPlatform.kt`. Protocol
+  changes must not be hidden inside platform utility code.
+- Compressed lock-sound decoding and PCM sample-format conversion live in `HelperPcmDecoder`.
+  Decoder utilities must not acquire vehicle or audio-route state.
+- `HelperLockSoundRuntime.kt` owns configuration plus lock, unlock and sentry detection. It decides
+  when an event should start or stop, but does not own Android playback objects.
+- `HelperLockSoundPlaybackEngine.kt` owns playback tokens, PCM/MediaPlayer fallback and the
+  AudioTrack/MediaPlayer lifecycle. Monitoring code must call this engine instead of manipulating
+  audio resources directly.
+- `ExteriorRoutePlan.kt` is the process-neutral source of truth for channel A/B arm and disarm FID
+  order. It contains no lock, unlock or sentry event logic. `BydExteriorAudioRouter` executes this
+  plan through `HelperClient`, while `HelperExteriorRouteController.kt` executes the same plan
+  through the helper Binder transport and owns helper-side speaker acquisition/release.
+- `BydLockSoundPlaybackState.kt` is the single BYD audio-manager reflection adapter used by both
+  route executors. Reflection class candidates must not be duplicated in either executor.
+- `HelperLockSoundSignalReader.kt` owns helper-side vehicle FID candidates, BYD SDK reflection,
+  sentry system properties and sentry log cursors. The event state machine consumes normalized
+  lock, door, flash, power and sentry readings instead of carrying platform fallbacks itself.
+- `HelperLockSoundWatchdog.kt` owns enable/disable markers, watchdog script versioning and helper
+  restart installation. Runtime configuration code must not manage watchdog files or processes
+  directly.
+- `HelperDaemon.kt` remains the app_process/Binder entry only. Keeping the entry class small
+  protects the externally referenced `com.byd.wjx.helper.HelperDaemon` launch name from feature
+  churn.

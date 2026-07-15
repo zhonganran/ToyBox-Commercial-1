@@ -4,7 +4,7 @@ import com.byd.wjx.data.remote.diParsData
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-// Per DiParsData.kt:21 — powerState: 0=OFF, 1=ON (ignition active, parked), 2=DRIVE.
+// BYD BODYWORK_POWER_LEVEL: 0=OFF, 1=ACC, 2=ON, 3=OK, 4=FAKE_OK.
 // Per DiParsData.kt:20 — gear: 1=P, 2=R, 3=N, 4=D.
 // Per DiParsData.kt:5  — speed: Int? in km/h.
 // Autoservice gun state: 0/1 = disconnected, 2..5 = connected.
@@ -12,7 +12,7 @@ import org.junit.Test
 class LoopFsmTest {
 
     @Test fun `charge gun connected always wins`() {
-        assertEquals(LoopState.CHARGE, LoopFsm.classify(diParsData(chargeGunState = 2, powerState = 2)))
+        assertEquals(LoopState.CHARGE, LoopFsm.classify(diParsData(chargeGunState = 2, powerState = 3)))
         assertEquals(LoopState.CHARGE, LoopFsm.classify(diParsData(chargeGunState = 3, powerState = 0)))
     }
 
@@ -21,19 +21,19 @@ class LoopFsmTest {
         assertEquals(LoopState.IDLE, LoopFsm.classify(diParsData(chargeGunState = 1, powerState = 0)))
     }
 
-    @Test fun `powerState DRIVE with speed = drive cadence`() {
-        assertEquals(LoopState.DRIVE, LoopFsm.classify(diParsData(powerState = 2, speed = 25)))
+    @Test fun `power level OK with speed = drive cadence`() {
+        assertEquals(LoopState.DRIVE, LoopFsm.classify(diParsData(powerState = 3, speed = 25)))
     }
 
-    @Test fun `powerState ON without movement = parked`() {
-        assertEquals(LoopState.PARKED, LoopFsm.classify(diParsData(powerState = 1, speed = 0)))
-        assertEquals(LoopState.PARKED, LoopFsm.classify(diParsData(powerState = 1, speed = null)))
-    }
-
-    @Test fun `powerState DRIVE without speed = parked`() {
-        // DRIVE with speed=0 (foot on brake, ready) reads as parked cadence — battery
-        // not draining like real motion.
+    @Test fun `power level ON without movement = parked`() {
         assertEquals(LoopState.PARKED, LoopFsm.classify(diParsData(powerState = 2, speed = 0)))
+        assertEquals(LoopState.PARKED, LoopFsm.classify(diParsData(powerState = 2, speed = null)))
+    }
+
+    @Test fun `power level OK without speed = parked`() {
+        // OK with speed=0 (foot on brake, ready) reads as parked cadence — battery
+        // not draining like real motion.
+        assertEquals(LoopState.PARKED, LoopFsm.classify(diParsData(powerState = 3, speed = 0)))
     }
 
     @Test fun `powerState OFF = idle`() {

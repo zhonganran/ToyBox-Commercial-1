@@ -50,6 +50,7 @@ class ActionDispatcher @Inject constructor(
         private const val MINIMIZE_DELAY_MS = 3000L
         private const val AUTO_DIAL_DELAY_MS = 300L
         private const val MEDIA_REPLACEMENT_GUARD_MS = 150L
+        private const val REVERSE_GEAR = 2
         private const val BT_CALL_PACKAGE = "com.byd.bluetoothcall"
         private const val BT_CALL_ACTION_DIAL_HANGUP = "com.byd.btcall.action.DIAL_HANGUP"
         private const val BT_CALL_KEYCODE_DIAL = 313
@@ -249,8 +250,20 @@ class ActionDispatcher @Inject constructor(
 
         val profile = profileDetector.detect()
         val channel = ExteriorHailingSettings(context).effectiveChannel(profile)
-        WjxFileLogger.i(TAG, "play outside sound file=${file.name} loop=$loop owner=${owner.orEmpty()} controller=${profile.seriesLabel} channel=$channel")
-        WjxOutsidePlayService.play(context, file, channel, loop = loop, owner = owner)
+        val reverseActive = data?.gear == REVERSE_GEAR
+        WjxFileLogger.i(
+            TAG,
+            "play outside sound file=${file.name} loop=$loop owner=${owner.orEmpty()} " +
+                "controller=${profile.seriesLabel} channel=$channel reverse=$reverseActive"
+        )
+        WjxOutsidePlayService.play(
+            context,
+            file,
+            channel,
+            loop = loop,
+            owner = owner,
+            reverseActive = reverseActive,
+        )
         return DispatchResult(true)
     }
 

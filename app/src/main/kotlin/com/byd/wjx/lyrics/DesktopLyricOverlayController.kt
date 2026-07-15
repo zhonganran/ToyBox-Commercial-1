@@ -2,7 +2,6 @@ package com.byd.wjx.lyrics
 
 import android.content.Context
 import android.graphics.PixelFormat
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
@@ -230,13 +229,7 @@ class DesktopLyricOverlayController(
             .roundToInt()
             .coerceAtLeast(dp(280f))
 
-    private fun overlayType(): Int =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            @Suppress("DEPRECATION")
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
+    private fun overlayType(): Int = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
 
     private fun dp(value: Float): Int = (value * appContext.resources.displayMetrics.density).roundToInt()
 

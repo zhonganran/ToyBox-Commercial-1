@@ -1,5 +1,6 @@
 package com.byd.wjx.led
 
+import com.byd.wjx.data.nativestack.BydSignalSemantics
 import com.byd.wjx.data.nativestack.ParsReader
 import com.byd.wjx.data.remote.DiParsData
 import com.byd.wjx.log.WjxFileLogger
@@ -126,7 +127,7 @@ class LedRuntimeCoordinator @Inject constructor(
                 delay(FAST_IDLE_DELAY_MS)
                 continue
             }
-            if (latestRegularSignals.powerState == 0) {
+            if (latestRegularSignals.powerState?.let { !BydSignalSemantics.isPowered(it) } == true) {
                 delay(POWERED_OFF_FAST_DELAY_MS)
                 continue
             }
@@ -173,6 +174,7 @@ class LedRuntimeCoordinator @Inject constructor(
             TAG,
             "scene $current -> $next sent=$sent left=${signals.turnSignalLeft} right=${signals.turnSignalRight} " +
                 "hazard=${signals.hazardLights} gear=${signals.gear} brake=${signals.brakePedalDepth} " +
+                "brakeLight=${signals.lightBrake} reverseLight=${signals.lightReversing} " +
                 "lcc=${signals.adasLccNcaStatus} tja=${signals.adasTjaState}",
         )
     }
@@ -189,6 +191,8 @@ class LedRuntimeCoordinator @Inject constructor(
         adasTjaState = adasTjaState,
         laneKeepState = laneKeepState,
         brakePedalDepth = brakePedalDepth,
+        lightBrake = lightBrake,
+        lightReversing = lightReversing,
     )
 
     private fun LedVehicleSignals.mergeFast(fast: LedVehicleSignals): LedVehicleSignals = copy(
@@ -197,6 +201,8 @@ class LedRuntimeCoordinator @Inject constructor(
         hazardLights = fast.hazardLights ?: hazardLights,
         gear = fast.gear ?: gear,
         brakePedalDepth = fast.brakePedalDepth ?: brakePedalDepth,
+        lightBrake = fast.lightBrake ?: lightBrake,
+        lightReversing = fast.lightReversing ?: lightReversing,
     )
 
     private fun logSignalChanges(signals: LedVehicleSignals) {
@@ -207,6 +213,8 @@ class LedRuntimeCoordinator @Inject constructor(
             gear = signals.gear,
             moving = (signals.speed ?: 0) > 0,
             brakeBucket = signals.brakePedalDepth?.let { (it / 5) * 5 },
+            brakeLight = signals.lightBrake,
+            reverseLight = signals.lightReversing,
             lcc = signals.adasLccNcaStatus,
             tja = signals.adasTjaState,
             laneKeep = signals.laneKeepState,
@@ -217,7 +225,8 @@ class LedRuntimeCoordinator @Inject constructor(
             TAG,
             "signals left=${signals.turnSignalLeft} right=${signals.turnSignalRight} " +
                 "hazard=${signals.hazardLights} gear=${signals.gear} speed=${signals.speed} " +
-                "brake=${signals.brakePedalDepth} lcc=${signals.adasLccNcaStatus} " +
+                "brake=${signals.brakePedalDepth} brakeLight=${signals.lightBrake} " +
+                "reverseLight=${signals.lightReversing} lcc=${signals.adasLccNcaStatus} " +
                 "tja=${signals.adasTjaState} lane=${signals.laneKeepState}",
         )
     }
@@ -239,6 +248,8 @@ class LedRuntimeCoordinator @Inject constructor(
         val gear: Int?,
         val moving: Boolean,
         val brakeBucket: Int?,
+        val brakeLight: Int?,
+        val reverseLight: Int?,
         val lcc: Int?,
         val tja: Int?,
         val laneKeep: Int?,

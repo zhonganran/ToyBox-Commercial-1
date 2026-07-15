@@ -4,6 +4,7 @@ import com.byd.wjx.data.autoservice.BatteryReading
 import com.byd.wjx.data.autoservice.ChargingReading
 import com.byd.wjx.data.autoservice.FidRegistry
 import com.byd.wjx.data.autoservice.SentinelDecoder
+import com.byd.wjx.data.charging.ChargingTelemetrySemantics
 import com.byd.wjx.log.WjxFileLogger
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -103,7 +104,9 @@ interface VehicleGateway {
         )
     }
 
-    suspend fun readChargingSnapshot(): ChargingReading? {
+    suspend fun readChargingSnapshot(
+        includeElectricalTelemetry: Boolean = false,
+    ): ChargingReading? {
         val specs = listOf(
             VehicleReadSpec(FidRegistry.TX_GET_INT, FidRegistry.DEV_CHARGING, FidRegistry.FID_GUN_CONNECT_STATE),
             VehicleReadSpec(FidRegistry.TX_GET_INT, FidRegistry.DEV_CHARGING, FidRegistry.FID_CHARGING_TYPE),
@@ -113,18 +116,87 @@ interface VehicleGateway {
             VehicleReadSpec(FidRegistry.TX_GET_INT, FidRegistry.DEV_CHARGING, FidRegistry.FID_CHARGING_BMS_STATE),
         )
         val batch = readBatch(specs) ?: return null
-        fun intAt(index: Int): Int? = batch.values[index].takeIf { it.accepted }
+        fun intAt(source: VehicleBatchRead, index: Int): Int? =
+            source.values[index].takeIf { it.accepted }
             ?.value?.let(SentinelDecoder::decodeInt)
-        fun floatAt(index: Int): Float? = batch.values[index].takeIf { it.accepted }
+        fun floatAt(source: VehicleBatchRead, index: Int): Float? =
+            source.values[index].takeIf { it.accepted }
             ?.value?.let(SentinelDecoder::parseFloatFromShellInt)
+
+        val gunConnectState = intAt(batch, 0)
+        val chargingType = intAt(batch, 1)
+        val chargeBatteryVoltV = intAt(batch, 2)
+        val batteryType = intAt(batch, 3)
+        val chargingCapacityKwh = floatAt(batch, 4)
+        val bmsState = intAt(batch, 5)
+
+        var chargeCurrentA: Int? = null
+        var chargePowerKw: Float? = null
+        var batteryMaxChargePowerKw: Int? = null
+        var batteryMaxDischargePowerKw: Int? = null
+        var batteryInsulationKohm: Int? = null
+        var chargeStopSoc: Int? = null
+        var readAtMs = batch.completedAtMs
+        if (
+            includeElectricalTelemetry &&
+            ChargingTelemetrySemantics.isChargingSession(gunConnectState, bmsState)
+        ) {
+            val electricalSpecs = listOf(
+                VehicleReadSpec(
+                    FidRegistry.TX_GET_INT,
+                    FidRegistry.DEV_CHARGING,
+                    FidRegistry.FID_CHARGE_CURRENT,
+                ),
+                VehicleReadSpec(
+                    FidRegistry.TX_GET_FLOAT,
+                    FidRegistry.DEV_CHARGING,
+                    FidRegistry.FID_CHARGE_POWER,
+                ),
+                VehicleReadSpec(
+                    FidRegistry.TX_GET_INT,
+                    FidRegistry.DEV_STATISTIC,
+                    FidRegistry.FID_BATTERY_MAX_CHARGE_POWER,
+                ),
+                VehicleReadSpec(
+                    FidRegistry.TX_GET_INT,
+                    FidRegistry.DEV_STATISTIC,
+                    FidRegistry.FID_BATTERY_MAX_DISCHARGE_POWER,
+                ),
+                VehicleReadSpec(
+                    FidRegistry.TX_GET_INT,
+                    FidRegistry.DEV_BATTERY_MGMT,
+                    FidRegistry.FID_BATTERY_INSULATION,
+                ),
+                VehicleReadSpec(
+                    FidRegistry.TX_GET_INT,
+                    FidRegistry.DEV_CHARGING,
+                    FidRegistry.FID_CHARGE_STOP_SOC,
+                ),
+            )
+            readBatch(electricalSpecs)?.let { electrical ->
+                chargeCurrentA = intAt(electrical, 0)
+                chargePowerKw = floatAt(electrical, 1)
+                batteryMaxChargePowerKw = intAt(electrical, 2)
+                batteryMaxDischargePowerKw = intAt(electrical, 3)
+                batteryInsulationKohm = intAt(electrical, 4)
+                chargeStopSoc = intAt(electrical, 5)?.takeIf { it in 0..100 }
+                readAtMs = maxOf(readAtMs, electrical.completedAtMs)
+            }
+        }
         return ChargingReading(
-            gunConnectState = intAt(0),
-            chargingType = intAt(1),
-            chargeBatteryVoltV = intAt(2),
-            batteryType = intAt(3),
-            chargingCapacityKwh = floatAt(4),
-            bmsState = intAt(5),
-            readAtMs = batch.completedAtMs,
+            gunConnectState = gunConnectState,
+            chargingType = chargingType,
+            chargeBatteryVoltV = chargeBatteryVoltV,
+            batteryType = batteryType,
+            chargingCapacityKwh = chargingCapacityKwh,
+            bmsState = bmsState,
+            readAtMs = readAtMs,
+            chargeCurrentA = chargeCurrentA,
+            chargePowerKw = chargePowerKw,
+            batteryMaxChargePowerKw = batteryMaxChargePowerKw,
+            batteryMaxDischargePowerKw = batteryMaxDischargePowerKw,
+            batteryInsulationKohm = batteryInsulationKohm,
+            chargeStopSoc = chargeStopSoc,
         )
     }
 

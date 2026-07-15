@@ -4,7 +4,6 @@ import android.app.ActivityManager
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
-import android.os.Build
 import android.os.SystemClock
 import com.byd.wjx.data.camera.CameraForegroundMatcher
 import com.byd.wjx.log.WjxFileLogger
@@ -340,10 +339,10 @@ class DesktopOverlayVisibilityController(
             LAUNCHER_SUBPAGE_CLASS_KEYWORDS.any { cls.contains(it, ignoreCase = true) }
     }
 
+    @Suppress("DEPRECATION") // Some Android 10 vehicle builds still emit MOVE_TO_FOREGROUND.
     private fun isForegroundEvent(event: UsageEvents.Event): Boolean =
         event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND ||
-            (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
-                event.eventType == UsageEvents.Event.ACTIVITY_RESUMED)
+            event.eventType == UsageEvents.Event.ACTIVITY_RESUMED
 
     companion object {
         private const val FOREGROUND_POLL_MS = 1_000L

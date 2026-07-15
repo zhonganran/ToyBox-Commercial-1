@@ -9,7 +9,9 @@ import com.byd.wjx.data.repository.TrackingStateRepository
 import com.byd.wjx.log.WjxFileLogger
 import com.byd.wjx.overlay.AutoDoorFloatingService
 import com.byd.wjx.overlay.SoundFloatingService
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
@@ -26,6 +28,8 @@ class DaemonStartupManager(
 ) {
     private val appContext = context.applicationContext
     @Volatile private var lastOverlayGranted: Boolean? = null
+    private val runtimeCheckJobLock = Any()
+    private var runtimeCheckJob: Job? = null
 
     fun start(reason: String) {
         val verbose = reason != REASON_HEALTH_CHECK
@@ -67,16 +71,29 @@ class DaemonStartupManager(
             if (verbose) WjxFileLogger.i(TAG, "runtime check skipped by throttle reason=$reason")
             return
         }
-        scope.launch { checkRuntime(reason) }
+        val scheduled = scheduleRuntimeCheck(reason)
+        if (!scheduled && verbose) {
+            ChainLog.append(appContext, "DaemonStartup runtime check joined existing run")
+            WjxFileLogger.i(TAG, "runtime check already running reason=$reason")
+        }
+    }
+
+    private fun scheduleRuntimeCheck(reason: String): Boolean {
+        val newJob = synchronized(runtimeCheckJobLock) {
+            if (runtimeCheckJob?.isCompleted == false) return false
+            scope.launch(start = CoroutineStart.LAZY) { checkRuntime(reason) }
+                .also { runtimeCheckJob = it }
+        }
+        newJob.start()
+        return true
     }
 
     private suspend fun checkRuntime(reason: String) {
         try {
-            val helperAlreadyAlive = helperBootstrap.isHealthy()
             val helperAlive = helperBootstrap.ensureCurrent()
-            if (reason != REASON_HEALTH_CHECK || !helperAlreadyAlive || !helperAlive) {
+            if (reason != REASON_HEALTH_CHECK || !helperAlive) {
                 ChainLog.append(appContext, "DaemonStartup helper($reason): $helperAlive")
-                WjxFileLogger.i(TAG, "helper reason=$reason alreadyAlive=$helperAlreadyAlive alive=$helperAlive")
+                WjxFileLogger.i(TAG, "helper reason=$reason alive=$helperAlive")
             }
             if (!helperAlive) return
 

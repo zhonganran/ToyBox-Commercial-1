@@ -178,12 +178,7 @@ class LedBleClient @Inject constructor(
             message = "正在连接 ${name.ifBlank { address }}",
         )
         WjxFileLogger.i(TAG, "connect address=$address name=$name")
-        bluetoothGatt = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
-        } else {
-            @Suppress("DEPRECATION")
-            device.connectGatt(context, false, gattCallback)
-        }
+        bluetoothGatt = device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
     }
 
     fun disconnect() {

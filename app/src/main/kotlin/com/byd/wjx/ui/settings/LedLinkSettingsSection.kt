@@ -35,6 +35,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -71,7 +72,7 @@ fun LedLinkSettingsSection(
     val context = LocalContext.current
     var pendingScan by remember { mutableStateOf(false) }
     var brightness by remember(state.preferences.brightness) {
-        mutableStateOf(state.preferences.brightness.toFloat())
+        mutableFloatStateOf(state.preferences.brightness.toFloat())
     }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),

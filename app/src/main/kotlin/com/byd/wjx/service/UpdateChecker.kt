@@ -245,12 +245,7 @@ class UpdateChecker @Inject constructor(
     private fun getAppVersionCode(context: Context): Long {
         return try {
             val info = context.packageManager.getPackageInfo(context.packageName, 0)
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                info.longVersionCode
-            } else {
-                @Suppress("DEPRECATION")
-                info.versionCode.toLong()
-            }
+            info.longVersionCode
         } catch (e: Exception) {
             WjxFileLogger.w(TAG, "getAppVersionCode failed: ${e.message}")
             0L

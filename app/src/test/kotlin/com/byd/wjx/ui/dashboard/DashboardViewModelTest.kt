@@ -16,15 +16,16 @@ import com.byd.wjx.data.local.entity.IdleDrainEntity
 import com.byd.wjx.data.local.entity.SettingEntity
 import com.byd.wjx.data.local.entity.TripEntity
 import com.byd.wjx.data.local.entity.TripPointEntity
-import com.byd.wjx.data.repository.BatteryHealthRepository
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.data.repository.FakeTrackingStateRepository
 import com.byd.wjx.data.repository.TripRepository
 import com.byd.wjx.data.repository.VehicleDataFreshness
 import com.byd.wjx.data.repository.VehicleState
 import com.byd.wjx.data.repository.VehicleStateRepository
+import com.byd.wjx.data.nativestack.OnDemandVehicleTelemetryReader
+import com.byd.wjx.data.remote.diParsData
 import com.byd.wjx.data.vehicle.VehicleSnapshot
-import com.byd.wjx.domain.battery.BatteryStateRepository
+import com.byd.wjx.data.vehicle.VehicleSnapshotKind
 import com.byd.wjx.domain.calculator.ConsumptionAggregator
 import com.byd.wjx.domain.insight.LocalInsightEngine
 import com.byd.wjx.domain.insight.LocalInsightStatsAggregator
@@ -41,6 +42,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -59,7 +61,28 @@ class DashboardViewModelTest {
         override val actionSnapshot = MutableStateFlow<VehicleSnapshot?>(null)
         override val connected = MutableStateFlow(false)
         override val freshness = MutableStateFlow(VehicleDataFreshness.UNAVAILABLE)
-        override val state: StateFlow<VehicleState> = MutableStateFlow(VehicleState())
+        private val mutableState = MutableStateFlow(VehicleState())
+        override val state: StateFlow<VehicleState> = mutableState
+
+        fun update(data: com.byd.wjx.data.remote.DiParsData) {
+            val snapshot = VehicleSnapshot.legacy(data, VehicleSnapshotKind.FULL)
+            fullSnapshot.value = snapshot
+            connected.value = true
+            freshness.value = VehicleDataFreshness.FRESH
+            mutableState.value = VehicleState(
+                fullSnapshot = snapshot,
+                connected = true,
+                freshness = VehicleDataFreshness.FRESH,
+            )
+        }
+    }
+
+    private class FakeOnDemandTelemetryReader(
+        var data: com.byd.wjx.data.remote.DiParsData? = null,
+    ) : OnDemandVehicleTelemetryReader {
+        override suspend fun readTireTelemetry() = data
+        override suspend fun readAdasTelemetry() = data
+        override suspend fun readPowertrainTelemetry() = data
     }
 
     @Before
@@ -207,9 +230,12 @@ class DashboardViewModelTest {
     // --- Factory ---
 
     private fun buildViewModel(
-        fakeAutoservice: VehicleApi
+        fakeAutoservice: VehicleApi,
+        onDemandTelemetryReader: OnDemandVehicleTelemetryReader = FakeOnDemandTelemetryReader(),
+        initialSettings: Map<String, String> = emptyMap(),
+        vehicleStateRepository: FakeVehicleStateRepository = FakeVehicleStateRepository(),
     ): DashboardViewModel {
-        val settingsDao = FakeSettingsDao()
+        val settingsDao = FakeSettingsDao().also { it.map.putAll(initialSettings) }
         val settingsRepo = SettingsRepository(settingsDao)
 
         val tripDao = StubTripDao()
@@ -219,9 +245,6 @@ class DashboardViewModelTest {
         val idleDrainDao = StubIdleDrainDao()
         val batterySnapshotDao = StubBatterySnapshotDao()
 
-        val batteryHealthRepo = BatteryHealthRepository(batterySnapshotDao)
-        val batteryStateRepo = BatteryStateRepository(fakeAutoservice, batteryHealthRepo)
-        val vehicleStateRepository = FakeVehicleStateRepository()
         val trackingStateRepository = FakeTrackingStateRepository()
         val localInsightStatsAggregator = LocalInsightStatsAggregator(
             tripDao = tripDao,
@@ -236,16 +259,44 @@ class DashboardViewModelTest {
             tripRepository = tripRepo,
             settingsRepository = settingsRepo,
             idleDrainDao = idleDrainDao,
-            batteryStateRepository = batteryStateRepo,
             vehicleStateRepository = vehicleStateRepository,
             trackingStateRepository = trackingStateRepository,
             consumptionAggregator = ConsumptionAggregator(),
             localInsightStatsAggregator = localInsightStatsAggregator,
             localInsightEngine = LocalInsightEngine(),
+            onDemandTelemetryReader = onDemandTelemetryReader,
         )
     }
 
     // --- Tests ---
+
+    @Test
+    fun `remaining energy uses configured capacities without extra vehicle reads`() = runTest {
+        val vehicleStateRepository = FakeVehicleStateRepository()
+        val vm = buildViewModel(
+            fakeAutoservice = FakeAutoservice(sampleReading),
+            initialSettings = mapOf(
+                SettingsRepository.KEY_BATTERY_CAPACITY to "72.9",
+                SettingsRepository.KEY_FUEL_TANK_CAPACITY to "60",
+            ),
+            vehicleStateRepository = vehicleStateRepository,
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        vehicleStateRepository.update(diParsData(soc = 50).copy(fuelLevel = 40))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(36.45, vm.uiState.value.batteryRemainingKwh ?: 0.0, 0.001)
+        assertEquals(24.0, vm.uiState.value.fuelRemainingLiters ?: 0.0, 0.001)
+    }
+
+    @Test
+    fun `remaining amount rejects missing capacity and invalid percent`() {
+        assertNull(remainingAmount(50, null))
+        assertNull(remainingAmount(50, 0.0))
+        assertNull(remainingAmount(-1, 72.9))
+        assertNull(remainingAmount(101, 72.9))
+    }
 
     private val sampleReading = BatteryReading(
         sohPercent = 100f,
@@ -257,17 +308,22 @@ class DashboardViewModelTest {
     )
 
     @Test
-    fun `adbConnected is true when autoservice connected`() = runTest {
+    fun `adbConnected is true when shared vehicle snapshot connects`() = runTest {
+        val vehicleStateRepository = FakeVehicleStateRepository()
         val vm = buildViewModel(
-            fakeAutoservice = FakeAutoservice(sampleReading, available = true)
+            fakeAutoservice = FakeAutoservice(sampleReading, available = true),
+            vehicleStateRepository = vehicleStateRepository,
         )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        vehicleStateRepository.update(diParsData(soc = 91))
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(true, vm.uiState.value.adbConnected)
     }
 
     @Test
-    fun `adbConnected is false when autoservice unavailable`() = runTest {
+    fun `adbConnected is false before shared vehicle snapshot connects`() = runTest {
         val vm = buildViewModel(
             fakeAutoservice = FakeAutoservice(battery = null, available = false)
         )
@@ -277,12 +333,82 @@ class DashboardViewModelTest {
     }
 
     @Test
-    fun `currentSoh is populated from autoservice snapshot`() = runTest {
+    fun `home telemetry reads tire states and ADAS only while active`() = runTest {
+        val telemetryReader = FakeOnDemandTelemetryReader(
+            diParsData(
+                tireTempFL = 31,
+                tireTempFR = 32,
+                tireTempRL = 33,
+                tireTempRR = 34,
+                tireStateFL = 0,
+                tireStateRR = 2,
+                adasAebState = 1,
+                adasExecSpeed = 88,
+            ),
+        )
         val vm = buildViewModel(
-            fakeAutoservice = FakeAutoservice(sampleReading, available = true)
+            fakeAutoservice = FakeAutoservice(sampleReading),
+            onDemandTelemetryReader = telemetryReader,
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        vm.setHomeTelemetryActive(true)
+        testDispatcher.scheduler.runCurrent()
+
+        assertEquals(31, vm.uiState.value.tireTempFL)
+        assertEquals(34, vm.uiState.value.tireTempRR)
+        assertEquals(2, vm.uiState.value.tireStateRR)
+        assertEquals(1, vm.uiState.value.adasAebState)
+        assertEquals(88, vm.uiState.value.adasExecSpeed)
+        vm.setHomeTelemetryActive(false)
+    }
+
+    @Test
+    fun `powertrain telemetry is lifecycle controlled`() = runTest {
+        val telemetryReader = FakeOnDemandTelemetryReader(
+            diParsData(
+                frontMotorSpeed = 12_345,
+                rearMotorSpeed = 8_765,
+                frontMotorCurrent = 12.3,
+                waterTemp = 92,
+            ),
+        )
+        val vm = buildViewModel(
+            fakeAutoservice = FakeAutoservice(sampleReading),
+            onDemandTelemetryReader = telemetryReader,
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        vm.setPowertrainTelemetryActive(true)
+        testDispatcher.scheduler.runCurrent()
+
+        assertEquals(12_345, vm.uiState.value.frontMotorSpeed)
+        assertEquals(8_765, vm.uiState.value.rearMotorSpeed)
+        assertEquals(12.3, vm.uiState.value.frontMotorCurrent ?: 0.0, 0.001)
+        assertEquals(92, vm.uiState.value.waterTemp)
+        vm.setPowertrainTelemetryActive(false)
+    }
+
+    @Test
+    fun `currentSoh is populated from shared full snapshot`() = runTest {
+        val vehicleStateRepository = FakeVehicleStateRepository()
+        val vm = buildViewModel(
+            fakeAutoservice = FakeAutoservice(sampleReading, available = true),
+            vehicleStateRepository = vehicleStateRepository,
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        vehicleStateRepository.update(
+            diParsData(soc = 91).copy(
+                soh = 100,
+                mileage = 2091.0,
+                totalElecConsumption = 602.0,
+            ),
         )
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(100f, vm.uiState.value.currentSoh!!, 0.01f)
+        assertEquals(2091f, vm.uiState.value.currentLifetimeKm!!, 0.01f)
+        assertEquals(602f, vm.uiState.value.currentLifetimeKwh!!, 0.01f)
     }
 }

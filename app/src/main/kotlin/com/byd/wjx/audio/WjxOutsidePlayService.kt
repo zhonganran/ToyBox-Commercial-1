@@ -8,7 +8,6 @@ import android.content.Context
 import android.content.Intent
 import android.media.MediaPlayer
 import android.media.audiofx.LoudnessEnhancer
-import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -18,9 +17,11 @@ import dagger.hilt.android.AndroidEntryPoint
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -39,14 +40,14 @@ class WjxOutsidePlayService : Service() {
     private var activeChannel: ExteriorChannel? = null
     private var activePath: String? = null
     private var activeOwner: String? = null
+    private var routeGuardJob: Job? = null
+    private var playbackToken = 0L
     private val audioSettings by lazy { ExteriorHailingSettings(applicationContext) }
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        if (Build.VERSION.SDK_INT >= 26) {
-            startForeground(NOTIFICATION_ID, buildNotification("车外音效待命"))
-        }
+        startForeground(NOTIFICATION_ID, buildNotification("车外音效待命"))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -56,16 +57,18 @@ class WjxOutsidePlayService : Service() {
                 val channel = ExteriorChannel.fromName(intent.getStringExtra(EXTRA_CHANNEL))
                 val loop = intent.getBooleanExtra(EXTRA_LOOP, false)
                 val owner = intent.getStringExtra(EXTRA_OWNER)?.takeIf { it.isNotBlank() }
-                WjxFileLogger.i(TAG, "ACTION_PLAY path=$path channel=$channel loop=$loop owner=${owner.orEmpty()}")
-                serviceScope.launch { actionMutex.withLock { play(File(path), channel, loop, owner) } }
+                val reverseActive = intent.getBooleanExtra(EXTRA_REVERSE_ACTIVE, false)
+                WjxFileLogger.i(TAG, "ACTION_PLAY path=$path channel=$channel loop=$loop owner=${owner.orEmpty()} reverse=$reverseActive")
+                serviceScope.launch { actionMutex.withLock { play(File(path), channel, loop, owner, reverseActive) } }
             }
             ACTION_TOGGLE -> {
                 val path = intent.getStringExtra(EXTRA_PATH).orEmpty()
                 val channel = ExteriorChannel.fromName(intent.getStringExtra(EXTRA_CHANNEL))
                 val loop = intent.getBooleanExtra(EXTRA_LOOP, false)
                 val owner = intent.getStringExtra(EXTRA_OWNER)?.takeIf { it.isNotBlank() }
-                WjxFileLogger.i(TAG, "ACTION_TOGGLE path=$path channel=$channel loop=$loop owner=${owner.orEmpty()}")
-                serviceScope.launch { actionMutex.withLock { togglePlayback(File(path), channel, loop, owner) } }
+                val reverseActive = intent.getBooleanExtra(EXTRA_REVERSE_ACTIVE, false)
+                WjxFileLogger.i(TAG, "ACTION_TOGGLE path=$path channel=$channel loop=$loop owner=${owner.orEmpty()} reverse=$reverseActive")
+                serviceScope.launch { actionMutex.withLock { togglePlayback(File(path), channel, loop, owner, reverseActive) } }
             }
             ACTION_STOP -> {
                 val owner = intent.getStringExtra(EXTRA_OWNER)?.takeIf { it.isNotBlank() }
@@ -91,6 +94,7 @@ class WjxOutsidePlayService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        cancelRouteGuard()
         runCatching {
             runBlocking(Dispatchers.IO) {
                 activeChannel?.let { channel ->
@@ -104,17 +108,29 @@ class WjxOutsidePlayService : Service() {
         super.onDestroy()
     }
 
-    private suspend fun togglePlayback(file: File, channel: ExteriorChannel, loop: Boolean, owner: String?) {
+    private suspend fun togglePlayback(
+        file: File,
+        channel: ExteriorChannel,
+        loop: Boolean,
+        owner: String?,
+        reverseActive: Boolean,
+    ) {
         val sameRequest = activePath == file.absolutePath && activeOwner == owner && activeChannel == channel
         if (sameRequest && (player != null || activePath != null)) {
             WjxFileLogger.i(TAG, "toggle stop file=${file.absolutePath} owner=${owner.orEmpty()}")
             stopPlayback()
             return
         }
-        play(file, channel, loop, owner)
+        play(file, channel, loop, owner, reverseActive)
     }
 
-    private suspend fun play(file: File, channel: ExteriorChannel, loop: Boolean, owner: String?) {
+    private suspend fun play(
+        file: File,
+        channel: ExteriorChannel,
+        loop: Boolean,
+        owner: String?,
+        reverseActive: Boolean,
+    ) {
         if (!file.isFile) {
             WjxFileLogger.w(TAG, "file missing: ${file.absolutePath}")
             stopSelf()
@@ -128,26 +144,29 @@ class WjxOutsidePlayService : Service() {
             delay(140L)
         }
         stopPlayback(releaseService = false)
+        val token = ++playbackToken
         activeChannel = channel
         activePath = file.absolutePath
         activeOwner = owner
+        if (reverseActive) {
+            updateNotification("等待倒挡音频路由稳定")
+            delay(REVERSE_ROUTE_SETTLE_MS)
+        }
         val volumePercent = audioSettings.playbackVolumePercent
-        val armed = router.arm(channel, BydExteriorAudioRouter.Usage.Playback, volumePercent)
-        WjxFileLogger.i(TAG, "route arm result=$armed volume=$volumePercent elapsed=${System.currentTimeMillis() - startedAt}ms")
-        if (!armed) {
-            WjxFileLogger.w(TAG, "outside route failed, block playback to avoid cabin speaker channel=$channel")
-            runCatching { router.disarm(channel) }
-            broadcastState(STATE_ERROR, file.absolutePath, owner)
-            updateNotification("车外路由失败，已阻止车内播放")
-            activeChannel = null
-            activePath = null
-            activeOwner = null
-            delay(800L)
-            stopSelf()
+        val armed = router.armConfirmed(channel, BydExteriorAudioRouter.Usage.Playback, volumePercent)
+        WjxFileLogger.i(TAG, "route arm result=${armed.summary()} volume=$volumePercent elapsed=${System.currentTimeMillis() - startedAt}ms")
+        if (!armed.confirmed) {
+            abortBeforePlayback(file, channel, owner, "车外路由强确认失败，已阻止车内播放")
             return
         }
 
         delay(if (channel == ExteriorChannel.Channel0) 300L else 120L)
+        val verified = router.reinforceConfirmed(channel, BydExteriorAudioRouter.Usage.Playback, volumePercent)
+        WjxFileLogger.i(TAG, "route pre-play verify=${verified.summary()} elapsed=${System.currentTimeMillis() - startedAt}ms")
+        if (!verified.confirmed) {
+            abortBeforePlayback(file, channel, owner, "车外路由播放前复核失败，已阻止车内播放")
+            return
+        }
         val started = runCatching {
             player = MediaPlayer().apply {
                 setAudioAttributes(WjxAudioAttributes.forOutside(channel))
@@ -185,10 +204,70 @@ class WjxOutsidePlayService : Service() {
             )
             broadcastState(STATE_STARTED, file.absolutePath, owner)
             updateNotification(if (loop) "正在循环车外播放：${file.nameWithoutExtension}" else "正在车外播放：${file.nameWithoutExtension}")
+            startRouteGuard(token, file.absolutePath, channel, volumePercent)
         }
     }
 
+    private suspend fun abortBeforePlayback(
+        file: File,
+        channel: ExteriorChannel,
+        owner: String?,
+        message: String,
+    ) {
+        WjxFileLogger.w(TAG, "$message channel=$channel")
+        runCatching { router.disarm(channel) }
+        broadcastState(STATE_ERROR, file.absolutePath, owner)
+        updateNotification(message)
+        activeChannel = null
+        activePath = null
+        activeOwner = null
+        delay(800L)
+        stopSelf()
+    }
+
+    private fun startRouteGuard(
+        token: Long,
+        path: String,
+        channel: ExteriorChannel,
+        volumePercent: Int,
+    ) {
+        cancelRouteGuard()
+        routeGuardJob = serviceScope.launch {
+            while (isActive) {
+                delay(ROUTE_GUARD_INTERVAL_MS)
+                val keepRunning = actionMutex.withLock {
+                    if (token != playbackToken || activePath != path || activeChannel != channel || player == null) {
+                        return@withLock false
+                    }
+                    val result = router.reinforceConfirmed(
+                        channel = channel,
+                        usage = BydExteriorAudioRouter.Usage.Playback,
+                        volumePercent = volumePercent,
+                    )
+                    if (!result.confirmed) {
+                        WjxFileLogger.w(TAG, "route guard lost ${result.summary()} path=$path; mute before stop")
+                        mutePlayerForRouteRelease()
+                        updateNotification("车外路由丢失，已静音停止")
+                        routeGuardJob = null
+                        stopPlayback(state = STATE_ERROR)
+                        false
+                    } else {
+                        true
+                    }
+                }
+                if (!keepRunning) return@launch
+            }
+        }
+    }
+
+    private fun cancelRouteGuard() {
+        routeGuardJob?.cancel()
+        routeGuardJob = null
+    }
+
     private suspend fun stopPlayback(releaseService: Boolean = true, state: String = STATE_STOPPED) {
+        playbackToken += 1
+        cancelRouteGuard()
         val hadPlayer = player != null
         val channel = activeChannel
         val path = activePath
@@ -305,7 +384,6 @@ class WjxOutsidePlayService : Service() {
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT < 26) return
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL_ID, "车外音效", NotificationManager.IMPORTANCE_LOW)
@@ -313,18 +391,11 @@ class WjxOutsidePlayService : Service() {
     }
 
     private fun updateNotification(text: String) {
-        if (Build.VERSION.SDK_INT >= 26) {
-            startForeground(NOTIFICATION_ID, buildNotification(text))
-        }
+        startForeground(NOTIFICATION_ID, buildNotification(text))
     }
 
     private fun buildNotification(text: String): Notification {
-        val builder = if (Build.VERSION.SDK_INT >= 26) {
-            Notification.Builder(this, CHANNEL_ID)
-        } else {
-            Notification.Builder(this)
-        }
-        return builder
+        return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(text)
@@ -339,6 +410,7 @@ class WjxOutsidePlayService : Service() {
         private const val EXTRA_PATH = "path"
         private const val EXTRA_CHANNEL = "channel"
         private const val EXTRA_LOOP = "loop"
+        private const val EXTRA_REVERSE_ACTIVE = "reverse_active"
         const val EXTRA_OWNER = "owner"
         private const val CHANNEL_ID = "wjx_outside_audio"
         private const val NOTIFICATION_ID = 1101
@@ -347,6 +419,8 @@ class WjxOutsidePlayService : Service() {
         private const val PLAYER_RELEASE_DRAIN_MS = 180L
         private const val ROUTE_RELEASE_DRAIN_MS = 360L
         private const val ROUTE_RELEASE_TIMEOUT_MS = 1_000L
+        private const val REVERSE_ROUTE_SETTLE_MS = 500L
+        private const val ROUTE_GUARD_INTERVAL_MS = 400L
         const val ACTION_PLAYBACK_STATE = "com.byd.wjx.action.OUTSIDE_PLAYBACK_STATE"
         const val EXTRA_STATE = "state"
         const val EXTRA_STATE_PATH = "state_path"
@@ -361,6 +435,7 @@ class WjxOutsidePlayService : Service() {
             channel: ExteriorChannel = ExteriorChannel.Channel1,
             loop: Boolean = false,
             owner: String? = null,
+            reverseActive: Boolean = false,
         ) {
             val intent = Intent(context, WjxOutsidePlayService::class.java)
                 .setAction(ACTION_PLAY)
@@ -368,6 +443,7 @@ class WjxOutsidePlayService : Service() {
                 .putExtra(EXTRA_CHANNEL, channel.name)
                 .putExtra(EXTRA_LOOP, loop)
                 .putExtra(EXTRA_OWNER, owner.orEmpty())
+                .putExtra(EXTRA_REVERSE_ACTIVE, reverseActive)
             ContextCompat.startForegroundService(context, intent)
         }
 
@@ -377,6 +453,7 @@ class WjxOutsidePlayService : Service() {
             channel: ExteriorChannel = ExteriorChannel.Channel1,
             loop: Boolean = false,
             owner: String? = null,
+            reverseActive: Boolean = false,
         ) {
             val intent = Intent(context, WjxOutsidePlayService::class.java)
                 .setAction(ACTION_TOGGLE)
@@ -384,6 +461,7 @@ class WjxOutsidePlayService : Service() {
                 .putExtra(EXTRA_CHANNEL, channel.name)
                 .putExtra(EXTRA_LOOP, loop)
                 .putExtra(EXTRA_OWNER, owner.orEmpty())
+                .putExtra(EXTRA_REVERSE_ACTIVE, reverseActive)
             ContextCompat.startForegroundService(context, intent)
         }
 

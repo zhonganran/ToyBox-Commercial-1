@@ -33,8 +33,16 @@
     <string name="cluster_mirror_notification_active">正在同步中控屏到仪表盘</string>
 
     <!-- 设置：车辆与电池 -->
-    <string name="settings_battery_section_header">电池与电价</string>
+    <string name="settings_battery_section_header">能源容量与电价</string>
     <string name="settings_battery_capacity_label">电池容量（千瓦时）</string>
+    <string name="settings_fuel_tank_capacity_label">油箱容量（升）</string>
+    <string name="settings_fuel_tank_capacity_note">剩余油量按油量百分比 × 油箱容量估算；请按车型填写，不确定时可留空。</string>
+    <string name="settings_appearance_header">界面显示</string>
+    <string name="settings_theme_title">明暗主题</string>
+    <string name="settings_theme_description">自适应会跟随车机系统的深色模式自动切换。</string>
+    <string name="settings_theme_light">白天</string>
+    <string name="settings_theme_dark">黑暗</string>
+    <string name="settings_theme_system">自适应</string>
     <string name="settings_tariff_home_label">家充电价（%1$s/千瓦时）</string>
     <string name="settings_tariff_dc_label">快充电价（%1$s/千瓦时）</string>
     <string name="settings_tariff_trip_label">行程电价</string>
@@ -126,32 +134,14 @@
     <string name="charges_edit_tariff_label">%1$s/千瓦时：</string>
     <string name="charges_edit_save_button">保存</string>
 
-    <!-- 筛选按钮 -->
-    <string name="automation_filter_all">全部</string>
-    <string name="automation_filter_active">已启用</string>
-    <string name="automation_filter_disabled">已禁用</string>
-
     <!-- 顶部按钮 -->
-    <string name="automation_journal_button">日志</string>
     <string name="automation_create_button">+ 创建</string>
-
-    <!-- 规则卡片菜单 -->
-    <string name="automation_menu_edit">编辑</string>
-    <string name="automation_menu_duplicate">复制</string>
-    <string name="automation_menu_delete">删除</string>
 
     <!-- 删除确认弹窗 -->
     <string name="automation_delete_confirm_title">删除规则？</string>
     <string name="automation_delete_confirm_text">此操作不可撤销。</string>
     <string name="automation_delete_button">删除</string>
     <string name="automation_cancel_button">取消</string>
-
-    <!-- 规则卡片统计 -->
-    <string name="automation_rule_triggered_count">已触发：%1$d</string>
-    <string name="automation_rule_last_trigger">最近：%1$s</string>
-    <string name="automation_rule_cooldown">冷却：%1$d 秒</string>
-    <string name="automation_rule_logic_and"> 且 </string>
-    <string name="automation_rule_logic_or"> 或 </string>
 
     <!-- 编辑弹窗 -->
     <string name="automation_editor_new_rule_title">新建规则</string>
@@ -336,11 +326,6 @@
     <string name="widget_km_per_percent">%1$.1f</string>
 
     <!-- 首页 -->
-    <string name="dashboard_vehicle_data_offline">未收到车辆数据</string>
-    <string name="dashboard_adb_offline">调试连接无响应</string>
-    <string name="dashboard_status_online">在线</string>
-    <string name="dashboard_status_offline">离线</string>
-
     <string name="dashboard_unit_km">公里</string>
     <string name="dashboard_unit_kwh">千瓦时</string>
     <string name="dashboard_range_label">预估续航</string>

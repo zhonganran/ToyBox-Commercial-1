@@ -1,6 +1,8 @@
 package com.byd.wjx.ui.charges
 
 import com.byd.wjx.data.autoservice.BatteryReading
+import com.byd.wjx.data.autoservice.ChargingReading
+import com.byd.wjx.data.charging.ChargingTelemetryReader
 import com.byd.wjx.data.vehicle.VehicleApi
 import com.byd.wjx.data.local.dao.BatterySnapshotDao
 import com.byd.wjx.data.local.dao.ChargeDao
@@ -151,6 +153,17 @@ class ChargesViewModelTest {
         override suspend fun writeSunshade(open: Boolean): Result<Unit> = Result.success(Unit)
     }
 
+    private class FakeChargingTelemetryReader(
+        var reading: ChargingReading? = null,
+    ) : ChargingTelemetryReader {
+        var readCount: Int = 0
+
+        override suspend fun read(): ChargingReading? {
+            readCount++
+            return reading
+        }
+    }
+
     // ─── Factory ──────────────────────────────────────────────────────────────
 
     private fun buildViewModel(
@@ -160,10 +173,11 @@ class ChargesViewModelTest {
         batteryReading: BatteryReading? = null,
         autoserviceAvailable: Boolean = true,
         snapshots: List<BatterySnapshotEntity> = emptyList(),
-        batteryCapacityKwh: String = "72.9"
+        batteryCapacityKwh: String = "72.9",
+        chargingReading: ChargingReading? = null,
     ): ChargesViewModel = buildViewModelAndDao(
         chargesFlow, autoserviceCharges, legacyExists,
-        batteryReading, autoserviceAvailable, snapshots, batteryCapacityKwh
+        batteryReading, autoserviceAvailable, snapshots, batteryCapacityKwh, chargingReading
     ).first
 
     private fun buildViewModelAndDao(
@@ -173,7 +187,8 @@ class ChargesViewModelTest {
         batteryReading: BatteryReading? = null,
         autoserviceAvailable: Boolean = true,
         snapshots: List<BatterySnapshotEntity> = emptyList(),
-        batteryCapacityKwh: String = "72.9"
+        batteryCapacityKwh: String = "72.9",
+        chargingReading: ChargingReading? = null,
     ): Pair<ChargesViewModel, FakeChargeDao> {
         val settingsDao = FakeSettingsDao(batteryCapacityKwh)
         val settingsRepo = SettingsRepository(settingsDao)
@@ -198,7 +213,14 @@ class ChargesViewModelTest {
         // appLocalizedContext() rebuilds a localized context via createConfigurationContext;
         // route it back to the same mock so locale ("ru") and getString stubs still apply.
         every { ctx.createConfigurationContext(any()) } returns ctx
-        return ChargesViewModel(ctx, chargeRepo, snapshotDao, settingsRepo, batteryStateRepo) to chargeDao
+        return ChargesViewModel(
+            ctx,
+            chargeRepo,
+            snapshotDao,
+            settingsRepo,
+            batteryStateRepo,
+            FakeChargingTelemetryReader(chargingReading),
+        ) to chargeDao
     }
 
     // ─── Helper ───────────────────────────────────────────────────────────────
@@ -250,6 +272,39 @@ class ChargesViewModelTest {
         val vm = buildViewModel(batteryReading = null, autoserviceAvailable = false)
         testDispatcher.scheduler.advanceUntilIdle()
         assertEquals(72.9, vm.uiState.value.effectiveCapacityKwh, 0.001)
+    }
+
+    @Test
+    fun `live charging telemetry exposes current and power only while page polling is active`() = runTest {
+        val vm = buildViewModel(
+            chargingReading = ChargingReading(
+                gunConnectState = 2,
+                chargingType = 2,
+                chargeBatteryVoltV = 420,
+                batteryType = 1,
+                chargingCapacityKwh = 8.25f,
+                bmsState = 1,
+                readAtMs = 1_000L,
+                chargeCurrentA = 16,
+                chargePowerKw = 6.7f,
+                batteryMaxChargePowerKw = 120,
+                batteryMaxDischargePowerKw = 180,
+                batteryInsulationKohm = 850,
+                chargeStopSoc = 90,
+            ),
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        vm.setLiveTelemetryActive(true)
+        testDispatcher.scheduler.runCurrent()
+
+        assertEquals(16, vm.uiState.value.liveCharging?.chargeCurrentA)
+        assertEquals(6.7f, vm.uiState.value.liveCharging?.chargePowerKw)
+        assertEquals(120, vm.uiState.value.liveCharging?.batteryMaxChargePowerKw)
+        assertEquals(850, vm.uiState.value.liveCharging?.batteryInsulationKohm)
+
+        vm.setLiveTelemetryActive(false)
+        assertEquals(null, vm.uiState.value.liveCharging)
     }
 
     @Test

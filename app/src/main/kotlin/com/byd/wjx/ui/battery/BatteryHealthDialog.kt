@@ -245,6 +245,7 @@ private fun StatCell(label: String, value: String, valueColor: Color) {
     }
 }
 
+@Composable
 private fun cellDeltaColor(delta: Double?): Color = when {
     delta == null -> TextPrimary
     delta < 0.030 -> AccentGreen
@@ -260,6 +261,7 @@ private fun cellDeltaColor(delta: Double?): Color = when {
  * Visual-only — the configurable notification alert lives in Automations
  * (MinCellVoltage trigger).
  */
+@Composable
 private fun cellMinVoltageColor(min: Double?): Color = when {
     min == null -> TextPrimary
     min >= 3.0 -> AccentGreen

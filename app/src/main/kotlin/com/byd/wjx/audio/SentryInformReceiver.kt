@@ -44,13 +44,9 @@ class SentryInformReceiver : BroadcastReceiver() {
                     WjxFileLogger.i(TAG, "skip sentry broadcast: activation locked")
                     return@launch
                 }
-                val sync = LockSoundConfigSync(
-                    appContext,
-                    entryPoint.helperBootstrap(),
-                    entryPoint.helperClient(),
-                    activationManager,
-                )
-                sync.sync("sentry_broadcast")
+                // Use the application singleton so sentry, keepalive and settings sync share one
+                // mutex and one duplicate-suppression cache instead of racing separate instances.
+                entryPoint.lockSoundConfigSync().sync("sentry_broadcast")
                 val helper = entryPoint.helperClient()
                 if (!helper.isSentryGuarding()) {
                     WjxFileLogger.i(TAG, "skip sentry broadcast: not guarding")

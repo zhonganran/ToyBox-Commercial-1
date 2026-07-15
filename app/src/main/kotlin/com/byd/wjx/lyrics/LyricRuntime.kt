@@ -4,7 +4,6 @@ import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.ComponentName
 import android.content.Context
-import android.os.Build
 import android.os.SystemClock
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
@@ -165,11 +164,9 @@ class LyricRuntime @Inject constructor(
             adb.connect()
             val listenerGranted = adb.grantMusicNotificationListenerAccess()
             WjxFileLogger.i(TAG, "notification listener grant=$listenerGranted")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                NotificationListenerService.requestRebind(
-                    ComponentName(appContext, MusicNotificationListenerService::class.java),
-                )
-            }
+            NotificationListenerService.requestRebind(
+                ComponentName(appContext, MusicNotificationListenerService::class.java),
+            )
         }.onFailure {
             WjxFileLogger.w(TAG, "notification listener grant failed: ${it.message}")
         }

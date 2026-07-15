@@ -161,6 +161,8 @@ class TrackingService : Service() {
         com.byd.wjx.ui.widget.WidgetController.detach()
         ChainLog.append(this, "TrackingService onDestroy")
         pollingJob?.cancel()
+        pollingJob = null
+        sharedAdaptiveLoop.stop()
         chargingCatchUpCoordinator.stop()
         drivingMetricsCoordinator.reset()
         // Do not clear the driving-session anchor here. A process kill mid-trip must
@@ -235,20 +237,22 @@ class TrackingService : Service() {
 
     private fun startPolling() {
         WjxFileLogger.i(TAG, "Starting polling via SharedAdaptiveLoop")
-        pollingJob = serviceScope.launch {
+        pollingJob = serviceScope.launch pollingPipeline@{
             val helperReady = withTimeoutOrNull(HELPER_READINESS_WAIT_MS) {
                 helperReadiness.await()
             } == true
             if (!helperReady) {
                 WjxFileLogger.w(TAG, "helper read startup gate timed out; Binder polling will retry")
             }
-            chargingCatchUpCoordinator.start(serviceScope)
+            // Everything below belongs to one polling pipeline. If this parent exits, the
+            // vehicle loop and all consumers stop together instead of leaving an orphan poller.
+            chargingCatchUpCoordinator.start(this@pollingPipeline)
             // Cold-start reconciliation BEFORE subscribing — so we never receive
             // a tick into a stale open trip from a previous session.
             runCatching { tripRecorder.reconcileColdStart() }
                 .onFailure { WjxFileLogger.w(TAG, "Cold-start reconciliation failed", it) }
 
-            sharedAdaptiveLoop.start(serviceScope)
+            sharedAdaptiveLoop.start(this@pollingPipeline)
 
             launch {
                 sharedAdaptiveLoop.actionFlow.collect { data ->

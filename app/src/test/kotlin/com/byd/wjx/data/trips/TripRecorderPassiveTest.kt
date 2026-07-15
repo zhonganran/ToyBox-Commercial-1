@@ -20,8 +20,8 @@ class TripRecorderPassiveTest {
         val recorder = TripRecorder(tripDao, lastState, energy, batteryCapacityKwh = { 72.9 })
 
         recorder.consume(diParsData(powerState = 1, soc = 80, mileage = 100.0))   // ON-idle
-        recorder.consume(diParsData(powerState = 2, soc = 80, mileage = 100.0))   // DRIVE
-        recorder.consume(diParsData(powerState = 2, soc = 70, mileage = 110.0))   // driving
+        recorder.consume(diParsData(powerState = 3, soc = 80, mileage = 100.0))   // OK / drive-ready
+        recorder.consume(diParsData(powerState = 3, soc = 70, mileage = 110.0))   // driving
         recorder.consume(diParsData(powerState = 1, soc = 70, mileage = 110.0))   // back to ON-idle
 
         coVerify(exactly = 0) { tripDao.insert(any()) }

@@ -1,10 +1,10 @@
 package com.byd.wjx.ui.widget
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.PixelFormat
-import android.os.Build
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.Gravity
@@ -12,6 +12,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
@@ -44,6 +45,8 @@ import kotlinx.coroutines.launch
  * lifecycle. Called from TrackingService when the preference + permission
  * allow, and from ActivityLifecycleCallbacks to show/hide across fore/back.
  */
+// All overlay views are created from applicationContext and cleared in detach().
+@SuppressLint("StaticFieldLeak")
 object WidgetController {
 
     private const val TAG = "WidgetController"
@@ -101,8 +104,8 @@ object WidgetController {
     private var insideTempState = mutableStateOf<Int?>(null)
     private var batTempState = mutableStateOf<Int?>(null)
     private var voltsState = mutableStateOf<Double?>(null)
-    private var alphaState = mutableStateOf(1.0f)
-    private var scaleState = mutableStateOf(1.0f)
+    private var alphaState = mutableFloatStateOf(1.0f)
+    private var scaleState = mutableFloatStateOf(1.0f)
     private var trashActive = mutableStateOf(false)
     private var expandedState = mutableStateOf(false)
     @Volatile private var collapsedX: Int = 0
@@ -141,7 +144,7 @@ object WidgetController {
         val metrics = viewCtx.resources.displayMetrics
 
         val initialScale = prefs.getScale()
-        scaleState.value = initialScale
+        scaleState.floatValue = initialScale
         val widgetWpx = (dp(viewCtx, WIDGET_WIDTH_DP) * initialScale).toInt()
         val widgetHpx = (dp(viewCtx, WIDGET_HEIGHT_DP) * initialScale).toInt()
         currentWidgetWpx = widgetWpx
@@ -151,11 +154,7 @@ object WidgetController {
         val params = WindowManager.LayoutParams(
             widgetWpx,
             widgetHpx,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            else
-                @Suppress("DEPRECATION")
-                WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT,
@@ -187,8 +186,8 @@ object WidgetController {
                     insideTemp = insideTempState.value,
                     batTemp = batTempState.value,
                     voltage12v = voltsState.value,
-                    alpha = alphaState.value,
-                    scaleFactor = scaleState.value,
+                    alpha = alphaState.floatValue,
+                    scaleFactor = scaleState.floatValue,
                 )
             }
             setOnTouchListener(WidgetTouchListener(viewCtx, prefs, metrics))
@@ -204,7 +203,7 @@ object WidgetController {
             setContent {
                 WidgetButtonPanel(
                     expanded = expandedState.value,
-                    scaleFactor = scaleState.value,
+                    scaleFactor = scaleState.floatValue,
                     onButtonClick = { number -> onWidgetButtonClick(viewCtx, number) },
                 )
             }
@@ -351,10 +350,10 @@ object WidgetController {
                 tripDistanceKmState.value = snap.tripDistanceKm
                 consumptionState.value = snap.consumption.displayValue
                 trendState.value = snap.consumption.trend
-                alphaState.value = snap.alpha
+                alphaState.floatValue = snap.alpha
 
-                if (scaleState.value != snap.scale) {
-                    scaleState.value = snap.scale
+                if (scaleState.floatValue != snap.scale) {
+                    scaleState.floatValue = snap.scale
                     applyScaleChange(snap.scale)
                 }
 
@@ -432,7 +431,7 @@ object WidgetController {
         val metrics = ctx.resources.displayMetrics
         collapsedX = params.x
         collapsedY = params.y
-        val scale = scaleState.value
+        val scale = scaleState.floatValue
         val box = WidgetButtonLayout.expandedWindow(
             collapsedX = params.x,
             collapsedY = params.y,
@@ -517,11 +516,7 @@ object WidgetController {
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            else
-                @Suppress("DEPRECATION")
-                WindowManager.LayoutParams.TYPE_PHONE,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,

@@ -52,6 +52,7 @@ import androidx.compose.material.icons.outlined.WaterDrop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -79,12 +80,16 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.byd.wjx.data.autoservice.ChargeGunState
+import com.byd.wjx.data.nativestack.BydSignalSemantics
 import com.byd.wjx.domain.insight.LocalInsightResult
 import com.byd.wjx.ui.dashboard.DashboardUiState
 import com.byd.wjx.ui.dashboard.DashboardViewModel
 import com.byd.wjx.ui.theme.AccentBlue
 import com.byd.wjx.ui.theme.AccentGreen
 import com.byd.wjx.ui.theme.AccentOrange
+import com.byd.wjx.ui.theme.CardBorder
+import com.byd.wjx.ui.theme.CardSurface
+import com.byd.wjx.ui.theme.GlassStroke
 import com.byd.wjx.ui.theme.SceneAmber
 import com.byd.wjx.ui.theme.SceneBlue
 import com.byd.wjx.ui.theme.SceneCyan
@@ -109,6 +114,10 @@ fun ProHomeScreen(
     onOpenTripMap: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    DisposableEffect(viewModel) {
+        viewModel.setHomeTelemetryActive(true)
+        onDispose { viewModel.setHomeTelemetryActive(false) }
+    }
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
     var imageVersion by remember { mutableIntStateOf(0) }
@@ -304,6 +313,12 @@ private fun SocGauge(state: DashboardUiState, modifier: Modifier = Modifier) {
                 )
                 Text("%", color = TextPrimary, fontSize = 28.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 9.dp))
             }
+            Text(
+                text = state.batteryRemainingKwh?.let { "剩余 %.1f kWh".format(it) } ?: "剩余 -- kWh",
+                color = TextPrimary.copy(alpha = 0.66f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 HeroPill(text = workModeText(state.workMode), color = SceneMint)
                 HeroPill(text = driveModeText(state.driveMode), color = SceneSkyColor)
@@ -386,10 +401,10 @@ private fun VehicleStage(
             )
         }
 
-        TireBadge("左前", state.tirePressFL, Modifier.align(Alignment.TopStart).padding(start = 20.dp, top = 70.dp))
-        TireBadge("右前", state.tirePressFR, Modifier.align(Alignment.TopEnd).padding(end = 20.dp, top = 70.dp))
-        TireBadge("左后", state.tirePressRL, Modifier.align(Alignment.BottomStart).padding(start = 20.dp, bottom = 64.dp))
-        TireBadge("右后", state.tirePressRR, Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 64.dp))
+        TireBadge("左前", state.tirePressFL, state.tireTempFL, state.tireStateFL, Modifier.align(Alignment.TopStart).padding(start = 20.dp, top = 70.dp))
+        TireBadge("右前", state.tirePressFR, state.tireTempFR, state.tireStateFR, Modifier.align(Alignment.TopEnd).padding(end = 20.dp, top = 70.dp))
+        TireBadge("左后", state.tirePressRL, state.tireTempRL, state.tireStateRL, Modifier.align(Alignment.BottomStart).padding(start = 20.dp, bottom = 64.dp))
+        TireBadge("右后", state.tirePressRR, state.tireTempRR, state.tireStateRR, Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 64.dp))
 
         Box(
             modifier = Modifier
@@ -415,7 +430,7 @@ private fun VehicleStage(
                         .align(Alignment.TopEnd)
                         .size(38.dp)
                         .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.56f)),
+                        .background(CardSurface.copy(alpha = 0.82f)),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(Icons.Outlined.CameraAlt, contentDescription = "更换车辆图片", tint = TextPrimary, modifier = Modifier.size(21.dp))
@@ -424,8 +439,8 @@ private fun VehicleStage(
                 Column(
                     modifier = Modifier
                         .clip(RoundedCornerShape(24.dp))
-                        .background(Color.White.copy(alpha = 0.32f))
-                        .border(1.dp, Color.White.copy(alpha = 0.72f), RoundedCornerShape(24.dp))
+                        .background(CardSurface.copy(alpha = 0.62f))
+                        .border(1.dp, CardBorder, RoundedCornerShape(24.dp))
                         .clickable(onClick = onPickImage)
                         .padding(horizontal = 48.dp, vertical = 34.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -433,7 +448,7 @@ private fun VehicleStage(
                 ) {
                     Icon(Icons.Outlined.CameraAlt, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(34.dp))
                     Text("上传车辆图片", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                    Text("点击上传 · 长按删除", color = TextSecondary, fontSize = 11.sp)
+                    Text("点击上传 · 长按删除", color = TextSecondary, fontSize = 12.sp)
                 }
             }
         }
@@ -445,7 +460,7 @@ private fun VehicleStage(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            FlowIcon(Icons.Outlined.ElectricBolt, SceneMint, state.powerState != null)
+            FlowIcon(Icons.Outlined.ElectricBolt, SceneMint, BydSignalSemantics.isPowered(state.powerState))
             FlowLine(SceneMint)
             FlowIcon(Icons.Outlined.Battery5Bar, SceneBlue, state.soc != null)
             FlowLine(SceneBlue)
@@ -455,18 +470,33 @@ private fun VehicleStage(
 }
 
 @Composable
-private fun TireBadge(label: String, value: Int?, modifier: Modifier = Modifier) {
+private fun TireBadge(
+    label: String,
+    pressure: Int?,
+    temperature: Int?,
+    rawState: Int?,
+    modifier: Modifier = Modifier,
+) {
+    val attention = rawState != null && rawState != 0
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(999.dp))
-            .background(Color(0x6B315E7A))
+            .background(if (attention) Color(0xCCB83A46) else Color(0x6B315E7A))
             .border(1.dp, Color.White.copy(alpha = 0.56f), RoundedCornerShape(999.dp))
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Icon(Icons.Outlined.TireRepair, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
-        Text("$label ${tireValue(value)}", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            buildString {
+                append("$label ${tireValue(pressure)} · ${tireTempValue(temperature)}")
+                if (attention) append(" · 状态 $rawState")
+            },
+            color = Color.White,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 
@@ -490,7 +520,7 @@ private fun FlowIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, colo
         modifier = Modifier
             .size(34.dp)
             .clip(RoundedCornerShape(10.dp))
-            .background(Color.White.copy(alpha = 0.70f))
+            .background(CardSurface.copy(alpha = 0.86f))
             .border(1.dp, color.copy(alpha = if (active) 0.86f else 0.30f), RoundedCornerShape(10.dp)),
         contentAlignment = Alignment.Center,
     ) {
@@ -519,7 +549,15 @@ private fun HomeMetricRibbon(
         RibbonMetric("电续航", state.elecDrivingRangeKm?.toString() ?: "--", "km", Icons.Outlined.EvStation, SceneMint, rangeProgress(state.elecDrivingRangeKm, 320)),
         RibbonMetric("油续航", state.fuelDrivingRangeKm?.toString() ?: "--", "km", Icons.Outlined.LocalGasStation, SceneBlue, rangeProgress(state.fuelDrivingRangeKm, 800)),
         RibbonMetric("总续航", state.combinedRangeKm?.toString() ?: "--", "km", Icons.Outlined.Route, SceneViolet, rangeProgress(state.combinedRangeKm, 1200)),
-        RibbonMetric("油量", state.fuelLevel?.toString() ?: "--", "%", Icons.Outlined.WaterDrop, SceneAmber, ((state.fuelLevel ?: 0) / 100f).coerceIn(0f, 1f)),
+        RibbonMetric(
+            label = "油量",
+            value = state.fuelLevel?.toString() ?: "--",
+            unit = "%",
+            icon = Icons.Outlined.WaterDrop,
+            color = SceneAmber,
+            progress = ((state.fuelLevel ?: 0) / 100f).coerceIn(0f, 1f),
+            secondary = state.fuelRemainingLiters?.let { "剩余 %.1f L".format(it) },
+        ),
         RibbonMetric("实时功率", state.power?.let { "%.1f".format(it) } ?: "--", "kW", Icons.Outlined.ElectricBolt, AccentOrange, ((kotlin.math.abs(state.power ?: 0.0) / 80.0).toFloat()).coerceIn(0f, 1f)),
         RibbonMetric("总里程", state.odometer?.let { "%,.0f".format(it) } ?: "--", "km", Icons.Outlined.Speed, ScenePink, 0.72f),
     )
@@ -527,8 +565,8 @@ private fun HomeMetricRibbon(
     BoxWithConstraints(
         modifier = modifier
             .clip(shape)
-            .background(Color.White.copy(alpha = 0.76f))
-            .border(1.dp, Color.White.copy(alpha = 0.90f), shape)
+            .background(CardSurface.copy(alpha = 0.86f))
+            .border(1.dp, GlassStroke, shape)
             .clickable(onClick = onOpenCharges)
             .padding(horizontal = 22.dp, vertical = 10.dp),
     ) {
@@ -560,6 +598,7 @@ private data class RibbonMetric(
     val icon: androidx.compose.ui.graphics.vector.ImageVector,
     val color: Color,
     val progress: Float,
+    val secondary: String? = null,
 )
 
 @Composable
@@ -568,11 +607,14 @@ private fun RibbonMetricItem(metric: RibbonMetric, modifier: Modifier = Modifier
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Icon(metric.icon, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(20.dp))
             Column {
-                Text(metric.label, color = TextPrimary.copy(alpha = 0.76f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text(metric.label, color = TextPrimary.copy(alpha = 0.82f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(metric.value, color = TextPrimary, fontSize = 23.sp, lineHeight = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                     Spacer(Modifier.width(3.dp))
-                    Text(metric.unit, color = TextSecondary, fontSize = 10.sp, modifier = Modifier.padding(bottom = 2.dp))
+                    Text(metric.unit, color = TextSecondary, fontSize = 11.sp, modifier = Modifier.padding(bottom = 2.dp))
+                }
+                metric.secondary?.let {
+                    Text(it, color = TextSecondary, fontSize = 11.sp, maxLines = 1)
                 }
             }
         }
@@ -628,8 +670,18 @@ private fun VehicleEnvironmentPanel(state: DashboardUiState, modifier: Modifier 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
                 EnvironmentItem(Icons.Outlined.Lock, "车锁", lockSummary(state), lockSummary(state) == "已锁")
                 EnvironmentItem(Icons.Outlined.DirectionsCar, "车门", doorSummary(state), doorSummary(state) == "全关")
-                EnvironmentItem(Icons.Outlined.EvStation, "充电口", openCloseText(state.chargingCapCover), state.chargingCapCover == 1)
-                EnvironmentItem(Icons.Outlined.LocalGasStation, "油箱盖", openCloseText(state.fuelCap), state.fuelCap == 1)
+                EnvironmentItem(
+                    Icons.Outlined.EvStation,
+                    "充电口",
+                    openCloseText(state.chargingCapCover),
+                    BydSignalSemantics.isCoverOpen(state.chargingCapCover),
+                )
+                EnvironmentItem(
+                    Icons.Outlined.LocalGasStation,
+                    "油箱盖",
+                    openCloseText(state.fuelCap),
+                    BydSignalSemantics.isCoverOpen(state.fuelCap),
+                )
             }
         }
     }
@@ -672,10 +724,12 @@ private fun JourneyAssistPanel(
             }
             Box(Modifier.width(1.dp).fillMaxHeight().background(Color.White.copy(alpha = 0.18f)))
             Column(modifier = Modifier.weight(0.76f), verticalArrangement = Arrangement.SpaceEvenly) {
-                AssistStatus("ACC", accText(state))
-                AssistStatus("LCC", laneText(state.laneKeepState))
-                AssistStatus("NCA", ncaText(state))
-                AssistStatus("自动泊车", autoParkText(state.adasApaParkingStatus))
+                AssistStatus("ACC", accText(state), adasActive(state.accCruiseState, state.adasAccMode))
+                AssistStatus("LCC", laneText(state.laneKeepState), adasActive(state.laneKeepState))
+                AssistStatus("NCA / MNOA", ncaText(state), adasActive(state.adasLccNcaStatus, state.adasMnoaStatus))
+                AssistStatus("AEB / ESP", rawPairText(state.adasAebState, state.adasEspState), adasActive(state.adasAebState, state.adasEspState))
+                AssistStatus("AVH / BSD", rawPairText(state.adasAvhState, state.adasBsdState), adasActive(state.adasAvhState, state.adasBsdState))
+                AssistStatus("自动泊车", autoParkText(state.adasApaParkingStatus), adasActive(state.adasApaParkingStatus))
             }
         }
     }
@@ -756,9 +810,9 @@ private fun MiniTrendChart(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun AssistStatus(label: String, value: String) {
+private fun AssistStatus(label: String, value: String, active: Boolean) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(8.dp).clip(CircleShape).background(if (value.contains("开启") || value.contains("巡航") || value.contains("进行")) SceneMint else Color.White.copy(alpha = 0.54f)))
+        Box(Modifier.size(8.dp).clip(CircleShape).background(if (active) SceneMint else Color.White.copy(alpha = 0.54f)))
         Spacer(Modifier.width(8.dp))
         Text(label, color = Color.White.copy(alpha = 0.82f), fontSize = 12.sp, modifier = Modifier.weight(1f))
         Text(value, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -771,6 +825,9 @@ private fun rangeProgress(value: Int?, maxValue: Int): Float =
 private fun tireValue(value: Int?): String =
     value?.takeIf { it in 80..420 }?.let { "$it kPa" } ?: "-- kPa"
 
+private fun tireTempValue(value: Int?): String =
+    value?.takeIf { it in -50..150 }?.let { "$it°C" } ?: "--°C"
+
 private fun tempText(value: Int?): String = value?.let { "$it°C" } ?: "--"
 
 private fun maxMinTempText(state: DashboardUiState): String {
@@ -780,8 +837,8 @@ private fun maxMinTempText(state: DashboardUiState): String {
 }
 
 private fun openCloseText(value: Int?): String = when (value) {
-    0 -> "关闭"
-    1 -> "打开"
+    BydSignalSemantics.COVER_CLOSED -> "关闭"
+    BydSignalSemantics.COVER_OPEN -> "打开"
     else -> "--"
 }
 
@@ -802,13 +859,24 @@ private fun batteryHint(state: DashboardUiState): String = when {
 private fun doorSummary(state: DashboardUiState): String {
     val values = listOf(state.doorFL, state.doorFR, state.doorRL, state.doorRR, state.trunk, state.hood)
     if (values.all { it == null }) return "--"
-    return if (values.any { it == 1 }) "有开启" else "全关"
+    val sideDoorOrHoodOpen = listOf(
+        state.doorFL,
+        state.doorFR,
+        state.doorRL,
+        state.doorRR,
+        state.hood,
+    ).any { it == 1 }
+    return if (sideDoorOrHoodOpen || BydSignalSemantics.isTrunkNotClosed(state.trunk)) {
+        "有开启"
+    } else {
+        "全关"
+    }
 }
 
 private fun lockSummary(state: DashboardUiState): String {
     val values = listOf(state.lockFL, state.lockFR, state.lockRL, state.lockRR)
     if (values.all { it == null }) return "--"
-    return if (values.all { it == 1 }) "已锁" else "未锁"
+    return if (values.all(BydSignalSemantics::isDoorLocked)) "已锁" else "未锁"
 }
 
 private fun acMainText(state: DashboardUiState): String = when (state.acStatus) {
@@ -846,18 +914,23 @@ private fun gearText(gear: Int?): String = when (gear) {
 }
 
 private fun driveModeText(mode: Int?): String = when (mode) {
-    1 -> "经济模式"
-    2 -> "标准模式"
+    1 -> "标准模式"
+    2 -> "经济模式"
     3 -> "运动模式"
     4 -> "雪地模式"
+    5 -> "泥地模式"
+    6 -> "沙地模式"
     else -> "标准模式"
 }
 
 private fun workModeText(mode: Int?): String = when (mode) {
+    0 -> "停止"
     1 -> "EV"
-    2 -> "HEV"
-    3 -> "发动机"
-    else -> "EV"
+    2 -> "强制 EV"
+    3 -> "HEV"
+    4 -> "燃油"
+    5 -> "保持"
+    else -> "--"
 }
 
 private fun insightLine(insight: LocalInsightResult, loading: Boolean): String = when {
@@ -879,17 +952,26 @@ private fun laneText(value: Int?): String = when (value) {
     else -> "工作中"
 }
 
-private fun accText(state: DashboardUiState): String = when (state.accCruiseState) {
-    null, 0 -> "待机"
-    1 -> "开启"
-    else -> state.accCruisingSpeed?.let { "巡航 $it" } ?: "巡航中"
+private fun accText(state: DashboardUiState): String = when {
+    (state.adasExecSpeed ?: 0) > 0 -> "执行 ${state.adasExecSpeed}"
+    state.accCruiseState == 1 -> "开启"
+    state.accCruiseState != null && state.accCruiseState != 0 ->
+        state.accCruisingSpeed?.let { "巡航 $it" } ?: "巡航中"
+    (state.adasAccGrayState ?: 0) != 0 -> "灰态 ${state.adasAccGrayState}"
+    else -> "待机"
 }
 
 private fun ncaText(state: DashboardUiState): String = when {
-    state.adasLccNcaStatus == null && state.adasAccMode == null -> "关闭"
-    state.adasLccNcaStatus == 0 && state.adasAccMode == 0 -> "关闭"
-    else -> "开启"
+    (state.adasMnoaStatus ?: 0) != 0 -> "MNOA ${state.adasMnoaStatus}"
+    adasActive(state.adasLccNcaStatus, state.adasAccMode) -> "开启"
+    (state.adasNoaGrayState ?: 0) != 0 -> "灰态 ${state.adasNoaGrayState}"
+    else -> "关闭"
 }
+
+private fun rawPairText(first: Int?, second: Int?): String =
+    if (first == null && second == null) "--" else "${first ?: "-"} / ${second ?: "-"}"
+
+private fun adasActive(vararg values: Int?): Boolean = values.any { it != null && it != 0 }
 
 private fun vehicleImageFile(context: Context): File =
     File(context.filesDir, "ui/vehicle/home_vehicle.png")

@@ -10,20 +10,33 @@ SOC:           soc
 Speed:         speed
 Mileage:       mileage
 Power:         power
+EngineRPM:     engineRpm
+FrontMotorSpeed: frontMotorSpeed
+RearMotorSpeed: rearMotorSpeed
+FrontMotorTemp: frontMotorTemp
+RearMotorTemp: rearMotorTemp
+FrontMotorCurrent: frontMotorCurrent
+RearMotorCurrent: rearMotorCurrent
 TotalElecCon:  totalElecConsumption
 Voltage12V:    voltage12v
 
 # ── Battery ───────────────────────────────────────────────────────────────
+SOH:           soh
 MaxCellV:      maxCellVoltage
 MinCellV:      minCellVoltage
 MaxBatTemp:    maxBatTemp
 MinBatTemp:    minBatTemp
+WaterTemp:     waterTemp
 AvgBatTemp:    avgBatTemp
 BatCapacity:   batteryCapacityKwh
 
 # ── Gear + state ──────────────────────────────────────────────────────────
 Gear:          gear
 BrakePedal:    brakePedalDepth
+AccelPedal:    accelPedalDepth
+EpbState:      epbState
+BrakeState:    brakeState
+EpedalMode:    ePedalMode
 ChargeGun:     chargeGunState
 ChargingStatus: chargingStatus
 PowerState:    powerState
@@ -37,6 +50,17 @@ FanLevel:      fanLevel
 ACCirc:        acCirc
 InsideTemp:    insideTemp
 ExtTemp:       exteriorTemp
+ACCtrlMode:    acCtrlMode
+ACDefrostFront: acDefrostFront
+ACWindMode:    acWindMode
+ACDefrostRear: acDefrostRear
+SteeringHeat:  steeringHeat
+
+# ── Seat comfort (on-demand automation reads) ────────────────────────────
+SeatHeatD:     seatHeatD
+SeatVentD:     seatVentD
+SeatHeatP:     seatHeatP
+SeatVentP:     seatVentP
 
 # ── Doors / windows / body ────────────────────────────────────────────────
 Hood:          hood
@@ -50,6 +74,8 @@ WindowFL:      windowFL
 WindowFR:      windowFR
 WindowRL:      windowRL
 WindowRR:      windowRR
+SunshadePos:   sunshadePos
+MirrorFoldState: mirrorFoldState
 
 # ── Locks + belts ─────────────────────────────────────────────────────────
 LockFL:        lockFL
@@ -60,23 +86,36 @@ TirePressFL:   tirePressFL
 TirePressFR:   tirePressFR
 TirePressRL:   tirePressRL
 TirePressRR:   tirePressRR
+TireTempFL:    tireTempFL
+TireTempFR:    tireTempFR
+TireTempRL:    tireTempRL
+TireTempRR:    tireTempRR
+TyreStateFL:   tireStateFL
+TyreStateFR:   tireStateFR
+TyreStateRL:   tireStateRL
+TyreStateRR:   tireStateRR
 
 # ── Misc ──────────────────────────────────────────────────────────────────
 AutoPark:      autoPark
 AdasApaParkingStatus: adasApaParkingStatus
 Rain:          rain
 LightLow:      lightLow
+LightSide:     lightSide
+LightHigh:     lightHigh
+LightFrontFog: lightFrontFog
+LightRearFog:  lightRearFog
+LightBrake:    lightBrake
+LightReversing: lightReversing
 LightTurnLeft: turnSignalLeft
 LightTurnRight: turnSignalRight
 DRL:           drl
 
-# ── No DiParsData equivalent (Phase 2 reads) ─────────────────────────────
-# ACDefrostFront  → no field in DiParsData
-# ACWindMode      → no field in DiParsData
-# ACCtrlMode      → no field in DiParsData
-# SeatHeatD       → no field in DiParsData
-# SeatVentD       → no field in DiParsData
-# SeatHeatP       → no field in DiParsData
-# SeatVentP       → no field in DiParsData
-# LightSide       → no field in DiParsData
-# LightHigh       → no field in DiParsData
+# ── ADAS on-demand telemetry ─────────────────────────────────────────────
+AdasAebState:       adasAebState
+AdasAvhState:       adasAvhState
+AdasBsdState:       adasBsdState
+AdasEspState:       adasEspState
+AdasAccGrayState:   adasAccGrayState
+AdasNoaGrayState:   adasNoaGrayState
+AdasMnoaStatus:     adasMnoaStatus
+AdasExecSpeed:      adasExecSpeed

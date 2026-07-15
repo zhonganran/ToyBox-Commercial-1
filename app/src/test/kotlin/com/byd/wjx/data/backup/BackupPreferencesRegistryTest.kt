@@ -1,10 +1,19 @@
 package com.byd.wjx.data.backup
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BackupPreferencesRegistryTest {
+    @Test
+    fun `every preference file has one named owner`() {
+        val policies = BackupPreferencesRegistry.FILE_POLICIES
+
+        assertEquals(policies.size, policies.map { it.fileName }.distinct().size)
+        assertTrue(policies.all { it.owner.isNotBlank() })
+    }
+
     @Test
     fun `backup includes every user-facing audio widget and shortcut preference`() {
         val files = BackupPreferencesRegistry.USER_CONFIGURATION_FILES

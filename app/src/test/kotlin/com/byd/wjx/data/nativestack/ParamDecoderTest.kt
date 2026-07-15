@@ -36,6 +36,11 @@ class ParamDecoderTest {
         assertNull(ParamDecoder.decodeInt(200, Decoder.INT_TEMP_C))
     }
 
+    @Test fun `wide temperature decoder accepts powertrain operating temperatures`() {
+        assertEquals(104, ParamDecoder.decodeInt(104, Decoder.INT_TEMP_C_WIDE))
+        assertNull(ParamDecoder.decodeInt(201, Decoder.INT_TEMP_C_WIDE))
+    }
+
     @Test fun `int_temp_c_ofs40 subtracts 40 within plausible range`() {
         // Battery temp fids (dev=1014) encode °C with a -40 CAN offset.
         // raw 51 → 11°C, raw 50 → 10°C (matches D+ 10/11/11 and vehicle reference offsets).

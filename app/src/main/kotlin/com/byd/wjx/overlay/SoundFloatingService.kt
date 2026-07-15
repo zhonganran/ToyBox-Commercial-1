@@ -15,7 +15,6 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
 import android.text.TextUtils
@@ -55,10 +54,10 @@ import kotlinx.coroutines.cancel
 class SoundFloatingService : Service() {
     @Inject lateinit var trackingStateRepository: TrackingStateRepository
     @Inject lateinit var profileDetector: CarProfileDetector
+    @Inject lateinit var soundLibrary: SoundLibrary
     private lateinit var settings: SoundFloatingSettings
     private lateinit var windowManager: WindowManager
     private lateinit var hailingSettings: ExteriorHailingSettings
-    private lateinit var soundLibrary: SoundLibrary
     private var overlayView: View? = null
     private var params: WindowManager.LayoutParams? = null
     private var downRawX = 0f
@@ -112,12 +111,9 @@ class SoundFloatingService : Service() {
         settings = SoundFloatingSettings(applicationContext)
         windowManager = getSystemService(WindowManager::class.java)
         hailingSettings = ExteriorHailingSettings(applicationContext)
-        soundLibrary = SoundLibrary(applicationContext)
         WjxDirectories.ensureBaseDirs()
         createNotificationChannel()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForeground(NOTIFICATION_ID, buildNotification("音效悬浮窗待命"))
-        }
+        startForeground(NOTIFICATION_ID, buildNotification("音效悬浮窗待命"))
         registerPlaybackReceiver()
         registerHailingReceiver()
         startDesktopVisibilityController()
@@ -621,13 +617,7 @@ class SoundFloatingService : Service() {
         }.getOrDefault(resourceMetrics)
     }
 
-    private fun overlayType(): Int =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            @Suppress("DEPRECATION")
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
+    private fun overlayType(): Int = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
 
     private fun overlayFlags(): Int =
         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -656,7 +646,6 @@ class SoundFloatingService : Service() {
         View(this).apply { layoutParams = LinearLayout.LayoutParams(width, height) }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL_ID, "音效悬浮窗", NotificationManager.IMPORTANCE_LOW).apply {
@@ -669,12 +658,7 @@ class SoundFloatingService : Service() {
     }
 
     private fun buildNotification(text: String): Notification {
-        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(this, CHANNEL_ID)
-        } else {
-            Notification.Builder(this)
-        }
-        return builder
+        return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_dialer)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(text)

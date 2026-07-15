@@ -33,6 +33,24 @@ class LedSceneArbiterTest {
     }
 
     @Test
+    fun `actual reversing lamp is preferred and gear remains the null fallback`() {
+        val arbiter = LedSceneArbiter()
+
+        assertEquals(
+            LedScene.REVERSE_PARKING,
+            arbiter.evaluate(LedVehicleSignals(gear = 4, lightReversing = 1), 1_000L),
+        )
+        assertEquals(
+            LedScene.DEFAULT,
+            arbiter.evaluate(LedVehicleSignals(gear = 2, lightReversing = 0), 1_100L),
+        )
+        assertEquals(
+            LedScene.REVERSE_PARKING,
+            arbiter.evaluate(LedVehicleSignals(gear = 2, lightReversing = null), 1_200L),
+        )
+    }
+
+    @Test
     fun `new turn direction immediately replaces the old direction`() {
         val arbiter = LedSceneArbiter(turnHoldMs = 1_200L)
         arbiter.evaluate(LedVehicleSignals(turnSignalLeft = 1), 1_000L)
@@ -119,6 +137,24 @@ class LedSceneArbiterTest {
     }
 
     @Test
+    fun `actual brake lamp drives keep distance and pedal remains the null fallback`() {
+        val arbiter = LedSceneArbiter()
+
+        assertEquals(
+            LedScene.KEEP_DISTANCE,
+            arbiter.evaluate(LedVehicleSignals(speed = 40, lightBrake = 1), 1_000L),
+        )
+        assertEquals(
+            LedScene.KEEP_DISTANCE,
+            arbiter.evaluate(LedVehicleSignals(speed = 40, lightBrake = 0), 1_200L),
+        )
+        assertEquals(
+            LedScene.DEFAULT,
+            arbiter.evaluate(LedVehicleSignals(speed = 40, lightBrake = 0), 1_901L),
+        )
+    }
+
+    @Test
     fun `keep distance uses hysteresis and a short release hold`() {
         val arbiter = LedSceneArbiter(keepDistanceReleaseHoldMs = 700L)
 
@@ -143,15 +179,15 @@ class LedSceneArbiterTest {
     @Test
     fun `park transition shows temporary stop then default`() {
         val arbiter = LedSceneArbiter(oneShotDurationMs = 4_000L)
-        arbiter.evaluate(LedVehicleSignals(gear = 4, powerState = 2), 1_000L)
+        arbiter.evaluate(LedVehicleSignals(gear = 4, powerState = 3), 1_000L)
 
         assertEquals(
             LedScene.TEMPORARY_STOP,
-            arbiter.evaluate(LedVehicleSignals(gear = 1, powerState = 2), 1_100L),
+            arbiter.evaluate(LedVehicleSignals(gear = 1, powerState = 3), 1_100L),
         )
         assertEquals(
             LedScene.DEFAULT,
-            arbiter.evaluate(LedVehicleSignals(gear = 1, powerState = 2), 5_101L),
+            arbiter.evaluate(LedVehicleSignals(gear = 1, powerState = 3), 5_101L),
         )
     }
 

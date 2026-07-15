@@ -17,12 +17,12 @@ import com.byd.wjx.activation.PremiumFeature
 import com.byd.wjx.data.backup.BackupManager
 import com.byd.wjx.data.local.EnergyDataReader
 import com.byd.wjx.data.local.HistoryImporter
-import com.byd.wjx.data.local.LocalePreferences
 import com.byd.wjx.data.local.dao.IdleDrainDao
 import com.byd.wjx.data.local.dao.TripPointDao
 import com.byd.wjx.data.repository.ChargeRepository
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.data.repository.TripRepository
+import com.byd.wjx.data.settings.ServiceQrCache
 import com.byd.wjx.service.UpdateChecker
 import com.byd.wjx.R
 import com.byd.wjx.audio.AutoParkingSoundSettings
@@ -32,7 +32,6 @@ import com.byd.wjx.audio.LockSoundEvent
 import com.byd.wjx.audio.LockSoundSettings
 import com.byd.wjx.log.WjxFileLogger
 import com.byd.wjx.storage.SoundLibrary
-import com.byd.wjx.storage.WjxDirectories
 import com.byd.wjx.vehicle.CarProfile
 import com.byd.wjx.vehicle.CarProfileDetector
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -53,7 +52,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
-import com.byd.wjx.service.BootReceiver
+import com.byd.wjx.service.BootDiagnosticsStore
 import com.byd.wjx.ui.widget.WidgetController
 import java.io.File
 import java.io.FileWriter
@@ -61,71 +60,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import javax.inject.Inject
-
-/**
- * UI state for the Settings screen.
- * Contains current setting values and export operation status.
- */
-data class SettingsUiState(
-    val batteryCapacity: String = SettingsRepository.DEFAULT_BATTERY_CAPACITY,
-    val homeTariff: String = SettingsRepository.DEFAULT_HOME_TARIFF,
-    val dcTariff: String = SettingsRepository.DEFAULT_DC_TARIFF,
-    val units: String = SettingsRepository.DEFAULT_UNITS,
-    val currency: String = SettingsRepository.DEFAULT_CURRENCY,
-    val currencySymbol: String = "元",
-    val exportStatus: String? = null,
-    val importStatus: String? = null,
-    val appVersion: String = "0.0.0",
-    val updateStatus: String? = null,
-    val updateDialogState: UpdateState = UpdateState.Idle,
-    val showUpdateDialog: Boolean = false,
-    val diagnosticLog: String? = null,
-    val logSaveStatus: String? = null,
-    val isRecordingLogs: Boolean = false,
-    val tripCostTariff: String = "home",
-    val consumptionGood: String = SettingsRepository.DEFAULT_CONSUMPTION_GOOD,
-    val consumptionBad: String = SettingsRepository.DEFAULT_CONSUMPTION_BAD,
-    val lastBootInfo: String? = null,
-    val chainLog: String? = null,
-    val tariffSaveStatus: String? = null,
-    val recalcStatus: String? = null,
-    val showRecalcConfirm: Boolean = false,
-    val autoCheckUpdates: Boolean = true,
-    /** Status of the last config backup/restore operation. Red if starts with error prefix. */
-    val configStatus: String? = null,
-    val mapTileSource: String = SettingsRepository.DEFAULT_MAP_TILE_SOURCE,
-    val tripGpsRecordingEnabled: Boolean = true,
-    val activation: ActivationSnapshot = ActivationSnapshot(),
-    val activationCodeInput: String = "",
-    val activationMessage: String? = null,
-    val activationLoading: Boolean = false,
-    val serviceQrCodes: Map<String, ServiceQrCode> = emptyMap(),
-    val serviceQrLoading: Boolean = false,
-    val serviceQrMessage: String? = null,
-    val lockSound: LockSoundConfig = LockSoundConfig(),
-    val lockSoundChoices: List<LockSoundChoice> = emptyList(),
-    val lockSoundSyncing: Boolean = false,
-    val lockSoundStatus: String? = null,
-    val autoParkingSoundEnabled: Boolean = false,
-    val autoParkingSoundPath: String = "",
-    val carProfile: CarProfile? = null,
-)
-
-data class LockSoundChoice(
-    val path: String,
-    val name: String,
-    val sizeLabel: String,
-)
-
-data class ServiceQrCode(
-    val key: String,
-    val title: String,
-    val subtitle: String,
-    val description: String,
-    val imageUrl: String,
-    val expiresAt: String,
-    val updatedAt: String,
-)
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -138,14 +72,13 @@ class SettingsViewModel @Inject constructor(
     private val energyDataReader: EnergyDataReader,
     private val idleDrainDao: IdleDrainDao,
     private val tripPointDao: TripPointDao,
-    private val localePreferences: LocalePreferences,
     private val backupManager: BackupManager,
-    private val chargingStateStore: com.byd.wjx.data.charging.ChargingStateStore,
-    private val catchUpJournal: com.byd.wjx.data.charging.CatchUpJournal,
     private val activationManager: ActivationManager,
     private val soundLibrary: SoundLibrary,
     private val lockSoundConfigSync: LockSoundConfigSync,
     private val okHttpClient: OkHttpClient,
+    private val serviceQrCache: ServiceQrCache,
+    private val logRecorder: SettingsLogRecorder,
     private val carProfileDetector: CarProfileDetector = CarProfileDetector(),
 ) : ViewModel() {
     private val lockSoundSettings = LockSoundSettings(appContext)
@@ -169,6 +102,16 @@ class SettingsViewModel @Inject constructor(
         loadLockSoundSettings()
         refreshActivation(refreshDeviceCode = true)
         refreshServiceQrCodes()
+        viewModelScope.launch {
+            logRecorder.state.collect { recordingState ->
+                _uiState.update {
+                    it.copy(
+                        isRecordingLogs = recordingState.isRecording,
+                        logSaveStatus = recordingState.status ?: it.logSaveStatus,
+                    )
+                }
+            }
+        }
     }
 
     fun reloadLockSoundChoices() {
@@ -402,17 +345,12 @@ class SettingsViewModel @Inject constructor(
     }
 
     private fun readCachedServiceQrCodes(): Map<String, ServiceQrCode> {
-        val json = appContext.getSharedPreferences(SERVICE_QR_PREFS, Context.MODE_PRIVATE)
-            .getString(KEY_SERVICE_QR_JSON, null)
-            .orEmpty()
+        val json = serviceQrCache.readJson().orEmpty()
         return parseServiceQrCodes(json)
     }
 
     private fun cacheServiceQrCodes(json: String) {
-        appContext.getSharedPreferences(SERVICE_QR_PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putString(KEY_SERVICE_QR_JSON, json)
-            .apply()
+        serviceQrCache.writeJson(json)
     }
 
     private fun parseServiceQrCodes(json: String): Map<String, ServiceQrCode> {
@@ -491,6 +429,11 @@ class SettingsViewModel @Inject constructor(
                 SettingsRepository.KEY_BATTERY_CAPACITY,
                 SettingsRepository.DEFAULT_BATTERY_CAPACITY
             )
+            val fuelTankCapacity = settingsRepository.getString(
+                SettingsRepository.KEY_FUEL_TANK_CAPACITY,
+                SettingsRepository.DEFAULT_FUEL_TANK_CAPACITY
+            )
+            val themeMode = settingsRepository.getThemeMode()
             val homeTariff = settingsRepository.getString(
                 SettingsRepository.KEY_HOME_TARIFF,
                 SettingsRepository.DEFAULT_HOME_TARIFF
@@ -524,6 +467,8 @@ class SettingsViewModel @Inject constructor(
             _uiState.update {
                 it.copy(
                     batteryCapacity = capacity,
+                    fuelTankCapacity = fuelTankCapacity,
+                    themeMode = themeMode,
                     homeTariff = homeTariff,
                     dcTariff = dcTariff,
                     units = units,
@@ -547,6 +492,21 @@ class SettingsViewModel @Inject constructor(
         _uiState.update { it.copy(batteryCapacity = value) }
         viewModelScope.launch {
             settingsRepository.setString(SettingsRepository.KEY_BATTERY_CAPACITY, value)
+        }
+    }
+
+    /** Save the vehicle-specific fuel-tank capacity used for remaining-litre estimates. */
+    fun saveFuelTankCapacity(value: String) {
+        _uiState.update { it.copy(fuelTankCapacity = value) }
+        viewModelScope.launch {
+            settingsRepository.setString(SettingsRepository.KEY_FUEL_TANK_CAPACITY, value)
+        }
+    }
+
+    fun setThemeMode(mode: String) {
+        _uiState.update { it.copy(themeMode = mode) }
+        viewModelScope.launch {
+            settingsRepository.setThemeMode(mode)
         }
     }
 
@@ -801,12 +761,11 @@ class SettingsViewModel @Inject constructor(
 
     private fun readBootInfo(): String? {
         return try {
-            val prefs = appContext.getSharedPreferences(BootReceiver.PREFS_NAME, Context.MODE_PRIVATE)
-            val ts = prefs.getLong(BootReceiver.KEY_LAST_BOOT_TS, 0L)
+            val snapshot = BootDiagnosticsStore.read(appContext) ?: return null
+            val ts = snapshot.lastBootTimestamp
             if (ts == 0L) return null
-            val method = prefs.getString(BootReceiver.KEY_LAST_BOOT_METHOD, "?") ?: "?"
             val sdf = SimpleDateFormat("dd.MM.yy HH:mm:ss", Locale.US)
-            "${sdf.format(Date(ts))}（${formatBootMethod(method)}）"
+            "${sdf.format(Date(ts))}（${formatBootMethod(snapshot.lastBootMethod)}）"
         } catch (_: Exception) { null }
     }
 
@@ -826,19 +785,8 @@ class SettingsViewModel @Inject constructor(
         else -> permission.substringAfterLast(".")
     }
 
-    private fun formatBool(value: Boolean): String = if (value) "是" else "否"
-
-    private fun formatDataSource(name: String): String = when (name) {
-        "ENERGYDATA" -> "比亚迪能耗数据库"
-        else -> name
-    }
-
     private fun readChainLog(): String? {
-        return try {
-            val prefs = appContext.getSharedPreferences(BootReceiver.PREFS_NAME, Context.MODE_PRIVATE)
-            val log = prefs.getString(BootReceiver.KEY_CHAIN_LOG, null)
-            if (log.isNullOrBlank()) null else log
-        } catch (_: Exception) { null }
+        return BootDiagnosticsStore.read(appContext)?.chainLog
     }
 
     fun saveMapTileSource(source: String) {
@@ -869,182 +817,12 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    private var logProcess: Process? = null
-    private var logFile: File? = null
-    private var logAutoStopJob: Job? = null
-
-    companion object {
-        private const val LOG_MAX_DURATION_MS = 2 * 60 * 60 * 1000L // 2 hours auto-stop
-        private const val LOG_MAX_SIZE_BYTES = WjxFileLogger.MAX_LOG_BYTES
-        private const val LOG_MAX_SIZE_MB = LOG_MAX_SIZE_BYTES / 1024 / 1024
-        private const val SERVICE_QR_PREFS = "service_qr_cache"
-        private const val KEY_SERVICE_QR_JSON = "service_qr_json"
-    }
-
-    /**
-     * Writes a diagnostic header to the recording file before piping logcat.
-     * Captures app / device / setting context that issue reports (e.g. #19)
-     * routinely lack: which battery capacity the user typed (raw + parsed),
-     * whether autoservice is reachable, and whether the BYD energydata trip
-     * source is readable.
-     */
-    private suspend fun appendDiagnosticHeader() = withContext(Dispatchers.IO) {
-        // Build the header. Each piece is independently caught so a single
-        // failing getter doesn't drop the whole header.
-        val header = buildString {
-            appendLine("=== 超级玩具箱诊断信息 ===")
-            try {
-                val pkg = appContext.packageName
-                val pi = appContext.packageManager.getPackageInfo(pkg, 0)
-                val versionName = pi.versionName ?: "?"
-                val versionCode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P)
-                    pi.longVersionCode.toString()
-                else
-                    @Suppress("DEPRECATION") pi.versionCode.toString()
-                appendLine("时间：${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())}")
-                appendLine("应用：$pkg $versionName（版本号=$versionCode）")
-                appendLine("设备：${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
-                appendLine("系统：${android.os.Build.VERSION.RELEASE}（接口级别 ${android.os.Build.VERSION.SDK_INT}）")
-                appendLine("系统指纹：${android.os.Build.FINGERPRINT}")
-                appendLine("语言：系统=${Locale.getDefault().toLanguageTag()} 应用=${localePreferences.getLanguage() ?: "未设置"}")
-            } catch (e: Exception) {
-                appendLine("（获取应用和设备信息失败：${e.message}）")
-            }
-
-            appendLine("--- 设置 ---")
-            try {
-                val dataSource = formatDataSource(settingsRepository.getDataSource().name)
-                val capacityRaw = settingsRepository.getString(SettingsRepository.KEY_BATTERY_CAPACITY, "")
-                val capacityParsed = settingsRepository.getBatteryCapacity()
-                appendLine("数据来源：$dataSource")
-                appendLine("电池容量：原始=\"$capacityRaw\"，解析=$capacityParsed")
-            } catch (e: Exception) {
-                appendLine("（获取设置失败：${e.message}）")
-            }
-
-            appendLine("--- 充电补录 ---")
-            try {
-                val anchor = chargingStateStore.load()
-                val anchorTs = if (anchor.ts > 0L)
-                    SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(anchor.ts))
-                else "未设置"
-                appendLine(
-                    "锚点：电量=${anchor.socPercent}，里程=${anchor.mileageKm}，" +
-                        "时间=$anchorTs，待补录=${formatBool(chargingStateStore.loadChargePending())}"
-                )
-                val journal = catchUpJournal.read()
-                appendLine("补录日志：")
-                if (journal.isBlank()) {
-                    appendLine("  （空）")
-                } else {
-                    journal.lines().forEach { appendLine("  $it") }
-                }
-            } catch (e: Exception) {
-                appendLine("（获取充电补录状态失败：${e.message}）")
-            }
-
-            appendLine("--- 车辆数据来源 ---")
-            try {
-                val energyDb = File("/storage/emulated/0/energydata")
-                appendLine("能耗目录：存在=${formatBool(energyDb.exists())}，是目录=${formatBool(energyDb.isDirectory)}")
-                if (energyDb.exists() && energyDb.isDirectory) {
-                    val files = energyDb.listFiles()
-                    if (files == null) {
-                        appendLine("  读取文件列表：无结果（可能无权限）")
-                    } else {
-                        files.forEach { appendLine("  ${it.name}（${it.length()} 字节，修改时间=${it.lastModified()}）") }
-                    }
-                }
-            } catch (e: Exception) {
-                appendLine("（获取车辆数据来源失败：${e.message}）")
-            }
-            appendLine("===============================")
-            appendLine()
-        }
-
-        WjxFileLogger.appendSection("诊断信息", header)
-    }
-
     fun startLogRecording() {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                if (!WjxDirectories.ensureBaseDirs()) {
-                    _uiState.update { it.copy(logSaveStatus = appContext.getString(R.string.settings_log_error_no_fs_access)) }
-                    return@launch
-                }
-
-                logFile = WjxDirectories.appLog
-
-                appendDiagnosticHeader()
-
-                WjxFileLogger.i("SettingsViewModel", "logcat recording start target=${WjxFileLogger.logFilePath}")
-                Runtime.getRuntime().exec(arrayOf("logcat", "-c")).waitFor()
-
-                val pid = android.os.Process.myPid().toString()
-                logProcess = Runtime.getRuntime().exec(arrayOf("logcat", "-v", "time", "--pid=$pid"))
-
-                // Pipe every current-app logcat line into the same WJX/wjx.log file.
-                Thread {
-                    try {
-                        logProcess?.inputStream?.bufferedReader()?.use { reader ->
-                            val target = logFile ?: return@Thread
-                            var line = reader.readLine()
-                            while (line != null) {
-                                if (target.length() > LOG_MAX_SIZE_BYTES) {
-                                    WjxFileLogger.appendExternalLine("--- 日志已停止：文件大小达到 ${LOG_MAX_SIZE_MB} MB 上限 ---")
-                                    break
-                                }
-                                WjxFileLogger.appendExternalLine(line)
-                                line = reader.readLine()
-                            }
-                        }
-                    } catch (e: Exception) {
-                        WjxFileLogger.w("SettingsViewModel", "logcat pipe stopped: ${e.message}")
-                    }
-                }.start()
-
-                // Auto-stop after 2 hours
-                logAutoStopJob = viewModelScope.launch {
-                    delay(LOG_MAX_DURATION_MS)
-                    stopLogRecording()
-                }
-
-                _uiState.update {
-                    it.copy(isRecordingLogs = true, logSaveStatus = appContext.getString(R.string.settings_log_recording_started, WjxFileLogger.logFilePath))
-                }
-            } catch (e: Exception) {
-                WjxFileLogger.e("SettingsViewModel", "startLogRecording failed", e)
-                _uiState.update { it.copy(logSaveStatus = appContext.getString(R.string.settings_error_with_message, e.message ?: "?")) }
-            }
-        }
+        logRecorder.start()
     }
 
     fun stopLogRecording() {
-        logAutoStopJob?.cancel()
-        logAutoStopJob = null
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                logProcess?.destroy()
-                logProcess = null
-
-                val file = WjxDirectories.appLog
-                WjxFileLogger.flush()
-                val sizeKb = file.length() / 1024
-                WjxFileLogger.i("SettingsViewModel", "logcat recording stop target=${file.absolutePath} sizeKb=$sizeKb")
-
-                _uiState.update {
-                    it.copy(
-                        isRecordingLogs = false,
-                        logSaveStatus = appContext.getString(R.string.settings_log_saved, file.absolutePath, sizeKb)
-                    )
-                }
-            } catch (e: Exception) {
-                WjxFileLogger.e("SettingsViewModel", "stopLogRecording failed", e)
-                _uiState.update {
-                    it.copy(isRecordingLogs = false, logSaveStatus = appContext.getString(R.string.settings_error_with_message, e.message ?: "?"))
-                }
-            }
-        }
+        logRecorder.stop()
     }
 
     fun showUpdateDialog() {
@@ -1188,6 +966,11 @@ class SettingsViewModel @Inject constructor(
                 _uiState.update { it.copy(updateDialogState = UpdateState.Error(e.message ?: "下载失败")) }
             }
         }
+    }
+
+    override fun onCleared() {
+        logRecorder.close()
+        super.onCleared()
     }
 
 }

@@ -4,7 +4,10 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.byd.wjx.R
+import com.byd.wjx.data.autoservice.ChargingReading
 import com.byd.wjx.data.charging.AutoserviceChargingDetector
+import com.byd.wjx.data.charging.ChargingTelemetryReader
+import com.byd.wjx.data.charging.ChargingTelemetrySemantics
 import com.byd.wjx.data.local.dao.BatterySnapshotDao
 import com.byd.wjx.data.local.dao.ChargeSummary
 import com.byd.wjx.data.local.entity.ChargeEntity
@@ -15,6 +18,8 @@ import com.byd.wjx.util.appLocalizedContext
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -81,6 +86,7 @@ data class ChargesUiState(
     val deleteConfirmCharge: ChargeEntity? = null,
     val homeTariff: Double = 0.60,
     val dcTariff: Double = 1.20,
+    val liveCharging: ChargingReading? = null,
 ) {
     /** SOC→kWh conversions use the aged capacity, not the nominal one (#28). */
     val effectiveCapacityKwh: Double get() = nominalCapacityKwh * sohFactor
@@ -92,13 +98,15 @@ class ChargesViewModel @Inject constructor(
     private val chargeRepository: ChargeRepository,
     private val batterySnapshotDao: BatterySnapshotDao,
     private val settingsRepository: SettingsRepository,
-    private val batteryStateRepository: BatteryStateRepository
+    private val batteryStateRepository: BatteryStateRepository,
+    private val chargingTelemetryReader: ChargingTelemetryReader,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChargesUiState())
     val uiState: StateFlow<ChargesUiState> = _uiState.asStateFlow()
 
     private var loadJob: Job? = null
+    private var liveTelemetryJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -148,6 +156,32 @@ class ChargesViewModel @Inject constructor(
             val expanded = state.expandedDays.toMutableSet()
             if (date in expanded) expanded.remove(date) else expanded.add(date)
             state.copy(expandedDays = expanded)
+        }
+    }
+
+    /**
+     * The charging page owns this poller. Leaving the page cancels it immediately, and the reader
+     * only adds the six electrical/diagnostic FIDs after the base snapshot confirms an active
+     * charging session.
+     */
+    fun setLiveTelemetryActive(active: Boolean) {
+        if (!active) {
+            liveTelemetryJob?.cancel()
+            liveTelemetryJob = null
+            _uiState.update { it.copy(liveCharging = null) }
+            return
+        }
+        if (liveTelemetryJob?.isActive == true) return
+        liveTelemetryJob = viewModelScope.launch {
+            while (isActive) {
+                val reading = runCatching { chargingTelemetryReader.read() }.getOrNull()
+                val live = reading.takeIf(ChargingTelemetrySemantics::isChargingSession)
+                _uiState.update { it.copy(liveCharging = live) }
+                delay(
+                    if (live != null) LIVE_CHARGING_REFRESH_MS
+                    else IDLE_CHARGING_REFRESH_MS,
+                )
+            }
         }
     }
 
@@ -430,5 +464,10 @@ class ChargesViewModel @Inject constructor(
             loadAll()
             loadLifetimeStats()
         }
+    }
+
+    private companion object {
+        const val LIVE_CHARGING_REFRESH_MS = 2_000L
+        const val IDLE_CHARGING_REFRESH_MS = 5_000L
     }
 }

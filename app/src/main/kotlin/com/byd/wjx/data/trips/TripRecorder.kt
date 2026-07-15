@@ -5,6 +5,7 @@ import com.byd.wjx.data.local.dao.LastStateDao
 import com.byd.wjx.data.local.dao.TripDao
 import com.byd.wjx.data.local.entity.LastStateEntity
 import com.byd.wjx.data.local.entity.TripEntity
+import com.byd.wjx.data.nativestack.BydSignalSemantics
 import com.byd.wjx.data.remote.DiParsData
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -28,7 +29,11 @@ class TripRecorder @Inject constructor(
 
     private var nullPowerStreak = 0
     private fun ignitionOn(data: DiParsData): Boolean {
-        if (data.powerState != null) { nullPowerStreak = 0; return data.powerState == 2 }
+        if (data.powerState != null) {
+            nullPowerStreak = 0
+            return BydSignalSemantics.isDriveReady(data.powerState) ||
+                data.gear == 4 || ((data.speed ?: 0) > 0)
+        }
         nullPowerStreak++
         val fallback = nullPowerStreak >= 5
         return fallback && (data.gear == 4 || ((data.speed ?: 0) > 0))

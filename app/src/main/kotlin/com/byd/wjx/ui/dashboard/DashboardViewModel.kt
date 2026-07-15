@@ -5,12 +5,13 @@ import androidx.lifecycle.viewModelScope
 import com.byd.wjx.data.autoservice.ChargeGunState
 import com.byd.wjx.data.local.entity.TripEntity
 import com.byd.wjx.data.local.dao.IdleDrainDao
+import com.byd.wjx.data.nativestack.BydSignalSemantics
+import com.byd.wjx.data.nativestack.OnDemandVehicleTelemetryReader
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.data.repository.TrackingStateRepository
 import com.byd.wjx.data.repository.TripRepository
 import com.byd.wjx.data.repository.VehicleDataFreshness
 import com.byd.wjx.data.repository.VehicleStateRepository
-import com.byd.wjx.domain.battery.BatteryStateRepository
 import com.byd.wjx.domain.calculator.ConsumptionAggregator
 import com.byd.wjx.domain.calculator.ConsumptionState
 import com.byd.wjx.domain.calculator.Trend
@@ -23,6 +24,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import javax.inject.Inject
@@ -68,6 +72,7 @@ data class DashboardUiState(
     val idleDrainHours: Double = 0.0,
     val batteryHealthExpanded: Boolean = false,
     val idleDrainExpanded: Boolean = false,
+    val powertrainDiagnosticsExpanded: Boolean = false,
     val idleDrainKwhWeek: Double = 0.0,
     val idleDrainHoursWeek: Double = 0.0,
     val estimatedRangeKm: Double? = null,
@@ -75,6 +80,8 @@ data class DashboardUiState(
     val fuelDrivingRangeKm: Int? = null,
     val combinedRangeKm: Int? = null,
     val fuelLevel: Int? = null,
+    val batteryRemainingKwh: Double? = null,
+    val fuelRemainingLiters: Double? = null,
     val elecConPer100km: Double? = null,
     val fuelConPer100km: Double? = null,
     val currentTripElecKwh: Double? = null,
@@ -128,6 +135,14 @@ data class DashboardUiState(
     val tirePressFR: Int? = null,
     val tirePressRL: Int? = null,
     val tirePressRR: Int? = null,
+    val tireTempFL: Int? = null,
+    val tireTempFR: Int? = null,
+    val tireTempRL: Int? = null,
+    val tireTempRR: Int? = null,
+    val tireStateFL: Int? = null,
+    val tireStateFR: Int? = null,
+    val tireStateRL: Int? = null,
+    val tireStateRR: Int? = null,
     val lightLow: Int? = null,
     val lightHigh: Int? = null,
     val drl: Int? = null,
@@ -140,6 +155,22 @@ data class DashboardUiState(
     val laneKeepState: Int? = null,
     val accCruiseState: Int? = null,
     val accCruisingSpeed: Int? = null,
+    val adasAebState: Int? = null,
+    val adasAvhState: Int? = null,
+    val adasBsdState: Int? = null,
+    val adasEspState: Int? = null,
+    val adasAccGrayState: Int? = null,
+    val adasNoaGrayState: Int? = null,
+    val adasMnoaStatus: Int? = null,
+    val adasExecSpeed: Int? = null,
+    val frontMotorSpeed: Int? = null,
+    val rearMotorSpeed: Int? = null,
+    val frontMotorTemp: Int? = null,
+    val rearMotorTemp: Int? = null,
+    val frontMotorCurrent: Double? = null,
+    val rearMotorCurrent: Double? = null,
+    val engineRpm: Int? = null,
+    val waterTemp: Int? = null,
     val localInsight: LocalInsightResult = LocalInsightResult.initial(),
     val localInsightLoading: Boolean = true,
 )
@@ -149,16 +180,18 @@ class DashboardViewModel @Inject constructor(
     private val tripRepository: TripRepository,
     private val settingsRepository: SettingsRepository,
     private val idleDrainDao: IdleDrainDao,
-    private val batteryStateRepository: BatteryStateRepository,
     private val vehicleStateRepository: VehicleStateRepository,
     private val trackingStateRepository: TrackingStateRepository,
     private val consumptionAggregator: ConsumptionAggregator,
     private val localInsightStatsAggregator: LocalInsightStatsAggregator,
     private val localInsightEngine: LocalInsightEngine,
+    private val onDemandTelemetryReader: OnDemandVehicleTelemetryReader,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardUiState())
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
+    private var homeTelemetryJob: Job? = null
+    private var powertrainTelemetryJob: Job? = null
 
     init {
         observeLiveData()
@@ -167,12 +200,95 @@ class DashboardViewModel @Inject constructor(
         loadCurrency()
         loadPeriodSummary()
         loadLocalInsight()
-        viewModelScope.launch { loadAutoserviceFlag() }
     }
 
     fun setPeriod(period: DashboardPeriod) {
         _uiState.update { it.copy(period = period) }
         loadPeriodSummary()
+    }
+
+    fun setHomeTelemetryActive(active: Boolean) {
+        if (!active) {
+            homeTelemetryJob?.cancel()
+            homeTelemetryJob = null
+            return
+        }
+        if (homeTelemetryJob?.isActive == true) return
+        homeTelemetryJob = viewModelScope.launch {
+            var cycle = 0
+            while (isActive) {
+                if (cycle % TIRE_TELEMETRY_EVERY_HOME_CYCLES == 0) {
+                    runCatching { onDemandTelemetryReader.readTireTelemetry() }
+                        .getOrNull()
+                        ?.let(::applyTireTelemetry)
+                }
+                runCatching { onDemandTelemetryReader.readAdasTelemetry() }
+                    .getOrNull()
+                    ?.let(::applyAdasTelemetry)
+                cycle = (cycle + 1) % TIRE_TELEMETRY_EVERY_HOME_CYCLES
+                delay(HOME_TELEMETRY_INTERVAL_MS)
+            }
+        }
+    }
+
+    fun setPowertrainTelemetryActive(active: Boolean) {
+        if (!active) {
+            powertrainTelemetryJob?.cancel()
+            powertrainTelemetryJob = null
+            return
+        }
+        if (powertrainTelemetryJob?.isActive == true) return
+        powertrainTelemetryJob = viewModelScope.launch {
+            while (isActive) {
+                runCatching { onDemandTelemetryReader.readPowertrainTelemetry() }
+                    .getOrNull()
+                    ?.let { data ->
+                        _uiState.update {
+                            it.copy(
+                                frontMotorSpeed = data.frontMotorSpeed ?: it.frontMotorSpeed,
+                                rearMotorSpeed = data.rearMotorSpeed ?: it.rearMotorSpeed,
+                                frontMotorTemp = data.frontMotorTemp ?: it.frontMotorTemp,
+                                rearMotorTemp = data.rearMotorTemp ?: it.rearMotorTemp,
+                                frontMotorCurrent = data.frontMotorCurrent ?: it.frontMotorCurrent,
+                                rearMotorCurrent = data.rearMotorCurrent ?: it.rearMotorCurrent,
+                                engineRpm = data.engineRpm ?: it.engineRpm,
+                                waterTemp = data.waterTemp ?: it.waterTemp,
+                            )
+                        }
+                    }
+                delay(POWERTRAIN_TELEMETRY_INTERVAL_MS)
+            }
+        }
+    }
+
+    private fun applyTireTelemetry(data: com.byd.wjx.data.remote.DiParsData) {
+        _uiState.update {
+            it.copy(
+                tireTempFL = data.tireTempFL ?: it.tireTempFL,
+                tireTempFR = data.tireTempFR ?: it.tireTempFR,
+                tireTempRL = data.tireTempRL ?: it.tireTempRL,
+                tireTempRR = data.tireTempRR ?: it.tireTempRR,
+                tireStateFL = data.tireStateFL ?: it.tireStateFL,
+                tireStateFR = data.tireStateFR ?: it.tireStateFR,
+                tireStateRL = data.tireStateRL ?: it.tireStateRL,
+                tireStateRR = data.tireStateRR ?: it.tireStateRR,
+            )
+        }
+    }
+
+    private fun applyAdasTelemetry(data: com.byd.wjx.data.remote.DiParsData) {
+        _uiState.update {
+            it.copy(
+                adasAebState = data.adasAebState ?: it.adasAebState,
+                adasAvhState = data.adasAvhState ?: it.adasAvhState,
+                adasBsdState = data.adasBsdState ?: it.adasBsdState,
+                adasEspState = data.adasEspState ?: it.adasEspState,
+                adasAccGrayState = data.adasAccGrayState ?: it.adasAccGrayState,
+                adasNoaGrayState = data.adasNoaGrayState ?: it.adasNoaGrayState,
+                adasMnoaStatus = data.adasMnoaStatus ?: it.adasMnoaStatus,
+                adasExecSpeed = data.adasExecSpeed ?: it.adasExecSpeed,
+            )
+        }
     }
 
     /**
@@ -187,6 +303,8 @@ class DashboardViewModel @Inject constructor(
         val sessionStartedAt: Long?,
         val tripDistanceKm: Double?,
         val consumption: ConsumptionState,
+        val batteryCapacityKwh: Double?,
+        val fuelTankCapacityLiters: Double?,
     )
 
     private fun observeLiveData() {
@@ -195,7 +313,9 @@ class DashboardViewModel @Inject constructor(
                 vehicleStateRepository.state,
                 trackingStateRepository.state,
                 consumptionAggregator.state,
-            ) { vehicleState, trackingState, consumption ->
+                settingsRepository.observeBatteryCapacity(),
+                settingsRepository.observeFuelTankCapacity(),
+            ) { vehicleState, trackingState, consumption, batteryCapacity, fuelTankCapacity ->
                 LiveSnapshot(
                     data = vehicleState.data,
                     dataUpdatedAt = vehicleState.lastUpdatedAtMs,
@@ -206,6 +326,8 @@ class DashboardViewModel @Inject constructor(
                     sessionStartedAt = trackingState.sessionStartedAt,
                     tripDistanceKm = trackingState.tripDistanceKm,
                     consumption = consumption,
+                    batteryCapacityKwh = batteryCapacity,
+                    fuelTankCapacityLiters = fuelTankCapacity,
                 )
             }.collect { snapshot ->
                 val data = snapshot.data
@@ -215,6 +337,7 @@ class DashboardViewModel @Inject constructor(
 
                 _uiState.update { current ->
                     val newSoc = data?.soc ?: current.soc
+                    val newFuelLevel = data?.fuelLevel ?: current.fuelLevel
                     val elecRange = data?.elecDrivingRangeKm ?: current.elecDrivingRangeKm
                     val fuelRange = data?.fuelDrivingRangeKm ?: current.fuelDrivingRangeKm
                     val combinedRange = if (elecRange != null && fuelRange != null) elecRange + fuelRange else null
@@ -232,6 +355,10 @@ class DashboardViewModel @Inject constructor(
                         cellVoltageDelta = if (data?.maxCellVoltage != null && data.minCellVoltage != null)
                             data.maxCellVoltage - data.minCellVoltage else current.cellVoltageDelta,
                         voltage12v = data?.voltage12v ?: current.voltage12v,
+                        currentSoh = data?.soh?.toFloat() ?: current.currentSoh,
+                        currentLifetimeKm = data?.mileage?.toFloat() ?: current.currentLifetimeKm,
+                        currentLifetimeKwh = data?.totalElecConsumption?.toFloat() ?: current.currentLifetimeKwh,
+                        adbConnected = connected,
                         exteriorTemp = data?.exteriorTemp ?: current.exteriorTemp,
                         batteryHealthStatus = calculateBatteryStatus(data, current),
                         voltage12vStatus = calculate12vStatus(data?.voltage12v ?: current.voltage12v),
@@ -239,7 +366,9 @@ class DashboardViewModel @Inject constructor(
                         elecDrivingRangeKm = elecRange,
                         fuelDrivingRangeKm = fuelRange,
                         combinedRangeKm = combinedRange,
-                        fuelLevel = data?.fuelLevel ?: current.fuelLevel,
+                        fuelLevel = newFuelLevel,
+                        batteryRemainingKwh = remainingAmount(newSoc, snapshot.batteryCapacityKwh),
+                        fuelRemainingLiters = remainingAmount(newFuelLevel, snapshot.fuelTankCapacityLiters),
                         elecConPer100km = data?.elecConPer100km ?: current.elecConPer100km,
                         fuelConPer100km = data?.fuelConPer100km ?: current.fuelConPer100km,
                         currentTripElecKwh = data?.currentTripElecKwh ?: current.currentTripElecKwh,
@@ -429,7 +558,6 @@ class DashboardViewModel @Inject constructor(
     fun refresh() {
         loadPeriodSummary()
         loadLocalInsight()
-        viewModelScope.launch { loadAutoserviceFlag() }
     }
 
     private fun loadLocalInsight() {
@@ -451,33 +579,27 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
-    private suspend fun loadAutoserviceFlag() {
-        val state = runCatching { batteryStateRepository.refresh() }.getOrNull()
-        _uiState.update {
-            if (state == null) {
-                it.copy(adbConnected = false)
-            } else {
-                it.copy(
-                    adbConnected = state.autoserviceAvailable,
-                    currentSoh = state.sohPercent,
-                    currentLifetimeKm = state.lifetimeKm,
-                    currentLifetimeKwh = state.lifetimeKwh,
-                )
-            }
-        }
-    }
-
     fun toggleBatteryHealthExpanded() {
         _uiState.update { it.copy(
             batteryHealthExpanded = !it.batteryHealthExpanded,
-            idleDrainExpanded = false
+            idleDrainExpanded = false,
+            powertrainDiagnosticsExpanded = false,
         ) }
     }
 
     fun toggleIdleDrainExpanded() {
         _uiState.update { it.copy(
             idleDrainExpanded = !it.idleDrainExpanded,
-            batteryHealthExpanded = false
+            batteryHealthExpanded = false,
+            powertrainDiagnosticsExpanded = false,
+        ) }
+    }
+
+    fun togglePowertrainDiagnosticsExpanded() {
+        _uiState.update { it.copy(
+            powertrainDiagnosticsExpanded = !it.powertrainDiagnosticsExpanded,
+            batteryHealthExpanded = false,
+            idleDrainExpanded = false,
         ) }
     }
 
@@ -507,7 +629,19 @@ class DashboardViewModel @Inject constructor(
     }
 
     private fun isChargingSample(data: com.byd.wjx.data.remote.DiParsData): Boolean {
-        if (data.chargingStatus == 2) return true
+        if (BydSignalSemantics.isCharging(data.chargingStatus)) return true
         return ChargeGunState.isConnected(data.chargeGunState) && (data.power ?: 0.0) < -0.3
     }
+
+    private companion object {
+        const val HOME_TELEMETRY_INTERVAL_MS = 2_000L
+        const val TIRE_TELEMETRY_EVERY_HOME_CYCLES = 5
+        const val POWERTRAIN_TELEMETRY_INTERVAL_MS = 2_000L
+    }
+}
+
+internal fun remainingAmount(percent: Int?, capacity: Double?): Double? {
+    if (percent == null || percent !in 0..100) return null
+    if (capacity == null || !capacity.isFinite() || capacity <= 0.0) return null
+    return (capacity * percent / 100.0).coerceIn(0.0, capacity)
 }

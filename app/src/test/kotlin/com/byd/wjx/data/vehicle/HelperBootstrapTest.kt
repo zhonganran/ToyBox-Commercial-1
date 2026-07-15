@@ -26,6 +26,7 @@ class HelperBootstrapTest {
         assertTrue(ready)
         assertTrue(cachedReady)
         coVerify(exactly = 0) { adb.spawnHelper() }
+        coVerify(exactly = 1) { helper.isAlive() }
         coVerify(exactly = 1) { helper.protocolVersion() }
         coVerify(exactly = 1) { helper.readBatch(VehicleGateway.AVAILABILITY_PROBES) }
     }

@@ -66,6 +66,7 @@ import com.byd.wjx.ui.theme.CardBorder
 import com.byd.wjx.ui.theme.CardSurface
 import com.byd.wjx.ui.theme.GlassStroke
 import com.byd.wjx.ui.theme.GlassWhite
+import com.byd.wjx.ui.theme.LocalSuperToyBoxDarkTheme
 import com.byd.wjx.ui.theme.NavyDark
 import com.byd.wjx.ui.theme.SceneAmber
 import com.byd.wjx.ui.theme.SceneBlue
@@ -119,7 +120,7 @@ fun ProAppScaffold(
             ) {
                 val baseDensity = LocalDensity.current
                 // Keep the information density close to AutoTark on 720p car displays.
-                val contentScale = (maxHeight.value / 860f).coerceIn(0.70f, 1f)
+                val contentScale = (maxHeight.value / 860f).coerceIn(0.74f, 1f)
                 val compactDensity = remember(baseDensity.density, baseDensity.fontScale, contentScale) {
                     Density(
                         density = baseDensity.density * contentScale,
@@ -158,8 +159,8 @@ private fun ProTopStatusBar(
         modifier = modifier
             .fillMaxWidth()
             .height(40.dp)
-            .background(Color.White.copy(alpha = 0.34f))
-            .border(0.5.dp, Color(0x280B2338), RoundedCornerShape(0.dp))
+            .background(GlassWhite.copy(alpha = 0.72f))
+            .border(0.5.dp, CardBorder.copy(alpha = 0.72f), RoundedCornerShape(0.dp))
             .padding(horizontal = 20.dp),
     ) {
         val compact = maxWidth < 980.dp
@@ -200,7 +201,7 @@ private fun ProTopStatusBar(
                 Text(
                     text = "方程豹  钛7",
                     color = TextPrimary,
-                    fontSize = 12.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
                 )
@@ -210,7 +211,7 @@ private fun ProTopStatusBar(
             Text(
                 text = "${state.exteriorTemp?.let { "$it°C" } ?: "--°C"}  外",
                 color = TextPrimary,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
             )
@@ -219,7 +220,7 @@ private fun ProTopStatusBar(
             Text(
                 text = "${state.insideTemp?.let { "$it°C" } ?: "--°C"}  内",
                 color = TextPrimary,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
             )
@@ -229,7 +230,7 @@ private fun ProTopStatusBar(
                 Text(
                     text = freshnessText(state.lastVehicleDataAt),
                     color = TextSecondary,
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
                 )
@@ -245,7 +246,7 @@ private fun StatusDivider() {
         modifier = Modifier
             .width(1.dp)
             .height(16.dp)
-            .background(Color(0x2610202A)),
+            .background(CardBorder.copy(alpha = 0.72f)),
     )
 }
 
@@ -270,7 +271,9 @@ fun ProDynamicBackground(
     } else {
         0f
     }
-    val colors = sceneColors(scene)
+    val darkTheme = LocalSuperToyBoxDarkTheme.current
+    val colors = sceneColors(scene, darkTheme)
+    val glowColor = if (darkTheme) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.54f)
 
     Canvas(modifier = modifier.fillMaxSize()) {
         drawRect(
@@ -284,7 +287,7 @@ fun ProDynamicBackground(
         val glowHeight = size.height * 0.34f
         drawRect(
             brush = Brush.radialGradient(
-                colors = listOf(Color.White.copy(alpha = 0.54f), Color.Transparent),
+                colors = listOf(glowColor, Color.Transparent),
                 center = Offset(size.width * (0.48f + motion), size.height * 0.34f),
                 radius = max(size.width, size.height) * 0.56f,
             ),
@@ -299,7 +302,9 @@ fun ProDynamicBackground(
             size = Size(size.width, glowHeight),
         )
 
-        val gridColor = Color.White.copy(alpha = if (scene == "settings") 0.22f else 0.18f)
+        val gridColor = Color.White.copy(
+            alpha = if (darkTheme) 0.07f else if (scene == "settings") 0.22f else 0.18f,
+        )
         repeat(9) { index ->
             val y = size.height * (0.12f + index * 0.075f)
             val path = Path().apply {
@@ -333,13 +338,24 @@ fun ProDynamicBackground(
     }
 }
 
-private fun sceneColors(scene: String): List<Color> = when (scene) {
-    "sound" -> listOf(Color(0xFFF3E9FF), Color(0xFF9D86FF), SceneBlue, ScenePink)
-    "desktop" -> listOf(Color(0xFFBFFBFA), SceneCyan, SceneSky, Color(0xFFF6A1C5))
-    "automation" -> listOf(Color(0xFFFFE8ED), Color(0xFFD8CFFF), SceneSky, Color(0xFF78E8E4))
-    "settings" -> listOf(Color(0xFFFAFCFE), Color(0xFFF2F7FB), Color(0xFFEAF5FA), Color(0xFFF7FCFC))
-    else -> listOf(Color(0xFFA8F7F2), SceneCyan, SceneSky, Color(0xFFF48DB9))
-}
+private fun sceneColors(scene: String, darkTheme: Boolean): List<Color> =
+    if (darkTheme) {
+        when (scene) {
+            "sound" -> listOf(Color(0xFF11131F), Color(0xFF241E3A), Color(0xFF172B45), Color(0xFF321E32))
+            "desktop" -> listOf(Color(0xFF0C1A1C), Color(0xFF123036), Color(0xFF172A42), Color(0xFF2A1D2B))
+            "automation" -> listOf(Color(0xFF17121A), Color(0xFF211C35), Color(0xFF162D43), Color(0xFF123536))
+            "settings" -> listOf(Color(0xFF091017), Color(0xFF101B24), Color(0xFF172631), Color(0xFF0D171F))
+            else -> listOf(Color(0xFF091416), Color(0xFF123033), Color(0xFF172C42), Color(0xFF2A1B29))
+        }
+    } else {
+        when (scene) {
+            "sound" -> listOf(Color(0xFFF3E9FF), Color(0xFF9D86FF), SceneBlue, ScenePink)
+            "desktop" -> listOf(Color(0xFFBFFBFA), SceneCyan, SceneSky, Color(0xFFF6A1C5))
+            "automation" -> listOf(Color(0xFFFFE8ED), Color(0xFFD8CFFF), SceneSky, Color(0xFF78E8E4))
+            "settings" -> listOf(Color(0xFFFAFCFE), Color(0xFFF2F7FB), Color(0xFFEAF5FA), Color(0xFFF7FCFC))
+            else -> listOf(Color(0xFFA8F7F2), SceneCyan, SceneSky, Color(0xFFF48DB9))
+        }
+    }
 
 @Composable
 private fun ProBottomNavigation(
@@ -352,7 +368,7 @@ private fun ProBottomNavigation(
         modifier = modifier
             .fillMaxWidth()
             .height(52.dp)
-            .background(Color.White.copy(alpha = 0.66f))
+            .background(GlassWhite.copy(alpha = 0.78f))
             .padding(horizontal = 42.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -390,7 +406,7 @@ private fun ProBottomNavigation(
                     Text(
                         text = item.label,
                         color = tint,
-                        fontSize = 13.sp,
+                        fontSize = 14.sp,
                         fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.Medium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -426,7 +442,7 @@ fun ProPageHeader(
                 Text(
                     text = eyebrow,
                     color = SceneBlue,
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.ExtraBold,
                 )
             }
@@ -493,9 +509,9 @@ fun ProInfoCard(
                 Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(title, color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text(title, color = TextSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 Text(value, color = TextPrimary, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
-                Text(caption, color = TextMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(caption, color = TextMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }
@@ -510,7 +526,7 @@ fun ProSectionTitle(
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(title, color = TextPrimary, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
         if (subtitle != null) {
-            Text(subtitle, color = TextSecondary, fontSize = 12.sp)
+            Text(subtitle, color = TextSecondary, fontSize = 13.sp)
         }
     }
 }
@@ -537,7 +553,7 @@ fun ProStatusPill(
                 .clip(CircleShape)
                 .background(tint),
         )
-        Text(text, color = if (active) TextPrimary else TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Text(text, color = if (active) TextPrimary else TextSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 

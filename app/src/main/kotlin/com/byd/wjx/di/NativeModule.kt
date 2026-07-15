@@ -1,6 +1,7 @@
 package com.byd.wjx.di
 
 import com.byd.wjx.data.nativestack.NativeParsReader
+import com.byd.wjx.data.nativestack.OnDemandVehicleTelemetryReader
 import com.byd.wjx.data.nativestack.ParsReader
 import dagger.Binds
 import dagger.Module
@@ -15,4 +16,10 @@ abstract class NativeModule {
     @Binds
     @Singleton
     abstract fun bindParsReader(impl: NativeParsReader): ParsReader
+
+    @Binds
+    @Singleton
+    abstract fun bindOnDemandVehicleTelemetryReader(
+        impl: NativeParsReader,
+    ): OnDemandVehicleTelemetryReader
 }

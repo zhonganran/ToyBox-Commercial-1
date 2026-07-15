@@ -41,6 +41,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.byd.wjx.ui.theme.AccentGreen
 import com.byd.wjx.ui.theme.CardBorder
 import com.byd.wjx.ui.theme.CardSurface
+import com.byd.wjx.ui.theme.CardSurfaceElevated
 import com.byd.wjx.ui.theme.TextMuted
 import com.byd.wjx.ui.theme.TextPrimary
 import com.byd.wjx.ui.theme.TextSecondary
@@ -99,7 +100,7 @@ fun DisclaimerScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(18.dp))
-                            .background(Color.White.copy(alpha = 0.62f))
+                            .background(CardSurface.copy(alpha = 0.78f))
                             .padding(18.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
@@ -142,7 +143,7 @@ fun DisclaimerScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(16.dp))
-                            .background(Color.White.copy(alpha = 0.72f))
+                            .background(CardSurfaceElevated.copy(alpha = 0.82f))
                             .padding(horizontal = 14.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {

@@ -23,6 +23,7 @@ class HelperBootstrap @Inject constructor(
 ) {
     private val mutex = Mutex()
     @Volatile private var currentProtocolReady = false
+    @Volatile private var protocolReadyAtNanos = 0L
 
     /**
      * Returns true if the helper binder service is reachable after this call.
@@ -45,6 +46,12 @@ class HelperBootstrap @Inject constructor(
      * full snapshot so Binder polling does not remain unavailable for the whole session.
      */
     suspend fun ensureCurrent(): Boolean = mutex.withLock {
+        val nowNanos = System.nanoTime()
+        if (currentProtocolReady &&
+            nowNanos - protocolReadyAtNanos in 0 until PROTOCOL_READY_CACHE_NANOS
+        ) {
+            return true
+        }
         val alive = helper.isAlive() || spawnAndWaitLocked("spawn")
         if (!alive) return false
         if (currentProtocolReady) return true
@@ -53,7 +60,6 @@ class HelperBootstrap @Inject constructor(
         WjxFileLogger.w(TAG, "helper protocol is stale or incomplete; restarting after update")
         if (!spawnAndWaitLocked("protocol_upgrade")) return false
         val ready = vehicleProtocolAvailable()
-        currentProtocolReady = ready
         if (!ready) {
             WjxFileLogger.w(TAG, "helper restarted but required protocol is still unavailable")
         }
@@ -69,15 +75,17 @@ class HelperBootstrap @Inject constructor(
      */
     suspend fun restart(reason: String): Boolean = mutex.withLock {
         WjxFileLogger.w(TAG, "helper restart requested: $reason")
-        currentProtocolReady = false
+        noteProtocolReady(false)
         spawnAndWaitLocked("restart:$reason")
     }
 
     /** Cheap reachability check — no side effects. */
-    suspend fun isHealthy(): Boolean = helper.isAlive()
+    suspend fun isHealthy(): Boolean = helper.isAlive().also { alive ->
+        if (!alive) noteProtocolReady(false)
+    }
 
     private suspend fun spawnAndWaitLocked(reason: String): Boolean {
-        currentProtocolReady = false
+        noteProtocolReady(false)
         val dispatched = HelperProcessGate.withRestart { adb.spawnHelper() }
         if (!dispatched) {
             WjxFileLogger.w(TAG, "spawnHelper dispatch failed reason=$reason")
@@ -108,12 +116,18 @@ class HelperBootstrap @Inject constructor(
             )
             return false
         }
-        return batchProtocolAvailable().also { currentProtocolReady = it }
+        return batchProtocolAvailable().also(::noteProtocolReady)
+    }
+
+    private fun noteProtocolReady(ready: Boolean) {
+        currentProtocolReady = ready
+        protocolReadyAtNanos = if (ready) System.nanoTime() else 0L
     }
 
     companion object {
         private const val TAG = "HelperBootstrap"
         private const val POLL_ATTEMPTS = 40
         private const val POLL_INTERVAL_MS = 200L
+        private const val PROTOCOL_READY_CACHE_NANOS = 2_000_000_000L
     }
 }

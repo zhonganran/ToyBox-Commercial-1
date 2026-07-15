@@ -17,11 +17,6 @@ class BootReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "BootReceiver"
-        const val PREFS_NAME = "boot_log"
-        const val KEY_LAST_BOOT_TS = "last_boot_ts"
-        const val KEY_LAST_BOOT_METHOD = "last_boot_method"
-        const val KEY_LAST_BOOT_ACTION = "last_boot_action"
-        const val KEY_CHAIN_LOG = "chain_log"
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -40,8 +35,6 @@ class BootReceiver : BroadcastReceiver() {
             "com.byd.action.ACC_OFF",
             "com.byd.action.IGN_ON",
             "com.byd.accmode.ACC_MODE_CHANGED",
-            "android.net.wifi.STATE_CHANGE",
-            "android.net.conn.CONNECTIVITY_CHANGE",
         )
         if (intent.action !in validActions) return
 
@@ -94,23 +87,14 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     private fun logBootEvent(context: Context, action: String) {
-        try {
-            BootState.deviceProtectedContext(context).getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-                .putLong(KEY_LAST_BOOT_TS, System.currentTimeMillis())
-                .putString(KEY_LAST_BOOT_ACTION, action)
-                .apply()
-        } catch (e: Exception) {
-            WjxFileLogger.w(TAG, "Failed to log boot event: ${e.message}")
+        if (!BootDiagnosticsStore.recordBootEvent(context, action)) {
+            WjxFileLogger.w(TAG, "Failed to log boot event")
         }
     }
 
     private fun updateBootMethod(context: Context, method: String) {
-        try {
-            BootState.deviceProtectedContext(context).getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-                .putString(KEY_LAST_BOOT_METHOD, method)
-                .apply()
-        } catch (e: Exception) {
-            WjxFileLogger.w(TAG, "Failed to update boot method: ${e.message}")
+        if (!BootDiagnosticsStore.updateBootMethod(context, method)) {
+            WjxFileLogger.w(TAG, "Failed to update boot method")
         }
     }
 

@@ -50,16 +50,15 @@ class NetworkAvailableMonitor @Inject constructor(
     // mid-probe and then handing the about-to-publish edge as "new" would
     // re-introduce the false-fire it tries to prevent. One extra poll tick of
     // latency is a fair price.
-    @Volatile private var _probePending: Boolean = false
-
     val lastAvailableAt: Long get() = _lastAvailableAt
-    val probePending: Boolean get() = _probePending
+    val probePending: Boolean get() = probeGate.pending
 
     private val cm: ConnectivityManager =
         context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
-    private var registered = false
+    @Volatile private var registered = false
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val probeGate = LatestOperationGate()
     // Single in-flight probe — newer VALIDATED edges cancel any earlier
     // probe still running, avoiding stacked socket attempts when the
     // system spams capability changes during a network transition.
@@ -93,10 +92,12 @@ class NetworkAvailableMonitor @Inject constructor(
         }
     }
 
+    @Synchronized
     private fun probeReachability(network: Network, nid: Long) {
+        if (!registered) return
         probeJob?.cancel()
-        _probePending = true
-        probeJob = scope.launch {
+        val token = probeGate.begin()
+        val job = scope.launch {
             try {
                 val reached = withContext(Dispatchers.IO) { tryProbe(network) }
                 // Race guard: by the time the probe returns, the user may have
@@ -107,7 +108,7 @@ class NetworkAvailableMonitor @Inject constructor(
                     WjxFileLogger.i(TAG, "probe failed nid=$nid")
                     return@launch
                 }
-                if (validatedNetworkId != nid) {
+                if (!registered || !probeGate.isLatest(token) || validatedNetworkId != nid) {
                     Log.i(TAG, "probe ok for nid=$nid but tracked network changed — dropped")
                     WjxFileLogger.i(TAG, "probe ok but tracked network changed nid=$nid current=$validatedNetworkId")
                     return@launch
@@ -116,7 +117,13 @@ class NetworkAvailableMonitor @Inject constructor(
                 Log.i(TAG, "validated+reachable network edge at $_lastAvailableAt (nid=$nid)")
                 WjxFileLogger.i(TAG, "validated reachable network edge at=$_lastAvailableAt nid=$nid")
             } finally {
-                _probePending = false
+                probeGate.finish(token)
+            }
+        }
+        probeJob = job
+        job.invokeOnCompletion {
+            synchronized(this@NetworkAvailableMonitor) {
+                if (probeJob === job) probeJob = null
             }
         }
     }
@@ -139,8 +146,12 @@ class NetworkAvailableMonitor @Inject constructor(
         return false
     }
 
+    @Synchronized
     fun start() {
         if (registered) return
+        // Mark first so an immediate framework callback is accepted. Roll back if registration
+        // itself fails.
+        registered = true
         runCatching {
             // No initial-state guard. ConnectivityManager replays the current
             // VALIDATED network state to a freshly-registered callback — that
@@ -148,21 +159,25 @@ class NetworkAvailableMonitor @Inject constructor(
             // be able to react to on app launch. Repeat-fires from service
             // restarts are best handled by the rule's cooldown setting.
             cm.registerDefaultNetworkCallback(callback)
-            registered = true
             Log.i(TAG, "started")
             WjxFileLogger.i(TAG, "started")
         }.onFailure {
+            registered = false
             Log.w(TAG, "start failed: ${it.message}")
             WjxFileLogger.w(TAG, "start failed: ${it.message}")
         }
     }
 
+    @Synchronized
     fun stop() {
-        if (!registered) return
-        runCatching { cm.unregisterNetworkCallback(callback) }
+        val wasRegistered = registered
         registered = false
+        validatedNetworkId = -1L
+        probeGate.cancelAll()
         probeJob?.cancel()
         probeJob = null
+        if (!wasRegistered) return
+        runCatching { cm.unregisterNetworkCallback(callback) }
         Log.i(TAG, "stopped")
         WjxFileLogger.i(TAG, "stopped")
     }

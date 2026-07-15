@@ -136,6 +136,7 @@ fun SocGauge(
     )
     val socSweep = totalSweep * animatedSoc
     val strokeWidth = 14.dp
+    val trackColor = CardBorder.copy(alpha = 0.4f)
 
     Box(
         contentAlignment = Alignment.Center,
@@ -169,7 +170,7 @@ fun SocGauge(
 
             // Background track arc
             drawArc(
-                color = CardBorder.copy(alpha = 0.4f),
+                color = trackColor,
                 startAngle = startAngle,
                 sweepAngle = totalSweep,
                 useCenter = false,
@@ -391,9 +392,9 @@ fun SummaryRow(
     totalKm: Double,
     totalKwh: Double,
     avgKwhPer100km: Double,
+    modifier: Modifier = Modifier,
     totalCost: Double = 0.0,
     currencySymbol: String = "",
-    modifier: Modifier = Modifier
 ) {
     Row(
         modifier = modifier.fillMaxWidth().padding(horizontal = 8.dp),

@@ -69,30 +69,30 @@ object ClusterProjectionManager {
     private val DUPLICATE_APP_FLAGS = intArrayOf(18, 16, 17)
     private val RECOVERY_DELAYS_MS = longArrayOf(0L, 350L, 900L, 1600L)
 
-    const val PREFS_NAME = "cluster_projection"
+    const val PREFS_NAME = ClusterProjectionPreferences.PREFS_NAME
     // Master enable for star-controlled projection (settings switch). Read by SteeringWheelKeyService.
-    const val KEY_MIRROR_ENABLED = "mirror_enabled"
+    const val KEY_MIRROR_ENABLED = ClusterProjectionPreferences.KEY_MIRROR_ENABLED
     // Steering-wheel keycode that toggles projection. Default = right star (DEFAULT_TRIGGER_KEYCODE).
     // Stored independently of the master switch so the choice survives turning the feature off.
-    const val KEY_TRIGGER_KEYCODE = "trigger_keycode"
+    const val KEY_TRIGGER_KEYCODE = ClusterProjectionPreferences.KEY_TRIGGER_KEYCODE
     // User-tunable window size, % of the cluster panel (MIN_PROJECTION_PCT..MAX, default = full).
-    const val KEY_WIDTH_PCT = "width_pct"
-    const val KEY_HEIGHT_PCT = "height_pct"
+    const val KEY_WIDTH_PCT = ClusterProjectionPreferences.KEY_WIDTH_PCT
+    const val KEY_HEIGHT_PCT = ClusterProjectionPreferences.KEY_HEIGHT_PCT
     // User-tunable window position within the free space (MIN_OFFSET_PCT..MAX, default = centered).
-    const val KEY_OFFSET_X_PCT = "offset_x_pct"
-    const val KEY_OFFSET_Y_PCT = "offset_y_pct"
+    const val KEY_OFFSET_X_PCT = ClusterProjectionPreferences.KEY_OFFSET_X_PCT
+    const val KEY_OFFSET_Y_PCT = ClusterProjectionPreferences.KEY_OFFSET_Y_PCT
     // User-tunable content scale: VirtualDisplay density as % of cluster dpi (MIN_SCALE_PCT..MAX,
     // default 100 = native). Tunes what the projected app renders INSIDE the window — how big the
     // UI is and how much map fits — independent of the window size/position.
-    const val KEY_SCALE_PCT = "scale_pct"
+    const val KEY_SCALE_PCT = ClusterProjectionPreferences.KEY_SCALE_PCT
     // INDEPENDENT = move the selected app to cluster. DUPLICATE = mirror center screen to cluster.
-    const val KEY_PROJECTION_LAYOUT = "projection_layout"
+    const val KEY_PROJECTION_LAYOUT = ClusterProjectionPreferences.KEY_PROJECTION_LAYOUT
     // App to project onto the cluster (default Amap Auto). Label is cached only for the settings row.
-    const val KEY_TARGET_PACKAGE = "target_package"
-    const val KEY_TARGET_LABEL = "target_label"
+    const val KEY_TARGET_PACKAGE = ClusterProjectionPreferences.KEY_TARGET_PACKAGE
+    const val KEY_TARGET_LABEL = ClusterProjectionPreferences.KEY_TARGET_LABEL
     // Last VirtualDisplay id we created. Persisted so a fresh app process can release the display
     // a prior (dead) process left orphaned in the long-lived daemon, instead of leaking it.
-    private const val KEY_LAST_VD_ID = "last_vd_id"
+    private const val KEY_LAST_VD_ID = ClusterProjectionPreferences.KEY_LAST_VD_ID
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val mutex = Mutex()
@@ -311,52 +311,25 @@ object ClusterProjectionManager {
         }
     }
 
-    /** Saved window size as (widthPct, heightPct); defaults to a full-screen window. */
-    private fun readSizePct(context: Context): Pair<Int, Int> {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getInt(KEY_WIDTH_PCT, MAX_PROJECTION_PCT) to
-            prefs.getInt(KEY_HEIGHT_PCT, MAX_PROJECTION_PCT)
-    }
-
-    /** Saved window position as (offsetXPct, offsetYPct); defaults to centered. */
-    private fun readOffsetPct(context: Context): Pair<Int, Int> {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getInt(KEY_OFFSET_X_PCT, CENTER_OFFSET_PCT) to
-            prefs.getInt(KEY_OFFSET_Y_PCT, CENTER_OFFSET_PCT)
-    }
-
-    /** Saved content scale %; the default reproduces native rendering. */
-    private fun readScalePct(context: Context): Int =
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getInt(KEY_SCALE_PCT, DEFAULT_SCALE_PCT)
-
-    fun readProjectionLayout(context: Context): ProjectionLayout {
-        val saved = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(KEY_PROJECTION_LAYOUT, ProjectionLayout.INDEPENDENT.name)
-        return runCatching { ProjectionLayout.valueOf(saved ?: ProjectionLayout.INDEPENDENT.name) }
-            .getOrDefault(ProjectionLayout.INDEPENDENT)
-    }
+    fun readProjectionLayout(context: Context): ProjectionLayout =
+        ClusterProjectionPreferences(context).snapshot().layout
 
     /** Package to project — user-selectable in settings, defaults to Amap Auto. */
     private fun targetPackage(context: Context): String =
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(KEY_TARGET_PACKAGE, NAVI_PACKAGE) ?: NAVI_PACKAGE
+        ClusterProjectionPreferences(context).snapshot().targetPackage
 
     /** Persist the user's chosen trigger keycode (from the learn-button dialog). */
     fun setTriggerKeyCode(context: Context, keyCode: Int) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit().putInt(KEY_TRIGGER_KEYCODE, keyCode).apply()
+        ClusterProjectionPreferences(context).setTriggerKeyCode(keyCode)
     }
 
     /** Remember the last VirtualDisplay id so a future process can release it if we die holding it. */
     private fun saveLastVdId(context: Context, id: Int) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit().putInt(KEY_LAST_VD_ID, id).apply()
+        ClusterProjectionPreferences(context).saveLastVirtualDisplayId(id)
     }
 
     private fun clearLastVdId(context: Context) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit().remove(KEY_LAST_VD_ID).apply()
+        ClusterProjectionPreferences(context).clearLastVirtualDisplayId()
     }
 
     private fun persistDisplayHandle(context: Context, handle: DisplayHandle) {
@@ -369,9 +342,8 @@ object ClusterProjectionManager {
      * was recorded or the id is already gone (the daemon only releases displays in its own map).
      */
     private suspend fun releaseOrphanedDisplay(context: Context, helper: HelperClient) {
-        val orphan = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getInt(KEY_LAST_VD_ID, -1)
-        if (orphan != -1) {
+        val orphan = ClusterProjectionPreferences(context).snapshot().lastVirtualDisplayId
+        if (orphan != ClusterProjectionPreferences.NO_VIRTUAL_DISPLAY) {
             WjxFileLogger.i(TAG, "releasing orphaned VirtualDisplay id=$orphan from a prior session")
             if (!helper.releaseVirtualDisplay(orphan)) {
                 WjxFileLogger.w(TAG, "orphaned VirtualDisplay id=$orphan release failed; clearing stale handle")
@@ -527,12 +499,17 @@ object ClusterProjectionManager {
         return if (layout == ProjectionLayout.DUPLICATE) {
             duplicateFullScreenPlan(context)
         } else {
-            val (widthPct, heightPct) = readSizePct(context)
-            val (offsetXPct, offsetYPct) = readOffsetPct(context)
+            val preferences = ClusterProjectionPreferences(context).snapshot()
             val geo = geometryFor(
-                mode, clusterWidth, clusterHeight, widthPct, heightPct, offsetXPct, offsetYPct,
+                mode,
+                clusterWidth,
+                clusterHeight,
+                preferences.widthPct,
+                preferences.heightPct,
+                preferences.offsetXPct,
+                preferences.offsetYPct,
             ) ?: return null
-            val render = renderPlanFor(geo, clusterDensityDpi, readScalePct(context))
+            val render = renderPlanFor(geo, clusterDensityDpi, preferences.scalePct)
             ProjectionSurfacePlan(
                 geo = geo,
                 render = render,
@@ -720,8 +697,7 @@ object ClusterProjectionManager {
     }
 
     private fun shouldRecoverProjection(context: Context): Boolean {
-        val enabled = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getBoolean(KEY_MIRROR_ENABLED, false)
+        val enabled = ClusterProjectionPreferences(context).isEnabled()
         return enabled && currentMode == ClusterMode.FULLSCREEN
     }
 

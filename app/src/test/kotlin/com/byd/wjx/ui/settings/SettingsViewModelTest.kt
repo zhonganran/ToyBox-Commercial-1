@@ -26,6 +26,7 @@ import com.byd.wjx.data.local.entity.TripPointEntity
 import com.byd.wjx.data.repository.ChargeRepository
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.data.repository.TripRepository
+import com.byd.wjx.data.settings.ServiceQrCache
 import com.byd.wjx.service.UpdateChecker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -54,6 +55,7 @@ import org.robolectric.annotation.Config
 class SettingsViewModelTest {
 
     private val testDispatcher = StandardTestDispatcher()
+    private val logRecorders = mutableListOf<SettingsLogRecorder>()
 
     @Before
     fun setUp() {
@@ -62,6 +64,8 @@ class SettingsViewModelTest {
 
     @After
     fun tearDown() {
+        logRecorders.forEach(SettingsLogRecorder::close)
+        logRecorders.clear()
         Dispatchers.resetMain()
     }
 
@@ -206,6 +210,14 @@ class SettingsViewModelTest {
 
         // Stub BackupManager: no AppDatabase available in unit tests, use mockk
         val backupManager = mockk<BackupManager>(relaxed = true)
+        val chargingStateStore = com.byd.wjx.data.charging.ChargingStateStore(settingsRepo)
+        val logRecorder = SettingsLogRecorder(
+            appContext = ctx,
+            settingsRepository = settingsRepo,
+            localePreferences = LocalePreferences(ctx),
+            chargingStateStore = chargingStateStore,
+            catchUpJournal = com.byd.wjx.data.charging.CatchUpJournal(settingsRepo),
+        ).also(logRecorders::add)
 
         return SettingsViewModel(
             appContext = ctx,
@@ -217,14 +229,13 @@ class SettingsViewModelTest {
             energyDataReader = energyReader,
             idleDrainDao = idleDrainDao,
             tripPointDao = tripPointDao,
-            localePreferences = LocalePreferences(ctx),
             backupManager = backupManager,
-            chargingStateStore = com.byd.wjx.data.charging.ChargingStateStore(settingsRepo),
-            catchUpJournal = com.byd.wjx.data.charging.CatchUpJournal(settingsRepo),
             activationManager = mockk<ActivationManager>(relaxed = true),
             soundLibrary = com.byd.wjx.storage.SoundLibrary(ctx),
             lockSoundConfigSync = mockk<com.byd.wjx.audio.LockSoundConfigSync>(relaxed = true),
             okHttpClient = httpClient,
+            serviceQrCache = ServiceQrCache(ctx),
+            logRecorder = logRecorder,
         )
     }
 
@@ -236,6 +247,32 @@ class SettingsViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(SettingsRepository.DEFAULT_BATTERY_CAPACITY, vm.uiState.value.batteryCapacity)
+    }
+
+    @Test
+    fun `fuel tank capacity starts blank and saves as vehicle specific setting`() = runTest {
+        val vm = buildViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(SettingsRepository.DEFAULT_FUEL_TANK_CAPACITY, vm.uiState.value.fuelTankCapacity)
+
+        vm.saveFuelTankCapacity("53")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("53", vm.uiState.value.fuelTankCapacity)
+    }
+
+    @Test
+    fun `theme mode defaults to adaptive and can switch to dark`() = runTest {
+        val vm = buildViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(SettingsRepository.DEFAULT_THEME_MODE, vm.uiState.value.themeMode)
+
+        vm.setThemeMode("dark")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("dark", vm.uiState.value.themeMode)
     }
 
     @Test

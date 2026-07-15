@@ -22,6 +22,7 @@ import com.byd.wjx.data.local.entity.PlaceEntity
 import com.byd.wjx.data.local.entity.RuleEntity
 import com.byd.wjx.data.local.entity.RuleLogEntity
 import com.byd.wjx.data.local.entity.TriggerDef
+import com.byd.wjx.data.nativestack.BydSignalSemantics
 import com.byd.wjx.data.remote.DiParsData
 import com.byd.wjx.R
 import com.byd.wjx.data.repository.TrackingStateRepository
@@ -604,6 +605,17 @@ class AutomationEngine @Inject constructor(
         "ACTemp" -> data.acTemp?.toDouble()
         "FanLevel" -> data.fanLevel?.toDouble()
         "ACCirc" -> data.acCirc?.toDouble()
+        "ACCtrlMode" -> data.acCtrlMode?.toDouble()
+        "ACDefrostFront" -> data.acDefrostFront?.toDouble()
+        "ACWindMode" -> data.acWindMode?.toDouble()
+        "SeatHeatD" -> data.seatHeatD?.toDouble()
+        "SeatVentD" -> data.seatVentD?.toDouble()
+        "SeatHeatP" -> data.seatHeatP?.toDouble()
+        "SeatVentP" -> data.seatVentP?.toDouble()
+        "ACDefrostRear" -> data.acDefrostRear?.toDouble()
+        "SteeringHeat" -> data.steeringHeat?.toDouble()
+        "SunshadePos" -> data.sunshadePos?.toDouble()
+        "MirrorFoldState" -> data.mirrorFoldState?.toDouble()
         "DoorFL" -> data.doorFL?.toDouble()
         "DoorFR" -> data.doorFR?.toDouble()
         "DoorRL" -> data.doorRL?.toDouble()
@@ -621,6 +633,14 @@ class AutomationEngine @Inject constructor(
         "TirePressFR" -> data.tirePressFR?.toDouble()
         "TirePressRL" -> data.tirePressRL?.toDouble()
         "TirePressRR" -> data.tirePressRR?.toDouble()
+        "TireTempFL" -> data.tireTempFL?.toDouble()
+        "TireTempFR" -> data.tireTempFR?.toDouble()
+        "TireTempRL" -> data.tireTempRL?.toDouble()
+        "TireTempRR" -> data.tireTempRR?.toDouble()
+        "TireStateFL" -> data.tireStateFL?.toDouble()
+        "TireStateFR" -> data.tireStateFR?.toDouble()
+        "TireStateRL" -> data.tireStateRL?.toDouble()
+        "TireStateRR" -> data.tireStateRR?.toDouble()
         "DriveMode" -> data.driveMode?.toDouble()
         "WorkMode" -> data.workMode?.toDouble()
         "AutoPark" -> (data.autoPark ?: data.adasApaParkingStatus)?.toDouble()
@@ -629,6 +649,11 @@ class AutomationEngine @Inject constructor(
         "FuelCap" -> data.fuelCap?.toDouble()
         "Rain" -> data.rain?.toDouble()
         "LightLow" -> data.lightLow?.toDouble()
+        "LightSide" -> data.lightSide?.toDouble()
+        "LightFrontFog" -> data.lightFrontFog?.toDouble()
+        "LightRearFog" -> data.lightRearFog?.toDouble()
+        "LightBrake" -> data.lightBrake?.toDouble()
+        "LightReversing" -> data.lightReversing?.toDouble()
         "LightHigh" -> data.lightHigh?.toDouble()
         "DRL" -> data.drl?.toDouble()
         "TurnSignalFlash" -> data.turnSignalFlash?.toDouble()
@@ -638,7 +663,19 @@ class AutomationEngine @Inject constructor(
         "LaneKeepState" -> data.laneKeepState?.toDouble()
         "AccCruiseState" -> data.accCruiseState?.toDouble()
         "AccCruisingSpeed" -> data.accCruisingSpeed?.toDouble()
+        "AdasAebState" -> data.adasAebState?.toDouble()
+        "AdasAvhState" -> data.adasAvhState?.toDouble()
+        "AdasBsdState" -> data.adasBsdState?.toDouble()
+        "AdasEspState" -> data.adasEspState?.toDouble()
+        "AdasAccGrayState" -> data.adasAccGrayState?.toDouble()
+        "AdasNoaGrayState" -> data.adasNoaGrayState?.toDouble()
+        "AdasMnoaStatus" -> data.adasMnoaStatus?.toDouble()
+        "AdasExecSpeed" -> data.adasExecSpeed?.toDouble()
         "BrakePedal" -> data.brakePedalDepth?.toDouble()
+        "AccelPedal" -> data.accelPedalDepth?.toDouble()
+        "EpbState" -> data.epbState?.toDouble()
+        "BrakeState" -> data.brakeState?.toDouble()
+        "EpedalMode" -> data.ePedalMode?.toDouble()
         "TurnSignalLeft" -> data.turnSignalLeft?.toDouble()
         "TurnSignalRight" -> data.turnSignalRight?.toDouble()
         "MaxBatTemp" -> data.maxBatTemp?.toDouble()
@@ -649,6 +686,14 @@ class AutomationEngine @Inject constructor(
         "Voltage12V" -> data.voltage12v
         "MinCellVoltage" -> data.minCellVoltage
         "MaxCellVoltage" -> data.maxCellVoltage
+        "FrontMotorSpeed" -> data.frontMotorSpeed?.toDouble()
+        "RearMotorSpeed" -> data.rearMotorSpeed?.toDouble()
+        "FrontMotorTemp" -> data.frontMotorTemp?.toDouble()
+        "RearMotorTemp" -> data.rearMotorTemp?.toDouble()
+        "FrontMotorCurrent" -> data.frontMotorCurrent
+        "RearMotorCurrent" -> data.rearMotorCurrent
+        "EngineRPM" -> data.engineRpm?.toDouble()
+        "WaterTemp" -> data.waterTemp?.toDouble()
         else -> null
     }
 
@@ -889,7 +934,8 @@ internal class BoardVehicleDetector {
 
     fun onSample(data: DiParsData): Boolean {
         val doorOpen = data.doorFL == 1
-        val driving = data.powerState == 2 || data.gear == 4 || (data.speed ?: 0) > 0 || data.seatbeltFL == 1
+        val driving = BydSignalSemantics.isDriveReady(data.powerState) ||
+            data.gear == 4 || (data.speed ?: 0) > 0 || data.seatbeltFL == 1
 
         if (!initialized) {
             initialized = true
