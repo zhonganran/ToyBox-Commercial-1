@@ -31,11 +31,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.byd.wjx.R
 import com.byd.wjx.data.local.entity.ActionDef
+import com.byd.wjx.domain.vehicle.VehicleCommandSyntax
 import com.byd.wjx.data.local.entity.PlaceEntity
 import com.byd.wjx.storage.SoundLibrary
 import com.byd.wjx.ui.components.AppLaunchPickerDialog
 import com.byd.wjx.ui.components.bydSwitchColors
 import com.byd.wjx.ui.theme.*
+import kotlin.math.roundToInt
 import org.json.JSONObject
 
 @Composable
@@ -114,20 +116,136 @@ private fun ParamActionControls(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    CatalogDropdown(
-        selected = ACTION_COMMANDS.find { it.command == action.command }?.localizedName(context) ?: action.displayName,
-        items = ACTION_COMMANDS.map { it.localizedName(context) },
-        categories = ACTION_COMMANDS.map { it.localizedCategory(context) },
-        modifier = modifier,
-        onSelect = { idx ->
-            val a = ACTION_COMMANDS[idx]
-            onUpdate(ActionDef(a.command, a.localizedName(context)))
+    val numericSpec = remember(action.command) { vehicleNumericActionSpec(action.command) }
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        CatalogDropdown(
+            selected = numericSpec?.label
+                ?: ACTION_COMMANDS.find { it.command == action.command }?.localizedName(context)
+                ?: action.displayName,
+            items = ACTION_COMMANDS.map { it.localizedName(context) },
+            categories = ACTION_COMMANDS.map { it.localizedCategory(context) },
+            modifier = Modifier.weight(1f),
+            onSelect = { idx ->
+                val a = ACTION_COMMANDS[idx]
+                onUpdate(ActionDef(a.command, a.localizedName(context)))
+            }
+        )
+        numericSpec?.let { spec ->
+            Spacer(Modifier.width(6.dp))
+            VehicleNumericValueChip(spec = spec) { value ->
+                onUpdate(
+                    action.copy(
+                        command = spec.commandFor(value),
+                        displayName = "${spec.label}：$value${spec.unit}",
+                    )
+                )
+            }
         }
-    )
+    }
 }
 
-// Delay option keys — labels are resolved at runtime via stringResource
-private val DELAY_OPTION_MS = listOf(500L, 1000L, 2000L, 3000L, 5000L, 10000L)
+private data class VehicleNumericActionSpec(
+    val label: String,
+    val current: Int,
+    val min: Int,
+    val max: Int,
+    val unit: String,
+    val commandFor: (Int) -> String,
+)
+
+private fun vehicleNumericActionSpec(command: String): VehicleNumericActionSpec? {
+    val parsed = VehicleCommandSyntax.parseNumeric(command) ?: return null
+    return when (parsed) {
+        is VehicleCommandSyntax.WindowPosition -> {
+            val label = when (parsed.target) {
+                VehicleCommandSyntax.WindowTarget.DRIVER -> "主驾车窗位置"
+                VehicleCommandSyntax.WindowTarget.PASSENGER -> "副驾车窗位置"
+                VehicleCommandSyntax.WindowTarget.REAR_LEFT -> "后左车窗位置"
+                VehicleCommandSyntax.WindowTarget.REAR_RIGHT -> "后右车窗位置"
+                VehicleCommandSyntax.WindowTarget.ALL -> "全部车窗位置"
+                VehicleCommandSyntax.WindowTarget.FRONT -> "前排车窗位置"
+                VehicleCommandSyntax.WindowTarget.REAR -> "后排车窗位置"
+            }
+            VehicleNumericActionSpec(label, parsed.value, 0, 100, "%", parsed::commandFor)
+        }
+        is VehicleCommandSyntax.Temperature -> VehicleNumericActionSpec(
+            if (parsed.passenger) "副驾温度" else "主驾温度",
+            parsed.value,
+            16,
+            30,
+            "℃",
+            parsed::commandFor,
+        )
+        is VehicleCommandSyntax.FanLevel ->
+            VehicleNumericActionSpec("风量档位", parsed.value, 0, 7, "档", parsed::commandFor)
+        is VehicleCommandSyntax.SunshadePosition ->
+            VehicleNumericActionSpec("遮阳帘位置", parsed.value, 0, 100, "%", parsed::commandFor)
+        is VehicleCommandSyntax.AmbientBrightness ->
+            VehicleNumericActionSpec("氛围灯亮度", parsed.value, 1, 4, "档", parsed::commandFor)
+        is VehicleCommandSyntax.Massage -> VehicleNumericActionSpec(
+            "${parsed.seat.token}按摩：${parsed.mode.token}",
+            parsed.value,
+            1,
+            3,
+            "档",
+            parsed::commandFor,
+        )
+    }
+}
+
+@Composable
+private fun VehicleNumericValueChip(
+    spec: VehicleNumericActionSpec,
+    onValue: (Int) -> Unit,
+) {
+    var editing by remember { mutableStateOf(false) }
+    Text(
+        text = "${spec.current}${spec.unit}",
+        color = AccentTeal,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier
+            .background(CardSurface, RoundedCornerShape(10.dp))
+            .border(1.dp, AccentTeal.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+            .clickable { editing = true }
+            .padding(horizontal = 8.dp, vertical = 7.dp),
+    )
+
+    if (editing) {
+        var pending by remember(spec.current) { mutableIntStateOf(spec.current) }
+        AlertDialog(
+            onDismissRequest = { editing = false },
+            containerColor = CardSurface,
+            title = { Text(spec.label, color = TextPrimary, fontSize = 16.sp) },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "$pending${spec.unit}",
+                        color = AccentTeal,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Slider(
+                        value = pending.toFloat(),
+                        onValueChange = { pending = it.roundToInt().coerceIn(spec.min, spec.max) },
+                        valueRange = spec.min.toFloat()..spec.max.toFloat(),
+                        steps = (spec.max - spec.min - 1).coerceAtLeast(0),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { onValue(pending); editing = false }) {
+                    Text("确定", color = AccentGreen)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editing = false }) {
+                    Text("取消", color = TextSecondary)
+                }
+            },
+        )
+    }
+}
 
 @Composable
 private fun DelayActionControls(
@@ -422,48 +540,31 @@ internal fun AddActionButton(
         ) {
             Text(stringResource(R.string.automation_add_action_button), fontSize = 12.sp, color = TextMuted)
         }
-        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+        DropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = { menuExpanded = false },
+            modifier = Modifier.fillMaxHeight(0.72f),
+        ) {
+            AutomationMenuGroupHeader(
+                stringResource(R.string.automation_action_group_vehicle),
+                AccentTeal,
+            )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_action_dplus_command), fontSize = 13.sp) },
                 onClick = { menuExpanded = false; onAddParam() }
             )
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_notification_silent), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddNotification(true) }
+                text = { Text(stringResource(R.string.automation_action_sentry_mode), fontSize = 13.sp) },
+                onClick = { menuExpanded = false; onAddSentryMode() }
             )
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_notification_sound), fontSize = 13.sp) },
-                onClick = {
-                    menuExpanded = false
-                    onAddNotification(false)
-                    if (!android.provider.Settings.canDrawOverlays(context)) {
-                        showOverlayPrompt = true
-                    }
-                }
+                text = { Text(stringResource(R.string.automation_action_auto_door), fontSize = 13.sp) },
+                onClick = { menuExpanded = false; onAddAutoDoor() }
             )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_app_launch), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddAppLaunch() }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_call), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddCall() }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_navigate), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddNavigate() }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_url), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddUrl() }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_delay), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddDelay() }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_media_volume), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddMediaVolume() }
+
+            AutomationMenuGroupHeader(
+                stringResource(R.string.automation_action_group_media),
+                AccentTeal,
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_action_outside_sound), fontSize = 13.sp) },
@@ -472,14 +573,6 @@ internal fun AddActionButton(
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_action_stop_outside_sound), fontSize = 13.sp) },
                 onClick = { menuExpanded = false; onAddStopOutsideSound() }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_go_home), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddGoHome() }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_http), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddHttp() }
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_action_play_music), fontSize = 13.sp) },
@@ -498,12 +591,65 @@ internal fun AddActionButton(
                 onClick = { menuExpanded = false; onAddStopVideo() }
             )
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_sentry_mode), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddSentryMode() }
+                text = { Text(stringResource(R.string.automation_action_media_volume), fontSize = 13.sp) },
+                onClick = { menuExpanded = false; onAddMediaVolume() }
+            )
+
+            AutomationMenuGroupHeader(
+                stringResource(R.string.automation_action_group_apps),
+                AccentTeal,
             )
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_auto_door), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddAutoDoor() }
+                text = { Text(stringResource(R.string.automation_action_app_launch), fontSize = 13.sp) },
+                onClick = { menuExpanded = false; onAddAppLaunch() }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.automation_action_go_home), fontSize = 13.sp) },
+                onClick = { menuExpanded = false; onAddGoHome() }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.automation_action_delay), fontSize = 13.sp) },
+                onClick = { menuExpanded = false; onAddDelay() }
+            )
+
+            AutomationMenuGroupHeader(
+                stringResource(R.string.automation_action_group_notifications),
+                AccentTeal,
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.automation_action_notification_silent), fontSize = 13.sp) },
+                onClick = { menuExpanded = false; onAddNotification(true) }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.automation_action_notification_sound), fontSize = 13.sp) },
+                onClick = {
+                    menuExpanded = false
+                    onAddNotification(false)
+                    if (!android.provider.Settings.canDrawOverlays(context)) {
+                        showOverlayPrompt = true
+                    }
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.automation_action_call), fontSize = 13.sp) },
+                onClick = { menuExpanded = false; onAddCall() }
+            )
+
+            AutomationMenuGroupHeader(
+                stringResource(R.string.automation_action_group_network),
+                AccentTeal,
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.automation_action_http), fontSize = 13.sp) },
+                onClick = { menuExpanded = false; onAddHttp() }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.automation_action_url), fontSize = 13.sp) },
+                onClick = { menuExpanded = false; onAddUrl() }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.automation_action_navigate), fontSize = 13.sp) },
+                onClick = { menuExpanded = false; onAddNavigate() }
             )
         }
     }

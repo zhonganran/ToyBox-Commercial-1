@@ -41,6 +41,14 @@ class BackupPreferencesRegistryTest {
     }
 
     @Test
+    fun `backup includes accumulated energy flow statistics`() {
+        assertTrue(
+            "energy-flow totals are user data and must be backed up",
+            "wjx_energy_flow_stats" in BackupPreferencesRegistry.USER_CONFIGURATION_FILES,
+        )
+    }
+
+    @Test
     fun `device-protected backup files are explicitly registered user configuration`() {
         val deviceProtected = BackupPreferencesRegistry.DEVICE_PROTECTED_USER_CONFIGURATION_FILES
 

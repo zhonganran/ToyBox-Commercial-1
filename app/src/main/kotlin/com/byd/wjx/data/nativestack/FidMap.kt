@@ -105,6 +105,9 @@ object FidMap {
         FidEntry("lockRR",               1001, 1081081870,   5, Decoder.INT_ENUM),
         FidEntry("driveMode",            1006, 555745294,    5, Decoder.INT_ENUM),
         FidEntry("workMode",             1006, 874512420,    5, Decoder.INT_ENUM),
+        // ENERGY_STATE. Sampled with live power so regeneration can be split into
+        // EV/HEV/assisted recovery and engine generation instead of one mixed total.
+        FidEntry("energyState",           1006, 873463832,    5, Decoder.INT_ENUM),
         FidEntry("adasAccMode",          1038, 852492340,    5, Decoder.INT_ENUM),
         FidEntry("adasLccNcaStatus",     1038, 440401932,    5, Decoder.INT_ENUM),
         FidEntry("adasTjaState",         1038, 828375084,    5, Decoder.INT_ENUM),
@@ -124,7 +127,7 @@ object FidMap {
         FidEntry("seatVentP",             1000, 711983128,    5, Decoder.INT_ENUM),
         FidEntry("lightSide",             1004, 950009864,    5, Decoder.INT_ENUM),
         // Extended on-demand telemetry. Candidate/imported addresses remain isolated from the
-        // regular 70-FID snapshot so unsupported trims fail soft without permanent read cost.
+        // regular 71-FID snapshot so unsupported trims fail soft without permanent read cost.
         FidEntry("tireTempFL",             1007, 1246797848,   5, Decoder.INT_TEMP_C_WIDE),
         FidEntry("tireTempFR",             1007, 1246797860,   5, Decoder.INT_TEMP_C_WIDE),
         FidEntry("tireTempRL",             1007, 1246797872,   5, Decoder.INT_TEMP_C_WIDE),

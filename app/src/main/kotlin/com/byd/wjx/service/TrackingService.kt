@@ -46,6 +46,7 @@ class TrackingService : Service() {
     @Inject lateinit var driveSessionCoordinator: DriveSessionCoordinator
     @Inject lateinit var drivingMetricsCoordinator: DrivingMetricsCoordinator
     @Inject lateinit var chargingCatchUpCoordinator: ChargingCatchUpCoordinator
+    @Inject lateinit var energyFlowStatsStore: com.byd.wjx.data.energy.EnergyFlowStatsStore
     @Inject lateinit var locationCoordinator: TrackingLocationCoordinator
     @Inject lateinit var cameraRuntimeCoordinator: CameraRuntimeCoordinator
     @Inject lateinit var steeringWheelRuntimeCoordinator: SteeringWheelRuntimeCoordinator
@@ -164,6 +165,7 @@ class TrackingService : Service() {
         pollingJob = null
         sharedAdaptiveLoop.stop()
         chargingCatchUpCoordinator.stop()
+        energyFlowStatsStore.flush()
         drivingMetricsCoordinator.reset()
         // Do not clear the driving-session anchor here. A process kill mid-trip must
         // remain resumable; DriveSessionCoordinator clears it only after a real idle close.
@@ -297,6 +299,7 @@ class TrackingService : Service() {
                         trackerDriving = tripTracker.state.value ==
                             com.byd.wjx.domain.tracker.TripState.DRIVING,
                     )
+                    energyFlowStatsStore.onSample(nowMs, data, session.sessionStartedAt)
                     publishSessionStartedAt(session.sessionStartedAt)
                     val metrics = drivingMetricsCoordinator.onSample(nowMs, data, session)
                     publishRangeKm(metrics.rangeKm)

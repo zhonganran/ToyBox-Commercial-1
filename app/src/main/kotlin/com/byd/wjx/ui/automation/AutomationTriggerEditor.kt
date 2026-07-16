@@ -580,30 +580,30 @@ internal fun AddTriggerButton(
         ) {
             Text(stringResource(R.string.automation_add_condition_button), fontSize = 12.sp, color = TextMuted)
         }
-        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+        DropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = { menuExpanded = false },
+            modifier = Modifier.fillMaxHeight(0.72f),
+        ) {
+            AutomationMenuGroupHeader(
+                stringResource(R.string.automation_trigger_group_vehicle),
+                AccentGreen,
+            )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_trigger_type_param), fontSize = 13.sp) },
                 onClick = { menuExpanded = false; onAddParam() }
             )
-            val firstPlace = places.firstOrNull()
             DropdownMenuItem(
-                text = {
-                    if (firstPlace != null) {
-                        Text(stringResource(R.string.automation_trigger_type_place), fontSize = 13.sp)
-                    } else {
-                        Column {
-                            Text(stringResource(R.string.automation_trigger_type_place), fontSize = 13.sp, color = TextSecondary)
-                            Text(stringResource(R.string.automation_trigger_type_place_empty_hint), fontSize = 11.sp, color = TextMuted)
-                        }
-                    }
-                },
+                text = { Text(stringResource(R.string.automation_trigger_type_board_vehicle), fontSize = 13.sp) },
                 onClick = {
-                    if (firstPlace != null) {
-                        menuExpanded = false
-                        onAddPlace(firstPlace)
-                    }
-                },
-                enabled = firstPlace != null
+                    menuExpanded = false
+                    onAddBoardVehicle()
+                }
+            )
+
+            AutomationMenuGroupHeader(
+                stringResource(R.string.automation_trigger_group_time),
+                AccentGreen,
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_trigger_type_time_of_day), fontSize = 13.sp) },
@@ -626,12 +626,42 @@ internal fun AddTriggerButton(
                     onAddInterval()
                 }
             )
+
+            AutomationMenuGroupHeader(
+                stringResource(R.string.automation_trigger_group_environment),
+                AccentGreen,
+            )
+            val firstPlace = places.firstOrNull()
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_trigger_type_board_vehicle), fontSize = 13.sp) },
+                text = {
+                    if (firstPlace != null) {
+                        Text(stringResource(R.string.automation_trigger_type_place), fontSize = 13.sp)
+                    } else {
+                        Column {
+                            Text(stringResource(R.string.automation_trigger_type_place), fontSize = 13.sp, color = TextSecondary)
+                            Text(stringResource(R.string.automation_trigger_type_place_empty_hint), fontSize = 11.sp, color = TextMuted)
+                        }
+                    }
+                },
+                onClick = {
+                    if (firstPlace != null) {
+                        menuExpanded = false
+                        onAddPlace(firstPlace)
+                    }
+                },
+                enabled = firstPlace != null
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.automation_trigger_type_internet), fontSize = 13.sp) },
                 onClick = {
                     menuExpanded = false
-                    onAddBoardVehicle()
+                    onAddNetworkAvailable()
                 }
+            )
+
+            AutomationMenuGroupHeader(
+                stringResource(R.string.automation_trigger_group_system),
+                AccentGreen,
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_trigger_type_service_start), fontSize = 13.sp) },
@@ -641,14 +671,7 @@ internal fun AddTriggerButton(
                 }
             )
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_trigger_type_internet), fontSize = 13.sp) },
-                onClick = {
-                    menuExpanded = false
-                    onAddNetworkAvailable()
-                }
-            )
-            DropdownMenuItem(
-                text = { Text("桌面按钮", fontSize = 13.sp) },
+                text = { Text(stringResource(R.string.automation_trigger_type_button), fontSize = 13.sp) },
                 onClick = {
                     menuExpanded = false
                     onAddButtonPress()
@@ -750,4 +773,3 @@ internal fun newScheduleTrigger(): TriggerDef {
 }
 
 // --- Helpers ---
-

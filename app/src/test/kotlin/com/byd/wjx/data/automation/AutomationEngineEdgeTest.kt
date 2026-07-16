@@ -88,6 +88,7 @@ class AutomationEngineEdgeTest {
             activationManager = mockk<ActivationManager>(relaxed = true),
             vehicleStateRepository = mockk<VehicleStateRepository>(relaxed = true),
             trackingStateRepository = FakeTrackingStateRepository(),
+            confirmationPresenter = mockk(relaxed = true),
             context = ApplicationProvider.getApplicationContext<Context>(),
         )
         return engine to ruleDao
@@ -284,6 +285,7 @@ class AutomationEngineEdgeTest {
         activationManager = mockk<ActivationManager>(relaxed = true),
         vehicleStateRepository = vehicleRepository,
         trackingStateRepository = FakeTrackingStateRepository(),
+        confirmationPresenter = mockk(relaxed = true),
         context = ApplicationProvider.getApplicationContext(),
     )
 

@@ -48,6 +48,7 @@ object BackupPreferencesRegistry {
         PreferenceFilePolicy("sound_library", "SoundLibrary", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("wjx_sound_downloads", "SoundDownloadStore", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("wjx_led_link", "LedPreferences", PreferenceBackupPolicy.USER_CONFIGURATION),
+        PreferenceFilePolicy("wjx_energy_flow_stats", "EnergyFlowStatsStore", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("wjx_activation", "ActivationManager", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy("wjx_widget_session", "SessionPersistence", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy(

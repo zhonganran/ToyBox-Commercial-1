@@ -9,6 +9,12 @@ import org.junit.Test
 
 class AutomationActionSnapshotFieldProviderTest {
     @Test
+    fun `auto parking status is read only while its sound feature is enabled`() {
+        assertTrue(requiredRuntimeFeatureFields(false).isEmpty())
+        assertEquals(setOf("adasApaParkingStatus"), requiredRuntimeFeatureFields(true))
+    }
+
+    @Test
     fun `enabled param triggers select only their required vehicle fields`() {
         val fields = requiredAutomationVehicleFields(
             listOf(
@@ -113,6 +119,7 @@ class AutomationActionSnapshotFieldProviderTest {
                     TriggerDef("FrontMotorCurrent", "前电机电流", ">", "100", "前电机电流"),
                     TriggerDef("WaterTemp", "冷却液温度", ">", "100", "冷却液温度"),
                     TriggerDef("TireStateRR", "右后轮胎状态", "!=", "0", "右后轮胎状态"),
+                    TriggerDef("EnergyState", "能量流状态", "==", "5", "能量流状态"),
                 ),
             ),
         )
@@ -124,6 +131,7 @@ class AutomationActionSnapshotFieldProviderTest {
                 "frontMotorCurrent",
                 "waterTemp",
                 "tireStateRR",
+                "energyState",
             ),
             fields,
         )

@@ -65,7 +65,7 @@ data class DiParsData(
     val lockRR: Int? = null,
     val lightHigh: Int? = null,
     val hazardLights: Int? = null,
-    val turnSignalFlash: Int? = null,
+    val turnSignalFlash: Int? = null,    // stable switch enum: 1=off, 2=left, 4=right, 6=hazard
     val adasAccMode: Int? = null,
     val adasLccNcaStatus: Int? = null,
     val adasTjaState: Int? = null,
@@ -76,7 +76,7 @@ data class DiParsData(
     val turnSignalLeft: Int? = null,     // 0=off, 1=on
     val turnSignalRight: Int? = null,    // 0=off, 1=on
     // Validated comfort/light reads. These fields are selected on demand by enabled
-    // automations and stay out of the regular 70-FID full snapshot.
+    // automations and stay out of the regular 71-FID full snapshot.
     val acCtrlMode: Int? = null,
     val acDefrostFront: Int? = null,
     val acWindMode: Int? = null,
@@ -125,6 +125,9 @@ data class DiParsData(
     val tireStateFR: Int? = null,
     val tireStateRL: Int? = null,
     val tireStateRR: Int? = null,
+    // Detailed BYD power-flow state. Used to distinguish EV/HEV/assist regeneration
+    // and engine generation; the official raw enum is retained without remapping.
+    val energyState: Int? = null,
     // BMS state of health, 0..100%. Shared full snapshot field; no separate persistence.
     val soh: Int? = null,
 )

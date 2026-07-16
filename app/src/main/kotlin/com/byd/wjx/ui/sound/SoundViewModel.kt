@@ -82,10 +82,10 @@ class SoundViewModel @Inject constructor(
     private val remoteRepository: SoundLibraryRemoteRepository,
     private val downloadStore: SoundDownloadStore,
     private val lockSoundConfigSync: LockSoundConfigSync,
+    private val autoParkingSettings: AutoParkingSoundSettings,
     private val profileDetector: CarProfileDetector = CarProfileDetector(),
 ) : ViewModel() {
     private val hailingSettings = ExteriorHailingSettings(appContext)
-    private val autoParkingSettings = AutoParkingSoundSettings(appContext)
     private val lockSoundSettings = LockSoundSettings(appContext)
     private val _uiState = MutableStateFlow(SoundUiState(isLoading = true))
     val uiState: StateFlow<SoundUiState> = _uiState.asStateFlow()

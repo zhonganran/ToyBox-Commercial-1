@@ -29,6 +29,33 @@ class NativeParsReaderTest {
 
     private val noAdditionalActionFields = ActionSnapshotFieldProvider { emptySet() }
 
+    @Test
+    fun `LED profiles keep the per-second read budget bounded`() {
+        assertEquals(setOf("turnSignalFlash", "gear"), VehicleReadProfiles.ledMotionFields)
+        assertEquals(setOf("brakePedalDepth", "lightBrake"), VehicleReadProfiles.ledBrakeFields)
+        assertEquals(
+            setOf("doorFL", "doorFR", "doorRL", "doorRR", "adasApaParkingStatus"),
+            VehicleReadProfiles.ledBodyFields,
+        )
+        assertEquals(
+            setOf(
+                "adasAccMode",
+                "adasLccNcaStatus",
+                "adasTjaState",
+                "laneKeepState",
+                "accCruiseState",
+                "adasMnoaStatus",
+            ),
+            VehicleReadProfiles.ledAdasFields,
+        )
+
+        val readsPerSecond = VehicleReadProfiles.ledMotion.size * 10 +
+            VehicleReadProfiles.ledBrake.size * 5 +
+            VehicleReadProfiles.ledBody.size * 2 +
+            VehicleReadProfiles.ledAdas.size
+        assertEquals(46, readsPerSecond)
+    }
+
     private fun loadFixture(): JSONObject {
         val stream = checkNotNull(
             NativeParsReaderTest::class.java.classLoader
@@ -264,8 +291,9 @@ class NativeParsReaderTest {
 
     @Test
     fun `action snapshot does not query battery capacity settings`() = runTest {
+        val powerState = FidMap.entries.single { it.field == "powerState" }
         val gateway = FakeVehicleGateway().apply {
-            floatValues[1014 to 1246777400] = 50f
+            intValues[powerState.device to powerState.fid] = 3
         }
         val settings = mockk<SettingsRepository>(relaxed = true)
 
@@ -273,7 +301,7 @@ class NativeParsReaderTest {
 
         assertNotNull(data)
         assertNull(data?.batteryCapacityKwh)
-        assertEquals(6, gateway.lastBatchSpecs.size)
+        assertEquals(VehicleReadProfiles.actionCoreFields.size, gateway.lastBatchSpecs.size)
         coVerify(exactly = 0) { settings.getBatteryCapacity() }
     }
 
@@ -290,7 +318,7 @@ class NativeParsReaderTest {
 
         assertNotNull(data)
         assertEquals(18, data?.insideTemp)
-        assertEquals(7, gateway.lastBatchSpecs.size)
+        assertEquals(VehicleReadProfiles.actionCoreFields.size + 1, gateway.lastBatchSpecs.size)
     }
 
     @Test
@@ -342,7 +370,7 @@ class NativeParsReaderTest {
         assertEquals(18, initial?.data?.insideTemp)
         assertEquals(1, gateway.batchHistory.size)
         assertEquals(VehicleReadProfiles.regularFull.size, gateway.batchHistory.single().size)
-        assertEquals(70, gateway.batchHistory.single().size)
+        assertEquals(71, gateway.batchHistory.single().size)
         assertTrue(
             gateway.batchHistory.single().none { spec ->
                 FidMap.entries.any {
@@ -372,37 +400,74 @@ class NativeParsReaderTest {
     }
 
     @Test
-    fun `LED fast snapshot reads independent turn hazard gear and brake fields`() = runTest {
-        val turnLeft = FidMap.entries.single { it.field == "turnSignalLeft" }
-        val turnRight = FidMap.entries.single { it.field == "turnSignalRight" }
-        val hazard = FidMap.entries.single { it.field == "hazardLights" }
+    fun `LED motion snapshot reads only stable turn enum and gear`() = runTest {
+        val turnFlash = FidMap.entries.single { it.field == "turnSignalFlash" }
         val gear = FidMap.entries.single { it.field == "gear" }
-        val brake = FidMap.entries.single { it.field == "brakePedalDepth" }
-        val brakeLight = FidMap.entries.single { it.field == "lightBrake" }
-        val reverseLight = FidMap.entries.single { it.field == "lightReversing" }
         val gateway = FakeVehicleGateway().apply {
-            intValues[turnLeft.device to turnLeft.fid] = 1
-            intValues[turnRight.device to turnRight.fid] = 0
-            intValues[hazard.device to hazard.fid] = 0
+            intValues[turnFlash.device to turnFlash.fid] = 2
             intValues[gear.device to gear.fid] = 4
-            intValues[brake.device to brake.fid] = 28
-            intValues[brakeLight.device to brakeLight.fid] = 1
-            intValues[reverseLight.device to reverseLight.fid] = 0
         }
         val settings = mockk<SettingsRepository>(relaxed = true)
 
         val snapshot = NativeParsReader(gateway, settings, noAdditionalActionFields)
-            .fetchLedVehicleSnapshot()
+            .fetchLedMotionVehicleSnapshot()
 
         assertNotNull(snapshot)
-        assertEquals(1, snapshot?.data?.turnSignalLeft)
-        assertEquals(0, snapshot?.data?.turnSignalRight)
-        assertEquals(0, snapshot?.data?.hazardLights)
+        assertEquals(2, snapshot?.data?.turnSignalFlash)
         assertEquals(4, snapshot?.data?.gear)
+        assertEquals(2, gateway.lastBatchSpecs.size)
+        coVerify(exactly = 0) { settings.getBatteryCapacity() }
+    }
+
+    @Test
+    fun `LED brake snapshot reads only pedal and actual brake lamp`() = runTest {
+        val brake = FidMap.entries.single { it.field == "brakePedalDepth" }
+        val brakeLight = FidMap.entries.single { it.field == "lightBrake" }
+        val gateway = FakeVehicleGateway().apply {
+            intValues[brake.device to brake.fid] = 28
+            intValues[brakeLight.device to brakeLight.fid] = 1
+        }
+        val settings = mockk<SettingsRepository>(relaxed = true)
+
+        val snapshot = NativeParsReader(gateway, settings, noAdditionalActionFields)
+            .fetchLedBrakeVehicleSnapshot()
+
+        assertNotNull(snapshot)
         assertEquals(28, snapshot?.data?.brakePedalDepth)
         assertEquals(1, snapshot?.data?.lightBrake)
-        assertEquals(0, snapshot?.data?.lightReversing)
-        assertEquals(7, gateway.lastBatchSpecs.size)
+        assertEquals(2, gateway.lastBatchSpecs.size)
+        coVerify(exactly = 0) { settings.getBatteryCapacity() }
+    }
+
+    @Test
+    fun `LED body and ADAS snapshots stay in independent low cadence profiles`() = runTest {
+        val gateway = FakeVehicleGateway().apply {
+            (VehicleReadProfiles.ledBody + VehicleReadProfiles.ledAdas).forEach { entry ->
+                intValues[entry.device to entry.fid] = when (entry.field) {
+                    "doorFL", "doorFR", "doorRL", "doorRR" -> 0
+                    "adasApaParkingStatus" -> 4
+                    "adasAccMode" -> 3
+                    "adasLccNcaStatus" -> 2
+                    "adasTjaState" -> 3
+                    "laneKeepState" -> 2
+                    "accCruiseState" -> 2
+                    "adasMnoaStatus" -> 2
+                    else -> error("Unexpected LED context field ${entry.field}")
+                }
+            }
+        }
+        val settings = mockk<SettingsRepository>(relaxed = true)
+        val reader = NativeParsReader(gateway, settings, noAdditionalActionFields)
+
+        val body = reader.fetchLedBodyVehicleSnapshot()
+        assertEquals(0, body?.data?.doorFL)
+        assertEquals(4, body?.data?.adasApaParkingStatus)
+        assertEquals(VehicleReadProfiles.ledBody.size, gateway.lastBatchSpecs.size)
+
+        val adas = reader.fetchLedAdasVehicleSnapshot()
+        assertEquals(3, adas?.data?.adasAccMode)
+        assertEquals(2, adas?.data?.adasMnoaStatus)
+        assertEquals(VehicleReadProfiles.ledAdas.size, gateway.lastBatchSpecs.size)
         coVerify(exactly = 0) { settings.getBatteryCapacity() }
     }
 

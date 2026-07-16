@@ -83,6 +83,7 @@ fun diParsData(
     tireStateFR: Int? = null,
     tireStateRL: Int? = null,
     tireStateRR: Int? = null,
+    energyState: Int? = null,
     soh: Int? = null,
 ) = DiParsData(
     soc = soc, speed = speed, mileage = mileage, power = power,
@@ -116,5 +117,6 @@ fun diParsData(
     engineRpm = engineRpm, waterTemp = waterTemp,
     tireStateFL = tireStateFL, tireStateFR = tireStateFR,
     tireStateRL = tireStateRL, tireStateRR = tireStateRR,
+    energyState = energyState,
     soh = soh,
 )

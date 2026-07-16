@@ -3,6 +3,7 @@ package com.byd.wjx.ui.dashboard
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.byd.wjx.data.autoservice.ChargeGunState
+import com.byd.wjx.data.energy.EnergyFlowStatsRepository
 import com.byd.wjx.data.local.entity.TripEntity
 import com.byd.wjx.data.local.dao.IdleDrainDao
 import com.byd.wjx.data.nativestack.BydSignalSemantics
@@ -18,6 +19,9 @@ import com.byd.wjx.domain.calculator.Trend
 import com.byd.wjx.domain.insight.LocalInsightEngine
 import com.byd.wjx.domain.insight.LocalInsightResult
 import com.byd.wjx.domain.insight.LocalInsightStatsAggregator
+import com.byd.wjx.domain.energy.EnergyFlowCategory
+import com.byd.wjx.domain.energy.EnergyFlowStats
+import com.byd.wjx.domain.energy.EnergyFlowTotals
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -73,6 +77,7 @@ data class DashboardUiState(
     val batteryHealthExpanded: Boolean = false,
     val idleDrainExpanded: Boolean = false,
     val powertrainDiagnosticsExpanded: Boolean = false,
+    val energyFlowExpanded: Boolean = false,
     val idleDrainKwhWeek: Double = 0.0,
     val idleDrainHoursWeek: Double = 0.0,
     val estimatedRangeKm: Double? = null,
@@ -104,6 +109,10 @@ data class DashboardUiState(
     val powerState: Int? = null,
     val driveMode: Int? = null,
     val workMode: Int? = null,
+    val energyState: Int? = null,
+    val energyFlowCategory: EnergyFlowCategory = EnergyFlowCategory.NONE,
+    val sessionEnergyFlow: EnergyFlowTotals = EnergyFlowTotals(),
+    val lifetimeEnergyFlow: EnergyFlowTotals = EnergyFlowTotals(),
     val chargeGunState: Int? = null,
     val chargingStatus: Int? = null,
     val chargingCapCover: Int? = null,
@@ -186,6 +195,7 @@ class DashboardViewModel @Inject constructor(
     private val localInsightStatsAggregator: LocalInsightStatsAggregator,
     private val localInsightEngine: LocalInsightEngine,
     private val onDemandTelemetryReader: OnDemandVehicleTelemetryReader,
+    private val energyFlowStatsRepository: EnergyFlowStatsRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardUiState())
@@ -303,19 +313,31 @@ class DashboardViewModel @Inject constructor(
         val sessionStartedAt: Long?,
         val tripDistanceKm: Double?,
         val consumption: ConsumptionState,
+        val energyFlow: EnergyFlowStats,
         val batteryCapacityKwh: Double?,
         val fuelTankCapacityLiters: Double?,
     )
 
+    private data class LiveMetrics(
+        val consumption: ConsumptionState,
+        val energyFlow: EnergyFlowStats,
+    )
+
     private fun observeLiveData() {
         viewModelScope.launch {
+            val liveMetrics = combine(
+                consumptionAggregator.state,
+                energyFlowStatsRepository.state,
+            ) { consumption, energyFlow ->
+                LiveMetrics(consumption = consumption, energyFlow = energyFlow)
+            }
             combine(
                 vehicleStateRepository.state,
                 trackingStateRepository.state,
-                consumptionAggregator.state,
+                liveMetrics,
                 settingsRepository.observeBatteryCapacity(),
                 settingsRepository.observeFuelTankCapacity(),
-            ) { vehicleState, trackingState, consumption, batteryCapacity, fuelTankCapacity ->
+            ) { vehicleState, trackingState, metrics, batteryCapacity, fuelTankCapacity ->
                 LiveSnapshot(
                     data = vehicleState.data,
                     dataUpdatedAt = vehicleState.lastUpdatedAtMs,
@@ -325,7 +347,8 @@ class DashboardViewModel @Inject constructor(
                     rangeKm = trackingState.rangeKm,
                     sessionStartedAt = trackingState.sessionStartedAt,
                     tripDistanceKm = trackingState.tripDistanceKm,
-                    consumption = consumption,
+                    consumption = metrics.consumption,
+                    energyFlow = metrics.energyFlow,
                     batteryCapacityKwh = batteryCapacity,
                     fuelTankCapacityLiters = fuelTankCapacity,
                 )
@@ -387,6 +410,10 @@ class DashboardViewModel @Inject constructor(
                         powerState = data?.powerState ?: current.powerState,
                         driveMode = data?.driveMode ?: current.driveMode,
                         workMode = data?.workMode ?: current.workMode,
+                        energyState = data?.energyState ?: current.energyState,
+                        energyFlowCategory = snapshot.energyFlow.currentCategory,
+                        sessionEnergyFlow = snapshot.energyFlow.session,
+                        lifetimeEnergyFlow = snapshot.energyFlow.lifetime,
                         chargeGunState = data?.chargeGunState ?: current.chargeGunState,
                         chargingStatus = data?.chargingStatus ?: current.chargingStatus,
                         chargingCapCover = data?.chargingCapCover ?: current.chargingCapCover,
@@ -584,6 +611,7 @@ class DashboardViewModel @Inject constructor(
             batteryHealthExpanded = !it.batteryHealthExpanded,
             idleDrainExpanded = false,
             powertrainDiagnosticsExpanded = false,
+            energyFlowExpanded = false,
         ) }
     }
 
@@ -592,6 +620,7 @@ class DashboardViewModel @Inject constructor(
             idleDrainExpanded = !it.idleDrainExpanded,
             batteryHealthExpanded = false,
             powertrainDiagnosticsExpanded = false,
+            energyFlowExpanded = false,
         ) }
     }
 
@@ -600,6 +629,16 @@ class DashboardViewModel @Inject constructor(
             powertrainDiagnosticsExpanded = !it.powertrainDiagnosticsExpanded,
             batteryHealthExpanded = false,
             idleDrainExpanded = false,
+            energyFlowExpanded = false,
+        ) }
+    }
+
+    fun toggleEnergyFlowExpanded() {
+        _uiState.update { it.copy(
+            energyFlowExpanded = !it.energyFlowExpanded,
+            batteryHealthExpanded = false,
+            idleDrainExpanded = false,
+            powertrainDiagnosticsExpanded = false,
         ) }
     }
 

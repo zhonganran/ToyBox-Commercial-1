@@ -1,5 +1,6 @@
 package com.byd.wjx.service
 
+import com.byd.wjx.domain.tracker.PersistedSession
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test

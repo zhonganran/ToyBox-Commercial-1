@@ -97,7 +97,6 @@ class SharedAdaptiveLoop constructor(
         var consecutiveNull = 0
         var regularDelayRemainingMs = 0L
         var lastCadenceState: LoopState? = null
-        val actionIntervalMs = cadence.actionMs.coerceAtLeast(MIN_ACTION_INTERVAL_MS)
         while (true) {
             val regularDue = regularDelayRemainingMs <= 0L
             val fetchStartedAt = System.currentTimeMillis()
@@ -159,6 +158,9 @@ class SharedAdaptiveLoop constructor(
                     continue
                 }
             }
+            val actionIntervalMs = cadence
+                .actionIntervalFor(lastCadenceState ?: LoopState.DRIVE)
+                .coerceAtLeast(MIN_ACTION_INTERVAL_MS)
             val actionDelayMs = (actionIntervalMs - fetchElapsedMs).coerceAtLeast(0L)
             val delayMs = minOf(actionDelayMs, regularDelayRemainingMs)
             if (delayMs > 0L) delay(delayMs)

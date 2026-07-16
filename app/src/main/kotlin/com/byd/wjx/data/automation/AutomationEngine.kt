@@ -49,6 +49,7 @@ class AutomationEngine @Inject constructor(
     private val activationManager: ActivationManager,
     private val vehicleStateRepository: VehicleStateRepository,
     private val trackingStateRepository: TrackingStateRepository,
+    private val confirmationPresenter: AutomationConfirmationPresenter,
     @ApplicationContext private val context: Context
 ) {
     companion object {
@@ -440,8 +441,7 @@ class AutomationEngine @Inject constructor(
         WjxFileLogger.i(TAG, "rule phase ready name='${rule.name}' phase=$phase actions=${actions.size} confirm=${rule.confirmBeforeExecute} snapshot=$snapshot")
 
         if (rule.confirmBeforeExecute) {
-            val shown = ConfirmOverlayManager.show(
-                context = context,
+            val shown = confirmationPresenter.show(
                 ruleName = rule.name,
                 actionsSummary = actions.joinToString(", ") { it.displayName },
                 onConfirm = {
@@ -643,6 +643,7 @@ class AutomationEngine @Inject constructor(
         "TireStateRR" -> data.tireStateRR?.toDouble()
         "DriveMode" -> data.driveMode?.toDouble()
         "WorkMode" -> data.workMode?.toDouble()
+        "EnergyState" -> data.energyState?.toDouble()
         "AutoPark" -> (data.autoPark ?: data.adasApaParkingStatus)?.toDouble()
         "AdasApaParkingStatus" -> data.adasApaParkingStatus?.toDouble()
         "ChargingCap" -> data.chargingCapCover?.toDouble()

@@ -16,6 +16,7 @@ import com.byd.wjx.data.local.entity.IdleDrainEntity
 import com.byd.wjx.data.local.entity.SettingEntity
 import com.byd.wjx.data.local.entity.TripEntity
 import com.byd.wjx.data.local.entity.TripPointEntity
+import com.byd.wjx.data.energy.EnergyFlowStatsRepository
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.data.repository.FakeTrackingStateRepository
 import com.byd.wjx.data.repository.TripRepository
@@ -29,6 +30,7 @@ import com.byd.wjx.data.vehicle.VehicleSnapshotKind
 import com.byd.wjx.domain.calculator.ConsumptionAggregator
 import com.byd.wjx.domain.insight.LocalInsightEngine
 import com.byd.wjx.domain.insight.LocalInsightStatsAggregator
+import com.byd.wjx.domain.energy.EnergyFlowStats
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -83,6 +85,10 @@ class DashboardViewModelTest {
         override suspend fun readTireTelemetry() = data
         override suspend fun readAdasTelemetry() = data
         override suspend fun readPowertrainTelemetry() = data
+    }
+
+    private class FakeEnergyFlowStatsRepository : EnergyFlowStatsRepository {
+        override val state = MutableStateFlow(EnergyFlowStats())
     }
 
     @Before
@@ -265,6 +271,7 @@ class DashboardViewModelTest {
             localInsightStatsAggregator = localInsightStatsAggregator,
             localInsightEngine = LocalInsightEngine(),
             onDemandTelemetryReader = onDemandTelemetryReader,
+            energyFlowStatsRepository = FakeEnergyFlowStatsRepository(),
         )
     }
 

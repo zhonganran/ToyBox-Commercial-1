@@ -1,4 +1,4 @@
-package com.byd.wjx.data.automation
+package com.byd.wjx.ui.overlay
 
 import android.content.Context
 import android.graphics.PixelFormat
@@ -33,8 +33,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.byd.wjx.data.automation.AutomationConfirmationPresenter
 import com.byd.wjx.log.WjxFileLogger
-import com.byd.wjx.ui.overlay.OverlayLifecycleOwner
 import com.byd.wjx.ui.theme.AccentContent
 import com.byd.wjx.ui.theme.AccentGreen
 import com.byd.wjx.ui.theme.CardBorder
@@ -42,6 +42,9 @@ import com.byd.wjx.ui.theme.CardSurface
 import com.byd.wjx.ui.theme.SocRed
 import com.byd.wjx.ui.theme.TextMuted
 import com.byd.wjx.ui.theme.TextPrimary
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * Shows a SYSTEM_ALERT_WINDOW overlay asking the user to confirm execution
@@ -51,22 +54,25 @@ import com.byd.wjx.ui.theme.TextPrimary
  * Caller passes callbacks; the manager handles timeout auto-cancel, sound,
  * and teardown. Stateless singleton object (same shape as OverlayNotificationManager).
  */
-object ConfirmOverlayManager {
+@Singleton
+class ConfirmOverlayManager @Inject constructor(
+    @ApplicationContext private val context: Context,
+) : AutomationConfirmationPresenter {
 
-    private const val TAG = "ConfirmOverlay"
-    private const val DEFAULT_TIMEOUT_MS = 15_000L
+    private companion object {
+        const val TAG = "ConfirmOverlay"
+        const val DEFAULT_TIMEOUT_MS = 15_000L
+    }
 
-    fun canShow(context: Context): Boolean = Settings.canDrawOverlays(context)
+    private fun canShow(): Boolean = Settings.canDrawOverlays(context)
 
-    fun show(
-        context: Context,
+    override fun show(
         ruleName: String,
         actionsSummary: String,
         onConfirm: () -> Unit,
         onCancel: () -> Unit,
-        timeoutMs: Long = DEFAULT_TIMEOUT_MS,
     ): Boolean {
-        if (!canShow(context)) {
+        if (!canShow()) {
             Log.w(TAG, "SYSTEM_ALERT_WINDOW not granted — caller must fall back")
             WjxFileLogger.w(TAG, "SYSTEM_ALERT_WINDOW not granted; fallback needed rule='$ruleName'")
             return false
@@ -74,8 +80,8 @@ object ConfirmOverlayManager {
         val main = Handler(Looper.getMainLooper())
         main.post {
             try {
-                render(context, ruleName, actionsSummary, onConfirm, onCancel, timeoutMs)
-                WjxFileLogger.i(TAG, "shown rule='$ruleName' timeout=$timeoutMs")
+                render(context, ruleName, actionsSummary, onConfirm, onCancel, DEFAULT_TIMEOUT_MS)
+                WjxFileLogger.i(TAG, "shown rule='$ruleName' timeout=$DEFAULT_TIMEOUT_MS")
             } catch (e: Exception) {
                 Log.e(TAG, "show failed: ${e.message}")
                 WjxFileLogger.e(TAG, "show failed rule='$ruleName': ${e.message}", e)

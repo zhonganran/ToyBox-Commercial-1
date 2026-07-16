@@ -7,6 +7,7 @@ import com.byd.wjx.log.WjxFileLogger
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.abs
@@ -30,6 +31,42 @@ data class AutoDoorSideSnapshot(
     val nextCommandLabel: String,
 )
 
+internal enum class AutoDoorMotionDirection {
+    OPENING,
+    CLOSING,
+}
+
+internal data class AutoDoorDisplayDecision(
+    val statusText: String,
+    val nextCommand: Int,
+    val rememberedMotion: AutoDoorMotionDirection?,
+)
+
+/**
+ * Mirrors Settings' state machine:
+ * 100% is fully open, 0..2% is fully closed, and a stopped intermediate door
+ * continues in the opposite direction of the motion that was paused.
+ */
+internal fun resolveAutoDoorDisplayDecision(
+    action: Int?,
+    percent: Int?,
+    previousMotion: AutoDoorMotionDirection?,
+): AutoDoorDisplayDecision {
+    val validPercent = percent?.takeIf { it in 0..100 }
+    return when {
+        action == 2 -> AutoDoorDisplayDecision("动作中", 3, AutoDoorMotionDirection.OPENING)
+        action == 3 -> AutoDoorDisplayDecision("动作中", 3, AutoDoorMotionDirection.CLOSING)
+        validPercent == 100 -> AutoDoorDisplayDecision("已开", 2, null)
+        validPercent != null && validPercent <= 2 -> AutoDoorDisplayDecision("已关", 1, null)
+        validPercent != null -> AutoDoorDisplayDecision(
+            statusText = "半开 $validPercent%",
+            nextCommand = if (previousMotion == AutoDoorMotionDirection.OPENING) 2 else 1,
+            rememberedMotion = previousMotion,
+        )
+        else -> AutoDoorDisplayDecision("未知", 1, previousMotion)
+    }
+}
+
 /**
  * Guarded control path for BYD electric sliding doors.
  *
@@ -41,6 +78,7 @@ class AutoDoorController @Inject constructor(
     private val helperBootstrap: HelperBootstrap,
     private val helper: HelperClient,
 ) {
+    private val lastMotionBySide = ConcurrentHashMap<String, AutoDoorMotionDirection>()
 
     suspend fun runDoorCommand(slotKey: String, commandValue: Int): AutoDoorControlResult = withContext(Dispatchers.IO) {
         val startedAt = SystemClock.elapsedRealtime()
@@ -110,6 +148,12 @@ class AutoDoorController @Inject constructor(
             .onFailure { WjxFileLogger.w(TAG, "write failed ${target.key}/$commandValue: ${it.message}", it) }
             .getOrNull()
         val accepted = writeStatus == 1
+        if (accepted) {
+            when (commandValue) {
+                1 -> lastMotionBySide[target.key] = AutoDoorMotionDirection.OPENING
+                2 -> lastMotionBySide[target.key] = AutoDoorMotionDirection.CLOSING
+            }
+        }
         val writeCost = SystemClock.elapsedRealtime() - writeStartedAt
 
         delay(600L)
@@ -226,26 +270,22 @@ class AutoDoorController @Inject constructor(
         percent: Int?,
         statusOverride: String? = null,
     ): AutoDoorSideSnapshot {
-        val moving = action == 2 || action == 3
-        val normalizedPercent = percent?.coerceIn(0, 100)
-        val status = statusOverride ?: when {
-            moving -> "动作中"
-            normalizedPercent == null -> "未知"
-            normalizedPercent >= 90 -> "已开"
-            normalizedPercent <= 10 -> "已关"
-            else -> "半开 $normalizedPercent%"
-        }
-        val nextCommand = when {
-            moving -> 3
-            normalizedPercent != null && normalizedPercent >= 50 -> 2
-            else -> 1
+        val decision = resolveAutoDoorDisplayDecision(action, percent, lastMotionBySide[key])
+        decision.rememberedMotion?.let { motion ->
+            lastMotionBySide[key] = motion
+        } ?: lastMotionBySide.remove(key)
+        val nextCommand = decision.nextCommand
+        val validPercent = percent?.takeIf { it in 0..100 }
+        val status = statusOverride ?: decision.statusText
+        if (statusOverride != null && action == null && percent == null) {
+            lastMotionBySide.remove(key)
         }
         return AutoDoorSideSnapshot(
             key = key,
             label = label,
             shortLabel = shortLabel,
             action = action,
-            percent = normalizedPercent,
+            percent = validPercent,
             statusText = status,
             nextCommand = nextCommand,
             nextCommandLabel = COMMAND_LABELS.getValue(nextCommand),

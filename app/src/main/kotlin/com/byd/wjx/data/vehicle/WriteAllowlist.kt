@@ -72,14 +72,56 @@ class WriteAllowlist(private val map: Map<String, WriteEntry>) {
         val BANNED_DEV_FID_EXCEPTIONS: Set<Pair<Int, Int>> = setOf(
             1023 to 1330643002,  // SET_INSIDE_LIGHT_STATE_SET (interior light on/off)
             1023 to 1069547536,  // SET_INTERIOR_ATMOSPHERE_LAMP_BRIGHTNESS_SET (ambient)
+            1023 to 1276190736,  // main-driver massage intensity
+            1023 to 1276190752,  // main-driver massage mode
+            1023 to 1276190739,  // co-driver massage intensity
+            1023 to 1276190756,  // co-driver massage mode
             1004 to 1125122118,  // DRL (daytime running lights) on/off
+        )
+
+        /** Official Settings feature-catalog readbacks for optional comfort writes. */
+        private val OFFICIAL_READBACK_BY_WRITE: Map<Pair<Int, Int>, Int> = mapOf(
+            (1000 to 501219340) to 1077936156,  // AC wind level
+            (1000 to 501219336) to 1077936152,  // AC wind mode
+            (1000 to 501219346) to 1077936164,  // dual/separate temperature zone
+            (1000 to 501219376) to 1077936176,  // passenger target temperature
+            (1000 to 501219394) to 1314914314,  // ventilation-only state
+            (1000 to 944767029) to 1116733454,  // steering-wheel heat state
+            (1001 to 1330642984) to 1101004816, // sunshade percentage
+            (1023 to 1276190736) to 1335885876, // driver massage intensity
+            (1023 to 1276190752) to 1335885872, // driver massage mode
+            (1023 to 1276190739) to 1335885884, // passenger massage intensity
+            (1023 to 1276190756) to 1335885880, // passenger massage mode
+        )
+
+        /**
+         * Safe value ranges for variable actions in vehicle-actions.json.
+         * Without an explicit range an action remains fixed at zero and cannot
+         * accidentally accept arbitrary values.
+         */
+        private val OFFICIAL_VARIABLE_RANGES: Map<Pair<Int, Int>, IntRange> = mapOf(
+            (1000 to 501219352) to 0..1,       // AC control mode
+            (1000 to 501219355) to 1..2,       // inner / outer circulation
+            (1000 to 501219362) to 0..1,       // front defrost
+            (1000 to 501219357) to 0..1,       // rear defrost
+            (1000 to 501219346) to 0..1,       // sync / separate temperature zone
+            (1000 to 501219364) to 0..1,       // AC power
+            (1000 to 501219368) to 16..30,     // driver target temperature
+            (1000 to 501219376) to 16..30,     // passenger target temperature
+            (1000 to 501219340) to 0..7,       // wind level
+            (1000 to 501219336) to 1..7,       // wind mode
+            (1000 to 501219394) to 0..1,       // ventilation-only state
+            (1000 to 944767029) to 1..2,       // steering-wheel heat off/on
+            (1001 to 1330642984) to 0..100,    // sunshade percentage
         )
 
         /** A (dev,fid) is banned unless explicitly carved out. */
         internal fun isBanned(dev: Int, fid: Int): Boolean =
             dev in BANNED_DEVS && (dev to fid) !in BANNED_DEV_FID_EXCEPTIONS
 
-        // 31 native write entries on Fangchengbao Bao 3 via HelperDaemon: 22 live-validated
+        // Native write entries on Fangchengbao Bao 3 via HelperDaemon. AC power follows the
+        // official/AutoTark 0=off, 1=on contract; ac_off remains conservatively unvalidated
+        // until the corrected zero-value path is confirmed on the vehicle.
         // 2026-05-28 (climate/windows/sunroof/sunshade/locks) + 8 live-validated
         // 2026-05-29 (interior/ambient light, DRL, rear-window-defrost = mirror heat).
         // The sole non-validated entry is ac_on: its address uses the
@@ -89,7 +131,7 @@ class WriteAllowlist(private val map: Map<String, WriteEntry>) {
         val LIVE_VALIDATED: List<WriteEntry> = listOf(
             // climate (dev=1000)
             WriteEntry("ac_on",          1000, 501219352, null, 0, 0,   "climate",  false, "wjx-vehicle-actions"),
-            WriteEntry("ac_off",         1000, 501219364, null, 1, 1,   "climate",  true, "wjx-live-2026-05-28"),
+            WriteEntry("ac_off",         1000, 501219364, null, 0, 0,   "climate",  false, "autotark-settings-contract"),
             WriteEntry("ac_temp_main",   1000, 501219368, null, 16, 30, "climate",  true, "wjx-live-2026-05-28"),
             WriteEntry("ac_cycle_inner", 1000, 501219355, null, 1, 1,   "climate",  true, "wjx-live-2026-05-28"),
             WriteEntry("ac_cycle_outer", 1000, 501219355, null, 2, 2,   "climate",  true, "wjx-live-2026-05-28"),
@@ -128,6 +170,7 @@ class WriteAllowlist(private val map: Map<String, WriteEntry>) {
             // ambient (IAL) via brightness — raw is +1 shifted: raw 1=off(lvl0), 2..5=lvl1..4, dev=1023 carve-out
             WriteEntry("ambient_light_on",   1023, 1069547536, null, 5, 5, "lights", true, "wjx-live-2026-05-29"),
             WriteEntry("ambient_light_off",  1023, 1069547536, null, 1, 1, "lights", true, "wjx-live-2026-05-29"),
+            WriteEntry("ambient_light_level", 1023, 1069547536, null, 2, 5, "lights", true, "wjx-live-2026-05-29"),
             // DRL (daytime running lights) — 1=on, 2=off (0 invalid), dev=1004 carve-out
             WriteEntry("drl_on",  1004, 1125122118, null, 1, 1, "lights", true, "wjx-live-2026-05-29"),
             WriteEntry("drl_off", 1004, 1125122118, null, 2, 2, "lights", true, "wjx-live-2026-05-29"),
@@ -217,6 +260,9 @@ class WriteAllowlist(private val map: Map<String, WriteEntry>) {
                     val fid = obj.getInt("featureId")
                     val hasValue = obj.has("value")
                     val value = if (hasValue) obj.getInt("value") else 0
+                    val officialRange = OFFICIAL_VARIABLE_RANGES[dev to fid]
+                    val valueMin = if (hasValue) value else officialRange?.first ?: 0
+                    val valueMax = if (hasValue) value else officialRange?.last ?: 0
                     if (isBanned(dev, fid)) {
                         Log.w(TAG, "Dropping banned-dev action=$name dev=$dev")
                         WjxFileLogger.w(TAG, "Dropping banned-dev action=$name dev=$dev")
@@ -226,9 +272,9 @@ class WriteAllowlist(private val map: Map<String, WriteEntry>) {
                         actionName = name,
                         dev = dev,
                         writeFid = fid,
-                        readbackFid = null,
-                        valueMin = value,
-                        valueMax = value,
+                        readbackFid = OFFICIAL_READBACK_BY_WRITE[dev to fid],
+                        valueMin = valueMin,
+                        valueMax = valueMax,
                         category = inferCategory(name),
                         validated = false,
                         source = "wjx-vehicle-actions",

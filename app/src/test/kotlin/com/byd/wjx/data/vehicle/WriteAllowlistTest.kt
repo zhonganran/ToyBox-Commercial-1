@@ -215,6 +215,13 @@ class WriteAllowlistTest {
         assertEquals(1, e.valueMax)
     }
 
+    @Test fun `ac off uses the zero power contract`() {
+        val entry = WriteAllowlist.loadProduction { "{}" }.find("ac_off")
+        assertNotNull(entry)
+        assertEquals(0, entry!!.valueMin)
+        assertEquals(0, entry.valueMax)
+    }
+
     @Test fun `drl is carved out of banned dev 1004`() {
         assertTrue(
             "drl write fid must be carved out of the dev 1004 ban",
@@ -226,6 +233,54 @@ class WriteAllowlistTest {
         assertEquals(1004, on!!.dev)
         assertEquals(1, on.valueMin)
         assertEquals(2, al.find("drl_off")!!.valueMin)
+    }
+
+    @Test fun `official optional comfort actions keep safe ranges and readbacks`() {
+        val projectRoot = generateSequence(File(".").canonicalFile) { it.parentFile }
+            .firstOrNull { File(it, "app/src/main/assets/vehicle-actions.json").exists() }
+            ?: error("Cannot find project root")
+        val allowlist = WriteAllowlist.loadProduction {
+            File(projectRoot, "app/src/main/assets/vehicle-actions.json").readText()
+        }
+
+        fun assertEntry(name: String, min: Int, max: Int, readback: Int) {
+            val entry = allowlist.find(name)
+            assertNotNull(name, entry)
+            assertEquals("$name min", min, entry!!.valueMin)
+            assertEquals("$name max", max, entry.valueMax)
+            assertEquals("$name readback", readback, entry.readbackFid)
+        }
+
+        assertEntry("ac_wind_level", 0, 7, 1077936156)
+        assertEntry("ac_wind_mode", 1, 7, 1077936152)
+        assertEntry("ac_dual", 0, 1, 1077936164)
+        assertEntry("ac_temp_deputy", 16, 30, 1077936176)
+        assertEntry("sunshade_set_position", 0, 100, 1101004816)
+        assertEntry("steering_wheel_heat", 1, 2, 1116733454)
+    }
+
+    @Test fun `massage carveouts use official readbacks and corrected mode values`() {
+        val projectRoot = generateSequence(File(".").canonicalFile) { it.parentFile }
+            .firstOrNull { File(it, "app/src/main/assets/vehicle-actions.json").exists() }
+            ?: error("Cannot find project root")
+        val allowlist = WriteAllowlist.loadProduction {
+            File(projectRoot, "app/src/main/assets/vehicle-actions.json").readText()
+        }
+
+        assertTrue(1023 to 1276190736 in WriteAllowlist.BANNED_DEV_FID_EXCEPTIONS)
+        assertTrue(1023 to 1276190752 in WriteAllowlist.BANNED_DEV_FID_EXCEPTIONS)
+        assertTrue(1023 to 1276190739 in WriteAllowlist.BANNED_DEV_FID_EXCEPTIONS)
+        assertTrue(1023 to 1276190756 in WriteAllowlist.BANNED_DEV_FID_EXCEPTIONS)
+
+        val wave = allowlist.find("driver_massage_wave")
+        val pulse = allowlist.find("driver_massage_pulse")
+        val shoulder = allowlist.find("passenger_massage_shoulder")
+        assertEquals(2, wave?.valueMin)
+        assertEquals(1335885872, wave?.readbackFid)
+        assertEquals(3, pulse?.valueMin)
+        assertEquals(6, shoulder?.valueMin)
+        assertEquals(1335885880, shoulder?.readbackFid)
+        assertNull("official SDK exposes only steering heat off/on", allowlist.find("steering_heat_lvl2"))
     }
 
     // ── Dim 6, Test 6: LIVE_VALIDATED has no duplicate actionName ────────────

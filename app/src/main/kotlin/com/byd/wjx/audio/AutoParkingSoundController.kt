@@ -20,9 +20,9 @@ import javax.inject.Singleton
 class AutoParkingSoundController @Inject constructor(
     @ApplicationContext private val context: Context,
     private val activationManager: ActivationManager,
+    private val settings: AutoParkingSoundSettings,
     private val profileDetector: CarProfileDetector = CarProfileDetector(),
 ) {
-    private val settings = AutoParkingSoundSettings(context)
     private val hailingSettings = ExteriorHailingSettings(context)
     private var wasActive: Boolean? = null
     @Volatile private var loopPlaybackStarted = false

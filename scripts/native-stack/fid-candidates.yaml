@@ -1340,9 +1340,8 @@
   source: reference-catalog
 
 # ── AutoTark optional reads confirmed by the official feature catalog ───
-# These addresses are semantically correct, but remain outside production FidMap
-# until a feature consumes them. Keeping them out avoids 7 unused Binder reads per
-# detail refresh.
+# These addresses are semantically correct. EnergyState is now a production core read
+# because the energy-flow feature consumes it; the other overlap candidates remain out.
 
 - param: DriveModeIndicator
   diplus_key: null
@@ -1364,7 +1363,7 @@
   unit: ""
   status: imported
   source: autoservice-catalog
-  note: "ENERGY_STATE; detailed power-flow state, matches AutoTark 3.7.2."
+  note: "Production core read; ENERGY_STATE detailed power-flow state, matches AutoTark 3.7.2."
 
 - param: AdasAccGrayState
   diplus_key: null

@@ -1,36 +1,25 @@
 package com.byd.wjx.data.automation
 
+import com.byd.wjx.audio.AutoParkingSoundSettings
 import com.byd.wjx.data.local.entity.RuleEntity
 import com.byd.wjx.data.local.entity.TriggerDef
 import com.byd.wjx.data.nativestack.ActionSnapshotFieldProvider
-import com.byd.wjx.led.LedPreferences
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class AutomationActionSnapshotFieldProvider @Inject constructor(
     private val repository: AutomationConfigRepository,
-    private val ledPreferences: LedPreferences,
+    private val autoParkingSoundSettings: AutoParkingSoundSettings,
 ) : ActionSnapshotFieldProvider {
     override suspend fun additionalFields(): Set<String> {
-        val led = ledPreferences.state.value
-        val ledFields = if (led.enabled && led.deviceAddress.isNotBlank()) {
-            LED_REGULAR_FIELDS
-        } else {
-            emptySet()
-        }
-        return repository.current().requiredVehicleFields + ledFields
+        val autoParkingFields = requiredRuntimeFeatureFields(autoParkingSoundSettings.enabled)
+        return repository.current().requiredVehicleFields + autoParkingFields
     }
 }
 
-private val LED_REGULAR_FIELDS = setOf(
-    "doorFL",
-    "adasAccMode",
-    "adasLccNcaStatus",
-    "adasTjaState",
-    "laneKeepState",
-    "accCruiseState",
-)
+internal fun requiredRuntimeFeatureFields(autoParkingSoundEnabled: Boolean): Set<String> =
+    if (autoParkingSoundEnabled) setOf("adasApaParkingStatus") else emptySet()
 
 internal fun requiredAutomationVehicleFields(rules: List<RuleEntity>): Set<String> = buildSet {
     rules.asSequence()
@@ -104,6 +93,7 @@ private val PARAM_TO_VEHICLE_FIELDS = mapOf(
     "TireStateRR" to setOf("tireStateRR"),
     "DriveMode" to setOf("driveMode"),
     "WorkMode" to setOf("workMode"),
+    "EnergyState" to setOf("energyState"),
     "AutoPark" to setOf("adasApaParkingStatus"),
     "AdasApaParkingStatus" to setOf("adasApaParkingStatus"),
     "ChargingCap" to setOf("chargingCapCover"),

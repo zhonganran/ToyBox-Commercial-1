@@ -9,6 +9,7 @@ import com.byd.wjx.data.remote.DiParsData
 import com.byd.wjx.log.WjxFileLogger
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.delay
 
 @Singleton
 class VehicleApiImpl @Inject constructor(
@@ -62,7 +63,7 @@ class VehicleApiImpl @Inject constructor(
 
     // Climate
     override suspend fun writeAcOn(): Result<Unit> = doWrite("ac_on", 0)
-    override suspend fun writeAcOff(): Result<Unit> = doWrite("ac_off", 1)
+    override suspend fun writeAcOff(): Result<Unit> = doWrite("ac_off", 0)
     override suspend fun writeSetDriverTemp(celsius: Int): Result<Unit> =
         doWrite("ac_temp_main", celsius)
 
@@ -157,11 +158,7 @@ class VehicleApiImpl @Inject constructor(
             }
         }
 
-        val readback: Long? = entry.readbackFid?.let { readbackFid ->
-            gateway.readRaw(VehicleReadSpec(transaction = 5, device = entry.dev, fid = readbackFid))
-                ?.value
-                ?.toLong()
-        }
+        val readback = readBackAfterWrite(entry, value)
 
         if (readback == -10011L) {
             // For non-validated entries, sentinel is expected (crowd-validation in progress) — surface as Unsupported.
@@ -188,6 +185,24 @@ class VehicleApiImpl @Inject constructor(
         WjxFileLogger.i(TAG, "doWrite OK: action=$actionName dev=${entry.dev} fid=${entry.writeFid} value=$value readback=$readback validated=${entry.validated}")
         logWrite(actionName, entry.dev, entry.writeFid, value, readback?.toInt(), true, null, entry.validated, auditId)
         return Result.success(Unit)
+    }
+
+    /**
+     * Vehicle state propagation is asynchronous. A single immediate read can still contain the
+     * previous CAN value even though the actuator accepted the write, so use a short bounded
+     * retry window before reporting a mismatch. Entries without a reliable readback remain
+     * best-effort and return immediately.
+     */
+    private suspend fun readBackAfterWrite(entry: WriteEntry, expectedValue: Int): Long? {
+        val readbackFid = entry.readbackFid ?: return null
+        val spec = VehicleReadSpec(transaction = 5, device = entry.dev, fid = readbackFid)
+        var latest: Long? = null
+        for (delayMs in READBACK_RETRY_DELAYS_MS) {
+            if (delayMs > 0L) delay(delayMs)
+            latest = gateway.readRaw(spec)?.value?.toLong()
+            if (latest != -10011L && latest?.toInt() == expectedValue) return latest
+        }
+        return latest
     }
 
     internal suspend fun doWriteOutcome(actionName: String, value: Int): WriteOutcome {
@@ -339,6 +354,7 @@ class VehicleApiImpl @Inject constructor(
     companion object {
         private const val TAG = "VehicleApiImpl"
         private const val VALIDATED_FAILURE_TAG = "VehicleApi.ValidatedFailure"
+        private val READBACK_RETRY_DELAYS_MS = longArrayOf(80L, 160L, 320L)
         // TODO: route to Crashlytics when Firebase is integrated
     }
 }

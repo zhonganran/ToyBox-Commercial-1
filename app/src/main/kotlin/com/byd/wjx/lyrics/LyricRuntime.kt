@@ -42,7 +42,7 @@ class LyricRuntime @Inject constructor(
 ) {
     private val appContext = context.applicationContext
     private val settings = LyricSettings(appContext)
-    private val repository = LyricRepository(appContext, okHttpClient)
+    private val repository = LyricRepository(okHttpClient)
     private val desktopOverlay = DesktopLyricOverlayController(appContext, settings)
     private val clusterOverlay = ClusterLyricOverlayController(appContext, settings)
     private val poller = MusicPlaybackPoller(adb)

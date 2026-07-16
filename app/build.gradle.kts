@@ -15,6 +15,7 @@ plugins {
 val keystorePropsFile = listOf(
     rootProject.file("keystore.properties"),
     rootProject.file("../keystore.properties"),
+    rootProject.file("../签名密钥/keystore.properties"),
 ).firstOrNull { it.exists() }
 val keystoreProps = Properties().apply {
     keystorePropsFile?.let { load(FileInputStream(it)) }
@@ -51,8 +52,8 @@ android {
         // on DiLink Android 12 (requestLegacyExternalStorage works).
         // targetSdk 30+ would break listFiles() on /storage/emulated/0/energydata/
         targetSdk = 29
-        versionCode = 410
-        versionName = "4.1"
+        versionCode = 430
+        versionName = "4.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "UPDATE_API_URL", "\"$updateApiUrl\"")

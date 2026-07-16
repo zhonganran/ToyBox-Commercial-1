@@ -54,6 +54,8 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.byd.wjx.R
 import com.byd.wjx.domain.calculator.Trend
+import com.byd.wjx.domain.energy.EnergyFlowCategory
+import com.byd.wjx.domain.energy.EnergyFlowTotals
 import com.byd.wjx.ui.components.SocGauge
 import com.byd.wjx.ui.components.consumptionColor
 import com.byd.wjx.ui.pro.ProPageHeader
@@ -294,6 +296,16 @@ fun DashboardScreen(
                             )
                         }
                         CompactCard(
+                            leftValue = formatEnergyFlowKwh(state.sessionEnergyFlow.totalRegenKwh),
+                            leftLabel = "本次回收 kWh",
+                            rightValue = energyFlowCategoryLabel(state.energyFlowCategory),
+                            rightLabel = state.energyState?.let { "能量状态 $it" } ?: "能量状态",
+                            borderColor = AccentGreen,
+                            hasData = state.energyState != null ||
+                                state.sessionEnergyFlow.totalRecoveredKwh > 0.0,
+                            onClick = { viewModel.toggleEnergyFlowExpanded() },
+                        )
+                        CompactCard(
                             leftValue = state.frontMotorSpeed?.let(::formatRpm) ?: "—",
                             leftLabel = "前电机转速",
                             rightValue = state.rearMotorSpeed?.let(::formatRpm) ?: "—",
@@ -364,6 +376,18 @@ fun DashboardScreen(
                             DetailRow("后电机电流", state.rearMotorCurrent?.let { "%.1f A".format(it) } ?: "--", TextPrimary)
                             DetailRow("发动机转速", state.engineRpm?.let(::formatRpm) ?: "--", TextPrimary)
                             DetailRow("冷却液温度", state.waterTemp?.let { "$it °C" } ?: "--", TextPrimary)
+                        }
+                    }
+                    if (state.energyFlowExpanded) {
+                        CardDetailDialog(
+                            title = "能量回收与发动机发电",
+                            borderColor = AccentGreen,
+                            onDismiss = { viewModel.toggleEnergyFlowExpanded() },
+                        ) {
+                            DetailRow("当前分类", energyFlowCategoryLabel(state.energyFlowCategory), AccentGreen)
+                            DetailRow("原始能量状态", state.energyState?.toString() ?: "--", TextPrimary)
+                            EnergyFlowDetailRows("本次行程", state.sessionEnergyFlow)
+                            EnergyFlowDetailRows("累计统计", state.lifetimeEnergyFlow)
                         }
                     }
                 }
@@ -515,6 +539,42 @@ private fun dashboardTripDuration(durationMs: Long): String {
 }
 
 private fun formatRpm(value: Int): String = "$value rpm"
+
+private fun formatEnergyFlowKwh(value: Double): String = when {
+    value >= 10.0 -> "%.1f".format(value)
+    value >= 0.1 -> "%.2f".format(value)
+    else -> "%.3f".format(value)
+}
+
+private fun energyFlowCategoryLabel(category: EnergyFlowCategory): String = when (category) {
+    EnergyFlowCategory.EV_4WD_REGEN -> "纯电四驱回收"
+    EnergyFlowCategory.EV_FWD_REGEN -> "纯电前驱回收"
+    EnergyFlowCategory.EV_RWD_REGEN -> "纯电后驱回收"
+    EnergyFlowCategory.HEV_REGEN -> "混动回收"
+    EnergyFlowCategory.ASSIST_REGEN -> "辅助驱动回收"
+    EnergyFlowCategory.OTHER_REGEN -> "其他回收"
+    EnergyFlowCategory.ENGINE_GENERATION -> "发动机发电"
+    EnergyFlowCategory.NONE -> "当前无回收"
+}
+
+@Composable
+private fun ColumnScope.EnergyFlowDetailRows(title: String, totals: EnergyFlowTotals) {
+    Text(
+        text = title,
+        color = AccentGreen,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
+    )
+    DetailRow("回收合计", "${formatEnergyFlowKwh(totals.totalRegenKwh)} kWh", TextPrimary)
+    DetailRow("纯电四驱", "${formatEnergyFlowKwh(totals.ev4wdRegenKwh)} kWh", TextPrimary)
+    DetailRow("纯电前驱", "${formatEnergyFlowKwh(totals.evFwdRegenKwh)} kWh", TextPrimary)
+    DetailRow("纯电后驱", "${formatEnergyFlowKwh(totals.evRwdRegenKwh)} kWh", TextPrimary)
+    DetailRow("混动回收", "${formatEnergyFlowKwh(totals.hevRegenKwh)} kWh", TextPrimary)
+    DetailRow("辅助驱动回收", "${formatEnergyFlowKwh(totals.assistRegenKwh)} kWh", TextPrimary)
+    DetailRow("其他回收", "${formatEnergyFlowKwh(totals.otherRegenKwh)} kWh", TextPrimary)
+    DetailRow("发动机发电", "${formatEnergyFlowKwh(totals.engineGenerationKwh)} kWh", TextPrimary)
+}
 
 // ============================================================================
 // Compact card — same look for dashboard health summaries

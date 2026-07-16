@@ -5,131 +5,159 @@ import com.byd.wjx.data.nativestack.BydSignalSemantics
 /**
  * Converts noisy vehicle samples into one stable LED scene.
  *
- * Turn signals blink at the vehicle level, so their scene is held briefly after the last ON
- * sample. Persistent higher-priority scenes switch directly without flashing DEFAULT between them.
+ * The stable turn-switch enum keeps left/right scenes active until the stalk is cancelled.
+ * Persistent higher-priority scenes switch directly without flashing DEFAULT between them.
  */
 class LedSceneArbiter(
-    private val turnHoldMs: Long = 1_200L,
-    private val oneShotDurationMs: Long = 4_000L,
-    private val keepDistanceBrakeOnPercent: Int = 12,
-    private val keepDistanceBrakeOffPercent: Int = 5,
-    private val keepDistanceReleaseHoldMs: Long = 700L,
+    private val brakeWarningOnPercent: Int = 12,
+    private val brakeWarningOffPercent: Int = 5,
+    private val brakeWarningReleaseHoldMs: Long = 700L,
 ) {
-    private var lastLeftAt = Long.MIN_VALUE
-    private var lastRightAt = Long.MIN_VALUE
-    private var lastHazardAt = Long.MIN_VALUE
-    private var temporaryStopUntil = Long.MIN_VALUE
-    private var exitVehicleUntil = Long.MIN_VALUE
+    private var temporaryStopActive = false
+    private var exitVehicleActive = false
     private var previousGear: Int? = null
     private var previousPowerState: Int? = null
-    private var previousDriverDoor: Int? = null
-    private var keepDistanceBraking = false
-    private var keepDistanceUntil = Long.MIN_VALUE
+    private var previousDoorFL: Int? = null
+    private var previousDoorFR: Int? = null
+    private var previousDoorRL: Int? = null
+    private var previousDoorRR: Int? = null
+    private var brakeWarningActive = false
+    private var brakeWarningUntil = Long.MIN_VALUE
 
     fun evaluate(signals: LedVehicleSignals, now: Long): LedScene {
-        val leftOn = signals.turnSignalLeft == 1
-        val rightOn = signals.turnSignalRight == 1
-        val hazardOn = signals.hazardLights == 1 || (leftOn && rightOn)
-        if (hazardOn) {
-            lastHazardAt = now
-        } else if (leftOn) {
-            lastLeftAt = now
-            lastRightAt = Long.MIN_VALUE
-        } else if (rightOn) {
-            lastRightAt = now
-            lastLeftAt = Long.MIN_VALUE
-        }
+        // Stable switch enum: 1=off, 2=left, 4=right, 6=hazard. It remains active through
+        // the physical lamp's blink-off phase and returns to off immediately when cancelled.
+        val stableTurnState = signals.turnSignalFlash
+        val leftOn = stableTurnState == TURN_LEFT
+        val rightOn = stableTurnState == TURN_RIGHT
+        val hazardOn = stableTurnState == TURN_HAZARD
 
         val enteredPark = previousGear != null && previousGear != 1 && signals.gear == 1
         if (enteredPark && BydSignalSemantics.isPowered(signals.powerState)) {
-            temporaryStopUntil = now + oneShotDurationMs
+            temporaryStopActive = true
         }
+        val leftPark = signals.gear != null && signals.gear != PARK_GEAR
+        val explicitlyPoweredOff = signals.powerState != null &&
+            !BydSignalSemantics.isPowered(signals.powerState)
+        if (leftPark || explicitlyPoweredOff) temporaryStopActive = false
 
-        val driverDoorOpened = previousDriverDoor != null && previousDriverDoor != 1 && signals.driverDoor == 1
+        val anyDoorOpened = openedEdge(previousDoorFL, signals.doorFL) ||
+            openedEdge(previousDoorFR, signals.doorFR) ||
+            openedEdge(previousDoorRL, signals.doorRL) ||
+            openedEdge(previousDoorRR, signals.doorRR)
         val poweredDown = BydSignalSemantics.isPowered(previousPowerState) &&
             signals.powerState == BydSignalSemantics.POWER_OFF
-        if ((driverDoorOpened && signals.gear == 1) || poweredDown) {
-            exitVehicleUntil = now + oneShotDurationMs
-        }
+        val poweredUp = previousPowerState != null &&
+            !BydSignalSemantics.isPowered(previousPowerState) &&
+            BydSignalSemantics.isPowered(signals.powerState)
+        if (leftPark || poweredUp) exitVehicleActive = false
+        if ((anyDoorOpened && signals.gear == PARK_GEAR) || poweredDown) exitVehicleActive = true
 
-        updateKeepDistanceState(signals, now)
+        updateBrakeWarningState(signals, now)
 
         previousGear = signals.gear ?: previousGear
         previousPowerState = signals.powerState ?: previousPowerState
-        previousDriverDoor = signals.driverDoor ?: previousDriverDoor
+        previousDoorFL = signals.doorFL ?: previousDoorFL
+        previousDoorFR = signals.doorFR ?: previousDoorFR
+        previousDoorRL = signals.doorRL ?: previousDoorRL
+        previousDoorRR = signals.doorRR ?: previousDoorRR
 
         val candidates = buildList {
-            if (isRecent(lastHazardAt, now, turnHoldMs)) add(LedScene.HAZARD)
-            val reversing = signals.lightReversing?.let { it == 1 } ?: (signals.gear == 2)
-            if (reversing) add(LedScene.REVERSE_PARKING)
-            if (isRecent(lastLeftAt, now, turnHoldMs)) add(LedScene.LEFT_TURN)
-            if (isRecent(lastRightAt, now, turnHoldMs)) add(LedScene.RIGHT_TURN)
+            if (hazardOn) add(LedScene.HAZARD)
+            val autoParking = signals.adasApaParkingStatus == AUTO_PARKING_ACTIVE
+            val manualReversing = !autoParking && signals.gear == REVERSE_GEAR
+            if (autoParking || manualReversing) add(LedScene.REVERSE_PARKING)
+            if (leftOn) add(LedScene.LEFT_TURN)
+            if (rightOn) add(LedScene.RIGHT_TURN)
             if (isAutopilotActive(signals)) add(LedScene.AUTOPILOT)
-            if (isKeepDistanceActive(signals, now)) add(LedScene.KEEP_DISTANCE)
-            if (now < exitVehicleUntil) add(LedScene.EXIT_VEHICLE)
-            if (now < temporaryStopUntil) add(LedScene.TEMPORARY_STOP)
+            if (isBrakeWarningActive(signals, now)) add(LedScene.BRAKE_WARNING)
+            if (exitVehicleActive) add(LedScene.EXIT_VEHICLE)
+            if (temporaryStopActive) add(LedScene.TEMPORARY_STOP)
         }
         return candidates.maxByOrNull { it.priority } ?: LedScene.DEFAULT
     }
 
     fun reset() {
-        lastLeftAt = Long.MIN_VALUE
-        lastRightAt = Long.MIN_VALUE
-        lastHazardAt = Long.MIN_VALUE
-        temporaryStopUntil = Long.MIN_VALUE
-        exitVehicleUntil = Long.MIN_VALUE
+        temporaryStopActive = false
+        exitVehicleActive = false
         previousGear = null
         previousPowerState = null
-        previousDriverDoor = null
-        keepDistanceBraking = false
-        keepDistanceUntil = Long.MIN_VALUE
+        previousDoorFL = null
+        previousDoorFR = null
+        previousDoorRL = null
+        previousDoorRR = null
+        brakeWarningActive = false
+        brakeWarningUntil = Long.MIN_VALUE
     }
 
     private fun isAutopilotActive(signals: LedVehicleSignals): Boolean =
-        isLccNcaActive(signals.adasLccNcaStatus) ||
-            isTjaActive(signals.adasTjaState)
+        isAdasAccModeActive(signals.adasAccMode) ||
+            isLccNcaActive(signals.adasLccNcaStatus) ||
+            isTjaActive(signals.adasTjaState) ||
+            isLaneKeepActive(signals.laneKeepState) ||
+            signals.accCruiseState == ACC_CRUISE_ACTIVE ||
+            isMnoaActive(signals.adasMnoaStatus)
 
-    private fun updateKeepDistanceState(signals: LedVehicleSignals, now: Long) {
+    private fun updateBrakeWarningState(signals: LedVehicleSignals, now: Long) {
         if ((signals.speed ?: 0) <= 0) {
-            keepDistanceBraking = false
-            keepDistanceUntil = Long.MIN_VALUE
+            brakeWarningActive = false
+            brakeWarningUntil = Long.MIN_VALUE
             return
         }
 
         signals.lightBrake?.let { light ->
             if (light == 1) {
-                keepDistanceBraking = true
-                keepDistanceUntil = Long.MIN_VALUE
-            } else if (keepDistanceBraking) {
-                keepDistanceBraking = false
-                keepDistanceUntil = now + keepDistanceReleaseHoldMs
+                brakeWarningActive = true
+                brakeWarningUntil = Long.MIN_VALUE
+            } else if (brakeWarningActive) {
+                brakeWarningActive = false
+                brakeWarningUntil = now + brakeWarningReleaseHoldMs
             }
             return
         }
 
         when {
-            (signals.brakePedalDepth ?: -1) >= keepDistanceBrakeOnPercent -> {
-                keepDistanceBraking = true
-                keepDistanceUntil = Long.MIN_VALUE
+            (signals.brakePedalDepth ?: -1) >= brakeWarningOnPercent -> {
+                brakeWarningActive = true
+                brakeWarningUntil = Long.MIN_VALUE
             }
-            keepDistanceBraking && (signals.brakePedalDepth ?: -1) > keepDistanceBrakeOffPercent -> Unit
-            keepDistanceBraking -> {
-                keepDistanceBraking = false
-                keepDistanceUntil = now + keepDistanceReleaseHoldMs
+            brakeWarningActive && (signals.brakePedalDepth ?: -1) > brakeWarningOffPercent -> Unit
+            brakeWarningActive -> {
+                brakeWarningActive = false
+                brakeWarningUntil = now + brakeWarningReleaseHoldMs
             }
         }
     }
 
-    private fun isKeepDistanceActive(signals: LedVehicleSignals, now: Long): Boolean =
-        (signals.speed ?: 0) > 0 && (keepDistanceBraking || now < keepDistanceUntil)
+    private fun isBrakeWarningActive(signals: LedVehicleSignals, now: Long): Boolean =
+        (signals.speed ?: 0) > 0 && (brakeWarningActive || now < brakeWarningUntil)
 
     // BYD TJA/ICA: 1 is passive, 2/3/5 are active, and 4 is a fault state.
     private fun isTjaActive(value: Int?): Boolean = value == 2 || value == 3 || value == 5
 
-    // The combined LCC/NCA status uses 1 as standby on the supported CAN-FD platforms.
-    // Restrict activation to working states so a configured-but-idle system cannot seize the LED.
-    private fun isLccNcaActive(value: Int?): Boolean = value == 2 || value == 3
+    // ADAS_ACC_MODE: 0/1/2 standby, 3/4/6/7 active, 5 driver override.
+    private fun isAdasAccModeActive(value: Int?): Boolean =
+        value == 3 || value == 4 || value == 6 || value == 7
 
-    private fun isRecent(timestamp: Long, now: Long, windowMs: Long): Boolean =
-        timestamp != Long.MIN_VALUE && now >= timestamp && now - timestamp <= windowMs
+    // Shared ADAS display enum: 0 off, 1 standby, 2 active, 3 override, 4 fault.
+    private fun isLccNcaActive(value: Int?): Boolean = value == ADAS_DISPLAY_ACTIVE
+
+    private fun isLaneKeepActive(value: Int?): Boolean = value == 2 || value == 3
+
+    private fun isMnoaActive(value: Int?): Boolean = value == ADAS_DISPLAY_ACTIVE
+
+    private fun openedEdge(previous: Int?, current: Int?): Boolean =
+        previous != null && previous != DOOR_OPEN && current == DOOR_OPEN
+
+    private companion object {
+        const val TURN_LEFT = 2
+        const val TURN_RIGHT = 4
+        const val TURN_HAZARD = 6
+        const val PARK_GEAR = 1
+        const val REVERSE_GEAR = 2
+        const val DOOR_OPEN = 1
+        const val ACC_CRUISE_ACTIVE = 2
+        const val ADAS_DISPLAY_ACTIVE = 2
+        const val AUTO_PARKING_ACTIVE = 4
+    }
 }

@@ -14,7 +14,7 @@ enum class LedScene(
     AUTOPILOT("自动驾驶", 14, 60),
     EXIT_VEHICLE("下车", 19, 50),
     HAZARD("双闪", 20, 100),
-    KEEP_DISTANCE("保持车距", 8, 55),
+    BRAKE_WARNING("刹车提醒", 8, 55),
 }
 
 enum class LedConnectionPhase {
@@ -53,18 +53,23 @@ data class LedPreferenceSnapshot(
 
 data class LedVehicleSignals(
     val speed: Int? = null,
-    val turnSignalLeft: Int? = null,
-    val turnSignalRight: Int? = null,
-    val hazardLights: Int? = null,
+    val turnSignalFlash: Int? = null,
     val gear: Int? = null,
     val powerState: Int? = null,
-    val driverDoor: Int? = null,
+    val doorFL: Int? = null,
+    val doorFR: Int? = null,
+    val doorRL: Int? = null,
+    val doorRR: Int? = null,
+    val adasAccMode: Int? = null,
     val adasLccNcaStatus: Int? = null,
     val adasTjaState: Int? = null,
     val laneKeepState: Int? = null,
+    val accCruiseState: Int? = null,
+    val adasMnoaStatus: Int? = null,
+    val adasExecSpeed: Int? = null,
+    val adasApaParkingStatus: Int? = null,
     val brakePedalDepth: Int? = null,
     val lightBrake: Int? = null,
-    val lightReversing: Int? = null,
 )
 
 data class LedRuntimeState(

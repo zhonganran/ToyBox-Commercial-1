@@ -1,9 +1,5 @@
 package com.byd.wjx.ui.home
 
-import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -67,7 +63,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -98,8 +93,6 @@ import com.byd.wjx.ui.theme.ScenePink
 import com.byd.wjx.ui.theme.SceneViolet
 import com.byd.wjx.ui.theme.TextPrimary
 import com.byd.wjx.ui.theme.TextSecondary
-import java.io.File
-import kotlin.math.max
 import kotlin.math.roundToInt
 
 @Composable
@@ -972,57 +965,3 @@ private fun rawPairText(first: Int?, second: Int?): String =
     if (first == null && second == null) "--" else "${first ?: "-"} / ${second ?: "-"}"
 
 private fun adasActive(vararg values: Int?): Boolean = values.any { it != null && it != 0 }
-
-private fun vehicleImageFile(context: Context): File =
-    File(context.filesDir, "ui/vehicle/home_vehicle.png")
-
-private fun loadVehicleImageBitmap(context: Context): ImageBitmap? {
-    val file = vehicleImageFile(context)
-    if (!file.isFile) return null
-    return runCatching { BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap() }.getOrNull()
-}
-
-private fun saveVehicleImage(context: Context, uri: Uri): Boolean = runCatching {
-    val decoded = decodeUriSampled(context, uri, 1600) ?: return@runCatching false
-    val normalized = normalizeVehicleBitmap(decoded, 1600)
-    val file = vehicleImageFile(context)
-    file.parentFile?.mkdirs()
-    file.outputStream().use { output ->
-        normalized.compress(Bitmap.CompressFormat.PNG, 100, output)
-    }
-    if (normalized !== decoded) decoded.recycle()
-    normalized.recycle()
-    true
-}.getOrDefault(false)
-
-private fun deleteVehicleImage(context: Context): Boolean = runCatching {
-    val file = vehicleImageFile(context)
-    file.isFile && file.delete()
-}.getOrDefault(false)
-
-private fun decodeUriSampled(context: Context, uri: Uri, maxSide: Int): Bitmap? {
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-    var sample = 1
-    while (bounds.outWidth / sample > maxSide * 2 || bounds.outHeight / sample > maxSide * 2) {
-        sample *= 2
-    }
-    val options = BitmapFactory.Options().apply {
-        inSampleSize = sample
-        inPreferredConfig = Bitmap.Config.ARGB_8888
-    }
-    return context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
-}
-
-private fun normalizeVehicleBitmap(source: Bitmap, maxSide: Int): Bitmap {
-    val largest = max(source.width, source.height)
-    if (largest <= maxSide) return source
-    val scale = maxSide.toFloat() / largest.toFloat()
-    return Bitmap.createScaledBitmap(
-        source,
-        (source.width * scale).roundToInt().coerceAtLeast(1),
-        (source.height * scale).roundToInt().coerceAtLeast(1),
-        true,
-    )
-}

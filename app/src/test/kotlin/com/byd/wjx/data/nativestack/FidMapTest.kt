@@ -29,7 +29,7 @@ class FidMapTest {
             .memberProperties.map { it.name }.toSet()
         val mappedFields = FidMap.entries.map { it.field }.toSet()
         val covered = mappedFields.intersect(dataFields)
-        assertEquals(114, covered.size)
+        assertEquals(115, covered.size)
     }
 
     @Test fun `official Settings corrections replace misleading AutoTark mappings`() {
@@ -46,6 +46,8 @@ class FidMapTest {
         assertEquals(824180744, entry("seatbeltFR").fid)
         assertEquals(824180746, entry("seatbeltRL").fid)
         assertEquals(824180748, entry("seatbeltRR").fid)
+        assertEquals(1006, entry("energyState").device)
+        assertEquals(873463832, entry("energyState").fid)
     }
 
     @Test fun `core and detail profiles partition the full catalog`() {
@@ -61,7 +63,7 @@ class FidMapTest {
     }
 
     @Test fun `on demand reads are selectable but do not expand regular full polling`() {
-        assertEquals(70, VehicleReadProfiles.regularFull.size)
+        assertEquals(71, VehicleReadProfiles.regularFull.size)
         assertEquals(44, VehicleReadProfiles.onDemandFields.size)
         assertEquals(8, VehicleReadProfiles.tireTelemetry.size)
         assertEquals(8, VehicleReadProfiles.adasTelemetry.size)
@@ -75,6 +77,18 @@ class FidMapTest {
             FidMap.entries.map { it.field }.toSet(),
             VehicleReadProfiles.regularFull.map { it.field }.toSet() +
                 VehicleReadProfiles.onDemandFields,
+        )
+    }
+
+    @Test fun `fast action core contains only lifecycle wake fields`() {
+        assertEquals(
+            setOf("speed", "gear", "chargeGunState", "powerState"),
+            VehicleReadProfiles.actionCoreFields,
+        )
+        assertTrue("soc must be selected only by active rules", "soc" !in VehicleReadProfiles.actionCoreFields)
+        assertTrue(
+            "auto parking status must be selected only by an enabled consumer",
+            "adasApaParkingStatus" !in VehicleReadProfiles.actionCoreFields,
         )
     }
 

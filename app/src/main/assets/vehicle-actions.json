@@ -137,12 +137,12 @@
   "driver_massage_pulse": {
     "deviceType": 1023,
     "featureId": 1276190752,
-    "value": 2
+    "value": 3
   },
   "driver_massage_shoulder": {
     "deviceType": 1023,
     "featureId": 1276190752,
-    "value": 3
+    "value": 6
   },
   "driver_massage_stretch": {
     "deviceType": 1023,
@@ -157,7 +157,7 @@
   "driver_massage_wave": {
     "deviceType": 1023,
     "featureId": 1276190752,
-    "value": 6
+    "value": 2
   },
   "driver_seat_heat": {
     "deviceType": 1001,
@@ -290,12 +290,12 @@
   "passenger_massage_pulse": {
     "deviceType": 1023,
     "featureId": 1276190756,
-    "value": 2
+    "value": 3
   },
   "passenger_massage_shoulder": {
     "deviceType": 1023,
     "featureId": 1276190756,
-    "value": 3
+    "value": 6
   },
   "passenger_massage_stretch": {
     "deviceType": 1023,
@@ -310,7 +310,7 @@
   "passenger_massage_wave": {
     "deviceType": 1023,
     "featureId": 1276190756,
-    "value": 6
+    "value": 2
   },
   "passenger_seat_heat": {
     "deviceType": 1001,
@@ -391,11 +391,6 @@
   "set_sunshade_position": {
     "deviceType": 1001,
     "featureId": 1330642984
-  },
-  "steering_heat_lvl2": {
-    "deviceType": 1000,
-    "featureId": 944767029,
-    "value": 3
   },
   "steering_heat_off": {
     "deviceType": 1000,

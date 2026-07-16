@@ -24,7 +24,7 @@ class LedProtocolTest {
             LedScene.AUTOPILOT to 14,
             LedScene.EXIT_VEHICLE to 19,
             LedScene.HAZARD to 20,
-            LedScene.KEEP_DISTANCE to 8,
+            LedScene.BRAKE_WARNING to 8,
         )
 
         expected.forEach { (scene, presetId) ->

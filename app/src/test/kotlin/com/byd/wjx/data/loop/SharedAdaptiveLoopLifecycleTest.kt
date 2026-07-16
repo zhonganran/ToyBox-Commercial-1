@@ -147,8 +147,9 @@ class SharedAdaptiveLoopLifecycleTest {
                 advanceTimeBy(1)
                 assertEquals(0, awaitItem().powerState)
 
-                // The 300 ms action sample sees power level OK and forces a full read immediately.
-                advanceTimeBy(300)
+                // Sleeping vehicles use a 1s wake probe; the state transition still forces a
+                // full snapshot immediately instead of waiting for the 30s idle cadence.
+                advanceTimeBy(1_000)
                 assertEquals(3, awaitItem().powerState)
                 assertEquals(2, fullReads)
             }

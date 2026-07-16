@@ -1,6 +1,5 @@
 package com.byd.wjx.lyrics
 
-import android.content.Context
 import android.net.Uri
 import android.util.Base64
 import com.byd.wjx.log.WjxFileLogger
@@ -96,10 +95,8 @@ object LyricTextFilter {
 }
 
 class LyricRepository(
-    context: Context,
     private val httpClient: OkHttpClient,
 ) {
-    private val appContext = context.applicationContext
     private val cache = linkedMapOf<String, LyricsResult>()
 
     suspend fun load(snapshot: MusicPlaybackSnapshot): LyricsResult = withContext(Dispatchers.IO) {

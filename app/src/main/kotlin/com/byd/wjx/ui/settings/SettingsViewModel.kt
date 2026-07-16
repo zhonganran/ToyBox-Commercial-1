@@ -76,13 +76,13 @@ class SettingsViewModel @Inject constructor(
     private val activationManager: ActivationManager,
     private val soundLibrary: SoundLibrary,
     private val lockSoundConfigSync: LockSoundConfigSync,
+    private val autoParkingSoundSettings: AutoParkingSoundSettings,
     private val okHttpClient: OkHttpClient,
     private val serviceQrCache: ServiceQrCache,
     private val logRecorder: SettingsLogRecorder,
     private val carProfileDetector: CarProfileDetector = CarProfileDetector(),
 ) : ViewModel() {
     private val lockSoundSettings = LockSoundSettings(appContext)
-    private val autoParkingSoundSettings = AutoParkingSoundSettings(appContext)
 
     private val _uiState = MutableStateFlow(SettingsUiState(
         appVersion = getVersion(),

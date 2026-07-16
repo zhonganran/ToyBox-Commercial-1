@@ -208,30 +208,6 @@ private fun LifetimeBlock(
 }
 
 @Composable
-private fun LifetimeDisabledBlock() {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(CardSurfaceElevated, RoundedCornerShape(10.dp))
-            .padding(horizontal = 14.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        Text(
-            stringResource(R.string.battery_health_disabled_title),
-            color = TextSecondary,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold
-        )
-        Text(
-            stringResource(R.string.battery_health_disabled_hint),
-            color = TextMuted,
-            fontSize = 11.sp,
-            lineHeight = 15.sp
-        )
-    }
-}
-
-@Composable
 private fun StatCell(label: String, value: String, valueColor: Color) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(

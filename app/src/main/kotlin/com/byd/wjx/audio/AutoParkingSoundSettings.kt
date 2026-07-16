@@ -1,8 +1,14 @@
 package com.byd.wjx.audio
 
 import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import javax.inject.Singleton
 
-class AutoParkingSoundSettings(context: Context) {
+@Singleton
+class AutoParkingSoundSettings @Inject constructor(
+    @ApplicationContext context: Context,
+) {
     private val appContext = context.applicationContext
     private val prefs
         get() = appContext.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)

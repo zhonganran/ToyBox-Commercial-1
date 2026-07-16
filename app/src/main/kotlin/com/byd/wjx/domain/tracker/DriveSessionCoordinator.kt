@@ -6,7 +6,6 @@ import com.byd.wjx.data.repository.LastSessionRepository
 import com.byd.wjx.data.repository.TripRepository
 import com.byd.wjx.di.ApplicationScope
 import com.byd.wjx.log.WjxFileLogger
-import com.byd.wjx.service.SessionPersistence
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
@@ -35,7 +34,7 @@ data class DriveSessionUpdate(
 /** Owns the ignition-on driving session state machine and its persisted anchor. */
 @Singleton
 class DriveSessionCoordinator @Inject constructor(
-    private val persistence: SessionPersistence,
+    private val persistence: DriveSessionPersistence,
     private val lastSessionRepository: LastSessionRepository,
     private val tripRepository: TripRepository,
     @ApplicationScope private val applicationScope: CoroutineScope,

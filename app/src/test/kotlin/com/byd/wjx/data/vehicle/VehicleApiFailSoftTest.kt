@@ -144,6 +144,21 @@ class VehicleApiFailSoftTest {
         coVerify { dao.complete(1L, null, 0, null) }
     }
 
+    @Test fun `readback retries an old value before reporting success`() = runTest {
+        val entry = allowlist.find("doors_lock")!!
+        coEvery { gateway.writeStatus(entry.dev, entry.writeFid, 2) } returns 0
+        coEvery { gateway.readRaw(readbackSpec(entry)) } returnsMany listOf(
+            VehicleRawRead(0, 1),
+            VehicleRawRead(0, 2),
+        )
+
+        val result = api.writeLockDoors()
+
+        assertTrue(result.isSuccess)
+        coVerify(exactly = 2) { gateway.readRaw(readbackSpec(entry)) }
+        coVerify { dao.complete(1L, 2, 0, null) }
+    }
+
     private fun readbackSpec(entry: WriteEntry): VehicleReadSpec =
         VehicleReadSpec(
             transaction = 5,

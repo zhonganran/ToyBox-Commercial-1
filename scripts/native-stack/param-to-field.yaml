@@ -42,6 +42,7 @@ ChargingStatus: chargingStatus
 PowerState:    powerState
 DriveMode:     driveMode
 WorkMode:      workMode
+EnergyState:   energyState
 
 # ── Climate ───────────────────────────────────────────────────────────────
 ACStatus:      acStatus

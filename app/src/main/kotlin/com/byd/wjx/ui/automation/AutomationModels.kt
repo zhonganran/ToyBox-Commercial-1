@@ -1,0 +1,80 @@
+package com.byd.wjx.ui.automation
+
+import android.content.Context
+import com.byd.wjx.data.local.entity.ActionDef
+import com.byd.wjx.data.local.entity.PlaceEntity
+import com.byd.wjx.data.local.entity.RuleEntity
+import com.byd.wjx.data.local.entity.RuleLogEntity
+import com.byd.wjx.data.local.entity.TriggerDef
+
+data class TriggerParamOption(
+    val param: String,
+    val chineseName: String,
+    val displayName: String,
+    val englishName: String = displayName,
+    val unit: String = "",
+    val category: String,
+    val chineseCategory: String = category,
+    val englishCategory: String = category,
+    val enumValues: List<Pair<String, String>>? = null,
+)
+
+data class ActionOption(
+    val command: String,
+    val displayName: String,
+    val chineseName: String = displayName,
+    val englishName: String = displayName,
+    val category: String,
+    val chineseCategory: String = category,
+    val englishCategory: String = category,
+)
+
+data class AutoDoorActionOption(
+    val side: String,
+    val commandValue: Int,
+    val label: String,
+)
+
+internal fun currentLang(context: Context): String = "zh"
+
+internal fun localized(zh: String, en: String, ru: String, context: Context): String = zh
+
+fun TriggerParamOption.localizedName(context: Context): String = chineseName
+fun TriggerParamOption.localizedCategory(context: Context): String = chineseCategory
+fun ActionOption.localizedName(context: Context): String = chineseName
+fun ActionOption.localizedCategory(context: Context): String = chineseCategory
+
+enum class RuleFilter { ALL, ENABLED, DISABLED }
+
+const val AUTOMATION_COOLDOWN_MIN_SECONDS = 0
+const val AUTOMATION_COOLDOWN_MAX_SECONDS = 60
+const val AUTOMATION_REPEAT_MIN_SECONDS = 2
+const val AUTOMATION_REPEAT_MAX_SECONDS = 3600
+const val AUTOMATION_RULE_LIMIT = 50
+
+data class EditingRule(
+    val id: Long = 0,
+    val name: String = "",
+    val triggerLogic: String = "AND",
+    val triggers: List<TriggerDef> = emptyList(),
+    val actions: List<ActionDef> = emptyList(),
+    val exitActions: List<ActionDef> = emptyList(),
+    val cooldownSeconds: Int = 60,
+    val repeatIntervalSeconds: Int = 0,
+    val requirePark: Boolean = false,
+    val confirmBeforeExecute: Boolean = false,
+    val fireOncePerTrip: Boolean = false,
+    val isNew: Boolean = true,
+)
+
+data class AutomationUiState(
+    val rules: List<RuleEntity> = emptyList(),
+    val filter: RuleFilter = RuleFilter.ALL,
+    val logs: List<RuleLogEntity> = emptyList(),
+    val showEditor: Boolean = false,
+    val showJournal: Boolean = false,
+    val editing: EditingRule = EditingRule(),
+    val showDeleteConfirm: Long? = null,
+    val places: List<PlaceEntity> = emptyList(),
+    val editorError: String? = null,
+)

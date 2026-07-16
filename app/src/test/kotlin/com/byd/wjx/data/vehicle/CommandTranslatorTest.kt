@@ -1,5 +1,6 @@
 package com.byd.wjx.data.vehicle
 
+import com.byd.wjx.ui.automation.ACTION_COMMANDS
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -252,9 +253,110 @@ class CommandTranslatorTest {
         assertEquals(3, r?.value)
     }
 
+    @Test fun `seat heat and vent expose full five levels`() {
+        assertEquals("driver_seat_heat_lvl5" to 6, one("主驾座椅加热5档")?.let { it.actionName to it.value })
+        assertEquals("passenger_seat_vent_lvl4" to 5, one("副驾座椅通风4档")?.let { it.actionName to it.value })
+    }
+
+    @Test fun `arbitrary window percentages use validated per-window routes`() {
+        assertEquals("window_rear_left_pos" to 37, one("后左打开37")?.let { it.actionName to it.value })
+        assertEquals(
+            setOf(
+                "window_driver_pos" to 63,
+                "window_passenger_pos" to 63,
+                "window_rear_left_pos" to 63,
+                "window_rear_right_pos" to 63,
+            ),
+            pairs("车窗打开63"),
+        )
+    }
+
+    @Test fun `new climate controls use official Settings enums`() {
+        assertEquals("ac_off" to 0, one("关闭空调")?.let { it.actionName to it.value })
+        assertEquals("ac_temp_deputy" to 24, one("副驾温度24")?.let { it.actionName to it.value })
+        assertEquals("ac_wind_level" to 7, one("风量7档")?.let { it.actionName to it.value })
+        assertEquals("ac_dual" to 0, one("主副驾温度同步")?.let { it.actionName to it.value })
+        assertEquals("ac_dual" to 1, one("主副驾温度分区")?.let { it.actionName to it.value })
+        assertEquals("ac_flow_only_off" to 0, one("关闭空调通风")?.let { it.actionName to it.value })
+        assertEquals("ac_wind_mode" to 1, one("出风吹脸")?.let { it.actionName to it.value })
+        assertEquals("ac_wind_mode" to 7, one("出风吹脸除霜")?.let { it.actionName to it.value })
+    }
+
+    @Test fun `ambient sunshade and steering comfort controls map correctly`() {
+        assertEquals("ambient_light_level" to 4, one("氛围灯亮度3档")?.let { it.actionName to it.value })
+        assertEquals("sunshade_set_position" to 72, one("遮阳帘位置72")?.let { it.actionName to it.value })
+        assertEquals("steering_heat_on" to 2, one("方向盘加热")?.let { it.actionName to it.value })
+        assertEquals("steering_heat_off" to 1, one("关闭方向盘加热")?.let { it.actionName to it.value })
+    }
+
+    @Test fun `massage uses official mode enum and writes intensity before mode`() {
+        assertEquals(
+            listOf(
+                "driver_massage_lvl3" to 3,
+                "driver_massage_wave" to 2,
+            ),
+            CommandTranslator.resolve("主驾按摩波浪3档").map { it.actionName to it.value },
+        )
+        assertEquals(
+            listOf(
+                "passenger_massage_lvl2" to 2,
+                "passenger_massage_shoulder" to 6,
+            ),
+            CommandTranslator.resolve("副驾按摩肩部2档").map { it.actionName to it.value },
+        )
+        assertEquals("driver_massage_off" to 1, one("主驾按摩关闭")?.let { it.actionName to it.value })
+    }
+
     // ── Test 12: allActions returns non-empty set of unique names ─────────────
     @Test fun `allActions returns non-empty set`() {
         val actions = CommandTranslator.allActions()
         assertTrue("allActions must be non-empty", actions.isNotEmpty())
+    }
+
+    @Test fun `every automation vehicle action resolves to at least one write`() {
+        val unresolved = ACTION_COMMANDS
+            .map { it.command }
+            .filter { CommandTranslator.resolve(it).isEmpty() }
+        assertTrue("Automation actions without control mapping: $unresolved", unresolved.isEmpty())
+    }
+
+    @Test fun `every automation vehicle action value is accepted by production allowlist`() {
+        val projectRoot = generateSequence(File(".").canonicalFile) { it.parentFile }
+            .firstOrNull { File(it, "app/src/main/assets/vehicle-actions.json").exists() }
+            ?: error("Cannot find project root")
+        val allowlist = WriteAllowlist.loadProduction {
+            File(projectRoot, "app/src/main/assets/vehicle-actions.json").readText()
+        }
+        val invalid = ACTION_COMMANDS.flatMap { option ->
+            CommandTranslator.resolve(option.command).mapNotNull { resolved ->
+                val entry = allowlist.find(resolved.actionName)
+                when {
+                    entry == null -> "${option.command}: missing ${resolved.actionName}"
+                    resolved.value !in entry.valueMin..entry.valueMax ->
+                        "${option.command}: ${resolved.actionName}=${resolved.value} outside ${entry.valueMin}..${entry.valueMax}"
+                    else -> null
+                }
+            }
+        }
+        assertTrue("Automation write contract drift: $invalid", invalid.isEmpty())
+    }
+
+    @Test fun `every translator sample value is accepted by production allowlist`() {
+        val projectRoot = generateSequence(File(".").canonicalFile) { it.parentFile }
+            .firstOrNull { File(it, "app/src/main/assets/vehicle-actions.json").exists() }
+            ?: error("Cannot find project root")
+        val allowlist = WriteAllowlist.loadProduction {
+            File(projectRoot, "app/src/main/assets/vehicle-actions.json").readText()
+        }
+        val invalid = CommandTranslator.contractSamples().mapNotNull { resolved ->
+            val entry = allowlist.find(resolved.actionName)
+            when {
+                entry == null -> "missing ${resolved.actionName}"
+                resolved.value !in entry.valueMin..entry.valueMax ->
+                    "${resolved.actionName}=${resolved.value} outside ${entry.valueMin}..${entry.valueMax}"
+                else -> null
+            }
+        }.distinct()
+        assertTrue("Translator/allowlist contract drift: $invalid", invalid.isEmpty())
     }
 }

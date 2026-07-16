@@ -21,7 +21,7 @@ service fields or issuing ad-hoc ADB commands.
 The normal and action streams have one polling owner. Direct reads are limited to bounded,
 explicit exceptions:
 
-- the LED fast-signal loop runs only while LED control is enabled and connected;
+- the tiered LED signal loops run only while LED control is enabled, connected and initialized;
 - the home screen owns one serialized on-demand loop: ADAS every 2 seconds and tire
   temperature/status every 10 seconds; leaving home cancels it;
 - the vehicle-data screen reads the eight powertrain diagnostic FIDs every 2 seconds and cancels
@@ -40,29 +40,43 @@ read vehicle FIDs.
 
 ## Cadence
 
-- Action snapshot: 300 ms.
+- Action snapshot: 300 ms while driving/parked, 1 second while charging/idle.
 - Driving full snapshot: 1 second.
 - Charging and parked full snapshot: 3 seconds.
 - Idle full snapshot: 30 seconds.
-- The selectable production catalog contains 114 FIDs. The first successful regular full snapshot
-  reads only 70 so every dashboard/trip consumer receives a complete initial state, including SOH, without
+- The selectable production catalog contains 115 FIDs. The first successful regular full snapshot
+  reads only 71 so every dashboard/trip consumer receives a complete initial state, including SOH, without
   paying for the 44 feature-specific fields that are on-demand.
-- Later full snapshots refresh the 12 lifecycle-critical core FIDs at the regular cadence. The
+- Later full snapshots refresh the 13 lifecycle-critical core FIDs at the regular cadence. The
   other 58 detail FIDs are eligible for refresh every 3 seconds and are merged from the reader's
   raw-value cache between refreshes. In 30-second idle mode they refresh on the next regular tick.
 - A failed detail refresh clears the cached detail values to unavailable instead of presenting
   stale data indefinitely. A failed core batch fails the whole sample and enters normal backoff.
 - An action snapshot that observes a cadence-state transition forces an immediate full snapshot,
   so ignition or charging wake-up never waits for the previous 30-second idle timer.
-- The 300 ms batch always contains only the cadence/safety core fields. Parameter fields are added
-  from the currently enabled automation rules, so an unused temperature, tire or window trigger
-  does not consume autoservice bandwidth on every tick.
+- The adaptive action batch always contains only four wake fields: speed, gear, charge-gun state
+  and power state. Parameter fields are added from currently enabled automation rules; automatic
+  parking status is added only while its sound feature or an automation rule needs it. LED linkage
+  no longer injects door or ADAS fields into this 300 ms shared batch.
 - All 44 AC/seat/tire/light/driving/ADAS/powertrain reads are absent from both regular core and
   detail profiles. Most enter the action batch only while an enabled rule references them. Home
   serializes an eight-FID ADAS profile every 2 seconds and an eight-FID tire temperature/status
   profile every 10 seconds. The vehicle-data page owns the eight-FID powertrain profile at 2 seconds.
-  Actual brake/reverse lamp status joins the 100 ms LED profile only when LED linkage is enabled and
-  connected.
+  LED reads are split by response requirement and run only while linkage is enabled, connected and
+  initialized: stable turn enum + gear at 100 ms, brake depth + actual brake lamp at 200 ms, four
+  doors + automatic parking at 500 ms, and six assisted-driving state fields at 1 second. This caps
+  the dedicated LED budget at roughly 46 FID reads per second instead of the previous 80. Turn
+  scenes use no blinking-lamp fallback; reverse parking is driven by reverse gear or active
+  automatic parking. ACC mode uses raw states 3/4/6/7, LCC/NCA and MNOA use raw state 2, and
+  execution speed remains diagnostic telemetry rather than an independent proof that automation is
+  active. Active automatic parking owns the reverse-parking scene and suppresses the ordinary
+  reverse-gear branch until parking finishes.
+- LED temporary-stop latches after a powered non-P to P transition and clears only after leaving P.
+  Exit-vehicle latches when any of the four doors opens in P or when power transitions to OFF; it
+  clears after leaving P or on the next power-up instead of expiring on a fixed timer.
+- Every first connection or reconnection resets the LED arbiter and sends the default smile before
+  current vehicle conditions may select another scene. When no scene condition remains, the same
+  default smile is always restored.
 - Charging current/power, BMS maximum charge/discharge power, insulation resistance and stop SOC
   belong to a separate UI-owned telemetry path. The ordinary catch-up snapshot does not read them;
   the charging page first reads its base metadata and adds the six diagnostic FIDs only after AC/DC
@@ -77,6 +91,9 @@ read vehicle FIDs.
 Consumers must not depend on `TrackingService` companion fields.
 
 `TrackingService` is an Android lifecycle orchestrator. Business state machines live in:
+
+- `EnergyFlowStatsStore` / `EnergyFlowAccumulator` for one-second recovery classification,
+  in-memory integration and batched 30-second persistence.
 
 - `DriveSessionCoordinator`
 - `DrivingMetricsCoordinator`
@@ -108,7 +125,7 @@ automation and overlays must not call autoservice or shell commands directly.
 
 ## Performance Rules
 
-- Do not query Room from the 300 ms action path.
+- Do not query Room from the adaptive action path.
 - Do not persist unchanged state on every vehicle tick.
 - `last_state` is a recovery checkpoint. Meaningful SOC, ignition, storage-mode and vehicle-value
   changes persist immediately; otherwise writes are coalesced behind a short heartbeat.

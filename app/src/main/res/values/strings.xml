@@ -182,7 +182,7 @@
 
     <!-- 添加条件按钮 -->
     <string name="automation_add_condition_button">+ 添加条件</string>
-    <string name="automation_trigger_type_param">参数</string>
+    <string name="automation_trigger_type_param">车辆数据</string>
     <string name="automation_trigger_type_place">地点</string>
     <string name="automation_trigger_type_place_empty_hint">请先在设置中创建地点</string>
     <string name="automation_trigger_type_time_of_day">时段</string>
@@ -191,6 +191,11 @@
     <string name="automation_trigger_type_schedule">定时</string>
     <string name="automation_trigger_type_interval">定时间隔</string>
     <string name="automation_trigger_type_board_vehicle">上车开门</string>
+    <string name="automation_trigger_type_button">桌面按钮</string>
+    <string name="automation_trigger_group_vehicle">车辆状态</string>
+    <string name="automation_trigger_group_time">时间计划</string>
+    <string name="automation_trigger_group_environment">位置与环境</string>
+    <string name="automation_trigger_group_system">系统交互</string>
 
     <!-- 定时条件控件 -->
     <string name="automation_schedule_time_label">时间</string>
@@ -240,6 +245,11 @@
     <string name="automation_action_outside_sound_empty">未选择音效</string>
     <string name="automation_action_auto_door">自动滑门</string>
     <string name="automation_action_auto_door_label">自动滑门</string>
+    <string name="automation_action_group_vehicle">车辆控制</string>
+    <string name="automation_action_group_media">音频媒体</string>
+    <string name="automation_action_group_apps">应用与流程</string>
+    <string name="automation_action_group_notifications">通知通信</string>
+    <string name="automation_action_group_network">网络导航</string>
 
     <!-- 悬浮窗权限弹窗 -->
     <string name="automation_overlay_permission_title">需要权限</string>
@@ -391,8 +401,6 @@
     <string name="battery_health_bms_mileage_value">%1$.1f 公里</string>
     <string name="battery_health_pumped_label">累计充入</string>
     <string name="battery_health_pumped_value">%1$.0f 千瓦时</string>
-    <string name="battery_health_disabled_title">系统数据已禁用</string>
-    <string name="battery_health_disabled_hint">在设置中启用"系统数据"，以查看健康度、电池管理系统里程和车辆累计充入量。</string>
 
     <!-- 通用汇总行 -->
     <string name="summary_unit_km">公里</string>

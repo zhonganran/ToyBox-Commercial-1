@@ -91,31 +91,50 @@ internal object VehicleReadProfiles {
         "voltage12v",
         "gear",
         "powerState",
+        "energyState",
     )
 
     val coreFull: List<FidEntry> = regularFull.filter { it.field in coreFullFields }
     val detailFull: List<FidEntry> = regularFull.filterNot { it.field in coreFullFields }
 
     val actionCoreFields: Set<String> = setOf(
-        "soc",
         "speed",
         "gear",
         "chargeGunState",
         "powerState",
+    )
+
+    val ledMotionFields: Set<String> = setOf(
+        "turnSignalFlash",
+        "gear",
+    )
+
+    val ledBrakeFields: Set<String> = setOf(
+        "brakePedalDepth",
+        "lightBrake",
+    )
+
+    val ledBodyFields: Set<String> = setOf(
+        "doorFL",
+        "doorFR",
+        "doorRL",
+        "doorRR",
         "adasApaParkingStatus",
     )
 
-    val ledFastFields: Set<String> = setOf(
-        "turnSignalLeft",
-        "turnSignalRight",
-        "hazardLights",
-        "gear",
-        "brakePedalDepth",
-        "lightBrake",
-        "lightReversing",
+    val ledAdasFields: Set<String> = setOf(
+        "adasAccMode",
+        "adasLccNcaStatus",
+        "adasTjaState",
+        "laneKeepState",
+        "accCruiseState",
+        "adasMnoaStatus",
     )
 
-    val ledFast: List<FidEntry> = FidMap.entries.filter { it.field in ledFastFields }
+    val ledMotion: List<FidEntry> = FidMap.entries.filter { it.field in ledMotionFields }
+    val ledBrake: List<FidEntry> = FidMap.entries.filter { it.field in ledBrakeFields }
+    val ledBody: List<FidEntry> = FidMap.entries.filter { it.field in ledBodyFields }
+    val ledAdas: List<FidEntry> = FidMap.entries.filter { it.field in ledAdasFields }
     val tireTelemetry: List<FidEntry> = FidMap.entries.filter {
         it.field in tireTelemetryFields
     }
@@ -158,8 +177,17 @@ internal object VehicleReadProfiles {
         require(coreFull.map { it.field }.toSet() == coreFullFields) {
             "Core vehicle read profile references an unmapped field"
         }
-        require(ledFast.map { it.field }.toSet() == ledFastFields) {
-            "LED fast read profile references an unmapped field"
+        require(ledMotion.map { it.field }.toSet() == ledMotionFields) {
+            "LED motion read profile references an unmapped field"
+        }
+        require(ledBrake.map { it.field }.toSet() == ledBrakeFields) {
+            "LED brake read profile references an unmapped field"
+        }
+        require(ledBody.map { it.field }.toSet() == ledBodyFields) {
+            "LED body read profile references an unmapped field"
+        }
+        require(ledAdas.map { it.field }.toSet() == ledAdasFields) {
+            "LED ADAS read profile references an unmapped field"
         }
     }
 }

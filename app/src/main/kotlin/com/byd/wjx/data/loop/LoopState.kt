@@ -11,12 +11,21 @@ data class CadenceConfig(
     val parkedMs: Long,
     val idleMs: Long,
     val actionMs: Long,
+    val chargeActionMs: Long,
+    val idleActionMs: Long,
 ) {
     fun intervalFor(state: LoopState): Long = when (state) {
         LoopState.DRIVE -> driveMs
         LoopState.CHARGE -> chargeMs
         LoopState.PARKED -> parkedMs
         LoopState.IDLE -> idleMs
+    }
+
+    /** Fast actions stay responsive while moving/parking; sleeping/charging polls are cheaper. */
+    fun actionIntervalFor(state: LoopState): Long = when (state) {
+        LoopState.DRIVE, LoopState.PARKED -> actionMs
+        LoopState.CHARGE -> chargeActionMs
+        LoopState.IDLE -> idleActionMs
     }
 
     companion object {
@@ -27,6 +36,8 @@ data class CadenceConfig(
             parkedMs = 3_000L,
             idleMs = 30_000L,
             actionMs = 300L,
+            chargeActionMs = 1_000L,
+            idleActionMs = 1_000L,
         )
     }
 }

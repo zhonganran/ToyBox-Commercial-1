@@ -27,53 +27,6 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import javax.inject.Inject
 
-// --- Catalogs ---
-
-data class TriggerParamOption(
-    val param: String,
-    val chineseName: String,
-    val displayName: String,
-    val englishName: String = displayName,
-    val unit: String = "",
-    val category: String,
-    val chineseCategory: String = category,
-    val englishCategory: String = category,
-    val enumValues: List<Pair<String, String>>? = null // value to label
-)
-
-data class ActionOption(
-    val command: String,
-    val displayName: String,
-    val chineseName: String = displayName,
-    val englishName: String = displayName,
-    val category: String,
-    val chineseCategory: String = category,
-    val englishCategory: String = category
-)
-
-data class AutoDoorActionOption(
-    val side: String,
-    val commandValue: Int,
-    val label: String,
-)
-
-internal fun currentLang(context: Context): String = "zh"
-
-internal fun localized(zh: String, en: String, ru: String, context: Context): String =
-    zh
-
-fun TriggerParamOption.localizedName(context: Context): String =
-    chineseName
-
-fun TriggerParamOption.localizedCategory(context: Context): String =
-    chineseCategory
-
-fun ActionOption.localizedName(context: Context): String =
-    chineseName
-
-fun ActionOption.localizedCategory(context: Context): String =
-    chineseCategory
-
 private val seatComfortLevels = listOf(
     "0" to "关闭",
     "1" to "1档",
@@ -152,6 +105,26 @@ val TRIGGER_PARAMS = listOf(
             "4" to "燃油",
             "5" to "保持",
         )),
+    TriggerParamOption("EnergyState", "能量流状态", "能量流状态", "能量流状态", "", "能源", "能源", "能源",
+        enumValues = listOf(
+            "0" to "无能量回收",
+            "4" to "纯电四驱回收",
+            "5" to "纯电前驱回收",
+            "6" to "纯电后驱回收",
+            "11" to "发动机发电 11",
+            "12" to "发动机发电 12",
+            "13" to "发动机发电 13",
+            "14" to "混动回收 14",
+            "15" to "混动回收 15",
+            "16" to "混动回收 16",
+            "18" to "发动机发电 18",
+            "20" to "发动机发电 20",
+            "21" to "发动机发电 21",
+            "22" to "发动机发电 22",
+            "27" to "辅助驱动回收 27",
+            "28" to "辅助驱动回收 28",
+            "29" to "辅助驱动回收 29",
+        )),
     TriggerParamOption("Voltage12V", "蓄电池电压", "蓄电池电压", "蓄电池电压", "伏", "能源", "能源", "能源"),
     TriggerParamOption("MinCellVoltage", "单体最低电压", "单体最低电压", "单体最低电压", "伏", "能源", "能源", "能源"),
     TriggerParamOption("MaxCellVoltage", "单体最高电压", "单体最高电压", "单体最高电压", "伏", "能源", "能源", "能源"),
@@ -202,7 +175,7 @@ val TRIGGER_PARAMS = listOf(
     TriggerParamOption("ACDefrostRear", "后挡除霜", "后挡除霜", "后挡除霜", "", "空调", "空调", "空调",
         enumValues = listOf("0" to "关闭", "1" to "开启")),
     TriggerParamOption("SteeringHeat", "方向盘加热", "方向盘加热", "方向盘加热", "", "座椅", "座椅", "座椅",
-        enumValues = listOf("0" to "关闭", "1" to "开启")),
+        enumValues = listOf("1" to "关闭", "2" to "开启")),
     TriggerParamOption("SunshadePos", "遮阳帘位置", "遮阳帘位置", "遮阳帘位置", "%", "车身", "车身", "车身"),
     TriggerParamOption("MirrorFoldState", "后视镜折叠状态", "后视镜折叠状态", "后视镜折叠状态", "原始值", "车身", "车身", "车身"),
     TriggerParamOption("SeatbeltFL", "主驾驶安全带状态", "主驾驶安全带状态", "主驾驶安全带状态", "", "安全", "安全", "安全",
@@ -276,34 +249,77 @@ val ACTION_COMMANDS = listOf(
     ActionOption("主驾打开0", "关闭主驾车窗", "关闭主驾车窗", "关闭主驾车窗", "车窗", "车窗", "车窗"),
     ActionOption("副驾打开100", "打开副驾车窗", "打开副驾车窗", "打开副驾车窗", "车窗", "车窗", "车窗"),
     ActionOption("副驾打开0", "关闭副驾车窗", "关闭副驾车窗", "关闭副驾车窗", "车窗", "车窗", "车窗"),
+    ActionOption("主驾打开50", "主驾车窗位置", "主驾车窗位置", "主驾车窗位置", "车窗", "车窗", "车窗"),
+    ActionOption("副驾打开50", "副驾车窗位置", "副驾车窗位置", "副驾车窗位置", "车窗", "车窗", "车窗"),
+    ActionOption("后左打开50", "后左车窗位置", "后左车窗位置", "后左车窗位置", "车窗", "车窗", "车窗"),
+    ActionOption("后右打开50", "后右车窗位置", "后右车窗位置", "后右车窗位置", "车窗", "车窗", "车窗"),
+    ActionOption("车窗打开50", "全部车窗位置", "全部车窗位置", "全部车窗位置", "车窗", "车窗", "车窗"),
+    ActionOption("前排车窗打开50", "前排车窗位置", "前排车窗位置", "前排车窗位置", "车窗", "车窗", "车窗"),
+    ActionOption("后排车窗打开50", "后排车窗位置", "后排车窗位置", "后排车窗位置", "车窗", "车窗", "车窗"),
     ActionOption("打开空调", "打开空调", "打开空调", "打开空调", "空调", "空调", "空调"),
     ActionOption("关闭空调", "关闭空调", "关闭空调", "关闭空调", "空调", "空调", "空调"),
     ActionOption("自动空调", "自动空调", "自动空调", "自动空调", "空调", "空调", "空调"),
     ActionOption("打开空调通风", "通风（不开制冷）", "通风（不开制冷）", "通风（不开制冷）", "空调", "空调", "空调"),
-    ActionOption("设置温度18", "温度 18 摄氏度", "温度 18 摄氏度", "温度 18 摄氏度", "空调", "空调", "空调"),
-    ActionOption("设置温度20", "温度 20 摄氏度", "温度 20 摄氏度", "温度 20 摄氏度", "空调", "空调", "空调"),
-    ActionOption("设置温度22", "温度 22 摄氏度", "温度 22 摄氏度", "温度 22 摄氏度", "空调", "空调", "空调"),
-    ActionOption("设置温度25", "温度 25 摄氏度", "温度 25 摄氏度", "温度 25 摄氏度", "空调", "空调", "空调"),
+    ActionOption("关闭空调通风", "关闭只通风", "关闭只通风", "关闭只通风", "空调", "空调", "空调"),
+    ActionOption("设置温度22", "主驾温度", "主驾温度", "主驾温度", "空调", "空调", "空调"),
+    ActionOption("副驾温度22", "副驾温度", "副驾温度", "副驾温度", "空调", "空调", "空调"),
+    ActionOption("风量3档", "风量档位", "风量档位", "风量档位", "空调", "空调", "空调"),
+    ActionOption("主副驾温度同步", "主副驾温度同步", "主副驾温度同步", "主副驾温度同步", "空调", "空调", "空调"),
+    ActionOption("主副驾温度分区", "主副驾温度分区", "主副驾温度分区", "主副驾温度分区", "空调", "空调", "空调"),
     ActionOption("内循环", "内循环", "内循环", "内循环", "空调", "空调", "空调"),
     ActionOption("外循环", "外循环", "外循环", "外循环", "空调", "空调", "空调"),
+    ActionOption("出风吹脸", "出风：吹脸", "出风：吹脸", "出风：吹脸", "空调", "空调", "空调"),
+    ActionOption("出风吹脸吹脚", "出风：吹脸＋吹脚", "出风：吹脸＋吹脚", "出风：吹脸＋吹脚", "空调", "空调", "空调"),
+    ActionOption("出风吹脚", "出风：吹脚", "出风：吹脚", "出风：吹脚", "空调", "空调", "空调"),
+    ActionOption("出风吹脚除霜", "出风：吹脚＋除霜", "出风：吹脚＋除霜", "出风：吹脚＋除霜", "空调", "空调", "空调"),
+    ActionOption("出风除霜", "出风：除霜", "出风：除霜", "出风：除霜", "空调", "空调", "空调"),
+    ActionOption("出风吹脸吹脚除霜", "出风：吹脸＋吹脚＋除霜", "出风：吹脸＋吹脚＋除霜", "出风：吹脸＋吹脚＋除霜", "空调", "空调", "空调"),
+    ActionOption("出风吹脸除霜", "出风：吹脸＋除霜", "出风：吹脸＋除霜", "出风：吹脸＋除霜", "空调", "空调", "空调"),
     ActionOption("吹前挡", "前挡风除雾开", "前挡风除雾开", "前挡风除雾开", "空调", "空调", "空调"),
     ActionOption("关闭吹前挡", "前挡风除雾关", "前挡风除雾关", "前挡风除雾关", "空调", "空调", "空调"),
     ActionOption("主驾座椅加热1档", "主驾座椅加热1档", "主驾座椅加热1档", "主驾座椅加热1档", "座椅", "座椅", "座椅"),
     ActionOption("主驾座椅加热2档", "主驾座椅加热2档", "主驾座椅加热2档", "主驾座椅加热2档", "座椅", "座椅", "座椅"),
+    ActionOption("主驾座椅加热3档", "主驾座椅加热3档", "主驾座椅加热3档", "主驾座椅加热3档", "座椅", "座椅", "座椅"),
+    ActionOption("主驾座椅加热4档", "主驾座椅加热4档", "主驾座椅加热4档", "主驾座椅加热4档", "座椅", "座椅", "座椅"),
+    ActionOption("主驾座椅加热5档", "主驾座椅加热5档", "主驾座椅加热5档", "主驾座椅加热5档", "座椅", "座椅", "座椅"),
     ActionOption("主驾座椅加热关闭", "主驾座椅加热关", "主驾座椅加热关", "主驾座椅加热关", "座椅", "座椅", "座椅"),
     ActionOption("副驾座椅加热1档", "副驾座椅加热1档", "副驾座椅加热1档", "副驾座椅加热1档", "座椅", "座椅", "座椅"),
     ActionOption("副驾座椅加热2档", "副驾座椅加热2档", "副驾座椅加热2档", "副驾座椅加热2档", "座椅", "座椅", "座椅"),
+    ActionOption("副驾座椅加热3档", "副驾座椅加热3档", "副驾座椅加热3档", "副驾座椅加热3档", "座椅", "座椅", "座椅"),
+    ActionOption("副驾座椅加热4档", "副驾座椅加热4档", "副驾座椅加热4档", "副驾座椅加热4档", "座椅", "座椅", "座椅"),
+    ActionOption("副驾座椅加热5档", "副驾座椅加热5档", "副驾座椅加热5档", "副驾座椅加热5档", "座椅", "座椅", "座椅"),
     ActionOption("副驾座椅加热关闭", "副驾座椅加热关", "副驾座椅加热关", "副驾座椅加热关", "座椅", "座椅", "座椅"),
     ActionOption("主驾座椅通风1档", "主驾座椅通风1档", "主驾座椅通风1档", "主驾座椅通风1档", "座椅", "座椅", "座椅"),
     ActionOption("主驾座椅通风2档", "主驾座椅通风2档", "主驾座椅通风2档", "主驾座椅通风2档", "座椅", "座椅", "座椅"),
+    ActionOption("主驾座椅通风3档", "主驾座椅通风3档", "主驾座椅通风3档", "主驾座椅通风3档", "座椅", "座椅", "座椅"),
+    ActionOption("主驾座椅通风4档", "主驾座椅通风4档", "主驾座椅通风4档", "主驾座椅通风4档", "座椅", "座椅", "座椅"),
+    ActionOption("主驾座椅通风5档", "主驾座椅通风5档", "主驾座椅通风5档", "主驾座椅通风5档", "座椅", "座椅", "座椅"),
     ActionOption("主驾座椅通风关闭", "主驾座椅通风关", "主驾座椅通风关", "主驾座椅通风关", "座椅", "座椅", "座椅"),
     ActionOption("副驾座椅通风1档", "副驾座椅通风1档", "副驾座椅通风1档", "副驾座椅通风1档", "座椅", "座椅", "座椅"),
     ActionOption("副驾座椅通风2档", "副驾座椅通风2档", "副驾座椅通风2档", "副驾座椅通风2档", "座椅", "座椅", "座椅"),
+    ActionOption("副驾座椅通风3档", "副驾座椅通风3档", "副驾座椅通风3档", "副驾座椅通风3档", "座椅", "座椅", "座椅"),
+    ActionOption("副驾座椅通风4档", "副驾座椅通风4档", "副驾座椅通风4档", "副驾座椅通风4档", "座椅", "座椅", "座椅"),
+    ActionOption("副驾座椅通风5档", "副驾座椅通风5档", "副驾座椅通风5档", "副驾座椅通风5档", "座椅", "座椅", "座椅"),
     ActionOption("副驾座椅通风关闭", "副驾座椅通风关", "副驾座椅通风关", "副驾座椅通风关", "座椅", "座椅", "座椅"),
+    ActionOption("方向盘加热", "方向盘加热开", "方向盘加热开", "方向盘加热开", "座椅", "座椅", "座椅"),
+    ActionOption("关闭方向盘加热", "方向盘加热关", "方向盘加热关", "方向盘加热关", "座椅", "座椅", "座椅"),
+    ActionOption("主驾按摩波浪1档", "主驾按摩：波浪", "主驾按摩：波浪", "主驾按摩：波浪", "座椅", "座椅", "座椅"),
+    ActionOption("主驾按摩脉冲1档", "主驾按摩：脉冲", "主驾按摩：脉冲", "主驾按摩：脉冲", "座椅", "座椅", "座椅"),
+    ActionOption("主驾按摩拉伸1档", "主驾按摩：拉伸", "主驾按摩：拉伸", "主驾按摩：拉伸", "座椅", "座椅", "座椅"),
+    ActionOption("主驾按摩腰部1档", "主驾按摩：腰部", "主驾按摩：腰部", "主驾按摩：腰部", "座椅", "座椅", "座椅"),
+    ActionOption("主驾按摩肩部1档", "主驾按摩：肩部", "主驾按摩：肩部", "主驾按摩：肩部", "座椅", "座椅", "座椅"),
+    ActionOption("主驾按摩关闭", "主驾按摩关闭", "主驾按摩关闭", "主驾按摩关闭", "座椅", "座椅", "座椅"),
+    ActionOption("副驾按摩波浪1档", "副驾按摩：波浪", "副驾按摩：波浪", "副驾按摩：波浪", "座椅", "座椅", "座椅"),
+    ActionOption("副驾按摩脉冲1档", "副驾按摩：脉冲", "副驾按摩：脉冲", "副驾按摩：脉冲", "座椅", "座椅", "座椅"),
+    ActionOption("副驾按摩拉伸1档", "副驾按摩：拉伸", "副驾按摩：拉伸", "副驾按摩：拉伸", "座椅", "座椅", "座椅"),
+    ActionOption("副驾按摩腰部1档", "副驾按摩：腰部", "副驾按摩：腰部", "副驾按摩：腰部", "座椅", "座椅", "座椅"),
+    ActionOption("副驾按摩肩部1档", "副驾按摩：肩部", "副驾按摩：肩部", "副驾按摩：肩部", "座椅", "座椅", "座椅"),
+    ActionOption("副驾按摩关闭", "副驾按摩关闭", "副驾按摩关闭", "副驾按摩关闭", "座椅", "座椅", "座椅"),
     ActionOption("后视镜加热", "后视镜加热开", "后视镜加热开", "后视镜加热开", "后视镜", "后视镜", "后视镜"),
     ActionOption("关闭后视镜加热", "后视镜加热关", "后视镜加热关", "后视镜加热关", "后视镜", "后视镜", "后视镜"),
     ActionOption("氛围灯打开", "氛围灯开", "氛围灯开", "氛围灯开", "灯光", "灯光", "灯光"),
     ActionOption("氛围灯关闭", "氛围灯关", "氛围灯关", "氛围灯关", "灯光", "灯光", "灯光"),
+    ActionOption("氛围灯亮度2档", "氛围灯亮度", "氛围灯亮度", "氛围灯亮度", "灯光", "灯光", "灯光"),
     ActionOption("打开日行灯", "日行灯开", "日行灯开", "日行灯开", "灯光", "灯光", "灯光"),
     ActionOption("关闭日行灯", "日行灯关", "日行灯关", "日行灯关", "灯光", "灯光", "灯光"),
     ActionOption("打开车内灯", "车内灯开", "车内灯开", "车内灯开", "灯光", "灯光", "灯光"),
@@ -313,8 +329,12 @@ val ACTION_COMMANDS = listOf(
     ActionOption("天窗打开100", "天窗全开", "天窗全开", "天窗全开", "天窗", "天窗", "天窗"),
     ActionOption("天窗打开50", "天窗半开", "天窗半开", "天窗半开", "天窗", "天窗", "天窗"),
     ActionOption("天窗打开0", "天窗关闭", "天窗关闭", "天窗关闭", "天窗", "天窗", "天窗"),
+    ActionOption("天窗停止", "天窗停止", "天窗停止", "天窗停止", "天窗", "天窗", "天窗"),
+    ActionOption("天窗通风", "天窗通风", "天窗通风", "天窗通风", "天窗", "天窗", "天窗"),
+    ActionOption("天窗舒适位置", "天窗舒适位置", "天窗舒适位置", "天窗舒适位置", "天窗", "天窗", "天窗"),
     ActionOption("遮阳帘打开", "遮阳帘打开", "遮阳帘打开", "遮阳帘打开", "天窗", "天窗", "天窗"),
     ActionOption("遮阳帘关闭", "遮阳帘关闭", "遮阳帘关闭", "遮阳帘关闭", "天窗", "天窗", "天窗"),
+    ActionOption("遮阳帘位置50", "遮阳帘位置", "遮阳帘位置", "遮阳帘位置", "天窗", "天窗", "天窗"),
     ActionOption("开后备箱", "打开后备箱", "打开后备箱", "打开后备箱", "车身", "车身", "车身"),
     ActionOption("关后备箱", "关闭后备箱", "关闭后备箱", "关闭后备箱", "车身", "车身", "车身")
 )
@@ -328,43 +348,6 @@ val AUTO_DOOR_ACTIONS = listOf(
 )
 
 val OPERATORS = listOf(">", "<", ">=", "<=", "==", "!=")
-
-enum class RuleFilter { ALL, ENABLED, DISABLED }
-
-const val AUTOMATION_COOLDOWN_MIN_SECONDS = 0
-const val AUTOMATION_COOLDOWN_MAX_SECONDS = 60
-const val AUTOMATION_REPEAT_MIN_SECONDS = 2
-const val AUTOMATION_REPEAT_MAX_SECONDS = 3600
-const val AUTOMATION_RULE_LIMIT = 50
-
-// --- ViewModel ---
-
-data class EditingRule(
-    val id: Long = 0,
-    val name: String = "",
-    val triggerLogic: String = "AND",
-    val triggers: List<TriggerDef> = emptyList(),
-    val actions: List<ActionDef> = emptyList(),
-    val exitActions: List<ActionDef> = emptyList(),
-    val cooldownSeconds: Int = 60,
-    val repeatIntervalSeconds: Int = 0,
-    val requirePark: Boolean = false,
-    val confirmBeforeExecute: Boolean = false,
-    val fireOncePerTrip: Boolean = false,
-    val isNew: Boolean = true
-)
-
-data class AutomationUiState(
-    val rules: List<RuleEntity> = emptyList(),
-    val filter: RuleFilter = RuleFilter.ALL,
-    val logs: List<RuleLogEntity> = emptyList(),
-    val showEditor: Boolean = false,
-    val showJournal: Boolean = false,
-    val editing: EditingRule = EditingRule(),
-    val showDeleteConfirm: Long? = null,
-    val places: List<PlaceEntity> = emptyList(),
-    val editorError: String? = null
-)
 
 @HiltViewModel
 class AutomationViewModel @Inject constructor(

@@ -44,8 +44,17 @@ class NativeParsReader @Inject constructor(
         return fetchPlan(actionPlan(selectedFields), VehicleSnapshotKind.ACTION)
     }
 
-    override suspend fun fetchLedVehicleSnapshot(): VehicleSnapshot? =
-        fetchPlan(LedFastReadPlan, VehicleSnapshotKind.ACTION)
+    override suspend fun fetchLedMotionVehicleSnapshot(): VehicleSnapshot? =
+        fetchPlan(LedMotionReadPlan, VehicleSnapshotKind.ACTION)
+
+    override suspend fun fetchLedBrakeVehicleSnapshot(): VehicleSnapshot? =
+        fetchPlan(LedBrakeReadPlan, VehicleSnapshotKind.ACTION)
+
+    override suspend fun fetchLedBodyVehicleSnapshot(): VehicleSnapshot? =
+        fetchPlan(LedBodyReadPlan, VehicleSnapshotKind.ACTION)
+
+    override suspend fun fetchLedAdasVehicleSnapshot(): VehicleSnapshot? =
+        fetchPlan(LedAdasReadPlan, VehicleSnapshotKind.ACTION)
 
     override suspend fun readTireTelemetry(): DiParsData? =
         fetchPlan(TireTelemetryReadPlan, VehicleSnapshotKind.ACTION)?.data
@@ -181,8 +190,8 @@ class NativeParsReader @Inject constructor(
             decoded[entry.field] = value
         }
 
-        // Action snapshots run every 300 ms and no automation trigger consumes battery capacity.
-        // Avoid hitting Room on that hot path; the full snapshot owns display/calculation settings.
+        // Action snapshots are the adaptive fast path and no automation trigger consumes battery
+        // capacity. Avoid hitting Room there; the full snapshot owns display/calculation settings.
         val batteryCapacityKwh = if (kind == VehicleSnapshotKind.FULL) {
             settings.getBatteryCapacity()
         } else {
@@ -354,6 +363,7 @@ class NativeParsReader @Inject constructor(
             tireStateFR         = intField("tireStateFR"),
             tireStateRL         = intField("tireStateRL"),
             tireStateRR         = intField("tireStateRR"),
+            energyState         = intField("energyState"),
         )
         return VehicleSnapshot(
             data = data,
@@ -377,7 +387,10 @@ class NativeParsReader @Inject constructor(
         private val FullReadPlan = ReadPlan(VehicleReadProfiles.regularFull)
         private val CoreFullReadPlan = ReadPlan(VehicleReadProfiles.coreFull)
         private val DetailFullReadPlan = ReadPlan(VehicleReadProfiles.detailFull)
-        private val LedFastReadPlan = ReadPlan(VehicleReadProfiles.ledFast)
+        private val LedMotionReadPlan = ReadPlan(VehicleReadProfiles.ledMotion)
+        private val LedBrakeReadPlan = ReadPlan(VehicleReadProfiles.ledBrake)
+        private val LedBodyReadPlan = ReadPlan(VehicleReadProfiles.ledBody)
+        private val LedAdasReadPlan = ReadPlan(VehicleReadProfiles.ledAdas)
         private val TireTelemetryReadPlan = ReadPlan(VehicleReadProfiles.tireTelemetry)
         private val AdasTelemetryReadPlan = ReadPlan(VehicleReadProfiles.adasTelemetry)
         private val PowertrainTelemetryReadPlan = ReadPlan(VehicleReadProfiles.powertrainTelemetry)

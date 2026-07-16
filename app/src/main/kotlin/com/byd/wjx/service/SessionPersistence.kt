@@ -1,44 +1,23 @@
 package com.byd.wjx.service
 
 import android.content.Context
+import com.byd.wjx.domain.tracker.DriveSessionPersistence
+import com.byd.wjx.domain.tracker.PersistedSession
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Holds the current widget-session anchor across process restarts: the ignition-on
- * timestamp and last-active heartbeat.
- *
- * Cleared on ignition-off (powerState 0 + 10 sec idle) so the next session
- * gets a fresh sessionStartedAt.
- */
-data class PersistedSession(
-    val sessionStartedAt: Long,
-    val lastActiveTs: Long,
-) {
-    /**
-     * Prefs may hold a session that *should* have been idle-closed but wasn't
-     * (process killed inside the grace window, or DiLink rebooted before idle-close
-     * could fire). If the last-active tick was longer ago than the idle-close
-     * threshold, treat the session as dead — otherwise the widget anchor is
-     * ancient and trip time renders as a very large duration on the next ignition-on.
-     */
-    fun isStale(now: Long, idleCloseMs: Long): Boolean {
-        return now - lastActiveTs >= idleCloseMs
-    }
-}
-
 @Singleton
 class SessionPersistence @Inject constructor(
     @ApplicationContext context: Context,
-) {
+) : DriveSessionPersistence {
 
     private val prefs = context.applicationContext
         .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private var lastSavedSessionStartedAt = Long.MIN_VALUE
     private var lastSavedActiveAt = Long.MIN_VALUE
 
-    fun load(): PersistedSession? {
+    override fun load(): PersistedSession? {
         if (!prefs.contains(KEY_STARTED_AT)) return null
         val ts = prefs.getLong(KEY_STARTED_AT, 0L)
         val last = prefs.getLong(KEY_LAST_ACTIVE_TS, 0L)
@@ -47,7 +26,7 @@ class SessionPersistence @Inject constructor(
     }
 
     @Synchronized
-    fun save(sessionStartedAt: Long, lastActiveTs: Long) {
+    override fun save(sessionStartedAt: Long, lastActiveTs: Long) {
         val sameSession = sessionStartedAt == lastSavedSessionStartedAt
         val forwardWithinInterval = lastActiveTs >= lastSavedActiveAt &&
             lastActiveTs - lastSavedActiveAt < MIN_HEARTBEAT_WRITE_INTERVAL_MS
@@ -61,7 +40,7 @@ class SessionPersistence @Inject constructor(
     }
 
     @Synchronized
-    fun clear() {
+    override fun clear() {
         prefs.edit()
             .remove(KEY_STARTED_AT)
             .remove(KEY_LAST_ACTIVE_TS)
