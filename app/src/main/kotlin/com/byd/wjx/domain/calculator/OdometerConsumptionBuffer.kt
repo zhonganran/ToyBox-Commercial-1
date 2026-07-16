@@ -16,7 +16,7 @@ data class BufferStatus(
 
 /**
  * Persistent rolling window of (mileage, totalElec, soc, sessionId, ts) snapshots.
- * Single source of truth for widget consumption display, trend arrow, and range
+ * Single source of truth for consumption display, trend arrow, and range
  * estimation. See spec 3.1 for algorithm details.
  *
  * SessionId boundary: pairs of consecutive samples (by mileage ASC) with
@@ -184,7 +184,7 @@ class OdometerConsumptionBuffer(
         // valid distance further. The window was widened to 3 km (v3.1.x) so a
         // regen tail no longer starves it below the threshold. Requiring totalKm
         // == SHORT_WINDOW_KM here would reject the window most of the time and the
-        // widget would oscillate between coloured arrow and grey "no trend" all
+        // display would oscillate between a coloured arrow and grey "no trend" all
         // trip long. 1.5 km of valid pair data is enough to call the short-window
         // trend.
         val minOk = if (fallbackOnShort) MIN_BUFFER_KM else MIN_SHORT_BUFFER_KM

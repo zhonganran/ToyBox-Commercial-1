@@ -129,7 +129,7 @@ class KeepAliveService : Service() {
             "超级玩具箱后台保活",
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "维持车机后台服务、悬浮窗和独立进程运行"
+            description = "维持车机后台服务、歌词显示和独立进程运行"
             setShowBadge(false)
         }
         manager.createNotificationChannel(channel)

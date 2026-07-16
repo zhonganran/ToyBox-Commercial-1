@@ -25,7 +25,6 @@ import com.byd.wjx.data.sound.RemoteSoundCategory
 import com.byd.wjx.data.sound.SoundDownloadRecord
 import com.byd.wjx.data.sound.SoundDownloadStore
 import com.byd.wjx.data.sound.SoundLibraryRemoteRepository
-import com.byd.wjx.overlay.SoundFloatingService
 import com.byd.wjx.storage.SoundLibrary
 import com.byd.wjx.storage.SoundDestination
 import com.byd.wjx.vehicle.CarProfileDetector
@@ -593,7 +592,6 @@ class SoundViewModel @Inject constructor(
             }
             if (deleted) {
                 lockSoundConfigSync.sync("sound_delete")
-                SoundFloatingService.startIfAllowed(appContext)
             }
         }
     }
@@ -602,7 +600,6 @@ class SoundViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             soundLibrary.moveSound(fromPath, toPath)
             _uiState.update { it.copy(sounds = soundLibrary.listSounds(), message = "已更新音效排序") }
-            SoundFloatingService.startIfAllowed(appContext)
         }
     }
 

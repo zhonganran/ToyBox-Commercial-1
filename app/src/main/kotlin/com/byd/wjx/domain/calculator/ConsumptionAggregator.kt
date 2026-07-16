@@ -8,13 +8,13 @@ import javax.inject.Singleton
 enum class Trend { NONE, DOWN, FLAT, UP }
 
 data class ConsumptionState(
-    /** kWh/100km to show on widget; null when nothing meaningful yet. */
+    /** kWh/100km to show in vehicle summaries; null when nothing meaningful yet. */
     val displayValue: Double?,
     val trend: Trend,
 )
 
 /**
- * Stateless trend computer for the floating widget.
+ * Stateless trend computer for vehicle consumption summaries.
  *
  * TrackingService computes recent and short averages via OdometerConsumptionBuffer
  * and pushes them in via onSample. Aggregator's only stateful job is hysteresis +
@@ -31,7 +31,7 @@ class ConsumptionAggregator @Inject constructor() {
     private var candidateSince: Long = 0L
 
     /**
-     * @param displayValue  Pre-computed value to render on widget. Comes from
+     * @param displayValue  Pre-computed value to render in summaries. Comes from
      *                      BigNumberCalculator. Pass null to render prochirk.
      *                      Aggregator no longer derives display from recentAvg, v2.5.2
      *                      splits "what to show" (trip-avg-based) from "trend baseline"

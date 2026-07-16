@@ -326,7 +326,7 @@ internal fun SettingsCapabilityCard(state: SettingsUiState) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("授权能力", color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
-            CapabilityRow("基础功能", "音效播放、桌面组件、常用设置", "可用", AccentGreen)
+            CapabilityRow("基础功能", "音效播放、歌词显示、常用设置", "可用", AccentGreen)
             CapabilityRow(
                 "高级功能",
                 "解锁/锁车/哨兵音效、自动泊车音效、按键快捷操作、仪表投射",

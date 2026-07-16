@@ -50,7 +50,7 @@ class SessionPersistence @Inject constructor(
     }
 
     companion object {
-        private const val PREFS_NAME = "wjx_widget_session"
+        private const val PREFS_NAME = "wjx_drive_session"
         private const val KEY_STARTED_AT = "session_started_at"
         private const val KEY_LAST_ACTIVE_TS = "last_active_ts"
         private const val MIN_HEARTBEAT_WRITE_INTERVAL_MS = 3_000L

@@ -16,9 +16,6 @@ import com.byd.wjx.audio.ExteriorHailingSettings
 import com.byd.wjx.audio.WjxOutsidePlayService
 import com.byd.wjx.audio.WjxRealtimeHailingService
 import com.byd.wjx.log.WjxFileLogger
-import com.byd.wjx.overlay.DesktopOverlayVisibilityEvents
-import com.byd.wjx.service.KeepAliveAccessibilityService
-import com.byd.wjx.service.LauncherWindowClassifier
 import dagger.hilt.android.EntryPointAccessors
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -48,14 +45,11 @@ class SteeringWheelKeyService : AccessibilityService() {
     private var pendingLongKeyCode: Int? = null
     private var pendingLongToken: Int = 0
     private var longTriggeredKeyCode: Int? = null
-    private val launcherRechecks = mutableListOf<Runnable>()
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         val info = serviceInfo ?: AccessibilityServiceInfo()
-        info.flags = info.flags or
-            AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS or
-            AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+        info.flags = info.flags or AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
         serviceInfo = info
         instance = this
         isConnected = true
@@ -269,34 +263,12 @@ class SteeringWheelKeyService : AccessibilityService() {
             .fromApplication(applicationContext, ClusterEntryPoint::class.java)
             .also { cachedEntryPoint = it }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
-        if (KeepAliveAccessibilityService.isConnected) {
-            clearLauncherRechecks()
-            return
-        }
-        val eventPackageName = event.packageName?.toString()
-        val eventClassName = event.className?.toString()
-        val snapshot = LauncherWindowClassifier.inspectActiveWindow(this, eventPackageName)
-        val packageName = snapshot.packageName ?: eventPackageName
-        val className = snapshot.className ?: eventClassName
-        DesktopOverlayVisibilityEvents.notifyAccessibilityForeground(
-            applicationContext,
-            packageName,
-            className,
-            launcherSubpage = snapshot.launcherSubpage,
-            launcherOverlay = snapshot.launcherOverlay,
-            source = DesktopOverlayVisibilityEvents.A11Y_SOURCE_STEERING,
-        )
-        scheduleLauncherRechecks(packageName)
-    }
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
     override fun onInterrupt() { /* no-op */ }
 
     override fun onUnbind(intent: Intent?): Boolean {
         isConnected = false
         if (instance === this) instance = null
-        clearLauncherRechecks()
-        DesktopOverlayVisibilityEvents.clearAccessibilityForeground(DesktopOverlayVisibilityEvents.A11Y_SOURCE_STEERING)
         clearPendingShortcut()
         clearPendingLong()
         WjxFileLogger.i(TAG, "unbound; star key filter inactive")
@@ -306,38 +278,10 @@ class SteeringWheelKeyService : AccessibilityService() {
     override fun onDestroy() {
         isConnected = false
         if (instance === this) instance = null
-        clearLauncherRechecks()
-        DesktopOverlayVisibilityEvents.clearAccessibilityForeground(DesktopOverlayVisibilityEvents.A11Y_SOURCE_STEERING)
         clearPendingShortcut()
         clearPendingLong()
         WjxFileLogger.i(TAG, "destroyed")
         super.onDestroy()
-    }
-
-    private fun scheduleLauncherRechecks(packageName: String?) {
-        clearLauncherRechecks()
-        if (!LauncherWindowClassifier.isLauncherPackage(packageName)) return
-        LAUNCHER_SETTLE_RECHECK_MS.forEach { delayMs ->
-            val runnable = Runnable {
-                if (KeepAliveAccessibilityService.isConnected) return@Runnable
-                val snapshot = LauncherWindowClassifier.inspectActiveWindow(this, packageName)
-                DesktopOverlayVisibilityEvents.notifyAccessibilityForeground(
-                    applicationContext,
-                    snapshot.packageName,
-                    snapshot.className,
-                    launcherSubpage = snapshot.launcherSubpage,
-                    launcherOverlay = snapshot.launcherOverlay,
-                    source = DesktopOverlayVisibilityEvents.A11Y_SOURCE_STEERING,
-                )
-            }
-            launcherRechecks += runnable
-            handler.postDelayed(runnable, delayMs)
-        }
-    }
-
-    private fun clearLauncherRechecks() {
-        launcherRechecks.forEach(handler::removeCallbacks)
-        launcherRechecks.clear()
     }
 
     companion object {
@@ -384,6 +328,5 @@ class SteeringWheelKeyService : AccessibilityService() {
 
         private const val DOUBLE_PRESS_TIMEOUT_MS = 400L
         private const val LONG_PRESS_TIMEOUT_MS = 600L
-        private val LAUNCHER_SETTLE_RECHECK_MS = longArrayOf(150L, 400L, 900L, 1500L)
     }
 }

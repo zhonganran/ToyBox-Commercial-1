@@ -151,16 +151,6 @@
             android:foregroundServiceType="mediaPlayback" />
 
         <service
-            android:name=".overlay.SoundFloatingService"
-            android:enabled="true"
-            android:exported="false" />
-
-        <service
-            android:name=".overlay.AutoDoorFloatingService"
-            android:enabled="true"
-            android:exported="false" />
-
-        <service
             android:name=".cluster.ClusterMirrorService"
             android:enabled="true"
             android:exported="false"

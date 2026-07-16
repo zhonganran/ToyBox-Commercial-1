@@ -98,10 +98,6 @@ import kotlin.math.roundToInt
 @Composable
 fun ProHomeScreen(
     viewModel: DashboardViewModel = hiltViewModel(),
-    onOpenSound: () -> Unit,
-    onOpenDesktop: () -> Unit,
-    onOpenAutomation: () -> Unit,
-    onOpenSettings: () -> Unit,
     onOpenCharges: () -> Unit,
     onOpenDashboard: () -> Unit,
     onOpenTripMap: () -> Unit,

@@ -140,7 +140,7 @@ class ActionDispatcher @Inject constructor(
         return DispatchResult(true)
     }
 
-    // --- outside sound (same route as Sound page / floating window) ---
+    // --- outside sound (same route as the Sound page) ---
 
     fun stopOutsideSound(owner: String) {
         WjxFileLogger.i(TAG, "stop outside sound owner=$owner")

@@ -148,9 +148,9 @@ automation and overlays must not call autoservice or shell commands directly.
   services or interpreting persistence keys.
 - `SettingsScreen.kt` composes display, shortcut, authorization, vehicle-sound and app-maintenance
   sections. `SettingsViewModel` delegates logcat lifecycle to `SettingsLogRecorder`.
-- `DesktopWidgetsScreen.kt` owns the screen-local state mirror and service callbacks.
-  `DesktopWidgetsSettingsPanels.kt` contains only the sound, lyric, battery and door settings UI;
-  `DesktopWidgetsControls.kt` owns previews and shared controls.
+- `LyricDisplayScreen.kt` owns the desktop and instrument-cluster lyric state plus service
+  callbacks. `LyricDisplaySettingsPanels.kt` contains lyric settings UI, while
+  `LyricDisplayControls.kt` owns lyric previews and shared controls.
 - `SoundScreen.kt` is the page shell. Local-library and online-catalog behavior live in
   `SoundLocalTab.kt` and `SoundOnlineTab.kt`.
 - Android Services remain lifecycle shells. Realtime hailing capture/playback lives in
@@ -161,8 +161,8 @@ automation and overlays must not call autoservice or shell commands directly.
 - `BackupPreferencesRegistry.FILE_POLICIES` is the canonical inventory of every preference file,
   its single schema owner, backup policy and credential/device-protected storage scope. New files
   must be registered there before release.
-- UI code must use typed owners such as `ClusterProjectionPreferences`, `WidgetPreferences`,
-  `DesktopWidgetPanelPreferences`, `AutomationPreferences` and `ServiceQrCache`; it must not copy
+- UI code must use typed owners such as `ClusterProjectionPreferences`,
+  `LyricDisplayPanelPreferences`, `AutomationPreferences` and `ServiceQrCache`; it must not copy
   preference keys or defaults.
 - `BootDiagnosticsStore` is the only owner of the device-protected `boot_log` schema. BootReceiver
   writes through it, ChainLog performs synchronized bounded appends through it, and Settings reads

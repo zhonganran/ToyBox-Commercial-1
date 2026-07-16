@@ -21,7 +21,6 @@ data class PreferenceFilePolicy(
 object BackupPreferencesRegistry {
     val FILE_POLICIES: List<PreferenceFilePolicy> = listOf(
         PreferenceFilePolicy("wjx_locale", "LocalePreferences", PreferenceBackupPolicy.USER_CONFIGURATION),
-        PreferenceFilePolicy("wjx_widget", "WidgetPreferences", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("cluster_projection", "ClusterProjectionPreferences", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("automation", "AutomationPreferences", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("update_prefs", "UpdateChecker", PreferenceBackupPolicy.USER_CONFIGURATION),
@@ -31,26 +30,14 @@ object BackupPreferencesRegistry {
         PreferenceFilePolicy("exterior_hailing", "ExteriorHailingSettings", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("auto_parking_sound", "AutoParkingSoundSettings", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("key_shortcuts", "KeyShortcutSettings", PreferenceBackupPolicy.USER_CONFIGURATION),
-        PreferenceFilePolicy(
-            "wjx_sound_floating",
-            "SoundFloatingSettings",
-            PreferenceBackupPolicy.USER_CONFIGURATION,
-            PreferenceStorageScope.DEVICE_PROTECTED,
-        ),
-        PreferenceFilePolicy(
-            "wjx_auto_door_floating",
-            "AutoDoorFloatingSettings",
-            PreferenceBackupPolicy.USER_CONFIGURATION,
-            PreferenceStorageScope.DEVICE_PROTECTED,
-        ),
         PreferenceFilePolicy("wjx_seat_channel", "SeatChannelStorePrefs", PreferenceBackupPolicy.USER_CONFIGURATION),
-        PreferenceFilePolicy("desktop_widget_controls", "DesktopWidgetPanelPreferences", PreferenceBackupPolicy.USER_CONFIGURATION),
+        PreferenceFilePolicy("lyric_display_controls", "LyricDisplayPanelPreferences", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("sound_library", "SoundLibrary", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("wjx_sound_downloads", "SoundDownloadStore", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("wjx_led_link", "LedPreferences", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("wjx_energy_flow_stats", "EnergyFlowStatsStore", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("wjx_activation", "ActivationManager", PreferenceBackupPolicy.DEVICE_LOCAL),
-        PreferenceFilePolicy("wjx_widget_session", "SessionPersistence", PreferenceBackupPolicy.DEVICE_LOCAL),
+        PreferenceFilePolicy("wjx_drive_session", "SessionPersistence", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy(
             "boot_log",
             "BootDiagnosticsStore",

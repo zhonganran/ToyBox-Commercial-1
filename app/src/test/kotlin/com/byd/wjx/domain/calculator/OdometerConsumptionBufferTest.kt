@@ -172,7 +172,7 @@ class OdometerConsumptionBufferTest {
     }
 
     @Test fun `startup race - zero mileage rejected then real reading anchors buffer`() = runBlocking {
-        // Full-flow regression for the v2.4.7 widget-trend report: Mileage:0
+        // Full-flow regression for the v2.4.7 trend report: Mileage:0
         // on first DiPars poll, real odometer ~2076 km on subsequent polls.
         // Pre-v2.4.8 this would freeze recentAvg on the EMA fallback forever.
         val dao = FakeOdometerSampleDao()
@@ -247,7 +247,7 @@ class OdometerConsumptionBufferTest {
     }
 
     @Test fun `short avg stays available during continuous driving with irregular ticks`() = runBlocking {
-        // Repro for the v2.4.11 widget grey-arrow report (2026-04-25 drive):
+        // Repro for the v2.4.11 grey-arrow report (2026-04-25 drive):
         // user reported the consumption number going grey without an arrow for
         // long stretches of a 10-km drive. Root cause: windowFrom(newest - 2.0)
         // returns samples with mileage >= newest - 2.0, but the oldest such
@@ -274,7 +274,7 @@ class OdometerConsumptionBufferTest {
             b.onSample(m, e, 80, s)
         }
         // After 5 km of uninterrupted driving, short window MUST have a value;
-        // a null here means the widget shows a grey number with no arrow.
+        // a null here means the summary shows a grey number with no arrow.
         assertTrue(
             "shortAvg should be non-null after 5 km of continuous driving (was null because of boundary case)",
             b.shortAvgConsumption() != null,
@@ -285,7 +285,7 @@ class OdometerConsumptionBufferTest {
         // Repro for the 2026-06 grey-number report: on descents / stop-and-go the
         // trailing 2 km holds regen pairs (dKwh < 0, skipped during averaging),
         // starving the short window below MIN_SHORT_BUFFER_KM. shortAvg went null
-        // and the widget number greyed out mid-trip even though it kept changing.
+        // and the summary number greyed out mid-trip even though it kept changing.
         // A 3 km short window reaches back past the regen tail to >= 1.5 km of
         // valid pair data, so the trend (and now the decoupled number colour)
         // stay alive.

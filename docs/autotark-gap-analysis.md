@@ -161,7 +161,8 @@ AutoTark 还包含高德原生 SDK、WebRTC、`RemoteBackupWorker`、屏幕录�
 7. osmdroid 曾在每次 Application 冷启动初始化；现延迟到首次打开地图。
 8. `AppModule` 曾同时承担 Room、DAO、接口绑定和运行时组装；现拆为
    `DatabaseModule`、`AppBindingsModule` 和显式运行时 provider。
-9. `SoundFloatingService` 曾手动创建标记为 `@Singleton` 的 `SoundLibrary`；现改为注入。
+9. 旧桌面音效入口曾在独立 Service 中重复持有音效库与桌面识别链；该功能现已整体移除，
+   音效库只由音效页和智能联动使用。
 10. `AutomationScreen` 中存在一套已不再调用的旧 toolbar/rule-card UI；现删除死代码，并把
     当前概览与规则场景卡拆到 `AutomationOverview.kt`，规则编辑器 API 保持不变。
 11. 仪表投射配置曾由设置 UI、无障碍服务、运行协调器和投射管理器分别直接解释相同的
@@ -183,8 +184,8 @@ AutoTark 还包含高德原生 SDK、WebRTC、`RemoteBackupWorker`、屏幕录�
 18. `SoundScreen` 已拆成页面壳、本地音效和在线音效三个文件；主文件由 1925 行降至 740 行。
 19. 实时喊话的 Service 只保留 Android 生命周期和通知，采集/播放状态机进入
     `RealtimeHailingEngine`，PCM 处理进入 `HailingAudioProcessor`；Service 约 324 行。
-20. 桌面组件页已拆成预览控件、设置面板和状态/副作用编排；主文件由 2121 行降至 669 行，
-    音效、歌词、电量和自动门的权限/启停回调不再在每个面板重复实现。
+20. 原歌词显示页中的三个旧工具入口已整体移除；当前页面只保留
+    中控桌面歌词与仪表盘歌词，预览、设置和状态编排仍按文件边界拆分。
 21. 锁车、解锁和哨兵仍保留各自独立触发状态机与音频文件；只把通道 A/B 的 FID 路由顺序
     收口到 `ExteriorRoutePlan`，应用侧与 Helper 侧分别执行同一纯路由计划。
 22. SharedPreferences 已建立 `FILE_POLICIES` 清单，逐文件记录唯一 owner、备份策略和设备保护

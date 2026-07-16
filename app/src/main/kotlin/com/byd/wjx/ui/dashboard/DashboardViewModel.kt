@@ -98,7 +98,7 @@ data class DashboardUiState(
     val currentSoh: Float? = null,
     val currentLifetimeKm: Float? = null,
     val currentLifetimeKwh: Float? = null,
-    // Widget-style stats around SOC ring (mirror FloatingWidgetView bindings).
+    // Compact driving stats around the SOC ring.
     val insideTemp: Int? = null,
     val tripDistanceKm: Double? = null,
     val sessionStartedAt: Long? = null,

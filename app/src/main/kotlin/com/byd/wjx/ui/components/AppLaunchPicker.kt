@@ -43,8 +43,8 @@ import com.byd.wjx.ui.theme.TextSecondary
 data class InstalledApp(val packageName: String, val label: String)
 
 /**
- * Reusable app chooser. Used by Automation (with minimize toggle) and the
- * widget settings (without). `showMinimizeToggle = false` hides the
+ * Reusable app chooser. Used by Automation (with minimize toggle) and Settings
+ * (without). `showMinimizeToggle = false` hides the
  * "minimize after launch" checkbox and skips emitting the parameter.
  */
 @Composable

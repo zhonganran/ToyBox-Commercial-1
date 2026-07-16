@@ -324,18 +324,10 @@
     <string name="service_confirm_action_yes">执行</string>
     <string name="service_confirm_action_no">取消</string>
 
-    <!-- 悬浮小组件 -->
-    <string name="widget_unit_km">公里</string>
-    <string name="widget_duration_hours">%1$d小时 %2$d分</string>
-    <string name="widget_duration_minutes">%1$d 分钟</string>
-    <string name="widget_trip_km_value">%1$.1f 公里</string>
-    <string name="widget_voltage_value">%1$.1f 伏</string>
-    <string name="widget_toast_hidden">小组件已隐藏。打开超级玩具箱即可恢复。</string>
-    <string name="widget_trash_release">松手 - 隐藏小组件</string>
-    <string name="widget_trash_hint">拖到这里隐藏</string>
-    <string name="widget_km_per_percent">%1$.1f</string>
-
     <!-- 首页 -->
+    <string name="dashboard_trip_duration_hours">%1$d小时 %2$d分</string>
+    <string name="dashboard_trip_duration_minutes">%1$d 分钟</string>
+    <string name="dashboard_trip_km_value">%1$.1f 公里</string>
     <string name="dashboard_unit_km">公里</string>
     <string name="dashboard_unit_kwh">千瓦时</string>
     <string name="dashboard_range_label">预估续航</string>
@@ -487,5 +479,4 @@
     <string name="steering_button_wheel_center">滚轮中键</string>
     <string name="steering_button_wheel_down">滚轮下</string>
     <string name="steering_button_wheel_up">滚轮上</string>
-    <string name="widget_button_no_rules">桌面按钮 %1$d 未绑定智能联动</string>
 </resources>

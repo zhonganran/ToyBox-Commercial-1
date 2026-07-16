@@ -144,22 +144,11 @@ class TrackingService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        maybeAttachWidget()
         return START_STICKY
-    }
-
-    private fun maybeAttachWidget() {
-        val prefs = com.byd.wjx.ui.widget.WidgetPreferences(this)
-        if (prefs.isEnabled() && android.provider.Settings.canDrawOverlays(this)) {
-            // ActivityLifecycleCallbacks detaches the widget when an Activity is resumed,
-            // so calling attach unconditionally here is safe.
-            com.byd.wjx.ui.widget.WidgetController.attach(this)
-        }
     }
 
     override fun onDestroy() {
         WjxFileLogger.w(TAG, "onDestroy: stopping TrackingService")
-        com.byd.wjx.ui.widget.WidgetController.detach()
         ChainLog.append(this, "TrackingService onDestroy")
         pollingJob?.cancel()
         pollingJob = null

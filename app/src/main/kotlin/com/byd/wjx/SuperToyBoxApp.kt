@@ -1,11 +1,6 @@
 package com.byd.wjx
 
-import android.app.Activity
 import android.app.Application
-import android.app.Application.ActivityLifecycleCallbacks
-import android.content.Context
-import android.os.Bundle
-import android.provider.Settings
 import org.lsposed.hiddenapibypass.HiddenApiBypass
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
@@ -14,13 +9,8 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.byd.wjx.data.local.DataThinningWorker
 import com.byd.wjx.log.WjxFileLogger
-import com.byd.wjx.overlay.AutoDoorFloatingService
-import com.byd.wjx.overlay.DesktopOverlayVisibilityEvents
-import com.byd.wjx.overlay.SoundFloatingService
 import com.byd.wjx.service.BootState
 import com.byd.wjx.service.ProcessRevivalReceiver
-import com.byd.wjx.ui.widget.WidgetController
-import com.byd.wjx.ui.widget.WidgetPreferences
 import dagger.hilt.android.HiltAndroidApp
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -70,7 +60,6 @@ class SuperToyBoxApp : Application(), Configuration.Provider {
         if (unlockedRuntimeInitialized || !BootState.isUserUnlocked(this)) return
         activationManager.ensureStarted()
         scheduleDataThinning()
-        registerActivityLifecycleCallbacks(WidgetLifecycleCallbacks(this))
         unlockedRuntimeInitialized = true
         WjxFileLogger.i("SuperToyBoxApp", "credential runtime initialized")
     }
@@ -87,44 +76,6 @@ class SuperToyBoxApp : Application(), Configuration.Provider {
             )
             previous?.uncaughtException(thread, throwable)
         }
-    }
-
-    private class WidgetLifecycleCallbacks(private val app: Context) : ActivityLifecycleCallbacks {
-        private var resumedCount = 0
-
-        override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
-        override fun onActivityStarted(activity: Activity) {}
-
-        override fun onActivityResumed(activity: Activity) {
-            resumedCount++
-            if (resumedCount == 1) {
-                // User opened SuperToyBox -> widget hides; also clear the
-                // "hidden until app launch" long-press flag so it reappears
-                // next time the app goes to background.
-                WidgetPreferences(app).setHiddenUntilAppLaunch(false)
-                WidgetController.setAppForegrounded(true)
-                DesktopOverlayVisibilityEvents.setAppForegrounded(true)
-            }
-        }
-
-        override fun onActivityPaused(activity: Activity) {
-            resumedCount--
-            if (resumedCount <= 0) {
-                resumedCount = 0
-                WidgetController.setAppForegrounded(false)
-                DesktopOverlayVisibilityEvents.setAppForegrounded(false)
-                val prefs = WidgetPreferences(app)
-                if (prefs.isEnabled() && Settings.canDrawOverlays(app)) {
-                    WidgetController.attach(app)
-                }
-                SoundFloatingService.startIfAllowed(app)
-                AutoDoorFloatingService.startIfAllowed(app)
-            }
-        }
-
-        override fun onActivityStopped(activity: Activity) {}
-        override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
-        override fun onActivityDestroyed(activity: Activity) {}
     }
 
     companion object {

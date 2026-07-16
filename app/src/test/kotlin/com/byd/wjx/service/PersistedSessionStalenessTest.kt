@@ -31,7 +31,7 @@ class PersistedSessionStalenessTest {
         // User report: machine drove 5 min, parked 20 min, process was killed
         // before 30-sec idle-close fired. Prefs hold the 25-min-old anchor.
         // Next ignition-on is 11 hours later — without the staleness guard
-        // the widget would render trip-time as "11h 43m".
+        // the dashboard would render trip-time as "11h 43m".
         val driveStart = 0L
         val lastActive = 25 * 60_000L             // 25 min into the dead session
         val nextIgnition = 11 * 3_600_000L + 43 * 60_000L + lastActive

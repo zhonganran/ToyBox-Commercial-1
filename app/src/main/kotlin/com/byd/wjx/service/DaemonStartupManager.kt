@@ -7,8 +7,6 @@ import com.byd.wjx.data.vehicle.HelperBootstrap
 import com.byd.wjx.data.vehicle.HelperClient
 import com.byd.wjx.data.repository.TrackingStateRepository
 import com.byd.wjx.log.WjxFileLogger
-import com.byd.wjx.overlay.AutoDoorFloatingService
-import com.byd.wjx.overlay.SoundFloatingService
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -53,17 +51,6 @@ class DaemonStartupManager(
                     ChainLog.append(appContext, "DaemonStartup tracking FAILED: ${it.message}")
                     WjxFileLogger.w(TAG, "TrackingService start failed: ${it.message}")
                 }
-        }
-
-        if (verbose) {
-            runCatching { SoundFloatingService.startIfAllowed(appContext) }
-                .onSuccess { WjxFileLogger.i(TAG, "SoundFloatingService startIfAllowed requested") }
-                .onFailure { WjxFileLogger.w(TAG, "floating start failed: ${it.message}") }
-
-            runCatching { AutoDoorFloatingService.startIfAllowed(appContext) }
-                .onSuccess { WjxFileLogger.i(TAG, "AutoDoorFloatingService startIfAllowed requested") }
-                .onFailure { WjxFileLogger.w(TAG, "auto door floating start failed: ${it.message}") }
-
         }
 
         if (!shouldCheckRuntime()) {

@@ -127,7 +127,7 @@ class BigNumberCalculatorTest {
     @Test fun `zero tripKwh during active session falls back to lastTripAvg`() {
         // Regression guard for v2.5.2 codex audit WARN 1: caller passes null on
         // negative delta (BMS recal), but if 0.0 ever reaches the calculator we
-        // must not show "0.0 kWh/100km" on the widget. Falls back to lastTripAvg.
+        // must not show "0.0 kWh/100km" in the summary. Falls back to lastTripAvg.
         val r = BigNumberCalculator.computeDisplay(
             tripKm = 5.0, tripKwh = 0.0,
             lastTripAvg = 18.0, recentAvg25km = 0.0,

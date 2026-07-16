@@ -1,7 +1,7 @@
 package com.byd.wjx.domain.calculator
 
 /**
- * Computes the floating widget's big consumption number, a live forecast of
+ * Computes the primary consumption display value, a live forecast of
  * the final trip-average that will land in TripEntity once ignition cycles off.
  *
  * Pure stateless function. Three regimes:

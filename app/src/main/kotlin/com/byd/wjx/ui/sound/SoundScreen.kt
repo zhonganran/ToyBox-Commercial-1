@@ -459,7 +459,7 @@ private fun DownloadDestinationDialog(
                 DownloadDestinationOption(
                     icon = Icons.Outlined.MusicNote,
                     title = "我的音效",
-                    subtitle = "保存到 /sdcard/WJX，用于卡片、悬浮窗和智能联动",
+                    subtitle = "保存到 /sdcard/WJX，用于音效列表和智能联动",
                     color = AccentGreen,
                     onClick = { onSelect(SoundDestination.PERSONAL) },
                 )

@@ -1,5 +1,6 @@
 package com.byd.wjx.ui.dashboard
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -61,13 +62,30 @@ import com.byd.wjx.ui.components.consumptionColor
 import com.byd.wjx.ui.pro.ProPageHeader
 import com.byd.wjx.ui.pro.ProStatusPill
 import com.byd.wjx.ui.theme.*
-import com.byd.wjx.ui.widget.TRIP_DISTANCE_TREND_THRESHOLD_KM
-import com.byd.wjx.ui.widget.formatDurationShort
-import com.byd.wjx.ui.widget.formatTripKm
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+private const val TRIP_DISTANCE_TREND_THRESHOLD_KM = 0.3
+
+private fun formatDurationShort(context: Context, sessionStartedAt: Long?): String {
+    if (sessionStartedAt == null) return "—"
+    val elapsed = System.currentTimeMillis() - sessionStartedAt
+    val totalMin = (elapsed / 60_000L).toInt().coerceAtLeast(0)
+    val hours = totalMin / 60
+    val minutes = totalMin % 60
+    return if (hours > 0) {
+        context.getString(R.string.dashboard_trip_duration_hours, hours, minutes)
+    } else {
+        context.getString(R.string.dashboard_trip_duration_minutes, minutes)
+    }
+}
+
+private fun formatTripKm(context: Context, km: Double?): String {
+    if (km == null || km.isNaN() || km.isInfinite() || km < 0.0) return "—"
+    return context.getString(R.string.dashboard_trip_km_value, km)
+}
 
 @Composable
 fun DashboardScreen(
@@ -116,7 +134,7 @@ fun DashboardScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.SpaceBetween
                 ) {
-                    // TOP: SOC gauge + 4 widget-style stats around it (mirrors FloatingWidgetView).
+                    // TOP: SOC gauge + 4 compact driving stats around it.
                     // Two symmetric rows wrap the gauge:
                     //   row mid    — duration | odometer | inside temp
                     //   row bottom — trip km | range km + label | consumption + trend
@@ -130,7 +148,7 @@ fun DashboardScreen(
                             isCharging = state.isCharging,
                         )
 
-                        // Live-ticking duration text (refresh every 15s, like in widget).
+                        // Live-ticking duration text, refreshed every 15 seconds.
                         var durationText by remember(context, state.sessionStartedAt) {
                             mutableStateOf(formatDurationShort(context, state.sessionStartedAt))
                         }
@@ -171,7 +189,7 @@ fun DashboardScreen(
                         }
 
                         // Row bottom: trip km | range km + label | consumption + trend
-                        // Trend logic mirrors widget: suppress arrow within first 300m of session.
+                        // Suppress the trend arrow within the first 300 m of a session.
                         val effectiveTrend = if (
                             state.sessionStartedAt != null &&
                             (state.tripDistanceKm ?: 0.0) < TRIP_DISTANCE_TREND_THRESHOLD_KM
@@ -741,8 +759,8 @@ private fun StatCard(title: String, value: String, subtitle: String?, accentColo
 }
 
 /**
- * Compact widget-style stat used in the top section of the dashboard left column.
- * Mirrors the IconText composable in FloatingWidgetView (icon muted gray + monospace value).
+ * Compact stat used in the top section of the dashboard left column.
+ * Icons are muted gray and values use a monospace font.
  * Set iconLast=true for the right-aligned variant where the value comes before the icon.
  */
 @Composable

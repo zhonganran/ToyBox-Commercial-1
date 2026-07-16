@@ -66,8 +66,8 @@ data class ConsumptionThresholds(val good: Double, val bad: Double) {
     }
 }
 
-// Provided by MainActivity / WidgetController from SettingsRepository so user-edited
-// thresholds in Settings actually recolor every screen and the floating widget.
+// Provided by MainActivity from SettingsRepository so user-edited
+// thresholds in Settings actually recolor every vehicle-data screen.
 val LocalConsumptionThresholds = compositionLocalOf { ConsumptionThresholds.Default }
 
 // Pure helper — testable without Compose runtime.

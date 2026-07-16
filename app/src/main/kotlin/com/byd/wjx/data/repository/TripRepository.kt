@@ -105,7 +105,7 @@ class TripRepository @Inject constructor(
 
     /**
      * EMA of consumption (kWh/100km) over the most recent [count] trips
-     * with distanceKm >= [minKm]. Used as baseline for widget trend arrow —
+     * with distanceKm >= [minKm]. Used as the consumption trend baseline —
      * calendar-independent, so a quiet week doesn't inflate the number.
      *
      * Returns 0.0 when fewer than 3 eligible trips — caller should fall back
@@ -165,7 +165,7 @@ class TripRepository @Inject constructor(
 
     /**
      * Average consumption (kWh/100km) of the most recent eligible completed trip.
-     * Used by the floating widget's big-number when no active trip is in progress
+     * Used by the primary consumption display when no active trip is in progress
      * and during the first 500 m of a freshly started trip (smooth fade from
      * "your last drive" to "your current drive").
      *

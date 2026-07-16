@@ -53,7 +53,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import com.byd.wjx.service.BootDiagnosticsStore
-import com.byd.wjx.ui.widget.WidgetController
 import java.io.File
 import java.io.FileWriter
 import java.text.SimpleDateFormat
