@@ -13,18 +13,25 @@ import kotlin.math.roundToInt
 internal fun loadVehicleImageBitmap(context: Context): ImageBitmap? {
     val file = vehicleImageFile(context)
     if (!file.isFile) return null
-    return runCatching { BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap() }.getOrNull()
+    return runCatching {
+        val decoded = BitmapFactory.decodeFile(file.absolutePath) ?: return@runCatching null
+        val trimmed = trimTransparentEdges(decoded)
+        if (trimmed !== decoded) decoded.recycle()
+        trimmed.asImageBitmap()
+    }.getOrNull()
 }
 
 internal fun saveVehicleImage(context: Context, uri: Uri): Boolean = runCatching {
     val decoded = decodeUriSampled(context, uri, 1600) ?: return@runCatching false
-    val normalized = normalizeVehicleBitmap(decoded, 1600)
+    val trimmed = trimTransparentEdges(decoded)
+    val normalized = normalizeVehicleBitmap(trimmed, 1600)
     val file = vehicleImageFile(context)
     file.parentFile?.mkdirs()
     file.outputStream().use { output ->
         normalized.compress(Bitmap.CompressFormat.PNG, 100, output)
     }
-    if (normalized !== decoded) decoded.recycle()
+    if (normalized !== trimmed) trimmed.recycle()
+    if (trimmed !== decoded) decoded.recycle()
     normalized.recycle()
     true
 }.getOrDefault(false)
@@ -63,3 +70,38 @@ private fun normalizeVehicleBitmap(source: Bitmap, maxSide: Int): Bitmap {
         true,
     )
 }
+
+private fun trimTransparentEdges(source: Bitmap): Bitmap {
+    if (!source.hasAlpha() || source.width < 4 || source.height < 4) return source
+    var left = source.width
+    var top = source.height
+    var right = -1
+    var bottom = -1
+    val row = IntArray(source.width)
+    repeat(source.height) { y ->
+        source.getPixels(row, 0, source.width, 0, y, source.width, 1)
+        row.forEachIndexed { x, color ->
+            if ((color ushr 24) > MIN_VISIBLE_ALPHA) {
+                if (x < left) left = x
+                if (x > right) right = x
+                if (y < top) top = y
+                if (y > bottom) bottom = y
+            }
+        }
+    }
+    if (right < left || bottom < top) return source
+
+    val margin = (max(source.width, source.height) * CROP_MARGIN_RATIO).roundToInt().coerceAtLeast(4)
+    left = (left - margin).coerceAtLeast(0)
+    top = (top - margin).coerceAtLeast(0)
+    right = (right + margin).coerceAtMost(source.width - 1)
+    bottom = (bottom + margin).coerceAtMost(source.height - 1)
+    val width = right - left + 1
+    val height = bottom - top + 1
+    if (width >= source.width * CROP_SKIP_RATIO && height >= source.height * CROP_SKIP_RATIO) return source
+    return Bitmap.createBitmap(source, left, top, width, height)
+}
+
+private const val MIN_VISIBLE_ALPHA = 8
+private const val CROP_MARGIN_RATIO = 0.025f
+private const val CROP_SKIP_RATIO = 0.96f

@@ -16,6 +16,7 @@ class LocalInsightEngineTest {
         assertFalse(result.hasEnoughData)
         assertEquals("数据还不够", result.title)
         assertTrue(result.summary.contains("3 次有效行程"))
+        assertEquals("0.020 V", result.metrics.first { it.label == "电芯压差" }.value)
     }
 
     @Test

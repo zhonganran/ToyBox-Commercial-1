@@ -74,7 +74,7 @@ class LocalInsightEngine @Inject constructor() {
             ),
             LocalInsightMetric(
                 label = "电芯压差",
-                value = stats.maxCellDeltaV?.let { "%.0f mV".formatCn(it * 1000.0) } ?: "--",
+                value = stats.maxCellDeltaV?.let { "%.3f V".formatCn(it) } ?: "--",
                 detail = stats.avgBatteryTempC?.let { "电池均温 %.0f°C".formatCn(it) } ?: "暂无电池温度",
                 tone = cellTone,
             ),
@@ -173,7 +173,7 @@ class LocalInsightEngine @Inject constructor() {
             ),
             LocalInsightMetric(
                 label = "电芯压差",
-                value = stats.maxCellDeltaV?.let { "%.0f mV".formatCn(it * 1000.0) } ?: "--",
+                value = stats.maxCellDeltaV?.let { "%.3f V".formatCn(it) } ?: "--",
                 detail = stats.avgBatteryTempC?.let { "电池均温 %.0f°C".formatCn(it) } ?: "暂无电池温度",
                 tone = cellTone,
             ),

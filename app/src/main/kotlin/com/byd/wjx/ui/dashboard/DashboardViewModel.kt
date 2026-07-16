@@ -4,10 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.byd.wjx.data.autoservice.ChargeGunState
 import com.byd.wjx.data.energy.EnergyFlowStatsRepository
+import com.byd.wjx.data.local.entity.ChargeEntity
 import com.byd.wjx.data.local.entity.TripEntity
 import com.byd.wjx.data.local.dao.IdleDrainDao
 import com.byd.wjx.data.nativestack.BydSignalSemantics
 import com.byd.wjx.data.nativestack.OnDemandVehicleTelemetryReader
+import com.byd.wjx.data.repository.ChargeRepository
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.data.repository.TrackingStateRepository
 import com.byd.wjx.data.repository.TripRepository
@@ -59,6 +61,7 @@ data class DashboardUiState(
     val idleDrainKwhToday: Double = 0.0,
     val lastTrip: TripEntity? = null,
     val recentTrips: List<TripEntity> = emptyList(),
+    val latestCharge: ChargeEntity? = null,
     val isServiceRunning: Boolean = false,
     val currencySymbol: String = "元",
     val avgBatTemp: Int? = null,
@@ -187,6 +190,7 @@ data class DashboardUiState(
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
     private val tripRepository: TripRepository,
+    private val chargeRepository: ChargeRepository,
     private val settingsRepository: SettingsRepository,
     private val idleDrainDao: IdleDrainDao,
     private val vehicleStateRepository: VehicleStateRepository,
@@ -207,6 +211,7 @@ class DashboardViewModel @Inject constructor(
         observeLiveData()
         observeLastTrip()
         observeRecentTrips()
+        observeLatestCharge()
         loadCurrency()
         loadPeriodSummary()
         loadLocalInsight()
@@ -232,9 +237,6 @@ class DashboardViewModel @Inject constructor(
                         .getOrNull()
                         ?.let(::applyTireTelemetry)
                 }
-                runCatching { onDemandTelemetryReader.readAdasTelemetry() }
-                    .getOrNull()
-                    ?.let(::applyAdasTelemetry)
                 cycle = (cycle + 1) % TIRE_TELEMETRY_EVERY_HOME_CYCLES
                 delay(HOME_TELEMETRY_INTERVAL_MS)
             }
@@ -282,21 +284,6 @@ class DashboardViewModel @Inject constructor(
                 tireStateFR = data.tireStateFR ?: it.tireStateFR,
                 tireStateRL = data.tireStateRL ?: it.tireStateRL,
                 tireStateRR = data.tireStateRR ?: it.tireStateRR,
-            )
-        }
-    }
-
-    private fun applyAdasTelemetry(data: com.byd.wjx.data.remote.DiParsData) {
-        _uiState.update {
-            it.copy(
-                adasAebState = data.adasAebState ?: it.adasAebState,
-                adasAvhState = data.adasAvhState ?: it.adasAvhState,
-                adasBsdState = data.adasBsdState ?: it.adasBsdState,
-                adasEspState = data.adasEspState ?: it.adasEspState,
-                adasAccGrayState = data.adasAccGrayState ?: it.adasAccGrayState,
-                adasNoaGrayState = data.adasNoaGrayState ?: it.adasNoaGrayState,
-                adasMnoaStatus = data.adasMnoaStatus ?: it.adasMnoaStatus,
-                adasExecSpeed = data.adasExecSpeed ?: it.adasExecSpeed,
             )
         }
     }
@@ -476,6 +463,14 @@ class DashboardViewModel @Inject constructor(
         viewModelScope.launch {
             tripRepository.getRecentTrips(7).collect { trips ->
                 _uiState.update { it.copy(recentTrips = trips) }
+            }
+        }
+    }
+
+    private fun observeLatestCharge() {
+        viewModelScope.launch {
+            chargeRepository.getLastCharge().collect { charge ->
+                _uiState.update { it.copy(latestCharge = charge) }
             }
         }
     }

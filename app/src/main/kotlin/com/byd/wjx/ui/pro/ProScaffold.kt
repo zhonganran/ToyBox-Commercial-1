@@ -342,7 +342,7 @@ private fun sceneColors(scene: String, darkTheme: Boolean): List<Color> =
     if (darkTheme) {
         when (scene) {
             "sound" -> listOf(Color(0xFF11131F), Color(0xFF241E3A), Color(0xFF172B45), Color(0xFF321E32))
-            "desktop" -> listOf(Color(0xFF0C1A1C), Color(0xFF123036), Color(0xFF172A42), Color(0xFF2A1D2B))
+            "lyrics" -> listOf(Color(0xFF0C1A1C), Color(0xFF123036), Color(0xFF172A42), Color(0xFF2A1D2B))
             "automation" -> listOf(Color(0xFF17121A), Color(0xFF211C35), Color(0xFF162D43), Color(0xFF123536))
             "settings" -> listOf(Color(0xFF091017), Color(0xFF101B24), Color(0xFF172631), Color(0xFF0D171F))
             else -> listOf(Color(0xFF091416), Color(0xFF123033), Color(0xFF172C42), Color(0xFF2A1B29))
@@ -350,7 +350,7 @@ private fun sceneColors(scene: String, darkTheme: Boolean): List<Color> =
     } else {
         when (scene) {
             "sound" -> listOf(Color(0xFFF3E9FF), Color(0xFF9D86FF), SceneBlue, ScenePink)
-            "desktop" -> listOf(Color(0xFFBFFBFA), SceneCyan, SceneSky, Color(0xFFF6A1C5))
+            "lyrics" -> listOf(Color(0xFFBFFBFA), SceneCyan, SceneSky, Color(0xFFF6A1C5))
             "automation" -> listOf(Color(0xFFFFE8ED), Color(0xFFD8CFFF), SceneSky, Color(0xFF78E8E4))
             "settings" -> listOf(Color(0xFFFAFCFE), Color(0xFFF2F7FB), Color(0xFFEAF5FA), Color(0xFFF7FCFC))
             else -> listOf(Color(0xFFA8F7F2), SceneCyan, SceneSky, Color(0xFFF48DB9))
@@ -419,7 +419,7 @@ private fun ProBottomNavigation(
 
 private fun navAccent(route: String): Color = when (route) {
     "sound" -> SceneViolet
-    "desktop" -> SceneAmber
+    "lyrics" -> SceneAmber
     "automation" -> SceneBlue
     "settings" -> SceneCoral
     else -> SceneAmber

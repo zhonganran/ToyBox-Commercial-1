@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,17 +32,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.AcUnit
 import androidx.compose.material.icons.outlined.Air
-import androidx.compose.material.icons.outlined.Battery5Bar
 import androidx.compose.material.icons.outlined.BatteryChargingFull
 import androidx.compose.material.icons.outlined.CameraAlt
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.DirectionsCar
+import androidx.compose.material.icons.outlined.ElectricCar
 import androidx.compose.material.icons.outlined.ElectricBolt
 import androidx.compose.material.icons.outlined.EvStation
 import androidx.compose.material.icons.outlined.HealthAndSafety
+import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.LocalGasStation
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Route
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.TireRepair
 import androidx.compose.material.icons.outlined.WaterDrop
@@ -61,7 +65,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
@@ -75,8 +78,10 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.byd.wjx.data.autoservice.ChargeGunState
+import com.byd.wjx.data.local.entity.ChargeEntity
 import com.byd.wjx.data.nativestack.BydSignalSemantics
-import com.byd.wjx.domain.insight.LocalInsightResult
+import com.byd.wjx.domain.insight.LocalInsightMetric
+import com.byd.wjx.domain.insight.LocalInsightTone
 import com.byd.wjx.ui.dashboard.DashboardUiState
 import com.byd.wjx.ui.dashboard.DashboardViewModel
 import com.byd.wjx.ui.theme.AccentBlue
@@ -93,6 +98,10 @@ import com.byd.wjx.ui.theme.ScenePink
 import com.byd.wjx.ui.theme.SceneViolet
 import com.byd.wjx.ui.theme.TextPrimary
 import com.byd.wjx.ui.theme.TextSecondary
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 @Composable
@@ -105,7 +114,11 @@ fun ProHomeScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     DisposableEffect(viewModel) {
         viewModel.setHomeTelemetryActive(true)
-        onDispose { viewModel.setHomeTelemetryActive(false) }
+        viewModel.setPowertrainTelemetryActive(true)
+        onDispose {
+            viewModel.setHomeTelemetryActive(false)
+            viewModel.setPowertrainTelemetryActive(false)
+        }
     }
     val context = LocalContext.current
     val appContext = remember(context) { context.applicationContext }
@@ -148,42 +161,57 @@ fun ProHomeScreen(
                     onDeleteImage = ::deleteCustomVehicleImage,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(330.dp),
+                        .height(322.dp),
                 )
                 HomeMetricRibbon(
                     state = state,
                     onOpenCharges = onOpenCharges,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(86.dp),
+                        .height(78.dp),
                 )
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(238.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        .height(232.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     BatteryHealthPanel(
                         state = state,
+                        onClick = onOpenDashboard,
                         modifier = Modifier
-                            .weight(0.98f)
+                            .weight(1f)
                             .fillMaxHeight(),
                     )
                     VehicleEnvironmentPanel(
                         state = state,
+                        onClick = onOpenDashboard,
                         modifier = Modifier
-                            .weight(1.02f)
+                            .weight(1f)
                             .fillMaxHeight(),
                     )
-                    JourneyAssistPanel(
+                    TripRoutePanel(
                         state = state,
-                        onOpenDashboard = onOpenDashboard,
                         onOpenTripMap = onOpenTripMap,
                         modifier = Modifier
-                            .weight(1.45f)
+                            .weight(1f)
+                            .fillMaxHeight(),
+                    )
+                    ChargeRecordPanel(
+                        charge = state.latestCharge,
+                        currencySymbol = state.currencySymbol,
+                        onOpenCharges = onOpenCharges,
+                        modifier = Modifier
+                            .weight(1f)
                             .fillMaxHeight(),
                     )
                 }
+                LocalInsightPanel(
+                    state = state,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(188.dp),
+                )
             } else {
                 HomeHero(
                     state = state,
@@ -203,13 +231,30 @@ fun ProHomeScreen(
                         .fillMaxWidth()
                         .height(if (compact) 220.dp else 150.dp),
                 )
-                BatteryHealthPanel(state, Modifier.fillMaxWidth().height(240.dp))
-                VehicleEnvironmentPanel(state, Modifier.fillMaxWidth().height(240.dp))
-                JourneyAssistPanel(
+                BatteryHealthPanel(
                     state = state,
-                    onOpenDashboard = onOpenDashboard,
+                    onClick = onOpenDashboard,
+                    modifier = Modifier.fillMaxWidth().height(240.dp),
+                )
+                VehicleEnvironmentPanel(
+                    state = state,
+                    onClick = onOpenDashboard,
+                    modifier = Modifier.fillMaxWidth().height(240.dp),
+                )
+                TripRoutePanel(
+                    state = state,
                     onOpenTripMap = onOpenTripMap,
                     modifier = Modifier.fillMaxWidth().height(270.dp),
+                )
+                ChargeRecordPanel(
+                    charge = state.latestCharge,
+                    currencySymbol = state.currencySymbol,
+                    onOpenCharges = onOpenCharges,
+                    modifier = Modifier.fillMaxWidth().height(270.dp),
+                )
+                LocalInsightPanel(
+                    state = state,
+                    modifier = Modifier.fillMaxWidth().height(if (compact) 360.dp else 260.dp),
                 )
             }
             Spacer(Modifier.height(2.dp))
@@ -259,7 +304,7 @@ private fun HomeHero(
 private fun SocGauge(state: DashboardUiState, modifier: Modifier = Modifier) {
     val value = state.soc?.coerceIn(0, 100)
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        Canvas(modifier = Modifier.size(252.dp)) {
+        Canvas(modifier = Modifier.size(280.dp)) {
             drawArc(
                 color = Color.White.copy(alpha = 0.58f),
                 startAngle = 132f,
@@ -331,7 +376,7 @@ private val SceneSkyColor = Color(0xFF4D9FE4)
 private fun SpeedGauge(state: DashboardUiState, modifier: Modifier = Modifier) {
     val speed = state.speed?.coerceAtLeast(0)
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        Canvas(modifier = Modifier.size(252.dp)) {
+        Canvas(modifier = Modifier.size(280.dp)) {
             drawArc(
                 color = Color.White.copy(alpha = 0.62f),
                 startAngle = 312f,
@@ -377,7 +422,13 @@ private fun VehicleStage(
     onDeleteImage: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+    BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.Center) {
+        val tireHorizontalInset = when {
+            maxWidth >= 1100.dp -> 170.dp
+            maxWidth >= 800.dp -> 110.dp
+            maxWidth >= 600.dp -> 70.dp
+            else -> 16.dp
+        }
         Canvas(modifier = Modifier.fillMaxSize()) {
             drawOval(
                 brush = Brush.radialGradient(
@@ -390,15 +441,16 @@ private fun VehicleStage(
             )
         }
 
-        TireBadge("左前", state.tirePressFL, state.tireTempFL, state.tireStateFL, Modifier.align(Alignment.TopStart).padding(start = 20.dp, top = 70.dp))
-        TireBadge("右前", state.tirePressFR, state.tireTempFR, state.tireStateFR, Modifier.align(Alignment.TopEnd).padding(end = 20.dp, top = 70.dp))
-        TireBadge("左后", state.tirePressRL, state.tireTempRL, state.tireStateRL, Modifier.align(Alignment.BottomStart).padding(start = 20.dp, bottom = 64.dp))
-        TireBadge("右后", state.tirePressRR, state.tireTempRR, state.tireStateRR, Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 64.dp))
+        TireBadge("左前", state.tirePressFL, state.tireTempFL, state.tireStateFL, Modifier.align(Alignment.TopStart).padding(start = tireHorizontalInset, top = 70.dp))
+        TireBadge("右前", state.tirePressFR, state.tireTempFR, state.tireStateFR, Modifier.align(Alignment.TopEnd).padding(end = tireHorizontalInset, top = 70.dp))
+        TireBadge("左后", state.tirePressRL, state.tireTempRL, state.tireStateRL, Modifier.align(Alignment.BottomStart).padding(start = tireHorizontalInset, bottom = 82.dp))
+        TireBadge("右后", state.tirePressRR, state.tireTempRR, state.tireStateRR, Modifier.align(Alignment.BottomEnd).padding(end = tireHorizontalInset, bottom = 82.dp))
 
         Box(
             modifier = Modifier
-                .fillMaxWidth(0.70f)
-                .fillMaxHeight(0.72f)
+                .fillMaxWidth(0.78f)
+                .fillMaxHeight(0.76f)
+                .offset(y = (-18).dp)
                 .pointerInput(image) {
                     detectTapGestures(
                         onTap = { onPickImage() },
@@ -442,19 +494,14 @@ private fun VehicleStage(
             }
         }
 
-        Row(
+        PowertrainSpeedStrip(
+            state = state,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 18.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            FlowIcon(Icons.Outlined.ElectricBolt, SceneMint, BydSignalSemantics.isPowered(state.powerState))
-            FlowLine(SceneMint)
-            FlowIcon(Icons.Outlined.Battery5Bar, SceneBlue, state.soc != null)
-            FlowLine(SceneBlue)
-            FlowIcon(Icons.Outlined.Air, SceneSkyColor, state.acStatus == 1)
-        }
+                .padding(bottom = 4.dp)
+                .fillMaxWidth(0.80f)
+                .height(72.dp),
+        )
     }
 }
 
@@ -504,27 +551,89 @@ private fun HeroPill(text: String, color: Color) {
 }
 
 @Composable
-private fun FlowIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, color: Color, active: Boolean) {
-    Box(
-        modifier = Modifier
-            .size(34.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(CardSurface.copy(alpha = 0.86f))
-            .border(1.dp, color.copy(alpha = if (active) 0.86f else 0.30f), RoundedCornerShape(10.dp)),
-        contentAlignment = Alignment.Center,
+private fun PowertrainSpeedStrip(
+    state: DashboardUiState,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(18.dp)
+    Column(
+        modifier = modifier
+            .clip(shape)
+            .background(CardSurface.copy(alpha = 0.88f))
+            .border(1.dp, GlassStroke, shape)
+            .padding(horizontal = 14.dp, vertical = 5.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(icon, contentDescription = null, tint = color.copy(alpha = if (active) 1f else 0.45f), modifier = Modifier.size(20.dp))
+        Text(
+            text = "动力转速",
+            color = TextPrimary.copy(alpha = 0.78f),
+            fontSize = 10.sp,
+            lineHeight = 11.sp,
+            fontWeight = FontWeight.ExtraBold,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            PowertrainSpeedItem(
+                icon = Icons.Outlined.Settings,
+                label = "发动机",
+                value = state.engineRpm,
+                color = SceneAmber,
+                modifier = Modifier.weight(1f),
+            )
+            PowertrainDivider()
+            PowertrainSpeedItem(
+                icon = Icons.Outlined.ElectricCar,
+                label = "前电机",
+                value = state.frontMotorSpeed,
+                color = SceneMint,
+                modifier = Modifier.weight(1f),
+            )
+            PowertrainDivider()
+            PowertrainSpeedItem(
+                icon = Icons.Outlined.ElectricCar,
+                label = "后电机",
+                value = state.rearMotorSpeed,
+                color = SceneBlue,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 
 @Composable
-private fun FlowLine(color: Color) {
-    Canvas(modifier = Modifier.width(68.dp).height(12.dp)) {
-        drawLine(color.copy(alpha = 0.36f), Offset.Zero.copy(y = size.height / 2f), Offset(size.width, size.height / 2f), 2.dp.toPx(), StrokeCap.Round)
-        repeat(4) { index ->
-            drawCircle(color.copy(alpha = 0.80f - index * 0.12f), radius = 2.4.dp.toPx(), center = Offset(size.width * ((index + 1) / 5f), size.height / 2f))
+private fun PowertrainSpeedItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: Int?,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(7.dp))
+        Column {
+            Text(label, color = TextSecondary, fontSize = 9.sp, lineHeight = 10.sp, fontWeight = FontWeight.Medium)
+            Text(
+                text = powertrainRpmText(value),
+                color = TextPrimary,
+                fontSize = 13.sp,
+                lineHeight = 14.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+            )
         }
     }
+}
+
+@Composable
+private fun PowertrainDivider() {
+    Box(Modifier.width(1.dp).height(28.dp).background(TextPrimary.copy(alpha = 0.12f)))
 }
 
 @Composable
@@ -614,26 +723,31 @@ private fun RibbonMetricItem(metric: RibbonMetric, modifier: Modifier = Modifier
 }
 
 @Composable
-private fun BatteryHealthPanel(state: DashboardUiState, modifier: Modifier = Modifier) {
+private fun BatteryHealthPanel(
+    state: DashboardUiState,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     HomeDarkPanel(
         modifier = modifier,
         colors = listOf(Color(0xE20E9C8E), Color(0xE21F7E77)),
         title = "电池健康",
         icon = Icons.Outlined.HealthAndSafety,
+        onClick = onClick,
     ) {
         Row(modifier = Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(0.95f)) {
+            Column(modifier = Modifier.weight(0.92f)) {
                 Text("SoH", color = Color.White.copy(alpha = 0.78f), fontSize = 14.sp)
                 Row(verticalAlignment = Alignment.Bottom) {
-                    Text(state.currentSoh?.roundToInt()?.toString() ?: "--", color = Color.White, fontSize = 54.sp, lineHeight = 56.sp, fontWeight = FontWeight.Light)
-                    Text("%", color = Color.White, fontSize = 23.sp, modifier = Modifier.padding(bottom = 7.dp))
+                    Text(state.currentSoh?.roundToInt()?.toString() ?: "--", color = Color.White, fontSize = 46.sp, lineHeight = 48.sp, fontWeight = FontWeight.Light)
+                    Text("%", color = Color.White, fontSize = 20.sp, modifier = Modifier.padding(bottom = 6.dp))
                 }
-                Text(batteryHint(state), color = Color.White.copy(alpha = 0.68f), fontSize = 11.sp)
+                Text(batteryHint(state), color = Color.White.copy(alpha = 0.72f), fontSize = 10.sp, maxLines = 2)
             }
-            Column(modifier = Modifier.weight(1.25f), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            Column(modifier = Modifier.weight(1.28f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 WhiteMetric("电池均温", tempText(state.avgBatTemp))
                 WhiteMetric("最高/最低", maxMinTempText(state))
-                WhiteMetric("电芯压差", state.cellVoltageDelta?.let { "%.0f mV".format(it * 1000) } ?: "--")
+                WhiteMetric("电芯压差", formatCellVoltageDelta(state.cellVoltageDelta))
                 WhiteMetric("12V 电池", state.voltage12v?.let { "%.1f V".format(it) } ?: "--")
                 WhiteMetric("充电枪", chargeGunText(state))
             }
@@ -642,34 +756,41 @@ private fun BatteryHealthPanel(state: DashboardUiState, modifier: Modifier = Mod
 }
 
 @Composable
-private fun VehicleEnvironmentPanel(state: DashboardUiState, modifier: Modifier = Modifier) {
+private fun VehicleEnvironmentPanel(
+    state: DashboardUiState,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     HomeDarkPanel(
         modifier = modifier,
         colors = listOf(Color(0xDF168FBD), Color(0xDF245AA8)),
         title = "车身环境",
         icon = Icons.Outlined.DirectionsCar,
+        onClick = onClick,
     ) {
         Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceEvenly) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
-                EnvironmentItem(Icons.Outlined.AcUnit, "空调", acMainText(state), state.acStatus == 1)
-                EnvironmentItem(Icons.Outlined.Air, "风量", fanText(state), (state.fanLevel ?: 0) > 0)
-                EnvironmentItem(Icons.Outlined.DirectionsCar, "内循环", circText(state.acCirc), state.acCirc == 1)
-                EnvironmentItem(Icons.Outlined.LightMode, "灯光", lightMainText(state), lightsActive(state))
+                EnvironmentItem(Icons.Outlined.AcUnit, "空调", acMainText(state), state.acStatus == 1, Modifier.weight(1f))
+                EnvironmentItem(Icons.Outlined.Air, "风量", fanText(state), (state.fanLevel ?: 0) > 0, Modifier.weight(1f))
+                EnvironmentItem(Icons.Outlined.DirectionsCar, "内循环", circText(state.acCirc), state.acCirc == 1, Modifier.weight(1f))
+                EnvironmentItem(Icons.Outlined.LightMode, "灯光", lightMainText(state), lightsActive(state), Modifier.weight(1f))
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
-                EnvironmentItem(Icons.Outlined.Lock, "车锁", lockSummary(state), lockSummary(state) == "已锁")
-                EnvironmentItem(Icons.Outlined.DirectionsCar, "车门", doorSummary(state), doorSummary(state) == "全关")
+                EnvironmentItem(Icons.Outlined.Lock, "车锁", lockSummary(state), lockSummary(state) == "已锁", Modifier.weight(1f))
+                EnvironmentItem(Icons.Outlined.DirectionsCar, "车门", doorSummary(state), doorSummary(state) == "全关", Modifier.weight(1f))
                 EnvironmentItem(
                     Icons.Outlined.EvStation,
                     "充电口",
                     openCloseText(state.chargingCapCover),
                     BydSignalSemantics.isCoverOpen(state.chargingCapCover),
+                    Modifier.weight(1f),
                 )
                 EnvironmentItem(
                     Icons.Outlined.LocalGasStation,
                     "油箱盖",
                     openCloseText(state.fuelCap),
                     BydSignalSemantics.isCoverOpen(state.fuelCap),
+                    Modifier.weight(1f),
                 )
             }
         }
@@ -677,48 +798,169 @@ private fun VehicleEnvironmentPanel(state: DashboardUiState, modifier: Modifier 
 }
 
 @Composable
-private fun JourneyAssistPanel(
+private fun TripRoutePanel(
     state: DashboardUiState,
-    onOpenDashboard: () -> Unit,
     onOpenTripMap: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     HomeDarkPanel(
-        modifier = modifier.clickable(onClick = onOpenDashboard),
-        colors = listOf(Color(0xDD315CB8), Color(0xDD59469C)),
-        title = "行程与驾驶辅助",
+        modifier = modifier,
+        colors = listOf(Color(0xE3366BD5), Color(0xE34A57C8)),
+        title = "行程与轨迹",
         icon = Icons.Outlined.Route,
+        onClick = onOpenTripMap,
     ) {
-        Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Column(modifier = Modifier.weight(1.22f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Row(modifier = Modifier.fillMaxWidth()) {
+                TripValue("本次", state.tripDistanceKm?.let { "%.1f km".format(it) } ?: "--", Modifier.weight(1f))
+                TripValue("时长", tripDurationText(state.sessionStartedAt), Modifier.weight(1f))
+            }
+            Row(modifier = Modifier.fillMaxWidth()) {
+                TripValue("用电", state.currentTripElecKwh?.let { "%.1f kWh".format(it) } ?: "--", Modifier.weight(1f))
+                TripValue("电耗", state.elecConPer100km?.let { "%.1f kWh/100km".format(it) } ?: "--", Modifier.weight(1f))
+            }
+            TripHistoryBars(
+                distances = state.recentTrips.mapNotNull { it.distanceKm?.takeIf { distance -> distance > 0.0 } },
+                modifier = Modifier.fillMaxWidth().weight(1f),
+            )
+            Text(
+                text = if (state.recentTrips.isEmpty()) "暂无行程记录" else "查看完整行程轨迹",
+                color = Color.White.copy(alpha = 0.84f),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ChargeRecordPanel(
+    charge: ChargeEntity?,
+    currencySymbol: String,
+    onOpenCharges: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    HomeDarkPanel(
+        modifier = modifier,
+        colors = listOf(Color(0xE29354E8), Color(0xE35B54D9)),
+        title = "充电记录",
+        icon = Icons.Outlined.ElectricBolt,
+        onClick = onOpenCharges,
+    ) {
+        if (charge == null) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Icon(Icons.Outlined.EvStation, contentDescription = null, tint = Color.White.copy(alpha = 0.78f), modifier = Modifier.size(34.dp))
+                Spacer(Modifier.height(8.dp))
+                Text("暂无充电记录", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Text("完成一次充电后会自动显示", color = Color.White.copy(alpha = 0.68f), fontSize = 10.sp)
+            }
+        } else {
+            Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(formatChargeDate(charge.startTs), color = Color.White.copy(alpha = 0.78f), fontSize = 10.sp, modifier = Modifier.weight(1f))
+                    HeroPill(chargeTypeText(charge), Color.White.copy(alpha = 0.20f))
+                }
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(charge.socStart?.let { "$it%" } ?: "--", color = Color.White, fontSize = 26.sp, lineHeight = 28.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("  →  ", color = Color.White.copy(alpha = 0.72f), fontSize = 16.sp, modifier = Modifier.padding(bottom = 3.dp))
+                    Text(charge.socEnd?.let { "$it%" } ?: if (charge.endTs == null) "进行中" else "--", color = Color.White, fontSize = 26.sp, lineHeight = 28.sp, fontWeight = FontWeight.ExtraBold)
+                }
+                ChargeSocProgress(charge, Modifier.fillMaxWidth().height(6.dp))
                 Row(modifier = Modifier.fillMaxWidth()) {
-                    TripValue("本次", state.tripDistanceKm?.let { "%.1f km".format(it) } ?: "--", Modifier.weight(1f))
-                    TripValue("用电", state.currentTripElecKwh?.let { "%.1f kWh".format(it) } ?: "--", Modifier.weight(1f))
-                    TripValue("用油", state.currentTripFuelL?.let { "%.1f L".format(it) } ?: "--", Modifier.weight(1f))
+                    TripValue("补能", chargeEnergyText(charge), Modifier.weight(1f))
+                    TripValue("时长", chargeDurationText(charge), Modifier.weight(1f))
                 }
                 Row(modifier = Modifier.fillMaxWidth()) {
-                    TripValue("电耗", state.elecConPer100km?.let { "%.1f".format(it) } ?: "--", Modifier.weight(1f))
-                    TripValue("油耗", state.fuelConPer100km?.let { "%.1f".format(it) } ?: "--", Modifier.weight(1f))
-                    TripValue("停车能耗", "%.1f kWh".format(state.idleDrainKwhToday), Modifier.weight(1f))
+                    TripValue("费用", charge.cost?.let { "%.2f %s".format(it, currencySymbol) } ?: "--", Modifier.weight(1f))
+                    TripValue("平均功率", charge.avgPowerKw?.let { "%.1f kW".format(it) } ?: "--", Modifier.weight(1f))
                 }
-                MiniTrendChart(modifier = Modifier.fillMaxWidth().weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocalInsightPanel(
+    state: DashboardUiState,
+    modifier: Modifier = Modifier,
+) {
+    val insight = state.localInsight
+    val shape = RoundedCornerShape(22.dp)
+    BoxWithConstraints(
+        modifier = modifier
+            .clip(shape)
+            .background(CardSurface.copy(alpha = 0.90f))
+            .border(1.dp, GlassStroke, shape)
+            .padding(horizontal = 20.dp, vertical = 13.dp),
+    ) {
+        val compact = maxWidth < 900.dp
+        Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Insights, contentDescription = null, tint = SceneBlue, modifier = Modifier.size(21.dp))
+                Spacer(Modifier.width(8.dp))
                 Text(
-                    text = insightLine(state.localInsight, state.localInsightLoading),
-                    color = Color.White.copy(alpha = 0.78f),
-                    fontSize = 11.sp,
+                    text = if (state.localInsightLoading) "本地洞察" else "本地洞察 · ${insight.title}",
+                    color = TextPrimary,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.ExtraBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.clickable(onClick = onOpenTripMap),
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = if (state.localInsightLoading) "分析中" else if (insight.hasEnoughData) "本地分析完成" else "数据积累中",
+                    color = if (insight.hasEnoughData) AccentGreen else AccentBlue,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .background((if (insight.hasEnoughData) AccentGreen else AccentBlue).copy(alpha = 0.12f))
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
                 )
             }
-            Box(Modifier.width(1.dp).fillMaxHeight().background(Color.White.copy(alpha = 0.18f)))
-            Column(modifier = Modifier.weight(0.76f), verticalArrangement = Arrangement.SpaceEvenly) {
-                AssistStatus("ACC", accText(state), adasActive(state.accCruiseState, state.adasAccMode))
-                AssistStatus("LCC", laneText(state.laneKeepState), adasActive(state.laneKeepState))
-                AssistStatus("NCA / MNOA", ncaText(state), adasActive(state.adasLccNcaStatus, state.adasMnoaStatus))
-                AssistStatus("AEB / ESP", rawPairText(state.adasAebState, state.adasEspState), adasActive(state.adasAebState, state.adasEspState))
-                AssistStatus("AVH / BSD", rawPairText(state.adasAvhState, state.adasBsdState), adasActive(state.adasAvhState, state.adasBsdState))
-                AssistStatus("自动泊车", autoParkText(state.adasApaParkingStatus), adasActive(state.adasApaParkingStatus))
+            Text(
+                text = if (state.localInsightLoading) "正在分析近期行程、充电和电池数据" else insight.summary.ifBlank { "本地数据积累中" },
+                color = TextSecondary,
+                fontSize = 11.sp,
+                maxLines = if (compact) 2 else 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (state.localInsightLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) {
+                    Text("所有分析均在车机本地完成，不上传车辆数据", color = TextSecondary, fontSize = 11.sp)
+                }
+            } else if (compact) {
+                Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    insight.metrics.take(6).chunked(3).forEach { rowMetrics ->
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            rowMetrics.forEach { metric -> LocalInsightMetricItem(metric, Modifier.weight(1f)) }
+                            repeat(3 - rowMetrics.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
+                    insight.recommendations.take(2).forEach { InsightRecommendation(it) }
+                }
+            } else {
+                Row(modifier = Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+                    Row(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                        insight.metrics.take(6).forEach { metric ->
+                            LocalInsightMetricItem(metric, Modifier.weight(1f))
+                        }
+                    }
+                    if (insight.recommendations.isNotEmpty()) {
+                        Box(Modifier.width(1.dp).fillMaxHeight().background(TextPrimary.copy(alpha = 0.10f)))
+                        Column(
+                            modifier = Modifier.width(310.dp).padding(start = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(7.dp),
+                        ) {
+                            insight.recommendations.take(2).forEach { InsightRecommendation(it) }
+                        }
+                    }
+                }
             }
         }
     }
@@ -730,11 +972,13 @@ private fun HomeDarkPanel(
     colors: List<Color>,
     title: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val shape = RoundedCornerShape(22.dp)
+    val interactiveModifier = if (onClick != null) modifier.clickable(onClick = onClick) else modifier
     Column(
-        modifier = modifier
+        modifier = interactiveModifier
             .clip(shape)
             .background(Brush.linearGradient(colors), shape)
             .border(1.dp, Color.White.copy(alpha = 0.48f), shape)
@@ -744,7 +988,9 @@ private fun HomeDarkPanel(
             Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
             Text(title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
             Spacer(Modifier.weight(1f))
-            Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = Color.White.copy(alpha = 0.78f), modifier = Modifier.size(20.dp))
+            if (onClick != null) {
+                Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = null, tint = Color.White.copy(alpha = 0.78f), modifier = Modifier.size(20.dp))
+            }
         }
         Spacer(Modifier.height(8.dp))
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) { content() }
@@ -765,8 +1011,9 @@ private fun EnvironmentItem(
     label: String,
     value: String,
     active: Boolean,
+    modifier: Modifier = Modifier,
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.width(70.dp)) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp), modifier = modifier) {
         Icon(icon, contentDescription = null, tint = if (active) Color.White else Color.White.copy(alpha = 0.62f), modifier = Modifier.size(26.dp))
         Text(label, color = Color.White.copy(alpha = 0.72f), fontSize = 10.sp)
         Text(value, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -782,29 +1029,90 @@ private fun TripValue(label: String, value: String, modifier: Modifier = Modifie
 }
 
 @Composable
-private fun MiniTrendChart(modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier) {
-        val values = listOf(0.68f, 0.42f, 0.56f, 0.75f, 0.60f, 0.82f, 0.70f, 0.74f)
-        val path = Path()
-        values.forEachIndexed { index, value ->
-            val x = size.width * index / (values.lastIndex.coerceAtLeast(1))
-            val y = size.height * (1f - value)
-            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+private fun TripHistoryBars(
+    distances: List<Double>,
+    modifier: Modifier = Modifier,
+) {
+    if (distances.isEmpty()) {
+        Box(modifier = modifier, contentAlignment = Alignment.CenterStart) {
+            Text("近期暂无可用行程数据", color = Color.White.copy(alpha = 0.66f), fontSize = 10.sp)
         }
-        drawPath(path, SceneAmber, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round))
-        values.forEachIndexed { index, value ->
-            drawCircle(SceneAmber, 2.4.dp.toPx(), Offset(size.width * index / values.lastIndex, size.height * (1f - value)))
+        return
+    }
+    val values = distances.takeLast(7)
+    val maximum = max(values.maxOrNull() ?: 0.0, 0.1)
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        values.forEach { value ->
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight((value / maximum).toFloat().coerceIn(0.12f, 1f))
+                    .clip(RoundedCornerShape(topStart = 5.dp, topEnd = 5.dp))
+                    .background(Color.White.copy(alpha = 0.58f)),
+            )
         }
     }
 }
 
 @Composable
-private fun AssistStatus(label: String, value: String, active: Boolean) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(8.dp).clip(CircleShape).background(if (active) SceneMint else Color.White.copy(alpha = 0.54f)))
-        Spacer(Modifier.width(8.dp))
-        Text(label, color = Color.White.copy(alpha = 0.82f), fontSize = 12.sp, modifier = Modifier.weight(1f))
-        Text(value, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+private fun ChargeSocProgress(charge: ChargeEntity, modifier: Modifier = Modifier) {
+    val start = charge.socStart?.coerceIn(0, 100)
+    val end = charge.socEnd?.coerceIn(0, 100)
+    val progress = when {
+        end != null -> end / 100f
+        start != null -> start / 100f
+        else -> 0f
+    }
+    Box(modifier = modifier.clip(CircleShape).background(Color.White.copy(alpha = 0.18f))) {
+        if (progress > 0f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(progress)
+                    .fillMaxHeight()
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.82f)),
+            )
+        }
+    }
+}
+
+@Composable
+private fun LocalInsightMetricItem(
+    metric: LocalInsightMetric,
+    modifier: Modifier = Modifier,
+) {
+    val color = insightToneColor(metric.tone)
+    Column(
+        modifier = modifier.padding(horizontal = 10.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(7.dp).clip(CircleShape).background(color))
+            Spacer(Modifier.width(6.dp))
+            Text(metric.label, color = TextSecondary, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        }
+        Text(metric.value, color = TextPrimary, fontSize = 18.sp, lineHeight = 20.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(metric.detail, color = TextSecondary, fontSize = 9.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun InsightRecommendation(text: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(AccentGreen.copy(alpha = 0.10f))
+            .padding(horizontal = 9.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = AccentGreen, modifier = Modifier.size(15.dp))
+        Spacer(Modifier.width(7.dp))
+        Text(text, color = TextPrimary, fontSize = 9.sp, lineHeight = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -836,6 +1144,49 @@ private fun chargeGunText(state: DashboardUiState): String = when {
     ChargeGunState.isConnected(state.chargeGunState) -> "已插枪"
     ChargeGunState.isDisconnected(state.chargeGunState) -> "未插枪"
     else -> "--"
+}
+
+internal fun formatCellVoltageDelta(value: Double?): String =
+    value?.takeIf { it.isFinite() && it >= 0.0 }?.let { "%.3f V".format(Locale.CHINA, it) } ?: "--"
+
+private fun powertrainRpmText(value: Int?): String =
+    value?.let { "%,d rpm".format(Locale.CHINA, it) } ?: "-- rpm"
+
+private fun tripDurationText(startedAt: Long?): String =
+    startedAt?.takeIf { it > 0L }?.let { formatDuration(System.currentTimeMillis() - it) } ?: "--"
+
+private fun chargeDurationText(charge: ChargeEntity): String =
+    formatDuration((charge.endTs ?: System.currentTimeMillis()) - charge.startTs)
+
+internal fun formatDuration(durationMs: Long): String {
+    if (durationMs < 0L) return "--"
+    val totalMinutes = durationMs / 60_000L
+    val hours = totalMinutes / 60L
+    val minutes = totalMinutes % 60L
+    return when {
+        hours > 0L -> "${hours}小时${minutes}分"
+        else -> "${minutes}分"
+    }
+}
+
+private fun formatChargeDate(timestamp: Long): String =
+    SimpleDateFormat("M月d日 HH:mm", Locale.CHINA).format(Date(timestamp))
+
+private fun chargeTypeText(charge: ChargeEntity): String = when {
+    charge.endTs == null -> "充电中"
+    charge.type.equals("AC", ignoreCase = true) -> "交流慢充"
+    charge.type.equals("DC", ignoreCase = true) -> "直流快充"
+    else -> "充电完成"
+}
+
+private fun chargeEnergyText(charge: ChargeEntity): String =
+    (charge.kwhCharged ?: charge.kwhChargedSoc)?.let { "%.1f kWh".format(Locale.CHINA, it) } ?: "--"
+
+private fun insightToneColor(tone: LocalInsightTone): Color = when (tone) {
+    LocalInsightTone.GOOD -> AccentGreen
+    LocalInsightTone.INFO -> AccentBlue
+    LocalInsightTone.WARNING -> SceneAmber
+    LocalInsightTone.CRITICAL -> Color(0xFFFF5A68)
 }
 
 private fun batteryHint(state: DashboardUiState): String = when {
@@ -899,7 +1250,7 @@ private fun gearText(gear: Int?): String = when (gear) {
     2 -> "R"
     3 -> "N"
     4 -> "D"
-    else -> "P"
+    else -> gear?.toString() ?: "--"
 }
 
 private fun driveModeText(mode: Int?): String = when (mode) {
@@ -909,7 +1260,7 @@ private fun driveModeText(mode: Int?): String = when (mode) {
     4 -> "雪地模式"
     5 -> "泥地模式"
     6 -> "沙地模式"
-    else -> "标准模式"
+    else -> mode?.let { "模式 $it" } ?: "--"
 }
 
 private fun workModeText(mode: Int?): String = when (mode) {
@@ -919,45 +1270,5 @@ private fun workModeText(mode: Int?): String = when (mode) {
     3 -> "HEV"
     4 -> "燃油"
     5 -> "保持"
-    else -> "--"
+    else -> mode?.let { "模式 $it" } ?: "--"
 }
-
-private fun insightLine(insight: LocalInsightResult, loading: Boolean): String = when {
-    loading -> "本地洞察：正在分析近期驾驶数据"
-    insight.summary.isNotBlank() -> "本地洞察：${insight.summary}"
-    else -> "本地洞察：数据积累中"
-}
-
-private fun autoParkText(value: Int?): String = when (value) {
-    null, 0 -> "关闭"
-    1 -> "待机"
-    2, 3, 4 -> "进行中"
-    else -> "开启"
-}
-
-private fun laneText(value: Int?): String = when (value) {
-    null, 0 -> "待机"
-    1 -> "开启"
-    else -> "工作中"
-}
-
-private fun accText(state: DashboardUiState): String = when {
-    (state.adasExecSpeed ?: 0) > 0 -> "执行 ${state.adasExecSpeed}"
-    state.accCruiseState == 1 -> "开启"
-    state.accCruiseState != null && state.accCruiseState != 0 ->
-        state.accCruisingSpeed?.let { "巡航 $it" } ?: "巡航中"
-    (state.adasAccGrayState ?: 0) != 0 -> "灰态 ${state.adasAccGrayState}"
-    else -> "待机"
-}
-
-private fun ncaText(state: DashboardUiState): String = when {
-    (state.adasMnoaStatus ?: 0) != 0 -> "MNOA ${state.adasMnoaStatus}"
-    adasActive(state.adasLccNcaStatus, state.adasAccMode) -> "开启"
-    (state.adasNoaGrayState ?: 0) != 0 -> "灰态 ${state.adasNoaGrayState}"
-    else -> "关闭"
-}
-
-private fun rawPairText(first: Int?, second: Int?): String =
-    if (first == null && second == null) "--" else "${first ?: "-"} / ${second ?: "-"}"
-
-private fun adasActive(vararg values: Int?): Boolean = values.any { it != null && it != 0 }

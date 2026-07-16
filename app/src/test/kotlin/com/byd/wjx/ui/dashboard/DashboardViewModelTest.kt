@@ -4,6 +4,7 @@ import com.byd.wjx.data.autoservice.BatteryReading
 import com.byd.wjx.data.vehicle.VehicleApi
 import com.byd.wjx.data.local.dao.BatterySnapshotDao
 import com.byd.wjx.data.local.dao.ChargeDao
+import com.byd.wjx.data.local.dao.ChargePointDao
 import com.byd.wjx.data.local.dao.ChargeSummary
 import com.byd.wjx.data.local.dao.IdleDrainDao
 import com.byd.wjx.data.local.dao.SettingsDao
@@ -12,11 +13,13 @@ import com.byd.wjx.data.local.dao.TripPointDao
 import com.byd.wjx.data.local.dao.TripSummary
 import com.byd.wjx.data.local.entity.BatterySnapshotEntity
 import com.byd.wjx.data.local.entity.ChargeEntity
+import com.byd.wjx.data.local.entity.ChargePointEntity
 import com.byd.wjx.data.local.entity.IdleDrainEntity
 import com.byd.wjx.data.local.entity.SettingEntity
 import com.byd.wjx.data.local.entity.TripEntity
 import com.byd.wjx.data.local.entity.TripPointEntity
 import com.byd.wjx.data.energy.EnergyFlowStatsRepository
+import com.byd.wjx.data.repository.ChargeRepository
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.data.repository.FakeTrackingStateRepository
 import com.byd.wjx.data.repository.TripRepository
@@ -191,14 +194,15 @@ class DashboardViewModelTest {
         override suspend fun getCount(): Int = 0
     }
 
-    private class StubChargeDao : ChargeDao {
+    private class StubChargeDao(initialLastCharge: ChargeEntity? = null) : ChargeDao {
+        private val lastCharge = MutableStateFlow(initialLastCharge)
         override suspend fun insert(charge: ChargeEntity): Long = 0L
         override suspend fun update(charge: ChargeEntity) {}
         override fun getAll(): Flow<List<ChargeEntity>> = flowOf(emptyList())
         override suspend fun getById(id: Long): ChargeEntity? = null
         override fun getByDateRange(from: Long, to: Long): Flow<List<ChargeEntity>> = flowOf(emptyList())
         override suspend fun getPeriodSummary(from: Long, to: Long): ChargeSummary = ChargeSummary(0, 0.0, 0.0)
-        override fun getLastCharge(): Flow<ChargeEntity?> = flowOf(null)
+        override fun getLastCharge(): Flow<ChargeEntity?> = lastCharge
         override suspend fun getLastSuspendedCharge(): ChargeEntity? = null
         override suspend fun getStaleSessions(cutoffTs: Long): List<ChargeEntity> = emptyList()
         override suspend fun getLastChargeSync(): ChargeEntity? = null
@@ -209,6 +213,13 @@ class DashboardViewModelTest {
         override suspend fun deleteEmpty(): Int = 0
         override suspend fun deletePhantomAutoserviceRows(): Int = 0
         override suspend fun delete(charge: ChargeEntity) {}
+    }
+
+    private class StubChargePointDao : ChargePointDao {
+        override suspend fun insertAll(points: List<ChargePointEntity>) {}
+        override suspend fun getByChargeId(chargeId: Long): List<ChargePointEntity> = emptyList()
+        override suspend fun getCount(): Int = 0
+        override suspend fun thinOldPoints(cutoff: Long, intervalMs: Long): Int = 0
     }
 
     // --- Fake vehicle API ---
@@ -240,6 +251,7 @@ class DashboardViewModelTest {
         onDemandTelemetryReader: OnDemandVehicleTelemetryReader = FakeOnDemandTelemetryReader(),
         initialSettings: Map<String, String> = emptyMap(),
         vehicleStateRepository: FakeVehicleStateRepository = FakeVehicleStateRepository(),
+        latestCharge: ChargeEntity? = null,
     ): DashboardViewModel {
         val settingsDao = FakeSettingsDao().also { it.map.putAll(initialSettings) }
         val settingsRepo = SettingsRepository(settingsDao)
@@ -247,6 +259,8 @@ class DashboardViewModelTest {
         val tripDao = StubTripDao()
         val tripPointDao = StubTripPointDao()
         val tripRepo = TripRepository(tripDao, tripPointDao)
+        val chargeDao = StubChargeDao(latestCharge)
+        val chargeRepo = ChargeRepository(chargeDao, StubChargePointDao())
 
         val idleDrainDao = StubIdleDrainDao()
         val batterySnapshotDao = StubBatterySnapshotDao()
@@ -254,7 +268,7 @@ class DashboardViewModelTest {
         val trackingStateRepository = FakeTrackingStateRepository()
         val localInsightStatsAggregator = LocalInsightStatsAggregator(
             tripDao = tripDao,
-            chargeDao = StubChargeDao(),
+            chargeDao = chargeDao,
             idleDrainDao = idleDrainDao,
             batterySnapshotDao = batterySnapshotDao,
             vehicleApi = fakeAutoservice,
@@ -263,6 +277,7 @@ class DashboardViewModelTest {
 
         return DashboardViewModel(
             tripRepository = tripRepo,
+            chargeRepository = chargeRepo,
             settingsRepository = settingsRepo,
             idleDrainDao = idleDrainDao,
             vehicleStateRepository = vehicleStateRepository,
@@ -305,6 +320,25 @@ class DashboardViewModelTest {
         assertNull(remainingAmount(101, 72.9))
     }
 
+    @Test
+    fun `latest charge is exposed for the home screen`() = runTest {
+        val charge = ChargeEntity(
+            id = 42L,
+            startTs = 1_700_000_000_000L,
+            endTs = 1_700_003_600_000L,
+            socStart = 25,
+            socEnd = 80,
+            kwhCharged = 41.2,
+        )
+        val vm = buildViewModel(
+            fakeAutoservice = FakeAutoservice(sampleReading),
+            latestCharge = charge,
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(charge, vm.uiState.value.latestCharge)
+    }
+
     private val sampleReading = BatteryReading(
         sohPercent = 100f,
         socPercent = 91f,
@@ -340,7 +374,7 @@ class DashboardViewModelTest {
     }
 
     @Test
-    fun `home telemetry reads tire states and ADAS only while active`() = runTest {
+    fun `home telemetry reads tire states only while active`() = runTest {
         val telemetryReader = FakeOnDemandTelemetryReader(
             diParsData(
                 tireTempFL = 31,
@@ -349,8 +383,6 @@ class DashboardViewModelTest {
                 tireTempRR = 34,
                 tireStateFL = 0,
                 tireStateRR = 2,
-                adasAebState = 1,
-                adasExecSpeed = 88,
             ),
         )
         val vm = buildViewModel(
@@ -365,8 +397,6 @@ class DashboardViewModelTest {
         assertEquals(31, vm.uiState.value.tireTempFL)
         assertEquals(34, vm.uiState.value.tireTempRR)
         assertEquals(2, vm.uiState.value.tireStateRR)
-        assertEquals(1, vm.uiState.value.adasAebState)
-        assertEquals(88, vm.uiState.value.adasExecSpeed)
         vm.setHomeTelemetryActive(false)
     }
 
