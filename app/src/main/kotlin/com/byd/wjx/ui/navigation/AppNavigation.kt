@@ -31,6 +31,9 @@ import androidx.compose.ui.res.stringResource
 import com.byd.wjx.R
 import androidx.compose.ui.platform.LocalContext
 import com.byd.wjx.data.legal.DisclaimerPreferences
+import com.byd.wjx.data.system.AutostartGuidePreferences
+import com.byd.wjx.data.system.AutostartSettingsLaunchResult
+import com.byd.wjx.data.system.AutostartSettingsLauncher
 import com.byd.wjx.service.UpdateChecker
 import com.byd.wjx.ui.automation.AutomationScreen
 import com.byd.wjx.ui.charges.ChargesScreen
@@ -64,6 +67,12 @@ fun AppNavigation(
     var disclaimerAccepted by remember {
         mutableStateOf(DisclaimerPreferences.isAccepted(appContext))
     }
+    var showAutostartGuide by rememberSaveable {
+        mutableStateOf(AutostartGuidePreferences.shouldShow(appContext))
+    }
+    var autostartLaunchResult by remember {
+        mutableStateOf<AutostartSettingsLaunchResult?>(null)
+    }
 
     var selectedRoute by rememberSaveable { mutableStateOf(Screen.Home.route) }
     var showPlaces by rememberSaveable { mutableStateOf(false) }
@@ -93,7 +102,7 @@ fun AppNavigation(
             // Ignore silently: offline, rate-limited, etc.
         }
     }
-    if (disclaimerAccepted) autoUpdateState?.let { dialogState ->
+    if (disclaimerAccepted && !showAutostartGuide) autoUpdateState?.let { dialogState ->
         val currentVersion = runCatching {
             autoCheckContext.packageManager.getPackageInfo(autoCheckContext.packageName, 0).versionName ?: "?"
         }.getOrDefault("?")
@@ -125,6 +134,22 @@ fun AppNavigation(
                 autoUpdateState = null
                 autoUpdateInfo = null
             }
+        )
+    }
+
+    if (disclaimerAccepted && showAutostartGuide) {
+        AutostartGuideDialog(
+            launchResult = autostartLaunchResult,
+            onOpenSettings = {
+                autostartLaunchResult = AutostartSettingsLauncher.open(appContext)
+            },
+            onConfirmed = {
+                AutostartGuidePreferences.markConfirmed(appContext)
+                showAutostartGuide = false
+            },
+            onLater = {
+                showAutostartGuide = false
+            },
         )
     }
 

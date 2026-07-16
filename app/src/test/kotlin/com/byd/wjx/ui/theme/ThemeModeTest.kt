@@ -13,4 +13,13 @@ class ThemeModeTest {
         assertEquals(ThemeMode.SYSTEM, ThemeMode.fromStored("unknown"))
         assertEquals(ThemeMode.SYSTEM, ThemeMode.fromStored(null))
     }
+
+    @Test
+    fun `stored wallpaper values parse with default fallback`() {
+        AppWallpaper.entries.forEach { wallpaper ->
+            assertEquals(wallpaper, AppWallpaper.fromStored(wallpaper.storedValue))
+        }
+        assertEquals(AppWallpaper.Default, AppWallpaper.fromStored("unknown"))
+        assertEquals(AppWallpaper.Default, AppWallpaper.fromStored(null))
+    }
 }

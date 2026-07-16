@@ -46,7 +46,6 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
@@ -347,31 +346,6 @@ class DashboardViewModelTest {
         voltage12v = 14f,
         readAtMs = 0L
     )
-
-    @Test
-    fun `adbConnected is true when shared vehicle snapshot connects`() = runTest {
-        val vehicleStateRepository = FakeVehicleStateRepository()
-        val vm = buildViewModel(
-            fakeAutoservice = FakeAutoservice(sampleReading, available = true),
-            vehicleStateRepository = vehicleStateRepository,
-        )
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        vehicleStateRepository.update(diParsData(soc = 91))
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        assertEquals(true, vm.uiState.value.adbConnected)
-    }
-
-    @Test
-    fun `adbConnected is false before shared vehicle snapshot connects`() = runTest {
-        val vm = buildViewModel(
-            fakeAutoservice = FakeAutoservice(battery = null, available = false)
-        )
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        assertFalse(vm.uiState.value.adbConnected!!)
-    }
 
     @Test
     fun `home telemetry reads tire states only while active`() = runTest {

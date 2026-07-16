@@ -433,6 +433,7 @@ class SettingsViewModel @Inject constructor(
                 SettingsRepository.DEFAULT_FUEL_TANK_CAPACITY
             )
             val themeMode = settingsRepository.getThemeMode()
+            val appWallpaper = settingsRepository.getAppWallpaper()
             val homeTariff = settingsRepository.getString(
                 SettingsRepository.KEY_HOME_TARIFF,
                 SettingsRepository.DEFAULT_HOME_TARIFF
@@ -468,6 +469,7 @@ class SettingsViewModel @Inject constructor(
                     batteryCapacity = capacity,
                     fuelTankCapacity = fuelTankCapacity,
                     themeMode = themeMode,
+                    appWallpaper = appWallpaper,
                     homeTariff = homeTariff,
                     dcTariff = dcTariff,
                     units = units,
@@ -506,6 +508,13 @@ class SettingsViewModel @Inject constructor(
         _uiState.update { it.copy(themeMode = mode) }
         viewModelScope.launch {
             settingsRepository.setThemeMode(mode)
+        }
+    }
+
+    fun setAppWallpaper(wallpaper: String) {
+        _uiState.update { it.copy(appWallpaper = wallpaper) }
+        viewModelScope.launch {
+            settingsRepository.setAppWallpaper(wallpaper)
         }
     }
 

@@ -1,7 +1,15 @@
 # 首页设计 QA
 
 - source visual truth path: `/Users/z/.codex/generated_images/019f63f8-f2a9-7511-aa09-0ae70f1f25d3/exec-38e97719-c14d-42e2-8abb-d307649fe494.png`
+- selected wallpaper source path: `/Users/z/.codex/generated_images/019f63f8-f2a9-7511-aa09-0ae70f1f25d3/exec-355f47e7-d331-4c32-a444-fb395b8b5f3b.png`
 - implementation screenshot path: `/Users/z/Desktop/优化版本/build/reports/design-qa/home-light-1920x1080.png`
+- wallpaper implementation screenshot path: `/Users/z/Desktop/优化版本/build/reports/design-qa/home-wallpaper-option1-light.png`
+- wallpaper dark theme screenshot path: `/Users/z/Desktop/优化版本/build/reports/design-qa/home-wallpaper-option1-dark.png`
+- wallpaper comparison evidence: `/Users/z/Desktop/优化版本/build/reports/design-qa/home-wallpaper-option1-comparison.png`
+- seven-wallpaper picker screenshot: `/Users/z/Desktop/优化版本/build/reports/design-qa/wallpaper-picker-seven.png`
+- global wallpaper settings screenshot: `/Users/z/Desktop/优化版本/build/reports/design-qa/wallpaper-switch-canyon-settings.png`
+- global wallpaper sound screenshot: `/Users/z/Desktop/优化版本/build/reports/design-qa/wallpaper-switch-canyon-sound.png`
+- light-theme dark-wallpaper screenshot: `/Users/z/Desktop/优化版本/build/reports/design-qa/wallpaper-light-theme-tech-home.png`
 - dark theme screenshot path: `/Users/z/Desktop/优化版本/build/reports/design-qa/home-dark-1920x1080.png`
 - full-view comparison evidence: `/Users/z/Desktop/优化版本/build/reports/design-qa/home-full-comparison.png`
 - focused card comparison evidence: `/Users/z/Desktop/优化版本/build/reports/design-qa/home-cards-comparison.png`
@@ -40,6 +48,12 @@
 4. 用户复查后指出四个胎压标签距离车辆过远。
    - 修复：宽屏左右内边距由 20dp 收拢到 170dp，并按 1100dp、800dp、600dp 三个断点自适应回退。
    - 复查：四个标签围绕车辆左右分布，与车辆保持清楚间隔，同时不遮挡车辆、仪表或动力转速条。
+5. 用户选择生成壁纸方案一，要求查看真实首页叠加效果。
+   - 修复：将选定壁纸转换为 243KB 的 JPEG 资源并完成首页浅色、深色适配。
+   - 复查：樱花和山景位于两侧，中心车辆、胎压、双仪表和动力转速保持清楚。
+6. 用户要求将前后三轮共 7 张壁纸全部内置，并在所有页面自由切换。
+   - 修复：7 张全尺寸壁纸压缩为 170–302KB，并为选择器单独生成 9–12KB 缩略图；选择写入设置数据库，由全局 scaffold 统一绘制，首页、个性音效、歌词显示、智能联动、设置和子页面共享同一壁纸。
+   - 复查：设置页一次显示 7 个选择项；切换“金色峡谷”后设置页和个性音效页即时同步，重启后首页仍保留选择；白天主题搭配深色“科技极夜”时文字与卡片保持可读。
 
 ## Implementation Checklist
 
@@ -49,6 +63,7 @@
 - [x] 本地洞察真实 metrics/recommendations 完整展示
 - [x] 电芯压差统一使用 V
 - [x] 空数据、加载中、浅色、深色状态验证
+- [x] 7 张内置壁纸、全页面同步、重启持久化验证
 - [x] 单元测试、Lint、Debug APK 构建通过
 
 ## Follow-up Polish

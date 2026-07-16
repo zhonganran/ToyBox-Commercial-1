@@ -34,6 +34,8 @@ import com.byd.wjx.ui.components.ConsumptionThresholds
 import com.byd.wjx.ui.components.LocalConsumptionThresholds
 import com.byd.wjx.ui.navigation.AppNavigation
 import com.byd.wjx.ui.theme.SuperToyBoxTheme
+import com.byd.wjx.ui.theme.AppWallpaper
+import com.byd.wjx.ui.theme.LocalAppWallpaper
 import com.byd.wjx.ui.theme.LocalSuperToyBoxDarkTheme
 import com.byd.wjx.ui.theme.ThemeMode
 import dagger.hilt.android.AndroidEntryPoint
@@ -74,6 +76,9 @@ class MainActivity : AppCompatActivity() {
         setContent {
             val storedThemeMode by produceState(initialValue = SettingsRepository.DEFAULT_THEME_MODE) {
                 settingsRepository.observeThemeMode().collect { value = it }
+            }
+            val storedAppWallpaper by produceState(initialValue = SettingsRepository.DEFAULT_APP_WALLPAPER) {
+                settingsRepository.observeAppWallpaper().collect { value = it }
             }
             val thresholds by produceState(initialValue = ConsumptionThresholds.Default) {
                 settingsRepository.observeConsumptionThresholds().collect { (good, bad) ->
@@ -130,6 +135,7 @@ class MainActivity : AppCompatActivity() {
                 CompositionLocalProvider(
                     LocalConfiguration provides localizedConfig,
                     LocalConsumptionThresholds provides thresholds,
+                    LocalAppWallpaper provides AppWallpaper.fromStored(storedAppWallpaper),
                 ) {
                     AppNavigation(updateChecker = updateChecker)
                 }

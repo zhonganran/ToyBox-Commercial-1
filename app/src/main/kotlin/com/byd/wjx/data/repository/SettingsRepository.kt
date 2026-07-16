@@ -27,6 +27,7 @@ open class SettingsRepository @Inject constructor(
         const val KEY_BATTERY_CAPACITY = "battery_capacity_kwh"
         const val KEY_FUEL_TANK_CAPACITY = "fuel_tank_capacity_liters"
         const val KEY_THEME_MODE = "theme_mode"
+        const val KEY_APP_WALLPAPER = "app_wallpaper"
         const val KEY_HOME_TARIFF = "home_tariff"
         const val KEY_DC_TARIFF = "dc_tariff"
         const val KEY_UNITS = "units" // "km" or "miles"
@@ -57,6 +58,7 @@ open class SettingsRepository @Inject constructor(
         const val DEFAULT_BATTERY_CAPACITY = "72.9"
         const val DEFAULT_FUEL_TANK_CAPACITY = ""
         const val DEFAULT_THEME_MODE = "system"
+        const val DEFAULT_APP_WALLPAPER = "sakura_lake"
         const val DEFAULT_HOME_TARIFF = "0.60"
         const val DEFAULT_DC_TARIFF = "1.20"
         const val DEFAULT_UNITS = "km"
@@ -125,6 +127,15 @@ open class SettingsRepository @Inject constructor(
 
     suspend fun setThemeMode(mode: String) =
         setString(KEY_THEME_MODE, normalizeThemeMode(mode))
+
+    suspend fun getAppWallpaper(): String =
+        normalizeAppWallpaper(getString(KEY_APP_WALLPAPER, DEFAULT_APP_WALLPAPER))
+
+    fun observeAppWallpaper(): Flow<String> =
+        observeString(KEY_APP_WALLPAPER).map { normalizeAppWallpaper(it) }
+
+    suspend fun setAppWallpaper(wallpaper: String) =
+        setString(KEY_APP_WALLPAPER, normalizeAppWallpaper(wallpaper))
 
     suspend fun getHomeTariff(): Double =
         getString(KEY_HOME_TARIFF, DEFAULT_HOME_TARIFF).parseNumericSetting()
@@ -248,4 +259,15 @@ private fun String.parsePositiveCapacity(): Double? =
 private fun normalizeThemeMode(value: String?): String = when (value) {
     "light", "dark", "system" -> value
     else -> SettingsRepository.DEFAULT_THEME_MODE
+}
+
+private fun normalizeAppWallpaper(value: String?): String = when (value) {
+    "sakura_lake",
+    "aurora_twilight",
+    "sunrise_lake",
+    "tech_night",
+    "ink_mountains",
+    "glacier_aurora",
+    "sunset_canyon" -> value
+    else -> SettingsRepository.DEFAULT_APP_WALLPAPER
 }

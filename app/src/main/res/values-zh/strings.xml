@@ -367,7 +367,31 @@
     <string name="dashboard_stat_kwh_value">%1$.1f 千瓦时</string>
     <string name="dashboard_voltage_value">%1$.1f 伏</string>
 
-    <!-- 安装后自启动提示弹窗 -->
+    <!-- 顶部状态与 ADB 授权 -->
+    <string name="top_status_adb_connected">ADB 已连接</string>
+    <string name="top_status_adb_disconnected">ADB 未连接 · 点击授权</string>
+    <string name="top_status_adb_disconnected_compact">ADB 未连接</string>
+    <string name="top_status_adb_checking">ADB 检测中</string>
+    <string name="adb_auth_title">ADB 授权</string>
+    <string name="adb_auth_message">点击“拉起授权”后，请在车机弹窗中选择“允许 USB 调试”，并勾选“始终允许”。</string>
+    <string name="adb_auth_waiting">正在等待车机授权，请在车机弹窗中点击“允许”。</string>
+    <string name="adb_auth_success">ADB 已连接，授权成功。</string>
+    <string name="adb_auth_failed">连接失败。请确认开发者选项中已开启无线调试/ADB，然后重试并在车机上允许授权。</string>
+    <string name="adb_auth_already_connected">ADB 已连接，无需再次授权。</string>
+    <string name="adb_auth_start">拉起授权</string>
+    <string name="adb_auth_retry">重新授权</string>
+    <string name="adb_auth_close">关闭</string>
+
+    <!-- 安装或更新后的自启动引导 -->
+    <string name="autostart_guide_title">开启应用自启动</string>
+    <string name="autostart_guide_message">为保证锁车音效、智能联动和后台车辆数据在车机重启后正常工作，请打开 DiLink 自启动管理。\n\n1. 在列表中找到“超级玩具箱”\n2. 此页面是“禁止自启动”名单，开关保持 OFF 才表示允许自启动\n3. 设置后返回本应用，点击“已设置”</string>
+    <string name="autostart_guide_open_settings">打开自启动设置</string>
+    <string name="autostart_guide_open_settings_again">再次打开自启动设置</string>
+    <string name="autostart_guide_opened">已打开 DiLink 自启动页面，设置完成后请返回本应用确认。</string>
+    <string name="autostart_guide_fallback">未找到 DiLink 自启动页面，已改为打开本应用的系统详情页。</string>
+    <string name="autostart_guide_failed">无法打开系统设置，请在车机应用管理中手动允许超级玩具箱自启动。</string>
+    <string name="autostart_guide_confirmed">已设置，不再提示</string>
+    <string name="autostart_guide_later">稍后</string>
 
     <!-- 应用选择弹窗 -->
     <string name="applauncher_title">选择应用</string>

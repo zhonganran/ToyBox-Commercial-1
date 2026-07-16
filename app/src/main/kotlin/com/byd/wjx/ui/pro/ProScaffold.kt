@@ -7,6 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -31,7 +32,11 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.ViewInAr
 import androidx.compose.material.icons.outlined.WbSunny
 import androidx.compose.material3.Icon
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -43,13 +48,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
@@ -59,6 +66,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.byd.wjx.ui.dashboard.DashboardUiState
 import com.byd.wjx.ui.dashboard.DashboardViewModel
+import com.byd.wjx.R
 import com.byd.wjx.ui.theme.AccentBlue
 import com.byd.wjx.ui.theme.AccentGreen
 import com.byd.wjx.ui.theme.AccentOrange
@@ -67,14 +75,10 @@ import com.byd.wjx.ui.theme.CardSurface
 import com.byd.wjx.ui.theme.GlassStroke
 import com.byd.wjx.ui.theme.GlassWhite
 import com.byd.wjx.ui.theme.LocalSuperToyBoxDarkTheme
-import com.byd.wjx.ui.theme.NavyDark
+import com.byd.wjx.ui.theme.LocalAppWallpaper
 import com.byd.wjx.ui.theme.SceneAmber
 import com.byd.wjx.ui.theme.SceneBlue
 import com.byd.wjx.ui.theme.SceneCoral
-import com.byd.wjx.ui.theme.SceneCyan
-import com.byd.wjx.ui.theme.SceneMint
-import com.byd.wjx.ui.theme.ScenePink
-import com.byd.wjx.ui.theme.SceneSky
 import com.byd.wjx.ui.theme.SceneViolet
 import com.byd.wjx.ui.theme.TextMuted
 import com.byd.wjx.ui.theme.TextPrimary
@@ -102,6 +106,8 @@ fun ProAppScaffold(
 ) {
     val dashboardViewModel: DashboardViewModel = hiltViewModel()
     val vehicleState by dashboardViewModel.uiState.collectAsStateWithLifecycle()
+    val adbStatusViewModel: AdbStatusViewModel = hiltViewModel()
+    val adbState by adbStatusViewModel.uiState.collectAsStateWithLifecycle()
 
     Box(modifier = Modifier.fillMaxSize()) {
         ProDynamicBackground(
@@ -112,7 +118,11 @@ fun ProAppScaffold(
             modifier = Modifier
                 .fillMaxSize(),
         ) {
-            ProTopStatusBar(state = vehicleState)
+            ProTopStatusBar(
+                state = vehicleState,
+                adbState = adbState,
+                onAdbClick = adbStatusViewModel::showAuthorizationDialog,
+            )
             BoxWithConstraints(
                 modifier = Modifier
                     .weight(1f)
@@ -139,12 +149,21 @@ fun ProAppScaffold(
                 )
             }
         }
+        if (adbState.dialogVisible) {
+            AdbAuthorizationDialog(
+                state = adbState,
+                onAuthorize = adbStatusViewModel::requestAuthorization,
+                onDismiss = adbStatusViewModel::dismissAuthorizationDialog,
+            )
+        }
     }
 }
 
 @Composable
 private fun ProTopStatusBar(
     state: DashboardUiState,
+    adbState: AdbStatusUiState,
+    onAdbClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var clock by remember { mutableStateOf(formatClock()) }
@@ -196,13 +215,39 @@ private fun ProTopStatusBar(
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
             )
-            if (!compact) {
-                StatusDivider()
+            StatusDivider()
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onAdbClick)
+                    .padding(horizontal = 5.dp, vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(
+                            when (adbState.connected) {
+                                true -> Color(0xFF15CB55)
+                                false -> Color(0xFFFFA726)
+                                null -> TextSecondary
+                            },
+                        ),
+                )
                 Text(
-                    text = "方程豹  钛7",
+                    text = when (adbState.connected) {
+                        true -> stringResource(R.string.top_status_adb_connected)
+                        false -> stringResource(
+                            if (compact) R.string.top_status_adb_disconnected_compact
+                            else R.string.top_status_adb_disconnected,
+                        )
+                        null -> stringResource(R.string.top_status_adb_checking)
+                    },
                     color = TextPrimary,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                 )
             }
@@ -241,6 +286,56 @@ private fun ProTopStatusBar(
 }
 
 @Composable
+private fun AdbAuthorizationDialog(
+    state: AdbStatusUiState,
+    onAuthorize: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val message = when {
+        state.connecting -> R.string.adb_auth_waiting
+        state.authorizationResult == AdbAuthorizationResult.SUCCESS -> R.string.adb_auth_success
+        state.authorizationResult == AdbAuthorizationResult.FAILURE -> R.string.adb_auth_failed
+        state.connected == true -> R.string.adb_auth_already_connected
+        else -> R.string.adb_auth_message
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.adb_auth_title), fontWeight = FontWeight.Bold) },
+        text = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                if (state.connecting) {
+                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                }
+                Text(stringResource(message))
+            }
+        },
+        confirmButton = {
+            if (!state.connecting && state.connected != true) {
+                Button(onClick = onAuthorize) {
+                    Text(
+                        stringResource(
+                            if (state.authorizationResult == AdbAuthorizationResult.FAILURE) {
+                                R.string.adb_auth_retry
+                            } else {
+                                R.string.adb_auth_start
+                            },
+                        ),
+                    )
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.adb_auth_close))
+            }
+        },
+    )
+}
+
+@Composable
 private fun StatusDivider() {
     Box(
         modifier = Modifier
@@ -272,90 +367,81 @@ fun ProDynamicBackground(
         0f
     }
     val darkTheme = LocalSuperToyBoxDarkTheme.current
-    val colors = sceneColors(scene, darkTheme)
-    val glowColor = if (darkTheme) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.54f)
+    val wallpaper = LocalAppWallpaper.current
+    val routeAccent = navAccent(scene)
 
-    Canvas(modifier = modifier.fillMaxSize()) {
-        drawRect(
-            brush = Brush.linearGradient(
-                colors = colors,
-                start = Offset(0f, size.height * 0.06f),
-                end = Offset(size.width, size.height),
-            ),
+    Box(modifier = modifier.fillMaxSize()) {
+        Image(
+            painter = painterResource(wallpaper.drawableRes),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
         )
-
-        val glowHeight = size.height * 0.34f
-        drawRect(
-            brush = Brush.radialGradient(
-                colors = listOf(glowColor, Color.Transparent),
-                center = Offset(size.width * (0.48f + motion), size.height * 0.34f),
-                radius = max(size.width, size.height) * 0.56f,
-            ),
-        )
-        drawRect(
-            brush = Brush.linearGradient(
-                colors = listOf(Color.Transparent, ScenePink.copy(alpha = 0.26f), Color.Transparent),
-                start = Offset(size.width * 0.38f, size.height * 0.42f),
-                end = Offset(size.width, size.height * 0.78f),
-            ),
-            topLeft = Offset(0f, size.height * 0.34f),
-            size = Size(size.width, glowHeight),
-        )
-
-        val gridColor = Color.White.copy(
-            alpha = if (darkTheme) 0.07f else if (scene == "settings") 0.22f else 0.18f,
-        )
-        repeat(9) { index ->
-            val y = size.height * (0.12f + index * 0.075f)
-            val path = Path().apply {
-                moveTo(0f, y)
-                cubicTo(
-                    size.width * 0.28f,
-                    y - size.height * (0.035f + motion),
-                    size.width * 0.67f,
-                    y + size.height * (0.045f - motion),
-                    size.width,
-                    y - size.height * 0.018f,
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val scrimColors = if (darkTheme) {
+                val alpha = if (wallpaper.darkArtwork) 0.42f else 0.66f
+                listOf(
+                    Color(0xFF06131C).copy(alpha = alpha),
+                    Color(0xFF102631).copy(alpha = (alpha - 0.08f).coerceAtLeast(0f)),
+                    Color(0xFF111722).copy(alpha = (alpha + 0.04f).coerceAtMost(1f)),
+                )
+            } else {
+                val alpha = if (wallpaper.darkArtwork) 0.50f else 0.12f
+                listOf(
+                    Color.White.copy(alpha = alpha),
+                    Color.White.copy(alpha = (alpha - 0.05f).coerceAtLeast(0f)),
+                    Color(0xFFF4FAFC).copy(alpha = (alpha + 0.08f).coerceAtMost(1f)),
                 )
             }
-            drawPath(path, gridColor, style = Stroke(width = 1f))
-        }
-        repeat(15) { index ->
-            val x = size.width * (index / 14f)
-            val path = Path().apply {
-                moveTo(x, size.height * 0.07f)
-                cubicTo(
-                    x - size.width * 0.04f,
-                    size.height * 0.32f,
-                    x + size.width * 0.04f,
-                    size.height * 0.60f,
-                    x,
-                    size.height * 0.88f,
-                )
+            drawRect(brush = Brush.verticalGradient(scrimColors))
+
+            drawRect(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        routeAccent.copy(alpha = if (darkTheme) 0.10f else 0.08f),
+                        Color.Transparent,
+                    ),
+                    center = Offset(size.width * (0.48f + motion), size.height * 0.34f),
+                    radius = max(size.width, size.height) * 0.56f,
+                ),
+            )
+
+            val gridColor = Color.White.copy(
+                alpha = if (darkTheme) 0.025f else 0.04f,
+            )
+            repeat(9) { index ->
+                val y = size.height * (0.12f + index * 0.075f)
+                val path = Path().apply {
+                    moveTo(0f, y)
+                    cubicTo(
+                        size.width * 0.28f,
+                        y - size.height * (0.035f + motion),
+                        size.width * 0.67f,
+                        y + size.height * (0.045f - motion),
+                        size.width,
+                        y - size.height * 0.018f,
+                    )
+                }
+                drawPath(path, gridColor, style = Stroke(width = 1f))
             }
-            drawPath(path, gridColor.copy(alpha = gridColor.alpha * 0.72f), style = Stroke(width = 1f))
+            repeat(15) { index ->
+                val x = size.width * (index / 14f)
+                val path = Path().apply {
+                    moveTo(x, size.height * 0.07f)
+                    cubicTo(
+                        x - size.width * 0.04f,
+                        size.height * 0.32f,
+                        x + size.width * 0.04f,
+                        size.height * 0.60f,
+                        x,
+                        size.height * 0.88f,
+                    )
+                }
+                drawPath(path, gridColor.copy(alpha = gridColor.alpha * 0.72f), style = Stroke(width = 1f))
+            }
         }
     }
 }
-
-private fun sceneColors(scene: String, darkTheme: Boolean): List<Color> =
-    if (darkTheme) {
-        when (scene) {
-            "sound" -> listOf(Color(0xFF11131F), Color(0xFF241E3A), Color(0xFF172B45), Color(0xFF321E32))
-            "lyrics" -> listOf(Color(0xFF0C1A1C), Color(0xFF123036), Color(0xFF172A42), Color(0xFF2A1D2B))
-            "automation" -> listOf(Color(0xFF17121A), Color(0xFF211C35), Color(0xFF162D43), Color(0xFF123536))
-            "settings" -> listOf(Color(0xFF091017), Color(0xFF101B24), Color(0xFF172631), Color(0xFF0D171F))
-            else -> listOf(Color(0xFF091416), Color(0xFF123033), Color(0xFF172C42), Color(0xFF2A1B29))
-        }
-    } else {
-        when (scene) {
-            "sound" -> listOf(Color(0xFFF3E9FF), Color(0xFF9D86FF), SceneBlue, ScenePink)
-            "lyrics" -> listOf(Color(0xFFBFFBFA), SceneCyan, SceneSky, Color(0xFFF6A1C5))
-            "automation" -> listOf(Color(0xFFFFE8ED), Color(0xFFD8CFFF), SceneSky, Color(0xFF78E8E4))
-            "settings" -> listOf(Color(0xFFFAFCFE), Color(0xFFF2F7FB), Color(0xFFEAF5FA), Color(0xFFF7FCFC))
-            else -> listOf(Color(0xFFA8F7F2), SceneCyan, SceneSky, Color(0xFFF48DB9))
-        }
-    }
 
 @Composable
 private fun ProBottomNavigation(

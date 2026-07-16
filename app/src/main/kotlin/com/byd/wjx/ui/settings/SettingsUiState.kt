@@ -13,6 +13,7 @@ data class SettingsUiState(
     val batteryCapacity: String = SettingsRepository.DEFAULT_BATTERY_CAPACITY,
     val fuelTankCapacity: String = SettingsRepository.DEFAULT_FUEL_TANK_CAPACITY,
     val themeMode: String = SettingsRepository.DEFAULT_THEME_MODE,
+    val appWallpaper: String = SettingsRepository.DEFAULT_APP_WALLPAPER,
     val homeTariff: String = SettingsRepository.DEFAULT_HOME_TARIFF,
     val dcTariff: String = SettingsRepository.DEFAULT_DC_TARIFF,
     val units: String = SettingsRepository.DEFAULT_UNITS,
