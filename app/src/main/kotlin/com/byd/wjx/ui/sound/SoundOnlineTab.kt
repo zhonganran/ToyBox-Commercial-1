@@ -45,13 +45,11 @@ import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.DirectionsCar
 import androidx.compose.material.icons.outlined.DragIndicator
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MoreHoriz
-import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
@@ -110,7 +108,6 @@ import com.byd.wjx.audio.ExteriorHailingSettings
 import com.byd.wjx.data.sound.RemoteSound
 import com.byd.wjx.data.sound.RemoteSoundCategory
 import com.byd.wjx.storage.SoundLibrary
-import com.byd.wjx.storage.SoundDestination
 import com.byd.wjx.ui.theme.AccentBlue
 import com.byd.wjx.ui.theme.AccentContent
 import com.byd.wjx.ui.theme.AccentGreen
@@ -624,4 +621,3 @@ internal fun sceneCardPalette(seed: String): SoundCardPalette {
     )
     return palettes[(seed.hashCode() and Int.MAX_VALUE) % palettes.size]
 }
-

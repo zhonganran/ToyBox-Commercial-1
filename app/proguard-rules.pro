@@ -29,3 +29,6 @@
 
 # Guard the reflective app_process entry point for the binder daemon
 -keep public class com.byd.wjx.helper.HelperDaemon { public static void main(java.lang.String[]); }
+-keepclasseswithmembernames class * {
+    native <methods>;
+}

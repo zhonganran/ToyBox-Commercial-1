@@ -19,6 +19,7 @@ enum class KeyShortcutPressType(val storageValue: String, val label: String) {
 enum class KeyShortcutActionType(val storageValue: String, val label: String) {
     PlaySound("play_sound", "播放音效"),
     RealtimeHailing("realtime_hailing", "实时喊话"),
+    Xiaozhi("xiaozhi", "小智对话"),
     Automation("automation", "智能联动");
 
     companion object {
@@ -41,6 +42,7 @@ data class KeyShortcutBinding(
         get() = keyCode > 0 && when (actionType) {
             KeyShortcutActionType.PlaySound -> soundPath.isNotBlank()
             KeyShortcutActionType.RealtimeHailing -> true
+            KeyShortcutActionType.Xiaozhi -> true
             KeyShortcutActionType.Automation -> automationButtonId in 1..4
         }
 }

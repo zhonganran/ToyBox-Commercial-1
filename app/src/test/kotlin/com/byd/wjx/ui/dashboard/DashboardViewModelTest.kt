@@ -450,4 +450,24 @@ class DashboardViewModelTest {
         assertEquals(2091f, vm.uiState.value.currentLifetimeKm!!, 0.01f)
         assertEquals(602f, vm.uiState.value.currentLifetimeKwh!!, 0.01f)
     }
+
+    @Test
+    fun `fresh snapshot clears unavailable drive and work modes instead of showing stale values`() = runTest {
+        val vehicleStateRepository = FakeVehicleStateRepository()
+        val vm = buildViewModel(
+            fakeAutoservice = FakeAutoservice(sampleReading, available = true),
+            vehicleStateRepository = vehicleStateRepository,
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        vehicleStateRepository.update(diParsData(soc = 80, driveMode = 2, workMode = 3))
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(2, vm.uiState.value.driveMode)
+        assertEquals(3, vm.uiState.value.workMode)
+
+        vehicleStateRepository.update(diParsData(soc = 79, driveMode = null, workMode = null))
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertNull(vm.uiState.value.driveMode)
+        assertNull(vm.uiState.value.workMode)
+    }
 }

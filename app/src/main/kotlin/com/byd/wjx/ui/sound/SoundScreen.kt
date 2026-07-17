@@ -45,13 +45,11 @@ import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.DirectionsCar
 import androidx.compose.material.icons.outlined.DragIndicator
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MoreHoriz
-import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
@@ -110,7 +108,6 @@ import com.byd.wjx.audio.ExteriorHailingSettings
 import com.byd.wjx.data.sound.RemoteSound
 import com.byd.wjx.data.sound.RemoteSoundCategory
 import com.byd.wjx.storage.SoundLibrary
-import com.byd.wjx.storage.SoundDestination
 import com.byd.wjx.ui.theme.AccentBlue
 import com.byd.wjx.ui.theme.AccentContent
 import com.byd.wjx.ui.theme.AccentGreen
@@ -135,20 +132,8 @@ fun SoundScreen(
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) viewModel.importSound(uri)
     }
-    var pendingDownload by remember { mutableStateOf<RemoteSound?>(null) }
     var pendingDelete by remember { mutableStateOf<SoundLibrary.SoundItem?>(null) }
     var onlineSearchVisible by remember { mutableStateOf(false) }
-
-    pendingDownload?.let { sound ->
-        DownloadDestinationDialog(
-            soundName = sound.name,
-            onDismiss = { pendingDownload = null },
-            onSelect = { destination ->
-                pendingDownload = null
-                viewModel.download(sound, destination)
-            },
-        )
-    }
 
     pendingDelete?.let { sound ->
         AlertDialog(
@@ -245,7 +230,7 @@ fun SoundScreen(
                 onSearch = viewModel::searchOnline,
                 onCategorySelected = viewModel::selectRemoteCategory,
                 onPreview = viewModel::preview,
-                onDownload = { pendingDownload = it },
+                onDownload = viewModel::download,
                 onLoadMore = viewModel::loadMoreOnline,
                 onRefresh = { viewModel.refreshOnline() },
             )
@@ -434,82 +419,6 @@ private fun AutoMicSensitivityRow(value: Int) {
                     .fillMaxHeight()
                     .background(SceneViolet, RoundedCornerShape(999.dp)),
             )
-        }
-    }
-}
-
-@Composable
-private fun DownloadDestinationDialog(
-    soundName: String,
-    onDismiss: () -> Unit,
-    onSelect: (SoundDestination) -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("保存音效", color = TextPrimary, fontWeight = FontWeight.ExtraBold) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    soundName,
-                    color = TextSecondary,
-                    fontSize = 13.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                DownloadDestinationOption(
-                    icon = Icons.Outlined.MusicNote,
-                    title = "我的音效",
-                    subtitle = "保存到 /sdcard/WJX，用于音效列表和智能联动",
-                    color = AccentGreen,
-                    onClick = { onSelect(SoundDestination.PERSONAL) },
-                )
-                DownloadDestinationOption(
-                    icon = Icons.Outlined.DirectionsCar,
-                    title = "车辆音效",
-                    subtitle = "保存到 /sdcard/WJX/车辆音效，用于解锁、锁车、哨兵和自动泊车",
-                    color = AccentBlue,
-                    onClick = { onSelect(SoundDestination.VEHICLE) },
-                )
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消", color = TextSecondary)
-            }
-        },
-        containerColor = CardSurfaceElevated,
-    )
-}
-
-@Composable
-private fun DownloadDestinationOption(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    subtitle: String,
-    color: Color,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(color.copy(alpha = 0.10f), RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(11.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .background(color.copy(alpha = 0.16f), RoundedCornerShape(8.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
-        }
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(title, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
-            Text(subtitle, color = TextSecondary, fontSize = 11.sp, lineHeight = 15.sp)
         }
     }
 }

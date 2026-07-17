@@ -243,6 +243,17 @@
   source: reference-catalog
   note: "energy_mode from reference."
 
+- param: WorkModeInstrument50
+  diplus_key: WorkMode
+  device: 1006
+  fid: 874512424
+  transact: 5
+  decoder: int_enum
+  unit: ""
+  status: active
+  source: official-settings-catalog
+  note: "ENERGY_MODE_INSTRUMENT_50; newer-platform primary with legacy WorkMode fallback."
+
 # ── AC / climate dev=1000 (validated S4) ─────────────────────────────────
 
 - param: ACStatus
@@ -1340,8 +1351,8 @@
   source: reference-catalog
 
 # ── AutoTark optional reads confirmed by the official feature catalog ───
-# These addresses are semantically correct. EnergyState is now a production core read
-# because the energy-flow feature consumes it; the other overlap candidates remain out.
+# These addresses are semantically correct. EnergyState and DriveModeIndicator are production
+# core reads because energy-flow and complete drive-mode display consume them.
 
 - param: DriveModeIndicator
   diplus_key: null
@@ -1350,9 +1361,9 @@
   transact: 5
   decoder: int_enum
   unit: ""
-  status: imported
+  status: active
   source: autoservice-catalog
-  note: "INSTRUMENT_MODE_INDICATOR_LIGHT; matches AutoTark 3.7.2."
+  note: "INSTRUMENT_MODE_INDICATOR_LIGHT; production core read combined with base DriveMode using AutoTark 3.7.2 gear gating."
 
 - param: EnergyState
   diplus_key: null

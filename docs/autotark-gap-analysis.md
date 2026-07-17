@@ -18,9 +18,9 @@ Gateway -> Helper Binder` 的单向链路，再按稳定边界拆模块。现在
 - AutoTark 读取表：97 条。
 - AutoTark 中 90 条字段与官方 Settings feature catalog 的语义直接一致。
 - 7 条虽然 FID 本身可能存在，但 AutoTark 的字段名/用途与官方语义冲突，不能照搬。
-- 当前可选择的车辆读取目录为 115 条：71 条常规 full/profile 字段，加上 44 条只由自动化、
+- 当前可选择的车辆读取目录为 117 个 FID 地址：73 条常规 full/profile 读取，加上 44 条只由自动化、
   首页安全遥测、车辆数据诊断页或 LED 消费者启用的按需字段；另有 11 条电池/充电专用地址，
-  总计实际接入 125 个不同 FID 地址。
+  总计实际接入 127 个不同 FID 地址。
 
 ### AutoTark 的 7 条冲突映射
 
@@ -89,15 +89,14 @@ chargingCapLegacy  dev=1009 fid=603979834 tx=5
 
 当前已有正式充电盖字段。没有车型证据前，不增加第二状态源。
 
-### 官方目录确认、仍无产品消费者的可选读取（2 条）
+### 官方目录确认、仍无产品消费者的可选读取（1 条）
 
 ```text
-driveModeIndicator   1007 710934584  5 INT_ENUM
 accSpeed             1007 597688328  5 INT_RAW
 ```
 
-这 2 条的地址和字段语义同时得到 AutoTark 与官方 feature catalog 支持，已写入候选目录。
-它们与当前驾驶模式或 ACC 速度高度重叠，因此没有塞入生产轮询。
+该地址和字段语义同时得到 AutoTark 与官方 feature catalog 支持，已写入候选目录。
+`driveModeIndicator` 已接入常规核心读取，用于补齐雪地、泥地、沙地、山地和竞速模式。
 
 `energyState`（dev1006 / `0x34100018`）不再视为 `workMode` 的重复项。它已经进入每秒行驶
 核心读取，用于在排除插枪充电后，将负功率拆分为纯电四驱/前驱/后驱回收、混动回收、
@@ -148,9 +147,9 @@ AutoTark 还包含高德原生 SDK、WebRTC、`RemoteBackupWorker`、屏幕录�
 
 ## 当前项目已确认的问题
 
-1. 车辆常规全量 71 FID 曾在驾驶 full tick 全部读取；现改为首帧 71、核心 13 按 cadence、
-   详情 58 每 3 秒到期刷新。SOH 随首次共享全量恢复，不再由 Dashboard 单独抢跑读取。
-   新增的 44 条功能字段属于 on-demand catalog；`energyState` 是唯一新增的常规核心读取。
+1. 车辆常规全量 73 FID 曾在驾驶 full tick 全部读取；现改为首帧 73、核心 17 按 cadence、
+   详情 56 每 3 秒到期刷新。SOH 随首次共享全量恢复，不再由 Dashboard 单独抢跑读取。
+   新增的 44 条功能字段属于 on-demand catalog；`energyState`、基础/地形驾驶模式与新旧能源模式 FID 属于常规核心读取。
 2. `last_state` 曾随 full tick 重复写 Room；现将它定义为恢复检查点，重要变化立即写，
    其余最多 5 秒一次。
 3. 服务重启可能出现短暂双轮询；现由 `SharedAdaptiveLoop` 的唯一所有权锁串行化。

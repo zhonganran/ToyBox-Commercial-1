@@ -104,6 +104,12 @@ object FidMap {
         FidEntry("lockRL",               1001, 1081081868,   5, Decoder.INT_ENUM),
         FidEntry("lockRR",               1001, 1081081870,   5, Decoder.INT_ENUM),
         FidEntry("driveMode",            1006, 555745294,    5, Decoder.INT_ENUM),
+        // INSTRUMENT_MODE_INDICATOR_LIGHT. AutoTark combines this with driveMode after leaving P
+        // to expose terrain modes 4/5/6/7 and racing mode 11 without showing a stale parked value.
+        FidEntry("driveModeIndicator",   1007, 710934584,    5, Decoder.INT_ENUM),
+        // ENERGY_MODE_INSTRUMENT_50 is used by newer 5.0/CAN-FD platforms. Keep the legacy
+        // address below as a fallback because both generations use the same official enum.
+        FidEntry("workModeAlt",           1006, 874512424,    5, Decoder.INT_ENUM),
         FidEntry("workMode",             1006, 874512420,    5, Decoder.INT_ENUM),
         // ENERGY_STATE. Sampled with live power so regeneration can be split into
         // EV/HEV/assisted recovery and engine generation instead of one mixed total.
@@ -127,7 +133,7 @@ object FidMap {
         FidEntry("seatVentP",             1000, 711983128,    5, Decoder.INT_ENUM),
         FidEntry("lightSide",             1004, 950009864,    5, Decoder.INT_ENUM),
         // Extended on-demand telemetry. Candidate/imported addresses remain isolated from the
-        // regular 71-FID snapshot so unsupported trims fail soft without permanent read cost.
+        // regular 73-FID snapshot so unsupported trims fail soft without permanent read cost.
         FidEntry("tireTempFL",             1007, 1246797848,   5, Decoder.INT_TEMP_C_WIDE),
         FidEntry("tireTempFR",             1007, 1246797860,   5, Decoder.INT_TEMP_C_WIDE),
         FidEntry("tireTempRL",             1007, 1246797872,   5, Decoder.INT_TEMP_C_WIDE),

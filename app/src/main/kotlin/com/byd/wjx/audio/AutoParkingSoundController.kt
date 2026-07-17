@@ -105,7 +105,7 @@ class AutoParkingSoundController @Inject constructor(
 
         val file = validatedConfiguredSound("parking_trigger")
         if (file == null) {
-            WjxFileLogger.w(TAG, "skip: vehicle sound unavailable adasApaParkingStatus=$parkingStatus label=$label")
+            WjxFileLogger.w(TAG, "skip: WJX sound unavailable adasApaParkingStatus=$parkingStatus label=$label")
             return
         }
 
@@ -171,11 +171,11 @@ class AutoParkingSoundController @Inject constructor(
 
     private fun validatedConfiguredSound(reason: String): File? {
         val path = settings.soundPath
-        if (!SoundLibrary.isVehicleSoundPath(path)) {
+        if (!SoundLibrary.isManagedSoundPath(path)) {
             if (!settings.enabled && path.isBlank()) return null
             settings.enabled = false
             settings.soundPath = ""
-            WjxFileLogger.w(TAG, "cleared invalid vehicle sound reason=$reason path=$path")
+            WjxFileLogger.w(TAG, "cleared invalid WJX sound reason=$reason path=$path")
             return null
         }
         return File(path).takeIf { it.isFile }

@@ -37,6 +37,8 @@ object BackupPreferencesRegistry {
         PreferenceFilePolicy("wjx_led_link", "LedPreferences", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("wjx_energy_flow_stats", "EnergyFlowStatsStore", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("wjx_activation", "ActivationManager", PreferenceBackupPolicy.DEVICE_LOCAL),
+        PreferenceFilePolicy("wjx_xiaozhi", "XiaozhiPreferences", PreferenceBackupPolicy.DEVICE_LOCAL),
+        PreferenceFilePolicy("wjx_xiaozhi_wake", "XiaozhiWakePreferences", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy("wjx_drive_session", "SessionPersistence", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy(
             "boot_log",

@@ -28,7 +28,12 @@ class CameraRuntimeCoordinator @Inject constructor(
 
     fun start(scope: CoroutineScope) {
         if (stateJob?.isActive == true) return
-        scope.launch { grantUsageStatsAppOp() }
+        scope.launch {
+            grantUsageStatsAppOp()
+            // Re-read the current foreground after the AppOps check/grant. This also handles a
+            // fresh install whose first UsageEvents query raced ahead of ADB authorization.
+            cameraStateMonitor.requestImmediateRescan("usage_stats_checked")
+        }
         cameraStateMonitor.start()
         stateJob = scope.launch {
             cameraStateMonitor.active.collect(trackingStateStore::setCameraActive)

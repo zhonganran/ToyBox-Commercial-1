@@ -2,7 +2,6 @@ package com.byd.wjx.data.sound
 
 import com.byd.wjx.BuildConfig
 import com.byd.wjx.log.WjxFileLogger
-import com.byd.wjx.storage.SoundDestination
 import com.byd.wjx.storage.SoundLibrary
 import java.io.File
 import java.io.IOException
@@ -67,8 +66,8 @@ class SoundLibraryRemoteRepository @Inject constructor(
         return pageResult
     }
 
-    fun download(sound: RemoteSound, destination: SoundDestination): DownloadedSound {
-        WjxFileLogger.i(TAG, "download sound id=${sound.id} destination=$destination name=${sound.name} url=${sound.downloadUrl}")
+    fun download(sound: RemoteSound): DownloadedSound {
+        WjxFileLogger.i(TAG, "download sound id=${sound.id} name=${sound.name} url=${sound.downloadUrl}")
         val request = Request.Builder().url(sound.downloadUrl).build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
@@ -80,13 +79,12 @@ class SoundLibraryRemoteRepository @Inject constructor(
                 url = sound.downloadUrl,
                 contentType = response.header("Content-Type"),
             )
-            val file = soundLibrary.saveSound(destination, sound.name, ext, body.byteStream())
+            val file = soundLibrary.saveSound(sound.name, ext, body.byteStream())
             val result = DownloadedSound(
                 fileName = file.name,
                 sizeBytes = file.length(),
-                destination = destination,
             )
-            WjxFileLogger.i(TAG, "download sound success id=${sound.id} destination=$destination file=${result.fileName} size=${result.sizeBytes}")
+            WjxFileLogger.i(TAG, "download sound success id=${sound.id} file=${result.fileName} size=${result.sizeBytes}")
             return result
         }
     }
@@ -214,5 +212,4 @@ data class RemoteSoundPage(
 data class DownloadedSound(
     val fileName: String,
     val sizeBytes: Long,
-    val destination: SoundDestination,
 )

@@ -78,6 +78,9 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
     </queries>
 
     <application
@@ -143,6 +146,18 @@
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="microphone|mediaPlayback" />
+
+        <service
+            android:name=".xiaozhi.service.XiaozhiVoiceService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="microphone|mediaPlayback" />
+
+        <service
+            android:name=".xiaozhi.wake.XiaozhiWakeWordService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
 
         <service
             android:name=".data.automation.AutomationMusicService"

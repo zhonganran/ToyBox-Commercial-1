@@ -48,6 +48,10 @@ class FidMapTest {
         assertEquals(824180748, entry("seatbeltRR").fid)
         assertEquals(1006, entry("energyState").device)
         assertEquals(873463832, entry("energyState").fid)
+        assertEquals(555745294, entry("driveMode").fid)
+        assertEquals(710934584, entry("driveModeIndicator").fid)
+        assertEquals(874512420, entry("workMode").fid)
+        assertEquals(874512424, entry("workModeAlt").fid)
     }
 
     @Test fun `core and detail profiles partition the full catalog`() {
@@ -63,7 +67,7 @@ class FidMapTest {
     }
 
     @Test fun `on demand reads are selectable but do not expand regular full polling`() {
-        assertEquals(71, VehicleReadProfiles.regularFull.size)
+        assertEquals(73, VehicleReadProfiles.regularFull.size)
         assertEquals(44, VehicleReadProfiles.onDemandFields.size)
         assertEquals(8, VehicleReadProfiles.tireTelemetry.size)
         assertEquals(8, VehicleReadProfiles.adasTelemetry.size)
@@ -78,6 +82,13 @@ class FidMapTest {
             VehicleReadProfiles.regularFull.map { it.field }.toSet() +
                 VehicleReadProfiles.onDemandFields,
         )
+        assertTrue("drive mode must refresh with the core snapshot", "driveMode" in VehicleReadProfiles.coreFullFields)
+        assertTrue(
+            "terrain mode indicator must refresh with the core snapshot",
+            "driveModeIndicator" in VehicleReadProfiles.coreFullFields,
+        )
+        assertTrue("legacy work mode must refresh with the core snapshot", "workMode" in VehicleReadProfiles.coreFullFields)
+        assertTrue("new work mode must refresh with the core snapshot", "workModeAlt" in VehicleReadProfiles.coreFullFields)
     }
 
     @Test fun `fast action core contains only lifecycle wake fields`() {

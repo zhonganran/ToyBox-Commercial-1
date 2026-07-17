@@ -292,7 +292,7 @@ internal fun DisplaySection(state: SettingsUiState, viewModel: SettingsViewModel
                 SteeringWheelKeyService.resetShortcutRuntimeState()
                 keyShortcutEditor = null
                 if (
-                    binding.actionType == KeyShortcutActionType.RealtimeHailing &&
+                    binding.actionType in setOf(KeyShortcutActionType.RealtimeHailing, KeyShortcutActionType.Xiaozhi) &&
                     ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
                 ) {
                     micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)

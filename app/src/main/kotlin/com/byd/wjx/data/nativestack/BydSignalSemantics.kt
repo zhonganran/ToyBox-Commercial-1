@@ -8,6 +8,60 @@ package com.byd.wjx.data.nativestack
  */
 internal object BydSignalSemantics {
 
+    // ENERGY_OPERATION / 0x2120000E
+    const val DRIVE_ECONOMY = 1
+    const val DRIVE_SPORT = 2
+    const val DRIVE_COMFORT = 3
+    const val DRIVE_SNOW = 4
+    const val DRIVE_MUDDY = 5
+    const val DRIVE_SAND = 6
+    const val DRIVE_MOUNTAIN = 7
+    const val DRIVE_RACING = 11
+
+    fun isValidDriveMode(value: Int?): Boolean =
+        value in DRIVE_ECONOMY..DRIVE_MOUNTAIN || value == DRIVE_RACING
+
+    /**
+     * AutoTark 3.7.2 combines ENERGY_OPERATION_MODE with the instrument mode indicator. The
+     * indicator is meaningful only after leaving P; in P it can retain the previous terrain mode.
+     */
+    fun selectDriveMode(baseMode: Int?, indicatorMode: Int?, gear: Int?): Int? {
+        val base = baseMode?.takeIf(::isValidDriveMode)
+        if (gear !in DRIVE_MODE_INDICATOR_GEARS) return base
+        val terrain = indicatorMode?.takeIf {
+            it == DRIVE_SNOW || it == DRIVE_MUDDY || it == DRIVE_SAND ||
+                it == DRIVE_MOUNTAIN || it == DRIVE_RACING
+        }
+        return terrain ?: base
+    }
+
+    // ENERGY_MODE_INSTRUMENT(_50)
+    const val ENERGY_STOP = 0
+    const val ENERGY_EV = 1
+    const val ENERGY_FORCE_EV = 2
+    const val ENERGY_HEV = 3
+    const val ENERGY_FUEL = 4
+    const val ENERGY_KEEP = 5
+
+    fun isValidWorkMode(value: Int?): Boolean = value in ENERGY_STOP..ENERGY_KEEP
+
+    /**
+     * Newer platforms expose ENERGY_MODE_INSTRUMENT_50 while older platforms expose the legacy
+     * ENERGY_MODE_INSTRUMENT FID. Unsupported FIDs commonly return a valid-looking zero, so a
+     * non-zero mode wins a disagreement; otherwise the newer FID is authoritative.
+     */
+    fun selectWorkMode(newInstrument50: Int?, legacyInstrument: Int?): Int? {
+        val newValue = newInstrument50?.takeIf(::isValidWorkMode)
+        val legacyValue = legacyInstrument?.takeIf(::isValidWorkMode)
+        return when {
+            newValue == null -> legacyValue
+            legacyValue == null || newValue == legacyValue -> newValue
+            newValue != ENERGY_STOP -> newValue
+            legacyValue != ENERGY_STOP -> legacyValue
+            else -> newValue
+        }
+    }
+
     // BODYWORK_POWER_LEVEL
     const val POWER_OFF = 0
     const val POWER_ACC = 1
@@ -45,4 +99,6 @@ internal object BydSignalSemantics {
     const val DOOR_LOCKED = 2
 
     fun isDoorLocked(value: Int?): Boolean = value == DOOR_LOCKED
+
+    private val DRIVE_MODE_INDICATOR_GEARS = setOf(2, 3, 4)
 }

@@ -11,12 +11,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -38,6 +39,7 @@ class CameraStateMonitor @Inject constructor(
 
     private var scope: CoroutineScope? = null
     private var job: Job? = null
+    private val rescanRequests = Channel<Unit>(Channel.CONFLATED)
 
     // Tail-the-event-stream state: remember the most recent ACTIVITY_RESUMED
     // we have already consumed so each poll queries only the delta since then.
@@ -51,6 +53,7 @@ class CameraStateMonitor @Inject constructor(
 
     fun start() {
         if (job?.isActive == true) return
+        while (rescanRequests.tryReceive().isSuccess) Unit
         lastForegroundPkg = null
         lastEventTs = 0L
         lastPublishedActive = false
@@ -69,9 +72,23 @@ class CameraStateMonitor @Inject constructor(
                     WjxFileLogger.i(TAG, "cameraActive=$cameraActive foreground=$lastForegroundPkg")
                 }
                 _active.value = cameraActive
-                delay(POLL_INTERVAL_MS)
+                // A successful GET_USAGE_STATS grant can request an immediate fresh-window scan;
+                // otherwise poll at a bounded cadence so the factory camera wins promptly.
+                withTimeoutOrNull(POLL_INTERVAL_MS) { rescanRequests.receive() }
             }
         }
+    }
+
+    /**
+     * Drops the tailed event cursor and wakes the polling loop immediately. An initial query made
+     * before GET_USAGE_STATS is granted can look like a valid empty stream; without this reset an
+     * already-visible factory camera would remain invisible until its next foreground transition.
+     */
+    fun requestImmediateRescan(reason: String) {
+        lastForegroundPkg = null
+        lastEventTs = 0L
+        rescanRequests.trySend(Unit)
+        WjxFileLogger.i(TAG, "immediate rescan requested reason=$reason")
     }
 
     fun stop() {
@@ -125,7 +142,7 @@ class CameraStateMonitor @Inject constructor(
 
     companion object {
         private const val TAG = "CameraMonitor"
-        private const val POLL_INTERVAL_MS = 2_000L
+        private const val POLL_INTERVAL_MS = 1_000L
         // First-poll window — wide enough to catch the camera ACTIVITY_RESUMED
         // that fired before our service even started (boot + immediate-reverse
         // scenario). Subsequent polls only fetch the delta since lastEventTs.

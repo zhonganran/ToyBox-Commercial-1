@@ -44,6 +44,7 @@ val serviceQrApiUrl: String =
 android {
     namespace = "com.byd.wjx"
     compileSdk = 34
+    ndkVersion = "27.0.12077973"
 
     defaultConfig {
         applicationId = "com.byd.wjx"
@@ -52,14 +53,20 @@ android {
         // on DiLink Android 12 (requestLegacyExternalStorage works).
         // targetSdk 30+ would break listFiles() on /storage/emulated/0/energydata/
         targetSdk = 29
-        versionCode = 480
-        versionName = "4.8"
+        versionCode = 490
+        versionName = "4.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "UPDATE_API_URL", "\"$updateApiUrl\"")
         buildConfigField("String", "SOUND_API_BASE_URL", "\"$soundApiBaseUrl\"")
         buildConfigField("String", "ACTIVATION_API_URL", "\"$activationApiUrl\"")
         buildConfigField("String", "SERVICE_QR_API_URL", "\"$serviceQrApiUrl\"")
+
+        externalNativeBuild {
+            cmake {
+                arguments += "-DANDROID_STL=c++_shared"
+            }
+        }
     }
 
     signingConfigs {
@@ -123,6 +130,14 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        prefab = true
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     bundle {
@@ -163,6 +178,9 @@ dependencies {
 
     // OkHttp
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // Official BSD-licensed libopus, consumed through a small in-tree JNI wrapper.
+    implementation("com.fpliu.ndk.pkg.prefab.android.21:opus:1.3.1")
 
     // osmdroid (maps)
     implementation("org.osmdroid:osmdroid-android:6.1.20")

@@ -79,6 +79,7 @@ import com.byd.wjx.ui.theme.LocalAppWallpaper
 import com.byd.wjx.ui.theme.SceneAmber
 import com.byd.wjx.ui.theme.SceneBlue
 import com.byd.wjx.ui.theme.SceneCoral
+import com.byd.wjx.ui.theme.SceneMint
 import com.byd.wjx.ui.theme.SceneViolet
 import com.byd.wjx.ui.theme.TextMuted
 import com.byd.wjx.ui.theme.TextPrimary
@@ -507,6 +508,7 @@ private fun navAccent(route: String): Color = when (route) {
     "sound" -> SceneViolet
     "lyrics" -> SceneAmber
     "automation" -> SceneBlue
+    "xiaozhi" -> SceneMint
     "settings" -> SceneCoral
     else -> SceneAmber
 }

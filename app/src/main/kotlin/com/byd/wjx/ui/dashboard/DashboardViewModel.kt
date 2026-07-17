@@ -393,8 +393,11 @@ class DashboardViewModel @Inject constructor(
                         isCharging = data?.let(::isChargingSample) ?: current.isCharging,
                         gear = data?.gear ?: current.gear,
                         powerState = data?.powerState ?: current.powerState,
-                        driveMode = data?.driveMode ?: current.driveMode,
-                        workMode = data?.workMode ?: current.workMode,
+                        // A fresh full snapshot owns these enums, including an unavailable value.
+                        // Keeping the previous non-null mode makes the home screen lie after a
+                        // failed/unsupported FID read or a real platform-mode transition.
+                        driveMode = if (data != null) data.driveMode else current.driveMode,
+                        workMode = if (data != null) data.workMode else current.workMode,
                         energyState = data?.energyState ?: current.energyState,
                         energyFlowCategory = snapshot.energyFlow.currentCategory,
                         sessionEnergyFlow = snapshot.energyFlow.session,

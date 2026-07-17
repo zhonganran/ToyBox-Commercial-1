@@ -41,7 +41,9 @@ data class DiParsData(
     val tirePressFR: Int?,
     val tirePressRL: Int?,
     val tirePressRR: Int?,
-    val driveMode: Int?,          // 1=NORMAL, 2=ECO, 3=SPORT, 4=SNOW, 5=MUD, 6=SAND
+    // Effective base + instrument mode: 1=ECO, 2=SPORT, 3=COMFORT, 4=SNOW, 5=MUD,
+    // 6=SAND, 7=MOUNTAIN, 11=RACING.
+    val driveMode: Int?,
     val workMode: Int?,           // 0=stop, 1=EV, 2=forced EV, 3=HEV, 4=fuel, 5=keep
     val autoPark: Int?,           // 0=disabled, 1=standby, 2=active
     val rain: Int?,
@@ -76,7 +78,7 @@ data class DiParsData(
     val turnSignalLeft: Int? = null,     // 0=off, 1=on
     val turnSignalRight: Int? = null,    // 0=off, 1=on
     // Validated comfort/light reads. These fields are selected on demand by enabled
-    // automations and stay out of the regular 71-FID full snapshot.
+    // automations and stay out of the regular 73-FID full snapshot.
     val acCtrlMode: Int? = null,
     val acDefrostFront: Int? = null,
     val acWindMode: Int? = null,

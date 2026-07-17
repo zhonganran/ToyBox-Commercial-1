@@ -26,7 +26,6 @@ import com.byd.wjx.data.sound.SoundDownloadRecord
 import com.byd.wjx.data.sound.SoundDownloadStore
 import com.byd.wjx.data.sound.SoundLibraryRemoteRepository
 import com.byd.wjx.storage.SoundLibrary
-import com.byd.wjx.storage.SoundDestination
 import com.byd.wjx.vehicle.CarProfileDetector
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -398,12 +397,11 @@ class SoundViewModel @Inject constructor(
         }
     }
 
-    fun download(sound: RemoteSound, destination: SoundDestination) {
+    fun download(sound: RemoteSound) {
         if (sound.id in _uiState.value.downloadingIds) return
-        val existing = downloadStore.findExistingRecord(sound.id, destination)
+        val existing = downloadStore.findExistingRecord(sound.id)
         if (existing != null) {
-            val targetLabel = if (destination == SoundDestination.VEHICLE) "车辆音效" else "我的音效"
-            _uiState.update { it.copy(message = "$targetLabel 已存在：${existing.fileName}") }
+            _uiState.update { it.copy(message = "音效已存在：${existing.fileName}") }
             return
         }
         viewModelScope.launch(Dispatchers.IO) {
@@ -414,7 +412,7 @@ class SoundViewModel @Inject constructor(
                 )
             }
             runCatching {
-                remoteRepository.download(sound, destination)
+                remoteRepository.download(sound)
             }.onSuccess { result ->
                 val record = SoundDownloadRecord(
                     soundId = sound.id,
@@ -422,19 +420,13 @@ class SoundViewModel @Inject constructor(
                     fileName = result.fileName,
                     sizeLabel = SoundLibrary.formatSize(result.sizeBytes),
                     finishedAt = System.currentTimeMillis(),
-                    destination = result.destination,
                 )
                 downloadStore.add(record)
-                val targetPath = if (result.destination == SoundDestination.VEHICLE) {
-                    "/sdcard/WJX/车辆音效"
-                } else {
-                    "/sdcard/WJX"
-                }
                 _uiState.update {
                     it.copy(
                         downloadingIds = it.downloadingIds - sound.id,
                         downloads = downloadStore.loadRecords(),
-                        message = "已下载到 $targetPath：${result.fileName}",
+                        message = "已下载到 /sdcard/WJX：${result.fileName}",
                     )
                 }
                 refresh(clearMessage = false)

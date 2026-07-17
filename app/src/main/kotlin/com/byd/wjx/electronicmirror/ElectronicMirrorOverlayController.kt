@@ -1,39 +1,44 @@
 package com.byd.wjx.electronicmirror
 
 import android.content.Context
+import android.graphics.SurfaceTexture
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Point
 import android.graphics.drawable.GradientDrawable
 import android.hardware.display.DisplayManager
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.Display
 import android.view.Gravity
 import android.view.Surface
-import android.view.SurfaceHolder
-import android.view.SurfaceView
+import android.view.TextureView
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.TextView
 import com.byd.wjx.log.WjxFileLogger
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.math.max
 import kotlin.math.roundToInt
 
 internal class ElectronicMirrorOverlayHandle(
     val windowManager: WindowManager,
     val container: FrameLayout,
-    val surfaceView: SurfaceView,
+    val textureView: TextureView,
     val ready: CompletableDeferred<Surface>,
+    val firstFrame: CompletableDeferred<Unit>,
     val label: TextView,
     val target: ElectronicMirrorDisplayTarget,
+    val layoutParams: WindowManager.LayoutParams,
 ) {
     @Volatile var intentionalRemoval: Boolean = false
     @Volatile var surface: Surface? = null
+    val frameCount = AtomicLong(0L)
+    @Volatile var lastFrameAtMs: Long = 0L
 }
 
 /** Creates a non-touchable camera Surface window on either the cluster or centre display. */
@@ -64,6 +69,19 @@ internal class ElectronicMirrorOverlayController(
             handle.intentionalRemoval = true
             runCatching { handle.windowManager.removeView(handle.container) }
                 .onFailure { WjxFileLogger.w(TAG, "remove overlay failed: ${it.message}") }
+            handle.surface?.release()
+            handle.surface = null
+        }
+    }
+
+    suspend fun reveal(handle: ElectronicMirrorOverlayHandle) {
+        withContext(Dispatchers.Main.immediate) {
+            if (!handle.intentionalRemoval && handle.surface?.isValid == true) {
+                // Do not animate this alpha. A direct reveal after a real producer frame avoids a
+                // black/transparent flash on the instrument cluster compositor.
+                handle.layoutParams.alpha = 1f
+                handle.windowManager.updateViewLayout(handle.container, handle.layoutParams)
+            }
         }
     }
 
@@ -99,16 +117,16 @@ internal class ElectronicMirrorOverlayController(
             clipToOutline = true
             foreground = roundedDrawable(Color.TRANSPARENT, BORDER_RADIUS_DP, BORDER_COLOR)
         }
-        val surfaceView = SurfaceView(displayContext)
-        val cameraLayout = cameraSurfaceLayout(windowWidth, windowHeight)
+        val textureView = TextureView(displayContext).apply {
+            isOpaque = true
+        }
         container.addView(
-            surfaceView,
-            FrameLayout.LayoutParams(cameraLayout.width, cameraLayout.height, Gravity.TOP or Gravity.START).apply {
-                leftMargin = cameraLayout.x
-                topMargin = cameraLayout.y
-            },
+            textureView,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            ),
         )
-        surfaceView.holder.setFixedSize(SOURCE_WIDTH, SOURCE_HEIGHT)
 
         val label = TextView(displayContext).apply {
             text = labelFor(scene)
@@ -143,22 +161,6 @@ internal class ElectronicMirrorOverlayController(
             },
         )
 
-        val ready = CompletableDeferred<Surface>()
-        val handle = ElectronicMirrorOverlayHandle(windowManager, container, surfaceView, ready, label, scene.target)
-        surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
-            override fun surfaceCreated(holder: SurfaceHolder) {
-                handle.surface = holder.surface
-                if (!ready.isCompleted) ready.complete(holder.surface)
-            }
-
-            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
-
-            override fun surfaceDestroyed(holder: SurfaceHolder) {
-                handle.surface = null
-                if (!handle.intentionalRemoval) onUnexpectedSurfaceLoss(handle)
-            }
-        })
-
         val params = WindowManager.LayoutParams(
             windowWidth,
             windowHeight,
@@ -170,14 +172,58 @@ internal class ElectronicMirrorOverlayController(
             x = windowX
             y = windowY
             title = "SuperToyBox Electronic Mirror"
+            // Keep the View hierarchy rendering so TextureView receives frame callbacks, while
+            // making the composed window itself invisible until a real producer frame arrives.
+            alpha = 0f
+        }
+
+        val ready = CompletableDeferred<Surface>()
+        val firstFrame = CompletableDeferred<Unit>()
+        val handle = ElectronicMirrorOverlayHandle(
+            windowManager,
+            container,
+            textureView,
+            ready,
+            firstFrame,
+            label,
+            scene.target,
+            params,
+        )
+        textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+            override fun onSurfaceTextureAvailable(texture: SurfaceTexture, width: Int, height: Int) {
+                val surface = Surface(texture)
+                handle.surface = surface
+                if (!ready.isCompleted) ready.complete(surface)
+                WjxFileLogger.i(TAG, "Surface available target=${scene.target} size=${width}x$height")
+            }
+
+            override fun onSurfaceTextureSizeChanged(texture: SurfaceTexture, width: Int, height: Int) {
+                WjxFileLogger.i(TAG, "Surface resized target=${scene.target} size=${width}x$height")
+            }
+
+            override fun onSurfaceTextureUpdated(texture: SurfaceTexture) {
+                handle.frameCount.incrementAndGet()
+                handle.lastFrameAtMs = SystemClock.elapsedRealtime()
+                if (!firstFrame.isCompleted) {
+                    firstFrame.complete(Unit)
+                    WjxFileLogger.i(TAG, "first frame target=${scene.target}")
+                }
+            }
+
+            override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean {
+                handle.surface?.release()
+                handle.surface = null
+                if (!handle.intentionalRemoval) onUnexpectedSurfaceLoss(handle)
+                return true
+            }
         }
 
         return runCatching {
             windowManager.addView(container, params)
             WjxFileLogger.i(
                 TAG,
-                "shown target=${scene.target} display=${display.displayId} ${windowWidth}x$windowHeight+$windowX,$windowY " +
-                    "surface=${cameraLayout.width}x${cameraLayout.height}+${cameraLayout.x},${cameraLayout.y}",
+                "prepared hidden target=${scene.target} display=${display.displayId} " +
+                    "${windowWidth}x$windowHeight+$windowX,$windowY",
             )
             handle
         }.onFailure {
@@ -190,32 +236,13 @@ internal class ElectronicMirrorOverlayController(
         return when (target) {
             ElectronicMirrorDisplayTarget.CENTER -> manager.getDisplay(Display.DEFAULT_DISPLAY)
             ElectronicMirrorDisplayTarget.CLUSTER -> {
-                val candidates = manager.displays.filter {
-                    it.name.contains("XDJAScreenProjection", ignoreCase = true)
-                }
-                candidates.firstOrNull { it.name.endsWith("_1") }
-                    ?: candidates.firstOrNull()
+                val candidates = manager.displays
+                    .filter { it.displayId != Display.DEFAULT_DISPLAY }
+                    .sortedByDescending { electronicMirrorDisplayRank(it.name) }
+                candidates.firstOrNull { electronicMirrorDisplayRank(it.name) > 0 }
                     ?: manager.getDisplay(DEFAULT_CLUSTER_DISPLAY_ID)
             }
         }
-    }
-
-    /**
-     * L1Mini validated the APA source as 1280x720 and cropped its first 430 columns. We preserve
-     * that source crop here, then crop-fill it into the independently adjustable user window.
-     */
-    private fun cameraSurfaceLayout(windowWidth: Int, windowHeight: Int): CameraLayout {
-        val visibleSourceWidth = SOURCE_WIDTH - SOURCE_CROP_LEFT
-        val scale = max(
-            windowWidth.toFloat() / visibleSourceWidth,
-            windowHeight.toFloat() / SOURCE_HEIGHT,
-        )
-        val width = (SOURCE_WIDTH * scale).roundToInt()
-        val height = (SOURCE_HEIGHT * scale).roundToInt()
-        val visibleWidth = (visibleSourceWidth * scale).roundToInt()
-        val x = ((windowWidth - visibleWidth) / 2f - SOURCE_CROP_LEFT * scale).roundToInt()
-        val y = ((windowHeight - height) / 2f).roundToInt()
-        return CameraLayout(width, height, x, y)
     }
 
     private fun labelFor(scene: ElectronicMirrorScene): String = when (scene.reason) {
@@ -235,14 +262,9 @@ internal class ElectronicMirrorOverlayController(
     private fun dp(context: Context, value: Int): Int =
         (value * context.resources.displayMetrics.density).roundToInt()
 
-    private data class CameraLayout(val width: Int, val height: Int, val x: Int, val y: Int)
-
     companion object {
         private const val TAG = "ElectronicMirrorOverlay"
         private const val DEFAULT_CLUSTER_DISPLAY_ID = 2
-        private const val SOURCE_WIDTH = 1280
-        private const val SOURCE_HEIGHT = 720
-        private const val SOURCE_CROP_LEFT = 430
         private const val SURFACE_TIMEOUT_MS = 3_000L
         private const val BORDER_RADIUS_DP = 18f
         private const val BORDER_COLOR = 0xFF45D6B5.toInt()
@@ -252,5 +274,17 @@ internal class ElectronicMirrorOverlayController(
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+    }
+}
+
+/** Rank known BYD cluster projection displays without binding the feature to one ROM name. */
+internal fun electronicMirrorDisplayRank(name: String): Int {
+    val normalized = name.trim().lowercase()
+    return when {
+        "xdjascreenprojection" in normalized && normalized.endsWith("_1") -> 40
+        "xdjascreenprojection" in normalized -> 30
+        "叠加视图 #1" in normalized -> 25
+        "fission_" in normalized -> 20
+        else -> 0
     }
 }

@@ -9,11 +9,6 @@ import java.text.DecimalFormat
 import javax.inject.Inject
 import javax.inject.Singleton
 
-enum class SoundDestination {
-    PERSONAL,
-    VEHICLE,
-}
-
 @Singleton
 class SoundLibrary @Inject constructor(
     @ApplicationContext private val appContext: Context,
@@ -35,16 +30,6 @@ class SoundLibrary @Inject constructor(
                     .thenBy { it.name.lowercase() }
             )
             .map { SoundItem(it) }
-    }
-
-    fun listVehicleSounds(): List<SoundItem> {
-        WjxDirectories.ensureVehicleSoundDir()
-        return WjxDirectories.vehicleSoundDir
-            .listFiles()
-            ?.filter { it.isFile && it.extension.lowercase() in SUPPORTED_EXT }
-            ?.sortedBy { it.name.lowercase() }
-            ?.map { SoundItem(it) }
-            ?: emptyList()
     }
 
     fun moveSound(fromPath: String, toPath: String) {
@@ -71,18 +56,6 @@ class SoundLibrary @Inject constructor(
         return deleted
     }
 
-    fun deleteVehicleSound(path: String): Boolean {
-        val file = File(path)
-        if (!file.isFile || file.parentFile?.absolutePath != WjxDirectories.vehicleSoundDir.absolutePath) return false
-        val deleted = file.delete()
-        if (deleted) {
-            WjxFileLogger.i(TAG, "delete vehicle sound path=${file.absolutePath}")
-        } else {
-            WjxFileLogger.w(TAG, "delete vehicle sound failed path=${file.absolutePath}")
-        }
-        return deleted
-    }
-
     fun createSoundFile(name: String, extension: String): File {
         WjxDirectories.ensureBaseDirs()
         return createSoundFileIn(WjxDirectories.soundDir, name, extension)
@@ -105,19 +78,7 @@ class SoundLibrary @Inject constructor(
         return saveToTarget(target, input)
     }
 
-    fun saveVehicleSound(name: String, extension: String, input: InputStream): File {
-        WjxDirectories.ensureVehicleSoundDir()
-        val target = createSoundFileIn(WjxDirectories.vehicleSoundDir, name, extension)
-        return saveToTarget(target, input)
-    }
-
-    fun saveSound(destination: SoundDestination, name: String, extension: String, input: InputStream): File =
-        when (destination) {
-            SoundDestination.PERSONAL -> saveSound(name, extension, input)
-            SoundDestination.VEHICLE -> saveVehicleSound(name, extension, input)
-        }
-
-    fun isVehicleSound(path: String): Boolean = isVehicleSoundFile(path)
+    fun isManagedSound(path: String): Boolean = isManagedSoundFile(path)
 
     private fun saveToTarget(target: File, input: InputStream): File {
         val tmp = File(target.parentFile, "${target.name}.download")
@@ -153,16 +114,16 @@ class SoundLibrary @Inject constructor(
         private const val PREFS_NAME = "sound_library"
         private const val KEY_ORDER = "order"
 
-        fun isVehicleSoundPath(path: String): Boolean {
+        fun isManagedSoundPath(path: String): Boolean {
             if (path.isBlank()) return false
             val file = runCatching { File(path).canonicalFile }.getOrNull() ?: return false
-            val directory = runCatching { WjxDirectories.vehicleSoundDir.canonicalFile }.getOrNull() ?: return false
+            val directory = runCatching { WjxDirectories.soundDir.canonicalFile }.getOrNull() ?: return false
             return file.parentFile == directory &&
                 file.extension.lowercase() in SUPPORTED_EXT
         }
 
-        fun isVehicleSoundFile(path: String): Boolean =
-            isVehicleSoundPath(path) && File(path).isFile
+        fun isManagedSoundFile(path: String): Boolean =
+            isManagedSoundPath(path) && File(path).isFile
 
         fun formatSize(bytes: Long): String {
             if (bytes < 1024) return "$bytes B"

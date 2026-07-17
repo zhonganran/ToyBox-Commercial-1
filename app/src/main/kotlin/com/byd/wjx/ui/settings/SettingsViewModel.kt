@@ -124,10 +124,10 @@ class SettingsViewModel @Inject constructor(
                 return@launch
             }
             val current = lockSoundSettings.snapshot()
-            if (enabled && !soundLibrary.isVehicleSound(current.path(event))) {
-                val first = soundLibrary.listVehicleSounds().firstOrNull()
+            if (enabled && !soundLibrary.isManagedSound(current.path(event))) {
+                val first = soundLibrary.listSounds().firstOrNull()
                 if (first == null) {
-                    refreshLockSoundState("车辆音效为空，请先下载或导入车辆音效")
+                    refreshLockSoundState("WJX 音效库为空，请先下载或导入音效")
                     return@launch
                 }
                 lockSoundSettings.setSoundPath(event, first.file.absolutePath)
@@ -149,8 +149,8 @@ class SettingsViewModel @Inject constructor(
                 refreshLockSoundState("音效文件不存在")
                 return@launch
             }
-            if (!soundLibrary.isVehicleSound(source.absolutePath)) {
-                refreshLockSoundState("请从车辆音效中选择")
+            if (!soundLibrary.isManagedSound(source.absolutePath)) {
+                refreshLockSoundState("请从 WJX 音效库中选择")
                 return@launch
             }
             lockSoundSettings.setSoundPath(event, source.absolutePath)
@@ -166,10 +166,10 @@ class SettingsViewModel @Inject constructor(
                 refreshLockSoundState("试用已结束，自动泊车音效需要激活后使用")
                 return@launch
             }
-            if (enabled && !soundLibrary.isVehicleSound(autoParkingSoundSettings.soundPath)) {
-                val first = soundLibrary.listVehicleSounds().firstOrNull()
+            if (enabled && !soundLibrary.isManagedSound(autoParkingSoundSettings.soundPath)) {
+                val first = soundLibrary.listSounds().firstOrNull()
                 if (first == null) {
-                    refreshLockSoundState("车辆音效为空，请先下载或导入车辆音效")
+                    refreshLockSoundState("WJX 音效库为空，请先下载或导入音效")
                     return@launch
                 }
                 autoParkingSoundSettings.soundPath = first.file.absolutePath
@@ -190,8 +190,8 @@ class SettingsViewModel @Inject constructor(
                 refreshLockSoundState("音效文件不存在")
                 return@launch
             }
-            if (!soundLibrary.isVehicleSound(source.absolutePath)) {
-                refreshLockSoundState("请从车辆音效中选择")
+            if (!soundLibrary.isManagedSound(source.absolutePath)) {
+                refreshLockSoundState("请从 WJX 音效库中选择")
                 return@launch
             }
             autoParkingSoundSettings.soundPath = source.absolutePath
@@ -200,7 +200,7 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun importVehicleSound(uri: Uri) {
+    fun importEventSound(uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
                 val displayName = appContext.contentResolver.query(
@@ -211,7 +211,7 @@ class SettingsViewModel @Inject constructor(
                     null,
                 )?.use { cursor ->
                     if (cursor.moveToFirst()) cursor.getString(0) else null
-                }.orEmpty().ifBlank { "车辆音效" }
+                }.orEmpty().ifBlank { "音效" }
                 val extension = displayName.substringAfterLast('.', "").lowercase()
                 require(extension in SoundLibrary.SUPPORTED_EXT) {
                     "仅支持 MP3、WAV、AAC、M4A、OGG、FLAC"
@@ -219,25 +219,25 @@ class SettingsViewModel @Inject constructor(
                 val baseName = displayName.substringBeforeLast('.', displayName)
                 val input = appContext.contentResolver.openInputStream(uri)
                     ?: error("无法读取所选音效")
-                input.use { soundLibrary.saveVehicleSound(baseName, extension, it) }
+                input.use { soundLibrary.saveSound(baseName, extension, it) }
             }.onSuccess { saved ->
-                refreshLockSoundState("已导入车辆音效：${saved.name}")
+                refreshLockSoundState("已导入到 /sdcard/WJX：${saved.name}")
             }.onFailure { error ->
                 refreshLockSoundState("导入失败：${error.message ?: "文件不可用"}")
             }
         }
     }
 
-    fun deleteVehicleSound(path: String) {
+    fun deleteEventSound(path: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            if (!soundLibrary.deleteVehicleSound(path)) {
+            if (!soundLibrary.deleteSound(path)) {
                 refreshLockSoundState("删除失败：音效文件不存在")
                 return@launch
             }
             lockSoundSettings.clearIfPath(path)
             autoParkingSoundSettings.clearIfPath(path)
-            refreshLockSoundState("车辆音效已删除")
-            syncLockSoundConfig("vehicle_sound_delete")
+            refreshLockSoundState("音效已删除")
+            syncLockSoundConfig("event_sound_delete")
         }
     }
 
@@ -263,7 +263,7 @@ class SettingsViewModel @Inject constructor(
         )
 
     private fun refreshLockSoundState(status: String?) {
-        val choices = soundLibrary.listVehicleSounds().map {
+        val choices = soundLibrary.listSounds().map {
             LockSoundChoice(
                 path = it.file.absolutePath,
                 name = it.name,

@@ -33,8 +33,8 @@ class LockSoundConfigSync @Inject constructor(
     suspend fun sync(reason: String): Boolean = withContext(Dispatchers.IO) {
         syncMutex.withLock {
             val settings = LockSoundSettings(context)
-            if (clearInvalidVehicleSoundPaths(settings)) {
-                WjxFileLogger.w(TAG, "cleared invalid vehicle sound paths before sync reason=$reason")
+            if (clearInvalidSoundPaths(settings)) {
+                WjxFileLogger.w(TAG, "cleared invalid WJX sound paths before sync reason=$reason")
             }
             val hailingSettings = ExteriorHailingSettings(context)
             val profile = profileDetector.detect()
@@ -111,12 +111,12 @@ class LockSoundConfigSync @Inject constructor(
             sentryEnabled = false,
         )
 
-    private fun clearInvalidVehicleSoundPaths(settings: LockSoundSettings): Boolean {
+    private fun clearInvalidSoundPaths(settings: LockSoundSettings): Boolean {
         val config = settings.snapshot()
         var changed = false
         LockSoundEvent.entries.forEach { event ->
             val path = config.path(event)
-            if ((config.enabled(event) || path.isNotBlank()) && !SoundLibrary.isVehicleSoundPath(path)) {
+            if ((config.enabled(event) || path.isNotBlank()) && !SoundLibrary.isManagedSoundPath(path)) {
                 settings.setEnabled(event, false)
                 settings.setSoundPath(event, "")
                 changed = true

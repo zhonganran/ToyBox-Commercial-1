@@ -16,6 +16,7 @@ import com.byd.wjx.audio.ExteriorHailingSettings
 import com.byd.wjx.audio.WjxOutsidePlayService
 import com.byd.wjx.audio.WjxRealtimeHailingService
 import com.byd.wjx.log.WjxFileLogger
+import com.byd.wjx.xiaozhi.service.XiaozhiVoiceService
 import dagger.hilt.android.EntryPointAccessors
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -248,6 +249,14 @@ class SteeringWheelKeyService : AccessibilityService() {
                 WjxFileLogger.i(TAG, "shortcut toggle hailing binding=${binding.id} channel=$channel")
                 WjxOutsidePlayService.stop(applicationContext)
                 WjxRealtimeHailingService.toggle(applicationContext, channel)
+            }
+            KeyShortcutActionType.Xiaozhi -> {
+                if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                    WjxFileLogger.w(TAG, "shortcut xiaozhi ignored: RECORD_AUDIO not granted binding=${binding.id}")
+                    return
+                }
+                WjxFileLogger.i(TAG, "shortcut toggle xiaozhi binding=${binding.id}")
+                XiaozhiVoiceService.toggle(applicationContext)
             }
             KeyShortcutActionType.Automation -> {
                 WjxFileLogger.i(TAG, "shortcut automation fire binding=${binding.id} slot=${binding.automationButtonId}")

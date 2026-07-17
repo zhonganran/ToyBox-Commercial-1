@@ -24,6 +24,7 @@ import android.os.Process
 import androidx.core.content.ContextCompat
 import com.byd.wjx.R
 import com.byd.wjx.log.WjxFileLogger
+import com.byd.wjx.xiaozhi.domain.XiaozhiSessionManager
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.CountDownLatch
@@ -47,6 +48,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 @AndroidEntryPoint
 class WjxRealtimeHailingService : Service() {
     @Inject lateinit var router: BydExteriorAudioRouter
+    @Inject lateinit var audioUsage: AudioUsageCoordinator
+    @Inject lateinit var xiaozhiSessionManager: XiaozhiSessionManager
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val actionMutex = Mutex()
@@ -94,9 +97,15 @@ class WjxRealtimeHailingService : Service() {
     override fun onDestroy() {
         runCatching {
             runBlocking(Dispatchers.IO) {
-                withTimeoutOrNull(1_200L) { actionMutex.withLock { stopHailing(stopService = false) } }
+                val released = withTimeoutOrNull(SERVICE_DESTROY_RELEASE_TIMEOUT_MS) {
+                    actionMutex.withLock { stopHailing(stopService = false) }
+                    true
+                } ?: false
+                if (!released) WjxFileLogger.w(TAG, "service destroy route release timeout")
             }
         }
+        serviceActive = false
+        audioUsage.setActive(AudioOwner.RealtimeHailing, false)
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -104,11 +113,13 @@ class WjxRealtimeHailingService : Service() {
     private suspend fun startHailing(channel: ExteriorChannel) {
         if (engine?.isRunning == true) return
         serviceActive = true
+        audioUsage.setActive(AudioOwner.RealtimeHailing, true)
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             WjxFileLogger.w(TAG, "start blocked: RECORD_AUDIO denied")
             broadcastState(STATE_ERROR, "未授权麦克风")
             updateNotification("麦克风权限未授权")
             serviceActive = false
+            audioUsage.setActive(AudioOwner.RealtimeHailing, false)
             delay(500L)
             stopSelf()
             return
@@ -116,8 +127,22 @@ class WjxRealtimeHailingService : Service() {
 
         WjxFileLogger.i(TAG, "start requested channel=$channel")
         updateNotification("正在准备实时喊话")
+        xiaozhiSessionManager.preemptForRealtimeHailing()
         WjxOutsidePlayService.stop(this)
-        delay(140L)
+        val released = audioUsage.awaitInactive(
+            owners = HAILING_BLOCKING_OWNERS,
+            timeoutMs = AUDIO_RESOURCE_RELEASE_TIMEOUT_MS,
+        )
+        if (!released) {
+            WjxFileLogger.w(TAG, "start blocked: competing audio resource release timeout")
+            broadcastState(STATE_ERROR, "小智对话或车外音频未能及时释放")
+            updateNotification("麦克风资源释放超时")
+            serviceActive = false
+            audioUsage.setActive(AudioOwner.RealtimeHailing, false)
+            stopSelf()
+            return
+        }
+        delay(AUDIO_RESOURCE_SETTLE_MS)
 
         val tuning = audioSettings.realtimeTuning()
         val armed = router.arm(channel, BydExteriorAudioRouter.Usage.Talk, tuning.volumePercent)
@@ -126,6 +151,7 @@ class WjxRealtimeHailingService : Service() {
             broadcastState(STATE_ERROR, "车外喊话通道打开失败")
             updateNotification("车外喊话通道打开失败")
             serviceActive = false
+            audioUsage.setActive(AudioOwner.RealtimeHailing, false)
             delay(700L)
             stopSelf()
             return
@@ -148,6 +174,7 @@ class WjxRealtimeHailingService : Service() {
             broadcastState(STATE_ERROR, "麦克风或输出初始化失败")
             updateNotification("麦克风或输出初始化失败")
             serviceActive = false
+            audioUsage.setActive(AudioOwner.RealtimeHailing, false)
             delay(700L)
             stopSelf()
             return
@@ -187,6 +214,7 @@ class WjxRealtimeHailingService : Service() {
             WjxFileLogger.i(TAG, "stopped state=$state message=$message channel=$channel")
         }
         serviceActive = false
+        audioUsage.setActive(AudioOwner.RealtimeHailing, false)
         if (stopService) stopSelf()
     }
 
@@ -215,6 +243,7 @@ class WjxRealtimeHailingService : Service() {
         val currentEngine = engine
         if (currentEngine?.isRunning != true) {
             serviceActive = false
+            audioUsage.setActive(AudioOwner.RealtimeHailing, false)
             stopSelf()
             return
         }
@@ -281,6 +310,14 @@ class WjxRealtimeHailingService : Service() {
         private const val TAG = "WjxRealtimeHailing"
         private const val ROUTE_RELEASE_DRAIN_MS = 360L
         private const val ROUTE_RELEASE_TIMEOUT_MS = 1_000L
+        private const val AUDIO_RESOURCE_RELEASE_TIMEOUT_MS = 2_400L
+        private const val AUDIO_RESOURCE_SETTLE_MS = 320L
+        private const val SERVICE_DESTROY_RELEASE_TIMEOUT_MS = 2_400L
+        private val HAILING_BLOCKING_OWNERS = setOf(
+            AudioOwner.WakeWordListener,
+            AudioOwner.XiaozhiConversation,
+            AudioOwner.ExteriorPlayback,
+        )
         @Volatile private var serviceActive = false
 
         fun start(context: Context, channel: ExteriorChannel) {

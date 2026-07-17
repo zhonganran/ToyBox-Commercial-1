@@ -52,9 +52,11 @@ object HelperBinderProtocol {
     const val SERVICE_NAME = "wjx_helper"
     const val PROCESS_NAME = "wjx_helper"   // app_process --nice-name + ps lookup
     const val DESCRIPTOR = "com.byd.wjx.helper.IHelper"
-    // v7 adds the AVMCamera direct-Surface electronic-mirror operations. Bumping forces an old
-    // app_process helper to restart after APK replacement before a camera Surface is transferred.
-    const val CURRENT_VERSION = 7
+    // v9 carries first-frame-safe TextureView output plus the instance BmmCameraInfo and
+    // signature-compatible AVMCamera reflection paths used by the electronic mirror. This is a
+    // runtime build marker, not a preference/data migration: a shell-uid app_process can outlive
+    // an APK uninstall, so a freshly installed app must reject that stale in-memory daemon.
+    const val CURRENT_VERSION = 9
 
     const val TX_PING = IBinder.FIRST_CALL_TRANSACTION       // 1
     const val TX_READ = IBinder.FIRST_CALL_TRANSACTION + 1   // 2

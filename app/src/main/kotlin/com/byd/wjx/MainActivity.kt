@@ -47,6 +47,7 @@ class MainActivity : AppCompatActivity() {
 
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var updateChecker: UpdateChecker
+    @Inject lateinit var xiaozhiWakeController: com.byd.wjx.xiaozhi.wake.XiaozhiWakeController
 
     companion object {
         private const val TAG = "MainActivity"
@@ -256,6 +257,7 @@ class MainActivity : AppCompatActivity() {
     private fun startBackgroundStack() {
         WjxFileLogger.i(TAG, "startBackgroundStack")
         KeepAliveService.start(this, "main_activity")
+        xiaozhiWakeController.reconcile("main_activity")
     }
 
     private fun ensureWjxDirectory() {

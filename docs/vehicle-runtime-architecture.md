@@ -44,11 +44,11 @@ read vehicle FIDs.
 - Driving full snapshot: 1 second.
 - Charging and parked full snapshot: 3 seconds.
 - Idle full snapshot: 30 seconds.
-- The selectable production catalog contains 115 FIDs. The first successful regular full snapshot
-  reads only 71 so every dashboard/trip consumer receives a complete initial state, including SOH, without
+- The selectable production catalog contains 117 FID addresses for 115 semantic fields. The first successful regular full snapshot
+  reads only 73 so every dashboard/trip consumer receives a complete initial state, including SOH, without
   paying for the 44 feature-specific fields that are on-demand.
-- Later full snapshots refresh the 13 lifecycle-critical core FIDs at the regular cadence. The
-  other 58 detail FIDs are eligible for refresh every 3 seconds and are merged from the reader's
+- Later full snapshots refresh the 17 lifecycle-critical core FIDs at the regular cadence. The
+  other 56 detail FIDs are eligible for refresh every 3 seconds and are merged from the reader's
   raw-value cache between refreshes. In 30-second idle mode they refresh on the next regular tick.
 - A failed detail refresh clears the cached detail values to unavailable instead of presenting
   stale data indefinitely. A failed core batch fails the whole sample and enters normal backoff.

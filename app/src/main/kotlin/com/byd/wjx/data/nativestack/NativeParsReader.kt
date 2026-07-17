@@ -39,8 +39,13 @@ class NativeParsReader @Inject constructor(
     }
 
     override suspend fun fetchActionVehicleSnapshot(): VehicleSnapshot? {
-        val selectedFields = VehicleReadProfiles.actionCoreFields +
+        val requestedFields = VehicleReadProfiles.actionCoreFields +
             actionSnapshotFieldProvider.additionalFields()
+        val selectedFields = buildSet {
+            addAll(requestedFields)
+            if ("driveMode" in requestedFields) add("driveModeIndicator")
+            if ("workMode" in requestedFields) add("workModeAlt")
+        }
         return fetchPlan(actionPlan(selectedFields), VehicleSnapshotKind.ACTION)
     }
 
@@ -70,6 +75,7 @@ class NativeParsReader @Inject constructor(
     private val fullRawCache = HashMap<VehicleReadSpec, com.byd.wjx.data.vehicle.VehicleRawRead>()
     private var fullCacheInitialized = false
     private var lastDetailAttemptAtNanos = 0L
+    @Volatile private var workModeConflictLogged = false
     internal var monotonicNanos: () -> Long = System::nanoTime
 
     private suspend fun fetchTieredFullSnapshot(): VehicleSnapshot? {
@@ -223,6 +229,24 @@ class NativeParsReader @Inject constructor(
 
         val soc = doubleField("soc")?.toInt()
         val mileage = doubleField("mileage")
+        val driveMode = BydSignalSemantics.selectDriveMode(
+            baseMode = intField("driveMode"),
+            indicatorMode = intField("driveModeIndicator"),
+            gear = intField("gear"),
+        )
+        val workMode50 = intField("workModeAlt")?.takeIf(BydSignalSemantics::isValidWorkMode)
+        val workModeLegacy = intField("workMode")?.takeIf(BydSignalSemantics::isValidWorkMode)
+        val workMode = BydSignalSemantics.selectWorkMode(workMode50, workModeLegacy)
+        if (
+            workMode50 != null && workModeLegacy != null && workMode50 != workModeLegacy &&
+            !workModeConflictLogged
+        ) {
+            workModeConflictLogged = true
+            WjxFileLogger.w(
+                TAG,
+                "work mode FID conflict instrument50=$workMode50 legacy=$workModeLegacy selected=$workMode",
+            )
+        }
 
         // Full snapshots require one stable primary signal. Action snapshots are intentionally
         // sparse and vehicle-dependent, so any decoded field proves that the helper batch is live.
@@ -285,8 +309,8 @@ class NativeParsReader @Inject constructor(
             tirePressFR         = intField("tirePressFR"),
             tirePressRL         = intField("tirePressRL"),
             tirePressRR         = intField("tirePressRR"),
-            driveMode           = intField("driveMode")?.takeIf { it in 1..6 },
-            workMode            = intField("workMode"),
+            driveMode           = driveMode,
+            workMode            = workMode,
             autoPark            = null,  // not in FidMap (unknown source)
             rain                = null,  // not in FidMap (user setting, no live sensor fid)
             lightLow            = intField("lightLow"),

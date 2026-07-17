@@ -248,7 +248,11 @@ class NativeParsReaderTest {
                 "fuelCap" to 1,
                 "lockFL" to 2,
                 "lockFR" to 1,
+                "gear" to 4,
                 "driveMode" to 1,
+                "driveModeIndicator" to 7,
+                "workMode" to 1,
+                "workModeAlt" to 3,
                 "sunroof" to 44,
             ).forEach { (field, value) ->
                 val fid = entry(field)
@@ -268,8 +272,92 @@ class NativeParsReaderTest {
         assertEquals(1, data?.fuelCap)
         assertEquals(2, data?.lockFL)
         assertEquals(1, data?.lockFR)
-        assertEquals(1, data?.driveMode)
+        assertEquals(7, data?.driveMode)
+        assertEquals(3, data?.workMode)
         assertEquals(44, data?.sunroof)
+    }
+
+    @Test
+    fun `terrain drive mode indicator is ignored while parked and used while driving`() = runTest {
+        fun entry(field: String) = FidMap.entries.single { it.field == field }
+        val mileage = entry("mileage")
+        val gear = entry("gear")
+        val base = entry("driveMode")
+        val indicator = entry("driveModeIndicator")
+        val settings = mockk<SettingsRepository>()
+        coEvery { settings.getBatteryCapacity() } returns 72.9
+
+        suspend fun read(gearValue: Int, indicatorValue: Int): Int? {
+            val gateway = FakeVehicleGateway().apply {
+                intValues[mileage.device to mileage.fid] = 10_000
+                intValues[gear.device to gear.fid] = gearValue
+                intValues[base.device to base.fid] = 3
+                intValues[indicator.device to indicator.fid] = indicatorValue
+            }
+            return NativeParsReader(gateway, settings, noAdditionalActionFields).fetch()?.driveMode
+        }
+
+        assertEquals(3, read(gearValue = 1, indicatorValue = 7))
+        assertEquals(7, read(gearValue = 4, indicatorValue = 7))
+        assertEquals(11, read(gearValue = 2, indicatorValue = 11))
+    }
+
+    @Test
+    fun `drive mode automation reads base and terrain indicator`() = runTest {
+        val gear = FidMap.entries.single { it.field == "gear" }
+        val base = FidMap.entries.single { it.field == "driveMode" }
+        val indicator = FidMap.entries.single { it.field == "driveModeIndicator" }
+        val gateway = FakeVehicleGateway().apply {
+            intValues[gear.device to gear.fid] = 4
+            intValues[base.device to base.fid] = 3
+            intValues[indicator.device to indicator.fid] = 7
+        }
+        val settings = mockk<SettingsRepository>(relaxed = true)
+        val provider = ActionSnapshotFieldProvider { setOf("driveMode") }
+
+        val data = NativeParsReader(gateway, settings, provider).fetchAction()
+
+        assertEquals(7, data?.driveMode)
+        assertEquals(VehicleReadProfiles.actionCoreFields.size + 2, gateway.lastBatchSpecs.size)
+    }
+
+    @Test
+    fun `work mode supports new fid legacy fallback and invalid values`() = runTest {
+        fun entry(field: String) = FidMap.entries.single { it.field == field }
+        val mileage = entry("mileage")
+        val legacy = entry("workMode")
+        val instrument50 = entry("workModeAlt")
+        val settings = mockk<SettingsRepository>()
+        coEvery { settings.getBatteryCapacity() } returns 72.9
+
+        suspend fun read(newValue: Int?, legacyValue: Int?): Int? {
+            val gateway = FakeVehicleGateway().apply {
+                intValues[mileage.device to mileage.fid] = 10_000
+                newValue?.let { intValues[instrument50.device to instrument50.fid] = it }
+                legacyValue?.let { intValues[legacy.device to legacy.fid] = it }
+            }
+            return NativeParsReader(gateway, settings, noAdditionalActionFields).fetch()?.workMode
+        }
+
+        assertEquals(3, read(newValue = 3, legacyValue = 1))
+        assertEquals(3, read(newValue = 0, legacyValue = 3))
+        assertEquals(1, read(newValue = null, legacyValue = 1))
+        assertNull(read(newValue = 9, legacyValue = -1))
+    }
+
+    @Test
+    fun `work mode automation reads both platform fids`() = runTest {
+        val workMode50 = FidMap.entries.single { it.field == "workModeAlt" }
+        val gateway = FakeVehicleGateway().apply {
+            intValues[workMode50.device to workMode50.fid] = 3
+        }
+        val settings = mockk<SettingsRepository>(relaxed = true)
+        val provider = ActionSnapshotFieldProvider { setOf("workMode") }
+
+        val data = NativeParsReader(gateway, settings, provider).fetchAction()
+
+        assertEquals(3, data?.workMode)
+        assertEquals(VehicleReadProfiles.actionCoreFields.size + 2, gateway.lastBatchSpecs.size)
     }
 
     /**
@@ -370,7 +458,7 @@ class NativeParsReaderTest {
         assertEquals(18, initial?.data?.insideTemp)
         assertEquals(1, gateway.batchHistory.size)
         assertEquals(VehicleReadProfiles.regularFull.size, gateway.batchHistory.single().size)
-        assertEquals(71, gateway.batchHistory.single().size)
+        assertEquals(73, gateway.batchHistory.single().size)
         assertTrue(
             gateway.batchHistory.single().none { spec ->
                 FidMap.entries.any {

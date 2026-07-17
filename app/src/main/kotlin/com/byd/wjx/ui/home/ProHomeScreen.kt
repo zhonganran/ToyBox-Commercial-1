@@ -1262,22 +1262,24 @@ private fun gearText(gear: Int?): String = when (gear) {
     else -> gear?.toString() ?: "--"
 }
 
-private fun driveModeText(mode: Int?): String = when (mode) {
-    1 -> "标准模式"
-    2 -> "经济模式"
-    3 -> "运动模式"
-    4 -> "雪地模式"
-    5 -> "泥地模式"
-    6 -> "沙地模式"
+internal fun driveModeText(mode: Int?): String = when (mode) {
+    BydSignalSemantics.DRIVE_ECONOMY -> "经济模式"
+    BydSignalSemantics.DRIVE_SPORT -> "运动模式"
+    BydSignalSemantics.DRIVE_COMFORT -> "舒适模式"
+    BydSignalSemantics.DRIVE_SNOW -> "雪地模式"
+    BydSignalSemantics.DRIVE_MUDDY -> "泥地模式"
+    BydSignalSemantics.DRIVE_SAND -> "沙地模式"
+    BydSignalSemantics.DRIVE_MOUNTAIN -> "山地模式"
+    BydSignalSemantics.DRIVE_RACING -> "竞速模式"
     else -> mode?.let { "模式 $it" } ?: "--"
 }
 
-private fun workModeText(mode: Int?): String = when (mode) {
-    0 -> "停止"
-    1 -> "EV"
-    2 -> "强制 EV"
-    3 -> "HEV"
-    4 -> "燃油"
-    5 -> "保持"
+internal fun workModeText(mode: Int?): String = when (mode) {
+    BydSignalSemantics.ENERGY_STOP -> "停止"
+    BydSignalSemantics.ENERGY_EV -> "EV"
+    BydSignalSemantics.ENERGY_FORCE_EV -> "强制 EV"
+    BydSignalSemantics.ENERGY_HEV -> "HEV"
+    BydSignalSemantics.ENERGY_FUEL -> "燃油"
+    BydSignalSemantics.ENERGY_KEEP -> "保持"
     else -> mode?.let { "模式 $it" } ?: "--"
 }

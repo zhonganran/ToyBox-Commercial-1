@@ -92,6 +92,10 @@ internal object VehicleReadProfiles {
         "gear",
         "powerState",
         "energyState",
+        "driveMode",
+        "driveModeIndicator",
+        "workMode",
+        "workModeAlt",
     )
 
     val coreFull: List<FidEntry> = regularFull.filter { it.field in coreFullFields }

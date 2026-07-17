@@ -49,7 +49,7 @@ import java.io.File
 @Composable
 internal fun VehicleEventSoundSection(state: SettingsUiState, viewModel: SettingsViewModel) {
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) viewModel.importVehicleSound(uri)
+        if (uri != null) viewModel.importEventSound(uri)
     }
     LaunchedEffect(Unit) {
         viewModel.reloadLockSoundChoices()
@@ -77,7 +77,7 @@ internal fun VehicleEventSoundSection(state: SettingsUiState, viewModel: Setting
                 ) {
                     Icon(Icons.Outlined.CloudUpload, contentDescription = null, modifier = Modifier.size(17.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("导入车辆音效", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("导入音效到 WJX", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
             LockSoundEventRow(
@@ -86,7 +86,7 @@ internal fun VehicleEventSoundSection(state: SettingsUiState, viewModel: Setting
                 state = state,
                 onEnabledChanged = { viewModel.setLockSoundEnabled(LockSoundEvent.Lock, it) },
                 onSoundSelected = { viewModel.setLockSoundPath(LockSoundEvent.Lock, it.path) },
-                onSoundDeleted = viewModel::deleteVehicleSound,
+                onSoundDeleted = viewModel::deleteEventSound,
             )
             LockSoundEventRow(
                 event = LockSoundEvent.Unlock,
@@ -94,7 +94,7 @@ internal fun VehicleEventSoundSection(state: SettingsUiState, viewModel: Setting
                 state = state,
                 onEnabledChanged = { viewModel.setLockSoundEnabled(LockSoundEvent.Unlock, it) },
                 onSoundSelected = { viewModel.setLockSoundPath(LockSoundEvent.Unlock, it.path) },
-                onSoundDeleted = viewModel::deleteVehicleSound,
+                onSoundDeleted = viewModel::deleteEventSound,
             )
             LockSoundEventRow(
                 event = LockSoundEvent.Sentry,
@@ -102,13 +102,13 @@ internal fun VehicleEventSoundSection(state: SettingsUiState, viewModel: Setting
                 state = state,
                 onEnabledChanged = { viewModel.setLockSoundEnabled(LockSoundEvent.Sentry, it) },
                 onSoundSelected = { viewModel.setLockSoundPath(LockSoundEvent.Sentry, it.path) },
-                onSoundDeleted = viewModel::deleteVehicleSound,
+                onSoundDeleted = viewModel::deleteEventSound,
             )
             AutoParkingSoundEventRow(
                 state = state,
                 onEnabledChanged = viewModel::setAutoParkingSoundEnabled,
                 onSoundSelected = { viewModel.setAutoParkingSoundPath(it.path) },
-                onSoundDeleted = viewModel::deleteVehicleSound,
+                onSoundDeleted = viewModel::deleteEventSound,
             )
             state.lockSoundStatus?.let {
                 Text(
@@ -263,10 +263,10 @@ private fun LockSoundPickerDialog(
     pendingDelete?.let { choice ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
-            title = { Text("删除车辆音效", color = TextPrimary) },
+            title = { Text("删除音效", color = TextPrimary) },
             text = {
                 Text(
-                    "确定永久删除“${choice.name}”吗？如果解锁、锁车、哨兵或自动泊车正在使用它，对应功能会自动关闭。",
+                    "确定永久删除“${choice.name}”吗？如果解锁、锁车、哨兵、自动泊车或智能联动正在使用它，对应功能可能停止播放。",
                     color = TextSecondary,
                     fontSize = 13.sp,
                     lineHeight = 18.sp,
@@ -297,7 +297,7 @@ private fun LockSoundPickerDialog(
         text = {
             if (choices.isEmpty()) {
                 Text(
-                    "车辆音效为空。请从在线音效库下载到“车辆音效”，或在车辆事件音效页面直接导入。",
+                    "WJX 音效库为空。请从在线音效库直接下载，或在这里导入音效。",
                     color = TextSecondary,
                     fontSize = 13.sp,
                     lineHeight = 18.sp,
@@ -333,7 +333,7 @@ private fun LockSoundPickerDialog(
                             IconButton(onClick = { pendingDelete = choice }) {
                                 Icon(
                                     Icons.Outlined.Delete,
-                                    contentDescription = "删除车辆音效",
+                                    contentDescription = "删除音效",
                                     tint = SocRed,
                                     modifier = Modifier.size(18.dp),
                                 )

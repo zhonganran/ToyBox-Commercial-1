@@ -57,4 +57,23 @@ class KeyShortcutSettingsTest {
         assertEquals(1, restored.automationButtonId)
         assertEquals(KeyShortcutActionType.PlaySound, restored.actionType)
     }
+
+    @Test
+    fun `xiaozhi binding survives persistence without extra payload`() {
+        val settings = KeyShortcutSettings(context)
+        settings.save(
+            listOf(
+                KeyShortcutBinding(
+                    id = "xiaozhi-1",
+                    keyCode = 85,
+                    pressType = KeyShortcutPressType.Long,
+                    actionType = KeyShortcutActionType.Xiaozhi,
+                ),
+            ),
+        )
+
+        val restored = KeyShortcutSettings(context).load().single()
+        assertEquals(KeyShortcutActionType.Xiaozhi, restored.actionType)
+        assertTrue(restored.isConfigured)
+    }
 }

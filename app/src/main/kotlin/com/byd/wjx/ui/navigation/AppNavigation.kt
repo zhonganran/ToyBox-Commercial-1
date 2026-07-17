@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.runtime.Composable
@@ -50,12 +51,14 @@ import com.byd.wjx.ui.settings.UpdateDialog
 import com.byd.wjx.ui.settings.UpdateState
 import com.byd.wjx.ui.sound.SoundScreen
 import com.byd.wjx.ui.theme.*
+import com.byd.wjx.xiaozhi.ui.XiaozhiScreen
 
 enum class Screen(val route: String, val label: String, val icon: ImageVector) {
     Home("home", "首页", Icons.Outlined.Home),
     Sound("sound", "个性音效", Icons.AutoMirrored.Outlined.VolumeUp),
     Lyrics("lyrics", "歌词显示", Icons.Outlined.Subtitles),
     Automation("automation", "智能联动", Icons.Outlined.Bolt),
+    Xiaozhi("xiaozhi", "小智", Icons.Outlined.RecordVoiceOver),
     Settings("settings", "设置", Icons.Outlined.Settings)
 }
 
@@ -79,6 +82,7 @@ fun AppNavigation(
     var showTripMap by rememberSaveable { mutableStateOf(false) }
     var showCharges by rememberSaveable { mutableStateOf(false) }
     var showDashboard by rememberSaveable { mutableStateOf(false) }
+    var settingsInitialCategory by rememberSaveable { mutableStateOf<String?>(null) }
     val screenStateHolder = rememberSaveableStateHolder()
 
 
@@ -186,6 +190,7 @@ fun AppNavigation(
             onNavigate = { route ->
                 if (selectedRoute != route || showPlaces || showTripMap || showCharges || showDashboard) {
                     selectedRoute = route
+                    if (route == Screen.Settings.route) settingsInitialCategory = null
                     showPlaces = false
                     showTripMap = false
                     showCharges = false
@@ -255,7 +260,14 @@ fun AppNavigation(
                             Screen.Sound -> SoundScreen()
                             Screen.Lyrics -> LyricDisplayScreen()
                             Screen.Automation -> AutomationScreen()
+                            Screen.Xiaozhi -> XiaozhiScreen(
+                                onOpenSettings = {
+                                    settingsInitialCategory = "Xiaozhi"
+                                    selectedRoute = Screen.Settings.route
+                                },
+                            )
                             Screen.Settings -> SettingsScreen(
+                                initialCategory = settingsInitialCategory,
                                 onNavigateToPlaces = {
                                     selectedRoute = Screen.Settings.route
                                     showPlaces = true

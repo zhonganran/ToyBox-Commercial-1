@@ -6,7 +6,6 @@ import java.io.File
 object WjxDirectories {
     val baseDir: File = File(Environment.getExternalStorageDirectory(), "WJX")
     val soundDir: File = baseDir
-    val vehicleSoundDir: File = File(baseDir, "车辆音效")
     val appLog: File = File(baseDir, "wjx.log")
     val exteriorAudioLog: File = appLog
     val offlineLicense: File = File(baseDir, "wjx_license.dat")
@@ -27,11 +26,8 @@ object WjxDirectories {
         return true
     }
 
-    fun ensureVehicleSoundDir(): Boolean =
-        ensureBaseDirs() && (vehicleSoundDir.isDirectory || vehicleSoundDir.mkdirs())
-
     private fun cleanupObsoleteEmptyDirs() {
-        listOf("sounds", "music", "video", "logs")
+        listOf("sounds", "music", "video", "logs", "车辆音效")
             .map { File(baseDir, it) }
             .forEach { dir ->
                 if (dir.isDirectory && dir.listFiles().isNullOrEmpty()) {

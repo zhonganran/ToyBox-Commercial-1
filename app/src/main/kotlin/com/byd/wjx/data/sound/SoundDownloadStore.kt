@@ -1,7 +1,6 @@
 package com.byd.wjx.data.sound
 
 import android.content.Context
-import com.byd.wjx.storage.SoundDestination
 import com.byd.wjx.storage.WjxDirectories
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -29,31 +28,27 @@ class SoundDownloadStore @Inject constructor(
                         fileName = obj.optString("fileName"),
                         sizeLabel = obj.optString("sizeLabel"),
                         finishedAt = obj.optLong("finishedAt"),
-                        destination = runCatching {
-                            SoundDestination.valueOf(obj.optString("destination", SoundDestination.PERSONAL.name))
-                        }.getOrDefault(SoundDestination.PERSONAL),
                     )
                 }
             }.filter {
                 it.soundId > 0L &&
                     it.name.isNotBlank() &&
                     it.fileName.isNotBlank() &&
-                    File(directoryFor(it.destination), it.fileName).isFile
+                    File(WjxDirectories.soundDir, it.fileName).isFile
             }
         }.getOrDefault(emptyList())
     }
 
-    fun findExistingRecord(soundId: Long, destination: SoundDestination): SoundDownloadRecord? {
+    fun findExistingRecord(soundId: Long): SoundDownloadRecord? {
         return loadRecords().firstOrNull { record ->
             record.soundId == soundId &&
-                record.destination == destination &&
-                File(directoryFor(record.destination), record.fileName).isFile
+                File(WjxDirectories.soundDir, record.fileName).isFile
         }
     }
 
     fun add(record: SoundDownloadRecord) {
         val records = (listOf(record) + loadRecords().filterNot {
-            it.soundId == record.soundId && it.destination == record.destination
+            it.soundId == record.soundId
         })
             .take(MAX_RECORDS)
         val ids = loadDownloadedIds() + record.soundId
@@ -67,18 +62,14 @@ class SoundDownloadStore @Inject constructor(
         val records = loadRecords().filterNot {
                 it.soundId == record.soundId &&
                 it.fileName == record.fileName &&
-                it.finishedAt == record.finishedAt &&
-                it.destination == record.destination
+                it.finishedAt == record.finishedAt
         }
         save(records)
     }
 
-    fun removeByFileName(
-        fileName: String,
-        destination: SoundDestination = SoundDestination.PERSONAL,
-    ) {
+    fun removeByFileName(fileName: String) {
         save(loadRecords().filterNot {
-            it.fileName == fileName && it.destination == destination
+            it.fileName == fileName
         })
     }
 
@@ -107,7 +98,6 @@ class SoundDownloadStore @Inject constructor(
                     .put("fileName", record.fileName)
                     .put("sizeLabel", record.sizeLabel)
                     .put("finishedAt", record.finishedAt)
-                    .put("destination", record.destination.name)
             )
         }
         return arr.toString()
@@ -120,11 +110,6 @@ class SoundDownloadStore @Inject constructor(
         private const val MAX_RECORDS = 50
     }
 
-    private fun directoryFor(destination: SoundDestination): File =
-        when (destination) {
-            SoundDestination.PERSONAL -> WjxDirectories.soundDir
-            SoundDestination.VEHICLE -> WjxDirectories.vehicleSoundDir
-        }
 }
 
 data class SoundDownloadRecord(
@@ -133,5 +118,4 @@ data class SoundDownloadRecord(
     val fileName: String,
     val sizeLabel: String,
     val finishedAt: Long,
-    val destination: SoundDestination = SoundDestination.PERSONAL,
 )
