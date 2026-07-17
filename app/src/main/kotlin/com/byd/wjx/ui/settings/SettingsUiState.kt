@@ -33,6 +33,7 @@ data class SettingsUiState(
     val consumptionBad: String = SettingsRepository.DEFAULT_CONSUMPTION_BAD,
     val lastBootInfo: String? = null,
     val chainLog: String? = null,
+    val capacitySaveStatus: String? = null,
     val tariffSaveStatus: String? = null,
     val recalcStatus: String? = null,
     val showRecalcConfirm: Boolean = false,

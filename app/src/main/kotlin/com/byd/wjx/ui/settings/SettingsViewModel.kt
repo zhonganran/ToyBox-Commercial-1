@@ -488,19 +488,37 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /** Save battery capacity setting. */
-    fun saveBatteryCapacity(value: String) {
-        _uiState.update { it.copy(batteryCapacity = value) }
-        viewModelScope.launch {
-            settingsRepository.setString(SettingsRepository.KEY_BATTERY_CAPACITY, value)
-        }
+    fun updateBatteryCapacity(value: String) {
+        _uiState.update { it.copy(batteryCapacity = value, capacitySaveStatus = null) }
     }
 
-    /** Save the vehicle-specific fuel-tank capacity used for remaining-litre estimates. */
-    fun saveFuelTankCapacity(value: String) {
-        _uiState.update { it.copy(fuelTankCapacity = value) }
+    fun updateFuelTankCapacity(value: String) {
+        _uiState.update { it.copy(fuelTankCapacity = value, capacitySaveStatus = null) }
+    }
+
+    /** Atomically save both vehicle-specific capacities used by the home estimates. */
+    fun saveEnergyCapacities() {
+        val state = _uiState.value
+        val batteryCapacity = state.batteryCapacity.normalizedPositiveNumber()
+        val fuelTankCapacity = state.fuelTankCapacity.replace(',', '.').trim()
+        val fuelTankCapacityValid = fuelTankCapacity.isEmpty() ||
+            fuelTankCapacity.toDoubleOrNull()?.let { it.isFinite() && it > 0.0 } == true
+        if (batteryCapacity == null || !fuelTankCapacityValid) {
+            _uiState.update {
+                it.copy(capacitySaveStatus = appContext.getString(R.string.settings_capacity_invalid))
+            }
+            return
+        }
         viewModelScope.launch {
-            settingsRepository.setString(SettingsRepository.KEY_FUEL_TANK_CAPACITY, value)
+            settingsRepository.setStrings(
+                mapOf(
+                    SettingsRepository.KEY_BATTERY_CAPACITY to batteryCapacity,
+                    SettingsRepository.KEY_FUEL_TANK_CAPACITY to fuelTankCapacity,
+                ),
+            )
+            _uiState.update { it.copy(capacitySaveStatus = appContext.getString(R.string.settings_saved)) }
+            delay(2_000L)
+            _uiState.update { it.copy(capacitySaveStatus = null) }
         }
     }
 
@@ -531,8 +549,12 @@ class SettingsViewModel @Inject constructor(
     fun saveTariffs() {
         val state = _uiState.value
         viewModelScope.launch {
-            settingsRepository.setString(SettingsRepository.KEY_HOME_TARIFF, state.homeTariff)
-            settingsRepository.setString(SettingsRepository.KEY_DC_TARIFF, state.dcTariff)
+            settingsRepository.setStrings(
+                mapOf(
+                    SettingsRepository.KEY_HOME_TARIFF to state.homeTariff,
+                    SettingsRepository.KEY_DC_TARIFF to state.dcTariff,
+                ),
+            )
             val tariff = settingsRepository.getTripCostTariff()
             historyImporter.calculateMissingCosts(tariff)
             _uiState.update { it.copy(tariffSaveStatus = appContext.getString(R.string.settings_saved)) }
@@ -540,6 +562,11 @@ class SettingsViewModel @Inject constructor(
             _uiState.update { it.copy(tariffSaveStatus = null) }
         }
     }
+
+    private fun String.normalizedPositiveNumber(): String? =
+        replace(',', '.').trim().takeIf { normalized ->
+            normalized.toDoubleOrNull()?.let { it.isFinite() && it > 0.0 } == true
+        }
 
     /** Recalculate cost for ALL trips using current tariff. */
     fun recalculateAllCosts() {

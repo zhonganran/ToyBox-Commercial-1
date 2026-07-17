@@ -178,7 +178,6 @@ fun AppNavigation(
     BackHandler(enabled = disclaimerAccepted && showDashboard) {
         showDashboard = false
     }
-
     ProAppScaffold(
             navItems = navItems,
             selectedRoute = scaffoldRoute,

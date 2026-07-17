@@ -31,6 +31,7 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.VerifiedUser
+import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -63,6 +64,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.byd.wjx.R
 import com.byd.wjx.audio.LockSoundEvent
+import com.byd.wjx.ui.electronicmirror.ElectronicMirrorSettingsContent
 import com.byd.wjx.ui.theme.*
 
 
@@ -231,6 +233,7 @@ private enum class SettingsCategory {
     Service,
     Vehicle,
     Control,
+    ElectronicMirror,
     Led,
     EventSound,
     Data,
@@ -249,6 +252,7 @@ private fun SettingsCategoryHeader(
         SettingsCategory.Service -> category.title
         SettingsCategory.Vehicle -> category.title
         SettingsCategory.Control -> category.title
+        SettingsCategory.ElectronicMirror -> category.title
         SettingsCategory.Led -> category.title
         SettingsCategory.EventSound -> category.title
         SettingsCategory.Data -> category.title
@@ -258,6 +262,7 @@ private fun SettingsCategoryHeader(
         SettingsCategory.Service -> category.subtitle
         SettingsCategory.Vehicle -> category.subtitle
         SettingsCategory.Control -> category.subtitle
+        SettingsCategory.ElectronicMirror -> category.subtitle
         SettingsCategory.Led -> category.subtitle
         SettingsCategory.EventSound -> category.subtitle
         SettingsCategory.Data -> category.subtitle
@@ -352,6 +357,9 @@ private fun SettingsCategoryContent(
             SettingsCategory.Control -> {
                 DisplaySection(state, viewModel)
             }
+            SettingsCategory.ElectronicMirror -> {
+                ElectronicMirrorSettingsContent(embedded = true)
+            }
             SettingsCategory.Led -> {
                 LedLinkSettingsSection()
             }
@@ -371,9 +379,10 @@ private val SettingsCategory.indexLabel: String
         SettingsCategory.Service -> "02"
         SettingsCategory.Vehicle -> "03"
         SettingsCategory.Control -> "04"
-        SettingsCategory.Led -> "05"
-        SettingsCategory.EventSound -> "06"
-        SettingsCategory.Data -> "07"
+        SettingsCategory.ElectronicMirror -> "05"
+        SettingsCategory.Led -> "06"
+        SettingsCategory.EventSound -> "07"
+        SettingsCategory.Data -> "08"
     }
 
 private val SettingsCategory.icon: ImageVector
@@ -382,6 +391,7 @@ private val SettingsCategory.icon: ImageVector
         SettingsCategory.Service -> Icons.Outlined.VerifiedUser
         SettingsCategory.Vehicle -> Icons.Outlined.Place
         SettingsCategory.Control -> Icons.Outlined.Key
+        SettingsCategory.ElectronicMirror -> Icons.Outlined.Visibility
         SettingsCategory.Led -> Icons.Outlined.BluetoothConnected
         SettingsCategory.EventSound -> Icons.Outlined.MusicNote
         SettingsCategory.Data -> Icons.Outlined.CloudUpload
@@ -393,6 +403,7 @@ private val SettingsCategory.title: String
         SettingsCategory.Service -> "服务与授权"
         SettingsCategory.Vehicle -> "车辆费用与地点"
         SettingsCategory.Control -> "按键 / 仪表 / 车外通道"
+        SettingsCategory.ElectronicMirror -> "电子后视镜"
         SettingsCategory.Led -> "LED联动"
         SettingsCategory.EventSound -> "车辆事件音效"
         SettingsCategory.Data -> "数据与更新"
@@ -404,6 +415,7 @@ private val SettingsCategory.subtitle: String
         SettingsCategory.Service -> "永久授权 $PERMANENT_AUTH_PRICE、联系客服、售后支持"
         SettingsCategory.Vehicle -> "电池容量、充电价格、能耗区间和常用地点"
         SettingsCategory.Control -> "车外音效通道、方向盘快捷键、仪表盘投射"
+        SettingsCategory.ElectronicMirror -> "转向显示侧后方画面，支持仪表盘和中控屏"
         SettingsCategory.Led -> "蓝牙屏幕、车辆事件联动和内置画面测试"
         SettingsCategory.EventSound -> "锁车、解锁、哨兵、自动泊车的后台车外音效"
         SettingsCategory.Data -> "界面主题、行程轨迹、备份恢复、更新和关于"
@@ -415,6 +427,7 @@ private fun SettingsCategory.status(state: SettingsUiState): String =
         SettingsCategory.Service -> if (state.activation.activated) "已授权" else PERMANENT_AUTH_PRICE
         SettingsCategory.Vehicle -> "费用 / 能耗"
         SettingsCategory.Control -> if (state.activation.activated || state.activation.trialActive) "高级可用" else "部分需激活"
+        SettingsCategory.ElectronicMirror -> "仪表 / 中控"
         SettingsCategory.Led -> "设备联动"
         SettingsCategory.EventSound -> {
             val count = LockSoundEvent.entries.count { state.lockSound.enabled(it) } +
@@ -434,6 +447,7 @@ private fun SettingsCategory.accent(state: SettingsUiState): Color =
         SettingsCategory.Service -> AccentOrange
         SettingsCategory.Vehicle -> AccentBlue
         SettingsCategory.Control -> AccentGreen
+        SettingsCategory.ElectronicMirror -> AccentGreen
         SettingsCategory.Led -> AccentBlue
         SettingsCategory.EventSound -> AccentOrange
         SettingsCategory.Data -> AccentPurple
@@ -490,35 +504,63 @@ private fun BatterySection(state: SettingsUiState, viewModel: SettingsViewModel)
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            SettingsTextField(
-                label = stringResource(R.string.settings_battery_capacity_label),
-                value = state.batteryCapacity,
-                onValueChange = { viewModel.saveBatteryCapacity(it) },
-                keyboardType = KeyboardType.Decimal
-            )
-            SettingsTextField(
-                label = stringResource(R.string.settings_fuel_tank_capacity_label),
-                value = state.fuelTankCapacity,
-                onValueChange = { viewModel.saveFuelTankCapacity(it) },
-                keyboardType = KeyboardType.Decimal
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SettingsTextField(
+                    label = stringResource(R.string.settings_battery_capacity_label),
+                    value = state.batteryCapacity,
+                    onValueChange = viewModel::updateBatteryCapacity,
+                    keyboardType = KeyboardType.Decimal,
+                    modifier = Modifier.weight(1f),
+                )
+                SettingsTextField(
+                    label = stringResource(R.string.settings_fuel_tank_capacity_label),
+                    value = state.fuelTankCapacity,
+                    onValueChange = viewModel::updateFuelTankCapacity,
+                    keyboardType = KeyboardType.Decimal,
+                    modifier = Modifier.weight(1f),
+                )
+                SettingsSaveButton(onClick = viewModel::saveEnergyCapacities)
+            }
+            state.capacitySaveStatus?.let {
+                Text(
+                    text = it,
+                    color = if (it == stringResource(R.string.settings_saved)) AccentGreen else AccentOrange,
+                    fontSize = 12.sp,
+                )
+            }
             Text(
                 stringResource(R.string.settings_fuel_tank_capacity_note),
                 color = TextSecondary,
                 fontSize = 12.sp,
             )
-            SettingsTextField(
-                label = stringResource(R.string.settings_tariff_home_label, state.currencySymbol),
-                value = state.homeTariff,
-                onValueChange = { viewModel.updateHomeTariff(it) },
-                keyboardType = KeyboardType.Decimal
-            )
-            SettingsTextField(
-                label = stringResource(R.string.settings_tariff_dc_label, state.currencySymbol),
-                value = state.dcTariff,
-                onValueChange = { viewModel.updateDcTariff(it) },
-                keyboardType = KeyboardType.Decimal
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SettingsTextField(
+                    label = stringResource(R.string.settings_tariff_home_label, state.currencySymbol),
+                    value = state.homeTariff,
+                    onValueChange = viewModel::updateHomeTariff,
+                    keyboardType = KeyboardType.Decimal,
+                    modifier = Modifier.weight(1f),
+                )
+                SettingsTextField(
+                    label = stringResource(R.string.settings_tariff_dc_label, state.currencySymbol),
+                    value = state.dcTariff,
+                    onValueChange = viewModel::updateDcTariff,
+                    keyboardType = KeyboardType.Decimal,
+                    modifier = Modifier.weight(1f),
+                )
+                SettingsSaveButton(onClick = viewModel::saveTariffs)
+            }
+            state.tariffSaveStatus?.let {
+                Text(it, color = AccentGreen, fontSize = 12.sp)
+            }
             Text(stringResource(R.string.settings_tariff_trip_label), color = TextSecondary, fontSize = 14.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 UnitChip("慢充", state.tripCostTariff == "home") { viewModel.saveTripCostTariff("home") }
@@ -536,18 +578,6 @@ private fun BatterySection(state: SettingsUiState, viewModel: SettingsViewModel)
                 )
             }
 
-            // Save tariffs button
-            Button(
-                onClick = { viewModel.saveTariffs() },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = AccentGreen, contentColor = AccentContent)
-            ) {
-                Text(stringResource(R.string.settings_save_tariffs_button), fontSize = 14.sp, fontWeight = FontWeight.Medium)
-            }
-            state.tariffSaveStatus?.let {
-                Text(it, color = AccentGreen, fontSize = 12.sp)
-            }
             Text(
                 stringResource(R.string.settings_tariff_future_note),
                 color = TextMuted, fontSize = 11.sp, lineHeight = 15.sp
@@ -648,7 +678,8 @@ private fun SettingsTextField(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,
-    keyboardType: KeyboardType
+    keyboardType: KeyboardType,
+    modifier: Modifier = Modifier.fillMaxWidth(),
 ) {
     OutlinedTextField(
         value = value,
@@ -656,7 +687,7 @@ private fun SettingsTextField(
         label = { Text(label) },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier,
         shape = RoundedCornerShape(8.dp),
         colors = OutlinedTextFieldDefaults.colors(
             focusedTextColor = TextPrimary,
@@ -668,6 +699,27 @@ private fun SettingsTextField(
             cursorColor = PrimaryColor
         )
     )
+}
+
+@Composable
+private fun SettingsSaveButton(onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier
+            .width(92.dp)
+            .height(56.dp),
+        shape = RoundedCornerShape(8.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = AccentGreen,
+            contentColor = AccentContent,
+        ),
+    ) {
+        Text(
+            text = stringResource(R.string.settings_save_button),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+        )
+    }
 }
 
 @Composable

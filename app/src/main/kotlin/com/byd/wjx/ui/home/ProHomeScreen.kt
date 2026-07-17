@@ -654,7 +654,7 @@ private fun HomeMetricRibbon(
             icon = Icons.Outlined.WaterDrop,
             color = SceneAmber,
             progress = ((state.fuelLevel ?: 0) / 100f).coerceIn(0f, 1f),
-            secondary = state.fuelRemainingLiters?.let { "剩余 %.1f L".format(it) },
+            extraValue = state.fuelRemainingLiters?.let { "%.1f L".format(it) },
         ),
         RibbonMetric("实时功率", state.power?.let { "%.1f".format(it) } ?: "--", "kW", Icons.Outlined.ElectricBolt, AccentOrange, ((kotlin.math.abs(state.power ?: 0.0) / 80.0).toFloat()).coerceIn(0f, 1f)),
         RibbonMetric("总里程", state.odometer?.let { "%,.0f".format(it) } ?: "--", "km", Icons.Outlined.Speed, ScenePink, 0.72f),
@@ -696,7 +696,7 @@ private data class RibbonMetric(
     val icon: androidx.compose.ui.graphics.vector.ImageVector,
     val color: Color,
     val progress: Float,
-    val secondary: String? = null,
+    val extraValue: String? = null,
 )
 
 @Composable
@@ -710,9 +710,18 @@ private fun RibbonMetricItem(metric: RibbonMetric, modifier: Modifier = Modifier
                     Text(metric.value, color = TextPrimary, fontSize = 23.sp, lineHeight = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                     Spacer(Modifier.width(3.dp))
                     Text(metric.unit, color = TextSecondary, fontSize = 11.sp, modifier = Modifier.padding(bottom = 2.dp))
-                }
-                metric.secondary?.let {
-                    Text(it, color = TextSecondary, fontSize = 11.sp, maxLines = 1)
+                    metric.extraValue?.let {
+                        Spacer(Modifier.width(7.dp))
+                        Text(
+                            text = "· $it",
+                            color = TextPrimary.copy(alpha = 0.78f),
+                            fontSize = 13.sp,
+                            lineHeight = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            modifier = Modifier.padding(bottom = 1.dp),
+                        )
+                    }
                 }
             }
         }

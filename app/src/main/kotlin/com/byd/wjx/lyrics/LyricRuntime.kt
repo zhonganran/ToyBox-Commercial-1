@@ -25,6 +25,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -64,7 +65,7 @@ class LyricRuntime @Inject constructor(
     private var cachedLyricsAllowed = false
     private var lastLyricsAllowedCheckAt = Long.MIN_VALUE
 
-    fun start(cameraActive: StateFlow<Boolean>) {
+    fun start(cameraActive: StateFlow<Boolean>, electronicMirrorActive: StateFlow<Boolean>) {
         if (scope?.isActive == true) return
         val newScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         scope = newScope
@@ -72,10 +73,11 @@ class LyricRuntime @Inject constructor(
 
         newScope.launch(Dispatchers.IO) { ensurePermissionsBestEffort() }
         newScope.launch {
-            cameraActive.collectLatest { active ->
-                latestCameraActive = active
-                if (active) hideOverlays(hard = true)
-            }
+            combine(cameraActive, electronicMirrorActive) { camera, mirror -> camera || mirror }
+                .collectLatest { active ->
+                    latestCameraActive = active
+                    if (active) hideOverlays(hard = true)
+                }
         }
         newScope.launch {
             MusicPlaybackStore.state.collectLatest { snapshot ->

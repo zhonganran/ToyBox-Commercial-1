@@ -121,4 +121,31 @@ class HelperClientProjectionTest {
         assertFalse(clientWith(capturingFake(status = -1, value = 0))
             .launchAndForce("com.autonavi.amapauto", 2, 1280, 480))
     }
+
+    @Test
+    fun `electronic mirror start sends viewpoint and fps before Surface`() = runBlocking {
+        var viewpoint = 0
+        var fps = 0
+        val fake = capturingFake(status = 0, value = 2002) {
+            viewpoint = it.readInt()
+            fps = it.readInt()
+        }
+        val surface = makeSurface()
+
+        assertTrue(clientWith(fake).startElectronicMirror(surface, 2002, 30))
+        assertEquals(2002, viewpoint)
+        assertEquals(30, fps)
+        surface.release()
+    }
+
+    @Test
+    fun `electronic mirror switch stop and status map replies`() = runBlocking {
+        assertTrue(clientWith(capturingFake(status = 0, value = 2003)).switchElectronicMirrorView(2003))
+        assertTrue(clientWith(capturingFake(status = 0, value = 0)).stopElectronicMirror())
+        assertFalse(clientWith(capturingFake(status = -7, value = -1)).switchElectronicMirrorView(2002))
+
+        val status = clientWith(capturingFake(status = 1, value = 2003)).electronicMirrorStatus()
+        assertEquals(true, status?.active)
+        assertEquals(2003, status?.viewpoint)
+    }
 }

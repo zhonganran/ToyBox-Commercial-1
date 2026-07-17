@@ -135,7 +135,7 @@ import java.util.Locale
 
 @Composable
 fun AutomationScreen(
-    viewModel: AutomationViewModel = hiltViewModel()
+    viewModel: AutomationViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val filtered = remember(state.rules, state.filter) {

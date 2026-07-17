@@ -15,6 +15,17 @@ class AutomationActionSnapshotFieldProviderTest {
     }
 
     @Test
+    fun `electronic mirror fast path reads stable turn and auto parking ownership`() {
+        assertEquals(
+            setOf("turnSignalFlash", "adasApaParkingStatus"),
+            requiredRuntimeFeatureFields(
+                autoParkingSoundEnabled = false,
+                electronicMirrorEnabled = true,
+            ),
+        )
+    }
+
+    @Test
     fun `enabled param triggers select only their required vehicle fields`() {
         val fields = requiredAutomationVehicleFields(
             listOf(

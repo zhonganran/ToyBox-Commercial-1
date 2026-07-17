@@ -186,10 +186,12 @@ class SettingsViewModelTest {
 
     // --- Factory ---
 
-    private fun buildViewModel(updateChecker: UpdateChecker? = null): SettingsViewModel {
+    private fun buildViewModel(
+        updateChecker: UpdateChecker? = null,
+        settingsDao: FakeSettingsDao = FakeSettingsDao(),
+    ): SettingsViewModel {
         val ctx: Context = ApplicationProvider.getApplicationContext()
 
-        val settingsDao = FakeSettingsDao()
         val settingsRepo = SettingsRepository(settingsDao)
 
         val tripDao = StubTripDao()
@@ -251,15 +253,22 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun `fuel tank capacity starts blank and saves as vehicle specific setting`() = runTest {
-        val vm = buildViewModel()
+    fun `vehicle capacities stay as drafts until explicit save then persist together`() = runTest {
+        val settingsDao = FakeSettingsDao()
+        val vm = buildViewModel(settingsDao = settingsDao)
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(SettingsRepository.DEFAULT_FUEL_TANK_CAPACITY, vm.uiState.value.fuelTankCapacity)
 
-        vm.saveFuelTankCapacity("53")
+        vm.updateBatteryCapacity("75.0")
+        vm.updateFuelTankCapacity("53")
+        assertEquals(null, settingsDao.map[SettingsRepository.KEY_FUEL_TANK_CAPACITY])
+
+        vm.saveEnergyCapacities()
         testDispatcher.scheduler.advanceUntilIdle()
 
+        assertEquals("75.0", settingsDao.map[SettingsRepository.KEY_BATTERY_CAPACITY])
+        assertEquals("53", settingsDao.map[SettingsRepository.KEY_FUEL_TANK_CAPACITY])
         assertEquals("53", vm.uiState.value.fuelTankCapacity)
     }
 

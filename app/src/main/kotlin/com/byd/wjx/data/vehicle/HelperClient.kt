@@ -23,6 +23,11 @@ data class HelperShellResult(
     val ok: Boolean get() = status == 0 && exitCode == 0
 }
 
+data class HelperCameraStatus(
+    val active: Boolean,
+    val viewpoint: Int,
+)
+
 /**
  * Client for the in-vehicle helper daemon registered as the `wjx_helper`
  * binder service (ServiceManager.getService + IBinder.transact).
@@ -89,6 +94,11 @@ interface HelperClient {
     suspend fun execShellResult(command: String): HelperShellResult? = null
     /** Generic helper-side shell execution. Keep call sites narrow and logged. */
     suspend fun execShell(command: String): String? = null
+    /** Starts AVMCamera preview directly into [surface]. Viewpoints use the validated 2000-series map. */
+    suspend fun startElectronicMirror(surface: Surface, viewpoint: Int, fps: Int): Boolean = false
+    suspend fun switchElectronicMirrorView(viewpoint: Int): Boolean = false
+    suspend fun stopElectronicMirror(): Boolean = false
+    suspend fun electronicMirrorStatus(): HelperCameraStatus? = null
 }
 
 @Singleton
@@ -277,6 +287,36 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
 
     override suspend fun execShell(command: String): String? =
         execShellResult(command)?.takeIf { it.status == 0 }?.output
+
+    override suspend fun startElectronicMirror(surface: Surface, viewpoint: Int, fps: Int): Boolean =
+        transactParsed(HelperBinderProtocol.TX_CAMERA_START, { data ->
+            data.writeInt(viewpoint)
+            data.writeInt(fps)
+            surface.writeToParcel(data, 0)
+        }, timeoutMs = FORCE_TIMEOUT_MS) { reply ->
+            val status = if (reply.dataAvail() >= 4) reply.readInt() else return@transactParsed false
+            if (reply.dataAvail() >= 4) reply.readInt()
+            status == 0
+        } ?: false
+
+    override suspend fun switchElectronicMirrorView(viewpoint: Int): Boolean =
+        transactParsed(HelperBinderProtocol.TX_CAMERA_SWITCH_VIEW, { data ->
+            data.writeInt(viewpoint)
+        }, timeoutMs = FORCE_TIMEOUT_MS) { reply ->
+            val status = if (reply.dataAvail() >= 4) reply.readInt() else return@transactParsed false
+            if (reply.dataAvail() >= 4) reply.readInt()
+            status == 0
+        } ?: false
+
+    override suspend fun stopElectronicMirror(): Boolean =
+        statusOk(HelperBinderProtocol.TX_CAMERA_STOP) { }
+
+    override suspend fun electronicMirrorStatus(): HelperCameraStatus? =
+        transactParsed(HelperBinderProtocol.TX_CAMERA_STATUS, { }) { reply ->
+            val active = if (reply.dataAvail() >= 4) reply.readInt() == 1 else return@transactParsed null
+            val viewpoint = if (reply.dataAvail() >= 4) reply.readInt() else -1
+            HelperCameraStatus(active, viewpoint)
+        }
 
     /** (status,value) reply; true iff status == 0. Shared by the boolean projection ops. */
     private suspend fun statusOk(code: Int, writeArgs: (Parcel) -> Unit): Boolean =

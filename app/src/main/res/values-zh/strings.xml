@@ -34,20 +34,21 @@
 
     <!-- 设置：车辆与电池 -->
     <string name="settings_battery_section_header">能源容量与电价</string>
-    <string name="settings_battery_capacity_label">电池容量（千瓦时）</string>
-    <string name="settings_fuel_tank_capacity_label">油箱容量（升）</string>
+    <string name="settings_battery_capacity_label">电池容量（kWh）</string>
+    <string name="settings_fuel_tank_capacity_label">油箱容量（L）</string>
     <string name="settings_fuel_tank_capacity_note">剩余油量按油量百分比 × 油箱容量估算；请按车型填写，不确定时可留空。</string>
+    <string name="settings_capacity_invalid">请输入有效的电池容量和油箱容量</string>
+    <string name="settings_save_button">保存</string>
     <string name="settings_appearance_header">界面显示</string>
     <string name="settings_theme_title">明暗主题</string>
     <string name="settings_theme_description">自适应会跟随车机系统的深色模式自动切换。</string>
     <string name="settings_theme_light">白天</string>
     <string name="settings_theme_dark">黑暗</string>
     <string name="settings_theme_system">自适应</string>
-    <string name="settings_tariff_home_label">家充电价（%1$s/千瓦时）</string>
-    <string name="settings_tariff_dc_label">快充电价（%1$s/千瓦时）</string>
+    <string name="settings_tariff_home_label">家充（%1$s/kWh）</string>
+    <string name="settings_tariff_dc_label">快充（%1$s/kWh）</string>
     <string name="settings_tariff_trip_label">行程电价</string>
     <string name="settings_tariff_custom_label">自定义电价（%1$s/千瓦时）</string>
-    <string name="settings_save_tariffs_button">保存电价</string>
     <string name="settings_tariff_future_note">新电价将应用于未来行程。\n已计算的行程不会改变。</string>
     <string name="settings_recalc_all_button">重新计算所有行程</string>
     <string name="settings_recalc_note">按当前电价重新计算\n所有行程的费用。</string>

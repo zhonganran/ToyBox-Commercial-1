@@ -4,6 +4,7 @@ import com.byd.wjx.audio.AutoParkingSoundSettings
 import com.byd.wjx.data.local.entity.RuleEntity
 import com.byd.wjx.data.local.entity.TriggerDef
 import com.byd.wjx.data.nativestack.ActionSnapshotFieldProvider
+import com.byd.wjx.electronicmirror.ElectronicMirrorPreferences
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -11,15 +12,24 @@ import javax.inject.Singleton
 class AutomationActionSnapshotFieldProvider @Inject constructor(
     private val repository: AutomationConfigRepository,
     private val autoParkingSoundSettings: AutoParkingSoundSettings,
+    private val electronicMirrorPreferences: ElectronicMirrorPreferences,
 ) : ActionSnapshotFieldProvider {
     override suspend fun additionalFields(): Set<String> {
-        val autoParkingFields = requiredRuntimeFeatureFields(autoParkingSoundSettings.enabled)
+        val autoParkingFields = requiredRuntimeFeatureFields(
+            autoParkingSoundEnabled = autoParkingSoundSettings.enabled,
+            electronicMirrorEnabled = electronicMirrorPreferences.isEnabled(),
+        )
         return repository.current().requiredVehicleFields + autoParkingFields
     }
 }
 
-internal fun requiredRuntimeFeatureFields(autoParkingSoundEnabled: Boolean): Set<String> =
-    if (autoParkingSoundEnabled) setOf("adasApaParkingStatus") else emptySet()
+internal fun requiredRuntimeFeatureFields(
+    autoParkingSoundEnabled: Boolean,
+    electronicMirrorEnabled: Boolean = false,
+): Set<String> = buildSet {
+    if (autoParkingSoundEnabled || electronicMirrorEnabled) add("adasApaParkingStatus")
+    if (electronicMirrorEnabled) add("turnSignalFlash")
+}
 
 internal fun requiredAutomationVehicleFields(rules: List<RuleEntity>): Set<String> = buildSet {
     rules.asSequence()

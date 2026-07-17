@@ -107,9 +107,15 @@ class DashboardViewModelTest {
 
     private class FakeSettingsDao : SettingsDao {
         val map = mutableMapOf<String, String>()
+        private val values = mutableMapOf<String, MutableStateFlow<String?>>()
         override suspend fun get(key: String): String? = map[key]
-        override fun observe(key: String): Flow<String?> = flowOf(map[key])
-        override suspend fun set(entity: SettingEntity) { map[entity.key] = entity.value ?: "" }
+        override fun observe(key: String): Flow<String?> =
+            values.getOrPut(key) { MutableStateFlow(map[key]) }
+        override suspend fun set(entity: SettingEntity) {
+            val value = entity.value ?: ""
+            map[entity.key] = value
+            values.getOrPut(entity.key) { MutableStateFlow(null) }.value = value
+        }
         override suspend fun setAll(settings: List<SettingEntity>) { settings.forEach { set(it) } }
         override fun getAll(): Flow<List<SettingEntity>> = flowOf(emptyList())
     }
@@ -249,10 +255,11 @@ class DashboardViewModelTest {
         fakeAutoservice: VehicleApi,
         onDemandTelemetryReader: OnDemandVehicleTelemetryReader = FakeOnDemandTelemetryReader(),
         initialSettings: Map<String, String> = emptyMap(),
+        settingsDao: FakeSettingsDao = FakeSettingsDao(),
         vehicleStateRepository: FakeVehicleStateRepository = FakeVehicleStateRepository(),
         latestCharge: ChargeEntity? = null,
     ): DashboardViewModel {
-        val settingsDao = FakeSettingsDao().also { it.map.putAll(initialSettings) }
+        settingsDao.map.putAll(initialSettings)
         val settingsRepo = SettingsRepository(settingsDao)
 
         val tripDao = StubTripDao()
@@ -317,6 +324,27 @@ class DashboardViewModelTest {
         assertNull(remainingAmount(50, 0.0))
         assertNull(remainingAmount(-1, 72.9))
         assertNull(remainingAmount(101, 72.9))
+    }
+
+    @Test
+    fun `saving fuel capacity updates remaining liters without recreating home view model`() = runTest {
+        val settingsDao = FakeSettingsDao()
+        val vehicleStateRepository = FakeVehicleStateRepository()
+        val vm = buildViewModel(
+            fakeAutoservice = FakeAutoservice(sampleReading),
+            settingsDao = settingsDao,
+            vehicleStateRepository = vehicleStateRepository,
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        vehicleStateRepository.update(diParsData(soc = 50).copy(fuelLevel = 40))
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertNull(vm.uiState.value.fuelRemainingLiters)
+
+        settingsDao.set(SettingEntity(SettingsRepository.KEY_FUEL_TANK_CAPACITY, "60"))
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(24.0, vm.uiState.value.fuelRemainingLiters ?: 0.0, 0.001)
     }
 
     @Test

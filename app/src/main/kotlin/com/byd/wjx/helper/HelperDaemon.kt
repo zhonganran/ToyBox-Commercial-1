@@ -190,6 +190,7 @@ fun main(args: Array<String>) {
     // Keyed by displayId so TX_RELEASE_VIRTUAL_DISPLAY can release the right one.
     val virtualDisplays = ConcurrentHashMap<Int, VirtualDisplay>()
     val lockSoundRuntime = WjxLockSoundRuntime(svc, autoIface, systemContext)
+    val electronicMirrorCamera = ElectronicMirrorCameraRuntime(systemContext)
 
     // Step 3: build our stub Binder.
     val helperBinder = object : Binder() {
@@ -425,6 +426,46 @@ fun main(args: Array<String>) {
                 }.getOrElse {
                     helperLog("LockSound", "stop failed: ${it.javaClass.simpleName}:${it.message.orEmpty()}")
                     reply?.writeInt(-1); reply?.writeInt(0); true
+                }
+
+                HelperBinderProtocol.TX_CAMERA_START -> runCatching {
+                    val viewpoint = data.readInt()
+                    val fps = data.readInt()
+                    val surface = Surface.CREATOR.createFromParcel(data)
+                    val status = electronicMirrorCamera.start(surface, viewpoint, fps)
+                    reply?.writeInt(status)
+                    reply?.writeInt(electronicMirrorCamera.activeViewpoint())
+                    true
+                }.getOrElse {
+                    helperLog("ElectronicMirrorCamera", "binder start failed: ${it.javaClass.simpleName}:${it.message.orEmpty()}")
+                    reply?.writeInt(-1); reply?.writeInt(-1); true
+                }
+
+                HelperBinderProtocol.TX_CAMERA_SWITCH_VIEW -> runCatching {
+                    val status = electronicMirrorCamera.switchView(data.readInt())
+                    reply?.writeInt(status)
+                    reply?.writeInt(electronicMirrorCamera.activeViewpoint())
+                    true
+                }.getOrElse {
+                    helperLog("ElectronicMirrorCamera", "binder switch failed: ${it.javaClass.simpleName}:${it.message.orEmpty()}")
+                    reply?.writeInt(-1); reply?.writeInt(-1); true
+                }
+
+                HelperBinderProtocol.TX_CAMERA_STOP -> runCatching {
+                    val status = electronicMirrorCamera.stop()
+                    reply?.writeInt(status); reply?.writeInt(0)
+                    true
+                }.getOrElse {
+                    helperLog("ElectronicMirrorCamera", "binder stop failed: ${it.javaClass.simpleName}:${it.message.orEmpty()}")
+                    reply?.writeInt(-1); reply?.writeInt(0); true
+                }
+
+                HelperBinderProtocol.TX_CAMERA_STATUS -> runCatching {
+                    reply?.writeInt(if (electronicMirrorCamera.isActive()) 1 else 0)
+                    reply?.writeInt(electronicMirrorCamera.activeViewpoint())
+                    true
+                }.getOrElse {
+                    reply?.writeInt(0); reply?.writeInt(-1); true
                 }
 
                 else -> super.onTransact(code, data, reply, flags)

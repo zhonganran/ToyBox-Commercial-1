@@ -37,6 +37,11 @@ import android.os.IBinder
  *   TX_DEBUG_PLAY_LOCK_SOUND : writeInt(kind)              -> reply: writeInt(status), writeInt(played)
  *   TX_STOP_LOCK_SOUND : writeInt(kind)                    -> reply: writeInt(status), writeInt(stopped)
  *   TX_EXEC_SHELL : writeString(command)                   -> reply: writeInt(status), writeInt(exitCode), writeString(output)
+ *   TX_CAMERA_START : writeInt(viewpoint), writeInt(fps), Surface.writeToParcel(surface)
+ *       -> reply: writeInt(status), writeInt(activeViewpoint)
+ *   TX_CAMERA_SWITCH_VIEW : writeInt(viewpoint)             -> reply: writeInt(status), writeInt(activeViewpoint)
+ *   TX_CAMERA_STOP : (no args)                              -> reply: writeInt(status), writeInt(0)
+ *   TX_CAMERA_STATUS : (no args)                            -> reply: writeInt(active), writeInt(activeViewpoint)
  *
  * Projection status: 0 = success, <0 = error/unavailable. Surface is written LAST so a
  * marshalling test can assert the scalar args without round-tripping the Surface.
@@ -47,9 +52,9 @@ object HelperBinderProtocol {
     const val SERVICE_NAME = "wjx_helper"
     const val PROCESS_NAME = "wjx_helper"   // app_process --nice-name + ps lookup
     const val DESCRIPTOR = "com.byd.wjx.helper.IHelper"
-    // v6 adds the restricted sentry put_global/set_prop operations. Bumping forces an
-    // old app_process helper to restart after APK replacement before automation uses them.
-    const val CURRENT_VERSION = 6
+    // v7 adds the AVMCamera direct-Surface electronic-mirror operations. Bumping forces an old
+    // app_process helper to restart after APK replacement before a camera Surface is transferred.
+    const val CURRENT_VERSION = 7
 
     const val TX_PING = IBinder.FIRST_CALL_TRANSACTION       // 1
     const val TX_READ = IBinder.FIRST_CALL_TRANSACTION + 1   // 2
@@ -78,6 +83,10 @@ object HelperBinderProtocol {
     const val TX_DEBUG_PLAY_LOCK_SOUND = IBinder.FIRST_CALL_TRANSACTION + 24    // 25
     const val TX_EXEC_SHELL = IBinder.FIRST_CALL_TRANSACTION + 25               // 26
     const val TX_STOP_LOCK_SOUND = IBinder.FIRST_CALL_TRANSACTION + 26          // 27
+    const val TX_CAMERA_START = IBinder.FIRST_CALL_TRANSACTION + 27             // 28
+    const val TX_CAMERA_SWITCH_VIEW = IBinder.FIRST_CALL_TRANSACTION + 28       // 29
+    const val TX_CAMERA_STOP = IBinder.FIRST_CALL_TRANSACTION + 29              // 30
+    const val TX_CAMERA_STATUS = IBinder.FIRST_CALL_TRANSACTION + 30            // 31
 
     /** Hard upper bound keeps a malformed caller from creating an oversized Binder reply. */
     const val MAX_BATCH_READS = 128
