@@ -255,8 +255,8 @@ class SteeringWheelKeyService : AccessibilityService() {
                     WjxFileLogger.w(TAG, "shortcut xiaozhi ignored: RECORD_AUDIO not granted binding=${binding.id}")
                     return
                 }
-                WjxFileLogger.i(TAG, "shortcut toggle xiaozhi binding=${binding.id}")
-                XiaozhiVoiceService.toggle(applicationContext)
+                WjxFileLogger.i(TAG, "shortcut automatic xiaozhi binding=${binding.id}")
+                XiaozhiVoiceService.toggleAutomaticConversation(applicationContext)
             }
             KeyShortcutActionType.Automation -> {
                 WjxFileLogger.i(TAG, "shortcut automation fire binding=${binding.id} slot=${binding.automationButtonId}")

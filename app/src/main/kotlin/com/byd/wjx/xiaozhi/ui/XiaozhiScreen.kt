@@ -90,7 +90,7 @@ fun XiaozhiScreen(
         ) {
             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         } else {
-            viewModel.toggleConversation()
+            viewModel.toggleAutomaticConversation()
         }
     }
 
@@ -106,7 +106,7 @@ fun XiaozhiScreen(
             subtitle = if (wakeState.config.enabled) {
                 "说“${wakeState.config.phrase}”唤醒 · 云端理解 · 车内语音回答"
             } else {
-                "按键说话 · 云端理解 · 车内语音回答"
+                "按一下自动对话 · 云端理解 · 车内语音回答"
             },
             trailing = {
                 StatusPill(state)
@@ -180,7 +180,7 @@ private fun ConversationPanel(
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Icon(Icons.Outlined.Mic, contentDescription = null, tint = SceneMint, modifier = Modifier.size(54.dp))
-                        Text("点击右侧按钮，和小智说句话", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Text("按一下开始，直接和小智说话", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                         Text(
                             if (wakeEnabled) "也可以直接说“$wakePhrase”开始对话" else "可以在设置中开启后台语音唤醒",
                             color = TextSecondary,
@@ -365,15 +365,15 @@ private fun StatusPill(state: XiaozhiUiState) {
 
 private fun mainButtonLabel(state: XiaozhiUiState): String = when (state.phase) {
     XiaozhiPhase.Connecting -> "取消连接"
-    XiaozhiPhase.Listening -> "结束说话"
+    XiaozhiPhase.Listening -> "停止对话"
     XiaozhiPhase.Thinking, XiaozhiPhase.Speaking -> "停止回答"
     XiaozhiPhase.NotConfigured -> "前往设置"
-    else -> "开始对话"
+    else -> "开始自动对话"
 }
 
 private fun phaseHint(state: XiaozhiUiState, wakeEnabled: Boolean, wakePhrase: String): String = when (state.phase) {
     XiaozhiPhase.NotConfigured -> "先获取小智官方配置，或填写自己的服务地址"
-    XiaozhiPhase.Listening -> if (state.autoListening) "说完后会自动识别；回答结束后可以直接继续说" else "说完后点击“结束说话”，随后等待小智回答"
+    XiaozhiPhase.Listening -> "说完自动识别；回答后可继续说，15秒无语音自动关闭"
     XiaozhiPhase.Thinking -> "语音已经发送，可以随时点击停止"
     XiaozhiPhase.Speaking -> "回答通过车内语音通道播放"
     XiaozhiPhase.Error -> state.error ?: "请检查网络和服务器配置"

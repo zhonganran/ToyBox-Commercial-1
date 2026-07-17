@@ -79,7 +79,12 @@ class XiaozhiWebSocketClient @Inject constructor(
                 }
 
                 override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-                    webSocket.close(code, reason)
+                    val replyCode = normalizeXiaozhiCloseCode(code)
+                    WjxFileLogger.i(
+                        TAG,
+                        "remote closing code=$code replyCode=$replyCode reason=$reason",
+                    )
+                    webSocket.close(replyCode, reason)
                 }
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
@@ -101,10 +106,8 @@ class XiaozhiWebSocketClient @Inject constructor(
         )
     }
 
-    fun startListening(mode: XiaozhiListeningMode = XiaozhiListeningMode.Manual): Boolean =
-        sendText(XiaozhiMessageCodec.startListening(sessionId, mode))
-
-    fun stopListening(): Boolean = sendText(XiaozhiMessageCodec.stopListening(sessionId))
+    fun startAutomaticListening(): Boolean =
+        sendText(XiaozhiMessageCodec.startAutomaticListening(sessionId))
 
     fun abort(): Boolean = sendText(XiaozhiMessageCodec.abort(sessionId))
 
@@ -125,4 +128,16 @@ class XiaozhiWebSocketClient @Inject constructor(
     companion object {
         private const val TAG = "XiaozhiWebSocket"
     }
+}
+
+/**
+ * OkHttp reports a peer close frame without a status code as 1005. Codes 1004, 1005, 1006 and
+ * 1015 are protocol-only sentinel values and must never be sent in a close frame. Reply with a
+ * normal close code so a valid server shutdown reaches onClosed instead of onFailure.
+ */
+internal fun normalizeXiaozhiCloseCode(code: Int): Int = when {
+    code !in 1000..4999 -> 1000
+    code in 1004..1006 -> 1000
+    code == 1015 -> 1000
+    else -> code
 }

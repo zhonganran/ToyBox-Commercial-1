@@ -8,26 +8,54 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.IBinder
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.byd.wjx.R
+import com.byd.wjx.data.vehicle.HelperBootstrap
+import com.byd.wjx.data.vehicle.HelperClient
+import com.byd.wjx.log.WjxFileLogger
 import com.byd.wjx.xiaozhi.domain.XiaozhiSessionManager
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
 class XiaozhiVoiceService : Service() {
     @Inject lateinit var sessionManager: XiaozhiSessionManager
+    @Inject lateinit var helperBootstrap: HelperBootstrap
+    @Inject lateinit var helperClient: HelperClient
+
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private lateinit var statusOverlay: XiaozhiStatusOverlayController
 
     override fun onCreate() {
         super.onCreate()
+        statusOverlay = XiaozhiStatusOverlayController(this)
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, notification("小智语音对话正在运行"))
+        startForeground(NOTIFICATION_ID, notification("正在准备自动对话"))
+        serviceScope.launch {
+            sessionManager.state.collect { state ->
+                statusOverlay.update(state.phase)
+                getSystemService(NotificationManager::class.java)
+                    ?.notify(NOTIFICATION_ID, notification(state.statusText))
+            }
+        }
+        serviceScope.launch {
+            ensureOverlayPermission()
+            statusOverlay.update(sessionManager.state.value.phase)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_TOGGLE -> sessionManager.toggleConversation()
+            ACTION_AUTOMATIC_CONVERSATION -> sessionManager.toggleAutomaticConversation()
             ACTION_ABORT -> sessionManager.abortConversation()
             ACTION_KEEP_ALIVE, null -> Unit
         }
@@ -35,6 +63,8 @@ class XiaozhiVoiceService : Service() {
     }
 
     override fun onDestroy() {
+        statusOverlay.hide()
+        serviceScope.cancel()
         sessionManager.onVoiceHostStopped()
         super.onDestroy()
     }
@@ -74,11 +104,28 @@ class XiaozhiVoiceService : Service() {
             .build()
     }
 
+    private suspend fun ensureOverlayPermission() {
+        if (Settings.canDrawOverlays(this)) return
+        val granted = runCatching {
+            helperBootstrap.ensureCurrent() && helperClient.grantOverlayPermission()
+        }.onFailure { error ->
+            WjxFileLogger.w(TAG, "overlay grant failed: ${error.message}", error)
+        }.getOrDefault(false)
+        if (granted) {
+            repeat(10) {
+                if (Settings.canDrawOverlays(this)) return
+                delay(200L)
+            }
+        }
+        WjxFileLogger.i(TAG, "overlay grant requested=$granted applied=${Settings.canDrawOverlays(this)}")
+    }
+
     companion object {
+        private const val TAG = "XiaozhiVoiceService"
         private const val CHANNEL_ID = "wjx_xiaozhi_voice"
         private const val NOTIFICATION_ID = 1110
         private const val ACTION_KEEP_ALIVE = "com.byd.wjx.xiaozhi.KEEP_ALIVE"
-        private const val ACTION_TOGGLE = "com.byd.wjx.xiaozhi.TOGGLE"
+        private const val ACTION_AUTOMATIC_CONVERSATION = "com.byd.wjx.xiaozhi.AUTOMATIC_CONVERSATION"
         private const val ACTION_ABORT = "com.byd.wjx.xiaozhi.ABORT"
 
         fun ensureRunning(context: Context): Boolean = runCatching {
@@ -89,11 +136,11 @@ class XiaozhiVoiceService : Service() {
             )
         }.isSuccess
 
-        fun toggle(context: Context) {
+        fun toggleAutomaticConversation(context: Context) {
             ContextCompat.startForegroundService(
                 context.applicationContext,
                 Intent(context.applicationContext, XiaozhiVoiceService::class.java)
-                    .setAction(ACTION_TOGGLE),
+                    .setAction(ACTION_AUTOMATIC_CONVERSATION),
             )
         }
 

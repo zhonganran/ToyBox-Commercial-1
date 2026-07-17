@@ -57,6 +57,5 @@ data class XiaozhiUiState(
     val messages: List<XiaozhiChatMessage> = emptyList(),
     val provisioning: XiaozhiProvisioningState = XiaozhiProvisioningState.Idle,
     val serverSampleRate: Int = 24_000,
-    val autoListening: Boolean = false,
     val error: String? = null,
 )

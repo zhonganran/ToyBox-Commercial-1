@@ -18,11 +18,6 @@ sealed interface XiaozhiServerEvent {
     data class Unknown(val type: String, val raw: String) : XiaozhiServerEvent
 }
 
-enum class XiaozhiListeningMode(val wireValue: String) {
-    Manual("manual"),
-    Auto("auto"),
-}
-
 object XiaozhiMessageCodec {
     const val PROTOCOL_VERSION = 1
     const val INPUT_SAMPLE_RATE = 16_000
@@ -44,16 +39,9 @@ object XiaozhiMessageCodec {
         )
         .toString()
 
-    fun startListening(
-        sessionId: String,
-        mode: XiaozhiListeningMode = XiaozhiListeningMode.Manual,
-    ): String = sessionMessage(sessionId, "listen")
+    fun startAutomaticListening(sessionId: String): String = sessionMessage(sessionId, "listen")
         .put("state", "start")
-        .put("mode", mode.wireValue)
-        .toString()
-
-    fun stopListening(sessionId: String): String = sessionMessage(sessionId, "listen")
-        .put("state", "stop")
+        .put("mode", "auto")
         .toString()
 
     fun abort(sessionId: String): String = sessionMessage(sessionId, "abort").toString()

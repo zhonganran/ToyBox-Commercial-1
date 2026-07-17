@@ -14,13 +14,11 @@ class XiaozhiViewModel @Inject constructor(
     val uiState = sessionManager.state
     val wakeState = wakeController.state
 
-    fun toggleConversation() = sessionManager.toggleConversation()
-    fun startConversation() = sessionManager.startConversation()
+    fun toggleAutomaticConversation() = sessionManager.toggleAutomaticConversation()
     fun startConversationAfterMicrophonePermission() {
         wakeController.reconcile("xiaozhi_permission_granted")
-        sessionManager.startConversation()
+        sessionManager.startAutomaticConversation()
     }
-    fun stopListening() = sessionManager.stopListening()
     fun abortConversation() = sessionManager.abortConversation()
     fun disconnect() = sessionManager.disconnect()
     fun clearMessages() = sessionManager.clearMessages()

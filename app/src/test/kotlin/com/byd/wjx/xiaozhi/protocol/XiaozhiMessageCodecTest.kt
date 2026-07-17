@@ -23,24 +23,12 @@ class XiaozhiMessageCodecTest {
     }
 
     @Test
-    fun `manual listen messages preserve server session id`() {
-        val start = JSONObject(XiaozhiMessageCodec.startListening("session-7"))
-        val stop = JSONObject(XiaozhiMessageCodec.stopListening("session-7"))
+    fun `automatic listen messages preserve server session id`() {
+        val start = JSONObject(XiaozhiMessageCodec.startAutomaticListening("session-7"))
 
         assertEquals("session-7", start.getString("session_id"))
         assertEquals("listen", start.getString("type"))
         assertEquals("start", start.getString("state"))
-        assertEquals("manual", start.getString("mode"))
-        assertEquals("stop", stop.getString("state"))
-    }
-
-    @Test
-    fun `wake conversation requests server side automatic voice activity detection`() {
-        val start = JSONObject(
-            XiaozhiMessageCodec.startListening("wake-session", XiaozhiListeningMode.Auto),
-        )
-
-        assertEquals("wake-session", start.getString("session_id"))
         assertEquals("auto", start.getString("mode"))
     }
 

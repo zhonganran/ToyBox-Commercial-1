@@ -11,7 +11,6 @@ import com.byd.wjx.xiaozhi.audio.XiaozhiAudioEngine
 import com.byd.wjx.xiaozhi.audio.XiaozhiFeedbackPlayer
 import com.byd.wjx.xiaozhi.data.XiaozhiPreferences
 import com.byd.wjx.xiaozhi.protocol.XiaozhiProvisioningClient
-import com.byd.wjx.xiaozhi.protocol.XiaozhiListeningMode
 import com.byd.wjx.xiaozhi.protocol.XiaozhiServerEvent
 import com.byd.wjx.xiaozhi.protocol.XiaozhiWebSocketClient
 import com.byd.wjx.xiaozhi.protocol.XiaozhiWebSocketListener
@@ -55,7 +54,6 @@ class XiaozhiSessionManager @Inject constructor(
     private var idleDisconnectJob: Job? = null
     private var provisioningJob: Job? = null
     private var startRequested = false
-    private var listeningMode = XiaozhiListeningMode.Manual
     private var continuousConversation = false
     private var serverFrameDurationMs = 60
     private val commandQueue = Channel<() -> Unit>(Channel.UNLIMITED)
@@ -94,42 +92,26 @@ class XiaozhiSessionManager @Inject constructor(
         }
     }
 
-    fun toggleConversation() = dispatch(::toggleConversationNow)
+    fun toggleAutomaticConversation() = dispatch(::toggleAutomaticConversationNow)
 
-    private fun toggleConversationNow() {
+    private fun toggleAutomaticConversationNow() {
         when (_state.value.phase) {
             XiaozhiPhase.NotConfigured -> {
                 setError("请先在设置中获取官方配置，或填写 WebSocket 地址")
                 XiaozhiVoiceService.stop(appContext)
             }
-            XiaozhiPhase.Idle, XiaozhiPhase.Error -> startConversationNow(
-                mode = XiaozhiListeningMode.Manual,
-                keepConversationOpen = false,
-            )
+            XiaozhiPhase.Idle, XiaozhiPhase.Error -> startAutomaticConversationNow()
             XiaozhiPhase.Connecting -> cancelConversation("已取消连接")
-            XiaozhiPhase.Listening -> stopListeningNow()
-            XiaozhiPhase.Thinking, XiaozhiPhase.Speaking -> abortConversationNow()
+            XiaozhiPhase.Listening, XiaozhiPhase.Thinking, XiaozhiPhase.Speaking ->
+                abortConversationNow()
         }
     }
 
-    fun startConversation() = dispatch {
-        startConversationNow(
-            mode = XiaozhiListeningMode.Manual,
-            keepConversationOpen = false,
-        )
-    }
+    fun startAutomaticConversation() = dispatch(::startAutomaticConversationNow)
 
-    fun startWakeConversation() = dispatch {
-        startConversationNow(
-            mode = XiaozhiListeningMode.Auto,
-            keepConversationOpen = true,
-        )
-    }
+    fun startWakeConversation() = dispatch(::startAutomaticConversationNow)
 
-    private fun startConversationNow(
-        mode: XiaozhiListeningMode,
-        keepConversationOpen: Boolean,
-    ) {
+    private fun startAutomaticConversationNow() {
         if (_state.value.phase in ACTIVE_PHASES) {
             WjxFileLogger.i(TAG, "duplicate start ignored phase=${_state.value.phase}")
             return
@@ -149,14 +131,12 @@ class XiaozhiSessionManager @Inject constructor(
         cancelResponseTimeout()
         cancelSpeakingTimeout()
         idleDisconnectJob?.cancel()
-        listeningMode = mode
-        continuousConversation = keepConversationOpen
+        continuousConversation = true
         startRequested = true
         _state.update {
             it.copy(
                 phase = XiaozhiPhase.Connecting,
-                statusText = if (mode == XiaozhiListeningMode.Auto) "已唤醒，正在准备自动聆听" else "正在释放其他音频通道",
-                autoListening = mode == XiaozhiListeningMode.Auto,
+                statusText = "正在准备自动聆听",
                 error = null,
             )
         }
@@ -214,23 +194,6 @@ class XiaozhiSessionManager @Inject constructor(
         }
     }
 
-    fun stopListening() = dispatch(::stopListeningNow)
-
-    private fun stopListeningNow() {
-        if (_state.value.phase != XiaozhiPhase.Listening) return
-        autoListenTimeoutJob?.cancel()
-        startRequested = false
-        audioEngine.stopRecording()
-        if (!webSocketClient.stopListening()) {
-            failSession("结束录音消息发送失败")
-            return
-        }
-        _state.update {
-            it.copy(phase = XiaozhiPhase.Thinking, statusText = "小智正在思考", error = null)
-        }
-        scheduleResponseTimeout()
-    }
-
     fun abortConversation() = dispatch(::abortConversationNow)
 
     fun preemptForRealtimeHailing() = dispatch {
@@ -256,7 +219,6 @@ class XiaozhiSessionManager @Inject constructor(
             it.copy(
                 phase = if (it.config.isConfigured) XiaozhiPhase.Idle else XiaozhiPhase.NotConfigured,
                 statusText = status ?: if (it.config.isConfigured) "对话已停止" else "尚未配置小智服务",
-                autoListening = false,
                 error = null,
             )
         }
@@ -283,7 +245,6 @@ class XiaozhiSessionManager @Inject constructor(
                 connected = false,
                 phase = if (it.config.isConfigured) XiaozhiPhase.Idle else XiaozhiPhase.NotConfigured,
                 statusText = if (it.config.isConfigured) "已断开，下次对话会重新连接" else "尚未配置小智服务",
-                autoListening = false,
                 error = null,
             )
         }
@@ -413,7 +374,6 @@ class XiaozhiSessionManager @Inject constructor(
                 connected = false,
                 phase = if (it.config.isConfigured) XiaozhiPhase.Idle else XiaozhiPhase.NotConfigured,
                 statusText = "小智语音服务已停止",
-                autoListening = false,
                 error = null,
             )
         }
@@ -445,13 +405,11 @@ class XiaozhiSessionManager @Inject constructor(
         when (event) {
             is XiaozhiServerEvent.Stt -> if (event.text.isNotBlank()) {
                 autoListenTimeoutJob?.cancel()
-                if (listeningMode == XiaozhiListeningMode.Auto) {
-                    // In auto mode the server-side VAD has already accepted the utterance.
-                    // Release the local recorder immediately so it cannot capture the reply
-                    // or keep uploading cabin audio while the model is thinking.
-                    startRequested = false
-                    audioEngine.stopRecording()
-                }
+                // Auto mode uses the server-side VAD to finish an utterance. Once STT arrives,
+                // release the recorder immediately so it cannot capture the reply or continue
+                // uploading cabin audio while the model is thinking.
+                startRequested = false
+                audioEngine.stopRecording()
                 addMessage(XiaozhiMessageRole.User, event.text)
                 _state.update { it.copy(phase = XiaozhiPhase.Thinking, statusText = "小智正在思考") }
                 scheduleResponseTimeout()
@@ -494,7 +452,6 @@ class XiaozhiSessionManager @Inject constructor(
                 phase = if (wasActive) XiaozhiPhase.Error else if (it.config.isConfigured) XiaozhiPhase.Idle else XiaozhiPhase.NotConfigured,
                 statusText = if (wasActive) "小智连接已断开" else "连接已关闭",
                 error = if (wasActive) reason else null,
-                autoListening = false,
             )
         }
         if (wasActive) feedbackPlayer.playFailureTone()
@@ -513,7 +470,7 @@ class XiaozhiSessionManager @Inject constructor(
                 failSession(it.message ?: "车内语音播放器初始化失败")
                 return
             }
-        if (!webSocketClient.startListening(listeningMode)) {
+        if (!webSocketClient.startAutomaticListening()) {
             failSession("开始对话消息发送失败")
             return
         }
@@ -531,16 +488,11 @@ class XiaozhiSessionManager @Inject constructor(
         _state.update {
             it.copy(
                 phase = XiaozhiPhase.Listening,
-                statusText = if (listeningMode == XiaozhiListeningMode.Auto) {
-                    "正在自动聆听，说完后会自动识别"
-                } else {
-                    "正在聆听，点击按钮结束说话"
-                },
-                autoListening = listeningMode == XiaozhiListeningMode.Auto,
+                statusText = "正在自动聆听，说完后会自动识别",
                 error = null,
             )
         }
-        if (listeningMode == XiaozhiListeningMode.Auto) scheduleAutoListenTimeout()
+        scheduleAutoListenTimeout()
     }
 
     private fun handleTts(event: XiaozhiServerEvent.Tts) {
@@ -576,7 +528,6 @@ class XiaozhiSessionManager @Inject constructor(
                                 it.copy(
                                     phase = XiaozhiPhase.Connecting,
                                     statusText = "回答完成，继续说话即可",
-                                    autoListening = true,
                                     error = null,
                                 )
                             }
@@ -617,7 +568,7 @@ class XiaozhiSessionManager @Inject constructor(
         autoListenTimeoutJob = applicationScope.launch {
             delay(AUTO_LISTEN_TIMEOUT_MS)
             dispatch {
-                if (_state.value.phase == XiaozhiPhase.Listening && listeningMode == XiaozhiListeningMode.Auto) {
+                if (_state.value.phase == XiaozhiPhase.Listening) {
                     WjxFileLogger.i(TAG, "auto conversation idle timeout")
                     continuousConversation = false
                     startRequested = false
@@ -642,7 +593,6 @@ class XiaozhiSessionManager @Inject constructor(
             it.copy(
                 phase = if (it.config.isConfigured) XiaozhiPhase.Idle else XiaozhiPhase.NotConfigured,
                 statusText = status,
-                autoListening = false,
                 error = null,
             )
         }
@@ -739,7 +689,6 @@ class XiaozhiSessionManager @Inject constructor(
                 connected = false,
                 phase = if (it.config.isConfigured) XiaozhiPhase.Idle else XiaozhiPhase.NotConfigured,
                 statusText = status,
-                autoListening = false,
                 error = null,
             )
         }
@@ -766,7 +715,6 @@ class XiaozhiSessionManager @Inject constructor(
                 connected = false,
                 phase = XiaozhiPhase.Error,
                 statusText = message,
-                autoListening = false,
                 error = message,
             )
         }
@@ -786,7 +734,7 @@ class XiaozhiSessionManager @Inject constructor(
         private const val PROVISION_POLL_MS = 3_000L
         private const val PROVISION_ATTEMPTS = 30
         private const val MAX_MESSAGES = 60
-        private const val AUTO_LISTEN_TIMEOUT_MS = 18_000L
+        private const val AUTO_LISTEN_TIMEOUT_MS = 15_000L
         private const val AUTO_RESTART_AFTER_TTS_MS = 420L
         private const val RESPONSE_TIMEOUT_MS = 45_000L
         private const val SPEAKING_TIMEOUT_MS = 90_000L

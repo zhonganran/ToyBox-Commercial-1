@@ -8,7 +8,6 @@ import com.byd.wjx.audio.WjxRealtimeHailingService
 import com.byd.wjx.xiaozhi.audio.XiaozhiAudioEngine
 import com.byd.wjx.xiaozhi.audio.XiaozhiFeedbackPlayer
 import com.byd.wjx.xiaozhi.data.XiaozhiPreferences
-import com.byd.wjx.xiaozhi.protocol.XiaozhiListeningMode
 import com.byd.wjx.xiaozhi.protocol.XiaozhiProvisioningClient
 import com.byd.wjx.xiaozhi.protocol.XiaozhiServerEvent
 import com.byd.wjx.xiaozhi.protocol.XiaozhiWebSocketClient
@@ -27,7 +26,6 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -60,7 +58,7 @@ class XiaozhiSessionManagerTest {
         justRun { WjxOutsidePlayService.stop(any(), any()) }
         every { WjxRealtimeHailingService.stop(any(), any()) } returns false
         every { webSocketClient.isReady() } returns true
-        every { webSocketClient.startListening(any()) } returns true
+        every { webSocketClient.startAutomaticListening() } returns true
         every { webSocketClient.abort() } returns true
         justRun { webSocketClient.disconnect(any()) }
         every { audioEngine.acquireFocus(any()) } returns Result.success(Unit)
@@ -86,7 +84,7 @@ class XiaozhiSessionManagerTest {
         val audioUsage = AudioUsageCoordinator()
         val manager = manager(audioUsage)
 
-        manager.startConversation()
+        manager.startAutomaticConversation()
         runCurrent()
         advanceTimeBy(321L)
         runCurrent()
@@ -114,7 +112,6 @@ class XiaozhiSessionManagerTest {
         advanceTimeBy(321L)
         runCurrent()
         assertEquals(XiaozhiPhase.Listening, manager.state.value.phase)
-        assertTrue(manager.state.value.autoListening)
 
         manager.onEvent(XiaozhiServerEvent.Stt("你好"))
         manager.onEvent(XiaozhiServerEvent.Tts("start", null))
@@ -126,8 +123,45 @@ class XiaozhiSessionManagerTest {
         runCurrent()
 
         assertEquals(XiaozhiPhase.Listening, manager.state.value.phase)
-        assertTrue(manager.state.value.autoListening)
-        verify(atLeast = 2) { webSocketClient.startListening(XiaozhiListeningMode.Auto) }
+        verify(atLeast = 2) { webSocketClient.startAutomaticListening() }
+    }
+
+    @Test
+    fun singlePressStartsAutomaticListeningAndSecondPressStops() = runTest {
+        val manager = manager(AudioUsageCoordinator())
+
+        manager.toggleAutomaticConversation()
+        runCurrent()
+        advanceTimeBy(321L)
+        runCurrent()
+
+        assertEquals(XiaozhiPhase.Listening, manager.state.value.phase)
+        verify(exactly = 1) { webSocketClient.startAutomaticListening() }
+
+        manager.toggleAutomaticConversation()
+        runCurrent()
+
+        assertEquals(XiaozhiPhase.Idle, manager.state.value.phase)
+        verify(exactly = 1) { webSocketClient.abort() }
+    }
+
+    @Test
+    fun automaticConversationClosesAfterFifteenSecondsWithoutSpeech() = runTest {
+        val audioUsage = AudioUsageCoordinator()
+        val manager = manager(audioUsage)
+
+        manager.startAutomaticConversation()
+        runCurrent()
+        advanceTimeBy(321L)
+        runCurrent()
+        assertEquals(XiaozhiPhase.Listening, manager.state.value.phase)
+
+        advanceTimeBy(15_001L)
+        runCurrent()
+
+        assertEquals(XiaozhiPhase.Idle, manager.state.value.phase)
+        assertFalse(audioUsage.isActive(AudioOwner.XiaozhiConversation))
+        verify(exactly = 1) { webSocketClient.abort() }
     }
 
     @Test
@@ -135,7 +169,7 @@ class XiaozhiSessionManagerTest {
         val audioUsage = AudioUsageCoordinator()
         val manager = manager(audioUsage)
 
-        manager.startConversation()
+        manager.startAutomaticConversation()
         runCurrent()
         advanceTimeBy(321L)
         runCurrent()
