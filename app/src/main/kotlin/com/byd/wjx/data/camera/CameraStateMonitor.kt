@@ -1,151 +1,64 @@
 package com.byd.wjx.data.camera
 
-import android.app.usage.UsageEvents
-import android.app.usage.UsageStatsManager
-import android.content.Context
-import android.util.Log
+import com.byd.wjx.data.foreground.ForegroundAppMonitor
 import com.byd.wjx.log.WjxFileLogger
-import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
-import javax.inject.Inject
-import javax.inject.Singleton
 
-/**
- * Detects when the BYD built-in camera/parking surface takes
- * the foreground — covers reverse, slow-forward auto-pop, 360° button and
- * the parking app. Reads the most recent MOVE_TO_FOREGROUND event from
- * UsageStatsManager every [POLL_INTERVAL_MS]. Requires the GET_USAGE_STATS
- * appop, which TrackingService grants at startup via the on-device ADB.
- */
+/** Derives camera/full-screen parking state from the process-wide foreground-app stream. */
 @Singleton
 class CameraStateMonitor @Inject constructor(
-    @ApplicationContext private val context: Context,
+    private val foregroundAppMonitor: ForegroundAppMonitor,
 ) {
-    private val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-
     private val _active = MutableStateFlow(false)
     val active: StateFlow<Boolean> = _active.asStateFlow()
 
-    private var scope: CoroutineScope? = null
     private var job: Job? = null
-    private val rescanRequests = Channel<Unit>(Channel.CONFLATED)
 
-    // Tail-the-event-stream state: remember the most recent ACTIVITY_RESUMED
-    // we have already consumed so each poll queries only the delta since then.
-    // Survives polling ticks; reset by start(). On the very first poll
-    // (lastEventTs == 0) we use a wider initial window so we catch a foreground
-    // event that fired before TrackingService started — e.g. camera engaged
-    // before SuperToyBox boot finishes.
-    @Volatile private var lastForegroundPkg: String? = null
-    @Volatile private var lastEventTs: Long = 0L
-    @Volatile private var lastPublishedActive: Boolean = false
-
-    fun start() {
+    fun start(scope: CoroutineScope) {
         if (job?.isActive == true) return
-        while (rescanRequests.tryReceive().isSuccess) Unit
-        lastForegroundPkg = null
-        lastEventTs = 0L
-        lastPublishedActive = false
-        WjxFileLogger.i(TAG, "start")
-        val s = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-        scope = s
-        job = s.launch {
-            while (true) {
-                val cameraActive = isCameraInForeground()
-                // queryEvents is blocking; check we weren't cancelled mid-IO
-                // before publishing. Stops a stale value from clobbering the
-                // false set in stop().
-                ensureActive()
-                if (cameraActive != lastPublishedActive) {
-                    lastPublishedActive = cameraActive
-                    WjxFileLogger.i(TAG, "cameraActive=$cameraActive foreground=$lastForegroundPkg")
+        foregroundAppMonitor.start(scope)
+        job = scope.launch {
+            foregroundAppMonitor.foreground
+                .map { foreground ->
+                    CameraForegroundMatcher.isCameraWindow(
+                        foreground.packageName,
+                        foreground.className,
+                    ) to foreground
                 }
-                _active.value = cameraActive
-                // A successful GET_USAGE_STATS grant can request an immediate fresh-window scan;
-                // otherwise poll at a bounded cadence so the factory camera wins promptly.
-                withTimeoutOrNull(POLL_INTERVAL_MS) { rescanRequests.receive() }
-            }
+                .distinctUntilChanged { old, new -> old.first == new.first }
+                .collect { (cameraActive, foreground) ->
+                    _active.value = cameraActive
+                    WjxFileLogger.i(
+                        TAG,
+                        "cameraActive=$cameraActive pkg=${foreground.packageName} cls=${foreground.className}",
+                    )
+                }
         }
+        WjxFileLogger.i(TAG, "start")
     }
 
-    /**
-     * Drops the tailed event cursor and wakes the polling loop immediately. An initial query made
-     * before GET_USAGE_STATS is granted can look like a valid empty stream; without this reset an
-     * already-visible factory camera would remain invisible until its next foreground transition.
-     */
     fun requestImmediateRescan(reason: String) {
-        lastForegroundPkg = null
-        lastEventTs = 0L
-        rescanRequests.trySend(Unit)
-        WjxFileLogger.i(TAG, "immediate rescan requested reason=$reason")
+        foregroundAppMonitor.requestImmediateRescan(reason)
     }
 
     fun stop() {
         job?.cancel()
         job = null
-        scope?.cancel()
-        scope = null
         _active.value = false
-        lastForegroundPkg = null
-        lastEventTs = 0L
-        lastPublishedActive = false
+        foregroundAppMonitor.stop()
         WjxFileLogger.i(TAG, "stop")
     }
 
-    private fun isCameraInForeground(): Boolean {
-        val now = System.currentTimeMillis()
-        val beginTs = if (lastEventTs == 0L) now - INITIAL_LOOKBACK_MS else lastEventTs + 1
-        return try {
-            val events = usm.queryEvents(beginTs, now + 1)
-            val ev = UsageEvents.Event()
-            // Pick latest by timestamp, not by iteration order — Android's
-            // queryEvents is documented to return chronological order, but
-            // relying on it would silently break under future framework
-            // changes or vendor patches.
-            var latestTs = -1L
-            var latestPkg: String? = null
-            while (events.hasNextEvent()) {
-                events.getNextEvent(ev)
-                if (ev.eventType == UsageEvents.Event.ACTIVITY_RESUMED && ev.timeStamp > latestTs) {
-                    latestTs = ev.timeStamp
-                    latestPkg = ev.packageName
-                }
-            }
-            if (latestPkg != null) {
-                lastForegroundPkg = latestPkg
-                if (latestTs > lastEventTs) lastEventTs = latestTs
-            }
-            // No new events => keep prior foreground (camera still on, etc.).
-            // Forward through start() ensures the very first call has lastEventTs=0,
-            // forcing the wider window above.
-            if (lastEventTs == 0L) lastEventTs = now
-            CameraForegroundMatcher.isCameraPackage(lastForegroundPkg)
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.w(TAG, "queryEvents failed: ${e.message}")
-            WjxFileLogger.w(TAG, "queryEvents failed: ${e.message}")
-            false
-        }
-    }
-
-    companion object {
-        private const val TAG = "CameraMonitor"
-        private const val POLL_INTERVAL_MS = 1_000L
-        // First-poll window — wide enough to catch the camera ACTIVITY_RESUMED
-        // that fired before our service even started (boot + immediate-reverse
-        // scenario). Subsequent polls only fetch the delta since lastEventTs.
-        private const val INITIAL_LOOKBACK_MS = 5L * 60_000L
+    private companion object {
+        const val TAG = "CameraMonitor"
     }
 }

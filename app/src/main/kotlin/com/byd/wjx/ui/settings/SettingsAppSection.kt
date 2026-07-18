@@ -147,7 +147,7 @@ internal fun AppSection(state: SettingsUiState, viewModel: SettingsViewModel) {
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                "切换后会同步应用到首页、个性音效、歌词显示、智能联动和设置等全部页面。",
+                "切换后会同步应用到首页、个性音效、桌面组件、智能联动和设置等全部页面。",
                 color = TextSecondary,
                 fontSize = 13.sp,
             )

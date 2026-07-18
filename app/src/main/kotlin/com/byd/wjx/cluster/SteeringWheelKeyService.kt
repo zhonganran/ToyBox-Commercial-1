@@ -15,6 +15,7 @@ import com.byd.wjx.activation.PremiumFeature
 import com.byd.wjx.audio.ExteriorHailingSettings
 import com.byd.wjx.audio.WjxOutsidePlayService
 import com.byd.wjx.audio.WjxRealtimeHailingService
+import com.byd.wjx.data.foreground.AccessibilityForegroundBridge
 import com.byd.wjx.log.WjxFileLogger
 import com.byd.wjx.xiaozhi.service.XiaozhiVoiceService
 import dagger.hilt.android.EntryPointAccessors
@@ -52,6 +53,7 @@ class SteeringWheelKeyService : AccessibilityService() {
         val info = serviceInfo ?: AccessibilityServiceInfo()
         info.flags = info.flags or AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
         serviceInfo = info
+        AccessibilityForegroundBridge.onServiceConnected(this)
         instance = this
         isConnected = true
         WjxFileLogger.i(TAG, "connected; filtering steering-wheel keys")
@@ -272,11 +274,14 @@ class SteeringWheelKeyService : AccessibilityService() {
             .fromApplication(applicationContext, ClusterEntryPoint::class.java)
             .also { cachedEntryPoint = it }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        AccessibilityForegroundBridge.onAccessibilityEvent(event)
+    }
     override fun onInterrupt() { /* no-op */ }
 
     override fun onUnbind(intent: Intent?): Boolean {
         isConnected = false
+        AccessibilityForegroundBridge.onServiceDisconnected(this)
         if (instance === this) instance = null
         clearPendingShortcut()
         clearPendingLong()
@@ -286,6 +291,7 @@ class SteeringWheelKeyService : AccessibilityService() {
 
     override fun onDestroy() {
         isConnected = false
+        AccessibilityForegroundBridge.onServiceDisconnected(this)
         if (instance === this) instance = null
         clearPendingShortcut()
         clearPendingLong()

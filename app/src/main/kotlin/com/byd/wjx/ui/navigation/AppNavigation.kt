@@ -9,10 +9,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,7 +40,7 @@ import com.byd.wjx.ui.automation.AutomationScreen
 import com.byd.wjx.ui.charges.ChargesScreen
 import com.byd.wjx.ui.dashboard.DashboardScreen
 import com.byd.wjx.ui.places.PlacesScreen
-import com.byd.wjx.ui.lyrics.LyricDisplayScreen
+import com.byd.wjx.ui.desktopcomponents.DesktopComponentsScreen
 import com.byd.wjx.ui.home.ProHomeScreen
 import com.byd.wjx.ui.legal.DisclaimerScreen
 import com.byd.wjx.ui.map.MapScreen
@@ -56,7 +56,7 @@ import com.byd.wjx.xiaozhi.ui.XiaozhiScreen
 enum class Screen(val route: String, val label: String, val icon: ImageVector) {
     Home("home", "首页", Icons.Outlined.Home),
     Sound("sound", "个性音效", Icons.AutoMirrored.Outlined.VolumeUp),
-    Lyrics("lyrics", "歌词显示", Icons.Outlined.Subtitles),
+    DesktopComponents("desktop_components", "桌面组件", Icons.Outlined.Apps),
     Automation("automation", "智能联动", Icons.Outlined.Bolt),
     Xiaozhi("xiaozhi", "小智", Icons.Outlined.RecordVoiceOver),
     Settings("settings", "设置", Icons.Outlined.Settings)
@@ -258,7 +258,7 @@ fun AppNavigation(
                                 },
                             )
                             Screen.Sound -> SoundScreen()
-                            Screen.Lyrics -> LyricDisplayScreen()
+                            Screen.DesktopComponents -> DesktopComponentsScreen()
                             Screen.Automation -> AutomationScreen()
                             Screen.Xiaozhi -> XiaozhiScreen(
                                 onOpenSettings = {

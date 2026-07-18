@@ -34,14 +34,6 @@ data class LyricMotionPreset(
     val spotlightAlpha: Float = 0f,
 )
 
-data class LyricColorPreset(
-    val id: String,
-    val label: String,
-    val sungColor: Int,
-    val currentColor: Int,
-    val upcomingColor: Int,
-)
-
 data class LyricDisplayStyle(
     val font: LyricFontPreset,
     val motion: LyricMotionPreset,
@@ -50,6 +42,34 @@ data class LyricDisplayStyle(
     val upcomingColor: Int,
     val karaokeEnabled: Boolean,
 )
+
+data class LyricSolidColor(
+    val id: String,
+    val label: String,
+    val color: Int,
+)
+
+object LyricSolidColorPalette {
+    val colors = listOf(
+        LyricSolidColor("white", "白", 0xFFFFFFFF.toInt()),
+        LyricSolidColor("silver", "银", 0xFFC7D2E0.toInt()),
+        LyricSolidColor("red", "红", 0xFFFF5252.toInt()),
+        LyricSolidColor("deep_orange", "朱", 0xFFFF7043.toInt()),
+        LyricSolidColor("orange", "橙", 0xFFFFA726.toInt()),
+        LyricSolidColor("yellow", "黄", 0xFFFFD54F.toInt()),
+        LyricSolidColor("lime", "柠", 0xFFCDDC39.toInt()),
+        LyricSolidColor("green", "绿", 0xFF66BB6A.toInt()),
+        LyricSolidColor("mint", "青", 0xFF26C6A3.toInt()),
+        LyricSolidColor("cyan", "蓝青", 0xFF26C6DA.toInt()),
+        LyricSolidColor("blue", "蓝", 0xFF42A5F5.toInt()),
+        LyricSolidColor("indigo", "靛", 0xFF5C6BC0.toInt()),
+        LyricSolidColor("purple", "紫", 0xFFAB47BC.toInt()),
+        LyricSolidColor("pink", "粉", 0xFFEC6F9E.toInt()),
+    )
+
+    fun normalize(color: Int, fallback: Int): Int =
+        colors.firstOrNull { it.color == color }?.color ?: fallback
+}
 
 object LyricStylePresets {
     val fonts = listOf(
@@ -80,20 +100,6 @@ object LyricStylePresets {
         LyricMotionPreset("slash", "斜切", currentScale = 1.26f, sideScale = 0.70f, sideAlpha = 0.34f, scrollDurationMs = 300L, easing = "back", highlightStrength = 0.82f, sideOffsetDp = 54f, tiltDegrees = -8f, currentOffsetDp = -18f),
     )
 
-    val colors = listOf(
-        LyricColorPreset("jade_gold", "玉金", 0xFF86D8B8.toInt(), 0xFFFFE28A.toInt(), 0xFF8EA7C8.toInt()),
-        LyricColorPreset("aurora", "极光", 0xFF7DD3FC.toInt(), 0xFFE9F7FF.toInt(), 0xFF7897B8.toInt()),
-        LyricColorPreset("amber", "琥珀", 0xFFFFB86B.toInt(), 0xFFFFF0C2.toInt(), 0xFFA68A64.toInt()),
-        LyricColorPreset("dragon", "赤金", 0xFFFF7A6E.toInt(), 0xFFFFE3A3.toInt(), 0xFFB98B80.toInt()),
-        LyricColorPreset("ceramic", "瓷白", 0xFFD7E5EE.toInt(), 0xFFFFFFFF.toInt(), 0xFF90A1B4.toInt()),
-        LyricColorPreset("laser", "电光", 0xFF5BE7FF.toInt(), 0xFFFFF7A8.toInt(), 0xFF667A9F.toInt()),
-        LyricColorPreset("rose_gold", "玫金", 0xFFFFA6B7.toInt(), 0xFFFFF1D2.toInt(), 0xFFB0839B.toInt()),
-        LyricColorPreset("forest", "森氧", 0xFF9ADBB0.toInt(), 0xFFF6FFD6.toInt(), 0xFF789B78.toInt()),
-        LyricColorPreset("instrument", "仪表", 0xFFB8C7D9.toInt(), 0xFFEAF3FF.toInt(), 0xFF71829A.toInt()),
-        LyricColorPreset("night_city", "夜城", 0xFF8DD8FF.toInt(), 0xFFFFDFA8.toInt(), 0xFF7A85A6.toInt()),
-    )
-
     fun font(id: String): LyricFontPreset = fonts.firstOrNull { it.id == id } ?: fonts.first()
     fun motion(id: String): LyricMotionPreset = motions.firstOrNull { it.id == id } ?: motions.first()
-    fun color(id: String): LyricColorPreset = colors.firstOrNull { it.id == id } ?: colors.first()
 }

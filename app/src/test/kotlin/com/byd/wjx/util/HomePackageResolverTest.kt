@@ -27,5 +27,14 @@ class HomePackageResolverTest {
     fun launcherHeuristic_excludesMapPackages() {
         assertTrue(HomePackageResolver.isKnownHomePackage("com.vendor.launcher"))
         assertFalse(HomePackageResolver.isKnownHomePackage("com.vendor.launchermap"))
+        assertFalse(HomePackageResolver.isHomePackage("com.byd.launchermap", setOf("com.byd.launchermap")))
+    }
+
+    @Test
+    fun launcherSubpage_rejectsAppCenterButKeepsLauncherDesktop() {
+        assertTrue(HomePackageResolver.isLauncherSubpage("com.byd.launcher.AppCenterActivity"))
+        assertTrue(HomePackageResolver.isLauncherSubpage("com.byd.launcher.WidgetPage"))
+        assertFalse(HomePackageResolver.isLauncherSubpage("com.byd.launcher.Launcher"))
+        assertFalse(HomePackageResolver.isLauncherSubpage("androidx.compose.ui.platform.ComposeView"))
     }
 }

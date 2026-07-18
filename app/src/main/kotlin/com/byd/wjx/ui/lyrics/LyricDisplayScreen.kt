@@ -6,9 +6,6 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -34,9 +31,14 @@ import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
-/** Settings for the desktop and instrument-cluster lyric overlays. */
+/** Shared settings for the desktop and instrument-cluster lyric overlays. */
 @Composable
-fun LyricDisplayScreen() {
+fun LyricDisplayScreen(
+    showHeader: Boolean = true,
+    scrollEnabled: Boolean = true,
+    onEnabledStateChanged: ((Boolean) -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val activationManager = remember(context.applicationContext) {
@@ -44,15 +46,12 @@ fun LyricDisplayScreen() {
             .fromApplication(context.applicationContext, ClusterEntryPoint::class.java)
             .activationManager()
     }
-    val lyricSettings = remember { LyricSettings(context) }
-    val panelPreferences = remember(context.applicationContext) {
-        LyricDisplayPanelPreferences(context)
-    }
+    val lyricSettings = remember(context.applicationContext) { LyricSettings(context.applicationContext) }
+    val panelPreferences = remember(context.applicationContext) { LyricDisplayPanelPreferences(context) }
 
-    var lyricDesktopEnabled by remember { mutableStateOf(lyricSettings.desktopEnabled) }
-    var lyricAllowOtherApps by remember { mutableStateOf(lyricSettings.allowOnOtherApps) }
-    var lyricClusterEnabled by remember { mutableStateOf(lyricSettings.clusterEnabled) }
-    var lyricControlsExpanded by remember {
+    var desktopEnabled by remember { mutableStateOf(lyricSettings.desktopEnabled) }
+    var clusterEnabled by remember { mutableStateOf(lyricSettings.clusterEnabled) }
+    var expanded by remember {
         mutableStateOf(
             panelPreferences.initialExpanded(
                 LyricDisplayPanel.LYRIC,
@@ -60,35 +59,49 @@ fun LyricDisplayScreen() {
             ),
         )
     }
-    var lyricFontScale by remember { mutableFloatStateOf(lyricSettings.fontScale) }
-    var lyricClusterFontScale by remember { mutableFloatStateOf(lyricSettings.clusterFontScale) }
-    var lyricClusterLineCount by remember { mutableIntStateOf(lyricSettings.clusterLineCount) }
-    var lyricClusterWidthScale by remember { mutableFloatStateOf(lyricSettings.clusterWidthScale) }
-    var lyricClusterAlpha by remember { mutableFloatStateOf(lyricSettings.clusterAlpha) }
-    var lyricClusterX by remember { mutableFloatStateOf(lyricSettings.clusterXPct.toFloat()) }
-    var lyricClusterY by remember { mutableFloatStateOf(lyricSettings.clusterYPct.toFloat()) }
-    var lyricSyncOffset by remember { mutableFloatStateOf(lyricSettings.syncOffsetMs.toFloat()) }
-    var lyricFontStyleId by remember { mutableStateOf(lyricSettings.fontStyleId) }
-    var lyricMotionPresetId by remember { mutableStateOf(lyricSettings.motionPresetId) }
-    var lyricColorPresetId by remember { mutableStateOf(lyricSettings.colorPresetId) }
-    var lyricKaraokeEnabled by remember { mutableStateOf(lyricSettings.karaokeEnabled) }
-    var lyricFeatureAllowed by remember {
+    var allowOtherApps by remember { mutableStateOf(lyricSettings.allowOnOtherApps) }
+    var desktopTouchThrough by remember { mutableStateOf(lyricSettings.desktopTouchThrough) }
+    var sharedLineCount by remember { mutableIntStateOf(lyricSettings.sharedLineCount) }
+    var sharedFontScale by remember { mutableFloatStateOf(lyricSettings.sharedFontScale) }
+    var sharedTextColor by remember { mutableIntStateOf(lyricSettings.sharedTextColor) }
+    var sharedHighlightColor by remember { mutableIntStateOf(lyricSettings.sharedHighlightColor) }
+    var sharedFontStyleId by remember { mutableStateOf(lyricSettings.sharedFontStyleId) }
+    var sharedMotionPresetId by remember { mutableStateOf(lyricSettings.sharedMotionPresetId) }
+    var clusterWidthScale by remember { mutableFloatStateOf(lyricSettings.clusterWidthScale) }
+    var clusterX by remember { mutableFloatStateOf(lyricSettings.clusterXPct.toFloat()) }
+    var clusterY by remember { mutableFloatStateOf(lyricSettings.clusterYPct.toFloat()) }
+    var syncOffset by remember { mutableFloatStateOf(lyricSettings.syncOffsetMs.toFloat()) }
+    var featureAllowed by remember {
         mutableStateOf(activationManager.canUse(PremiumFeature.DESKTOP_LYRICS))
     }
-    var selectedPreview by remember { mutableStateOf(LyricPreviewType.DesktopLyric) }
 
-    fun setLyricControlsExpanded(value: Boolean) {
-        lyricControlsExpanded = value
+    fun setExpanded(value: Boolean) {
+        expanded = value
         panelPreferences.setExpanded(LyricDisplayPanel.LYRIC, value)
     }
 
-    fun refreshLyricFeatureAllowed(): Boolean {
-        lyricFeatureAllowed = activationManager.canUse(PremiumFeature.DESKTOP_LYRICS)
-        return lyricFeatureAllowed
+    fun notifyEnabledState() {
+        onEnabledStateChanged?.invoke(desktopEnabled || clusterEnabled)
     }
 
-    fun showLyricActivationRequired() {
-        Toast.makeText(context, "桌面歌词需要激活后使用", Toast.LENGTH_SHORT).show()
+    fun refreshState() {
+        featureAllowed = activationManager.canUse(PremiumFeature.DESKTOP_LYRICS)
+        desktopEnabled = lyricSettings.desktopEnabled
+        clusterEnabled = lyricSettings.clusterEnabled
+        allowOtherApps = lyricSettings.allowOnOtherApps
+        desktopTouchThrough = lyricSettings.desktopTouchThrough
+        sharedLineCount = lyricSettings.sharedLineCount
+        sharedFontScale = lyricSettings.sharedFontScale
+        sharedTextColor = lyricSettings.sharedTextColor
+        sharedHighlightColor = lyricSettings.sharedHighlightColor
+        sharedFontStyleId = lyricSettings.sharedFontStyleId
+        sharedMotionPresetId = lyricSettings.sharedMotionPresetId
+        clusterWidthScale = lyricSettings.clusterWidthScale
+        clusterX = lyricSettings.clusterXPct.toFloat()
+        clusterY = lyricSettings.clusterYPct.toFloat()
+        syncOffset = lyricSettings.syncOffsetMs.toFloat()
+        notifyEnabledState()
+        if (!featureAllowed || (!desktopEnabled && !clusterEnabled)) setExpanded(false)
     }
 
     fun requestOverlayPermission() {
@@ -100,177 +113,83 @@ fun LyricDisplayScreen() {
         )
     }
 
-    fun setDesktopLyricEnabled(enabled: Boolean) {
-        if (enabled && !refreshLyricFeatureAllowed()) {
-            lyricSettings.desktopEnabled = false
-            lyricDesktopEnabled = false
-            showLyricActivationRequired()
+    fun setModeEnabled(desktop: Boolean, enabled: Boolean) {
+        featureAllowed = activationManager.canUse(PremiumFeature.DESKTOP_LYRICS)
+        if (enabled && !featureAllowed) {
+            Toast.makeText(context, "歌词组件需要激活后使用", Toast.LENGTH_SHORT).show()
+            if (desktop) lyricSettings.desktopEnabled = false else lyricSettings.clusterEnabled = false
+            refreshState()
             return
         }
         if (enabled && !Settings.canDrawOverlays(context)) {
-            lyricSettings.desktopEnabled = false
-            lyricDesktopEnabled = false
+            if (desktop) lyricSettings.desktopEnabled = false else lyricSettings.clusterEnabled = false
+            refreshState()
             requestOverlayPermission()
             return
         }
-        lyricSettings.desktopEnabled = enabled
-        lyricDesktopEnabled = lyricSettings.desktopEnabled
-        setLyricControlsExpanded(lyricSettings.desktopEnabled || lyricSettings.clusterEnabled)
+        if (desktop) lyricSettings.desktopEnabled = enabled else lyricSettings.clusterEnabled = enabled
+        refreshState()
+        setExpanded(desktopEnabled || clusterEnabled)
     }
 
-    fun setClusterLyricEnabled(enabled: Boolean) {
-        if (enabled && !refreshLyricFeatureAllowed()) {
-            lyricSettings.clusterEnabled = false
-            lyricClusterEnabled = false
-            showLyricActivationRequired()
-            return
-        }
-        if (enabled && !Settings.canDrawOverlays(context)) {
-            lyricSettings.clusterEnabled = false
-            lyricClusterEnabled = false
-            requestOverlayPermission()
-            return
-        }
-        lyricSettings.clusterEnabled = enabled
-        lyricClusterEnabled = lyricSettings.clusterEnabled
-        setLyricControlsExpanded(lyricSettings.desktopEnabled || lyricSettings.clusterEnabled)
+    LaunchedEffect(lyricSettings) {
+        refreshState()
     }
-
-    fun nudgeClusterLyric(dx: Int, dy: Int) {
-        lyricSettings.clusterXPct = (lyricSettings.clusterXPct + dx).coerceIn(0, 100)
-        lyricSettings.clusterYPct = (lyricSettings.clusterYPct + dy).coerceIn(0, 100)
-        lyricClusterX = lyricSettings.clusterXPct.toFloat()
-        lyricClusterY = lyricSettings.clusterYPct.toFloat()
-    }
-
-    val lyricDesktopActive = lyricFeatureAllowed && lyricDesktopEnabled
-    val lyricClusterActive = lyricFeatureAllowed && lyricClusterEnabled
 
     LaunchedEffect(activationManager) {
         while (true) {
-            lyricFeatureAllowed = activationManager.canUse(PremiumFeature.DESKTOP_LYRICS)
+            featureAllowed = activationManager.canUse(PremiumFeature.DESKTOP_LYRICS)
             delay(5_000L)
         }
     }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                lyricFeatureAllowed = activationManager.canUse(PremiumFeature.DESKTOP_LYRICS)
-                lyricDesktopEnabled = lyricSettings.desktopEnabled
-                lyricAllowOtherApps = lyricSettings.allowOnOtherApps
-                lyricClusterEnabled = lyricSettings.clusterEnabled
-                lyricFontScale = lyricSettings.fontScale
-                lyricClusterFontScale = lyricSettings.clusterFontScale
-                lyricClusterLineCount = lyricSettings.clusterLineCount
-                lyricClusterWidthScale = lyricSettings.clusterWidthScale
-                lyricClusterAlpha = lyricSettings.clusterAlpha
-                lyricClusterX = lyricSettings.clusterXPct.toFloat()
-                lyricClusterY = lyricSettings.clusterYPct.toFloat()
-                lyricSyncOffset = lyricSettings.syncOffsetMs.toFloat()
-                lyricFontStyleId = lyricSettings.fontStyleId
-                lyricMotionPresetId = lyricSettings.motionPresetId
-                lyricColorPresetId = lyricSettings.colorPresetId
-                lyricKaraokeEnabled = lyricSettings.karaokeEnabled
-                if (!lyricFeatureAllowed || (!lyricSettings.desktopEnabled && !lyricSettings.clusterEnabled)) {
-                    setLyricControlsExpanded(false)
-                }
-            }
+            if (event == Lifecycle.Event.ON_RESUME) refreshState()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    val scrollModifier = if (scrollEnabled) Modifier.verticalScroll(rememberScrollState()) else Modifier
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+        modifier = modifier
+            .then(scrollModifier)
             .padding(horizontal = 58.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        LyricDisplayHeader()
-
-        LyricPreviewStage(
-            selected = selectedPreview,
-            onSelected = { selectedPreview = it },
-            desktopLyricEnabled = lyricDesktopActive,
-            clusterLyricEnabled = lyricClusterActive,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(406.dp),
-        )
-
-        LyricQuickControlPanel(
-            selected = selectedPreview,
-            desktopLyricEnabled = lyricDesktopActive,
-            clusterLyricEnabled = lyricClusterActive,
-            desktopLyricScale = lyricFontScale,
-            clusterLyricScale = lyricClusterFontScale,
-            clusterLyricAlpha = lyricClusterAlpha,
-            onToggle = { enabled ->
-                when (selectedPreview) {
-                    LyricPreviewType.DesktopLyric -> setDesktopLyricEnabled(enabled)
-                    LyricPreviewType.ClusterLyric -> setClusterLyricEnabled(enabled)
-                }
-            },
-            onPrimaryValueChange = { value ->
-                when (selectedPreview) {
-                    LyricPreviewType.DesktopLyric -> {
-                        lyricSettings.fontScale = value
-                        lyricFontScale = lyricSettings.fontScale
-                    }
-                    LyricPreviewType.ClusterLyric -> {
-                        lyricSettings.clusterFontScale = value
-                        lyricClusterFontScale = lyricSettings.clusterFontScale
-                    }
-                }
-            },
-            onSecondaryValueChange = { value ->
-                if (selectedPreview == LyricPreviewType.ClusterLyric) {
-                    lyricSettings.clusterAlpha = value
-                    lyricClusterAlpha = lyricSettings.clusterAlpha
-                }
-            },
-            onReset = {
-                when (selectedPreview) {
-                    LyricPreviewType.DesktopLyric -> lyricSettings.resetDesktopPosition()
-                    LyricPreviewType.ClusterLyric -> {
-                        lyricSettings.resetClusterPosition()
-                        lyricClusterX = lyricSettings.clusterXPct.toFloat()
-                        lyricClusterY = lyricSettings.clusterYPct.toFloat()
-                    }
-                }
-            },
-        )
+        if (showHeader) LyricDisplayHeader()
 
         LyricSettingsPanel(
             state = LyricPanelState(
-                selected = selectedPreview,
-                featureAllowed = lyricFeatureAllowed,
-                desktopActive = lyricDesktopActive,
-                clusterActive = lyricClusterActive,
-                expanded = lyricControlsExpanded,
-                allowOtherApps = lyricAllowOtherApps,
-                desktopFontScale = lyricFontScale,
-                clusterLineCount = lyricClusterLineCount,
-                clusterFontScale = lyricClusterFontScale,
-                clusterWidthScale = lyricClusterWidthScale,
-                clusterAlpha = lyricClusterAlpha,
-                clusterX = lyricClusterX,
-                clusterY = lyricClusterY,
-                syncOffset = lyricSyncOffset,
-                karaokeEnabled = lyricKaraokeEnabled,
-                fontStyleId = lyricFontStyleId,
-                motionPresetId = lyricMotionPresetId,
-                colorPresetId = lyricColorPresetId,
+                featureAllowed = featureAllowed,
+                desktopActive = featureAllowed && desktopEnabled,
+                clusterActive = featureAllowed && clusterEnabled,
+                expanded = expanded,
+                allowOtherApps = allowOtherApps,
+                desktopTouchThrough = desktopTouchThrough,
+                sharedLineCount = sharedLineCount,
+                sharedFontScale = sharedFontScale,
+                sharedTextColor = sharedTextColor,
+                sharedHighlightColor = sharedHighlightColor,
+                sharedFontStyleId = sharedFontStyleId,
+                sharedMotionPresetId = sharedMotionPresetId,
+                clusterWidthScale = clusterWidthScale,
+                clusterX = clusterX,
+                clusterY = clusterY,
+                syncOffset = syncOffset,
             ),
             actions = LyricPanelActions(
-                onDesktopEnabledChange = ::setDesktopLyricEnabled,
-                onClusterEnabledChange = ::setClusterLyricEnabled,
-                onExpandedChange = ::setLyricControlsExpanded,
+                onDesktopEnabledChange = { setModeEnabled(desktop = true, enabled = it) },
+                onClusterEnabledChange = { setModeEnabled(desktop = false, enabled = it) },
+                onExpandedChange = ::setExpanded,
                 onAllowOtherAppsChange = {
                     lyricSettings.allowOnOtherApps = it
-                    lyricAllowOtherApps = lyricSettings.allowOnOtherApps
+                    allowOtherApps = lyricSettings.allowOnOtherApps
+                },
+                onDesktopTouchThroughChange = {
+                    lyricSettings.desktopTouchThrough = it
+                    desktopTouchThrough = lyricSettings.desktopTouchThrough
                 },
                 onOpenPlaybackPermission = {
                     context.startActivity(
@@ -278,65 +197,52 @@ fun LyricDisplayScreen() {
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                     )
                 },
-                onResetPosition = {
-                    when (selectedPreview) {
-                        LyricPreviewType.DesktopLyric -> lyricSettings.resetDesktopPosition()
-                        LyricPreviewType.ClusterLyric -> {
-                            lyricSettings.resetClusterPosition()
-                            lyricClusterX = lyricSettings.clusterXPct.toFloat()
-                            lyricClusterY = lyricSettings.clusterYPct.toFloat()
-                        }
-                    }
+                onResetDesktopPosition = { lyricSettings.resetDesktopPosition() },
+                onResetClusterPosition = {
+                    lyricSettings.resetClusterPosition()
+                    clusterX = lyricSettings.clusterXPct.toFloat()
+                    clusterY = lyricSettings.clusterYPct.toFloat()
                 },
-                onNudgeCluster = ::nudgeClusterLyric,
-                onDesktopFontScaleChange = {
-                    lyricSettings.fontScale = it
-                    lyricFontScale = lyricSettings.fontScale
+                onSharedLineCountChange = {
+                    lyricSettings.sharedLineCount = it
+                    sharedLineCount = lyricSettings.sharedLineCount
                 },
-                onClusterLineCountChange = {
-                    lyricSettings.clusterLineCount = it
-                    lyricClusterLineCount = lyricSettings.clusterLineCount
+                onSharedFontScaleChange = {
+                    lyricSettings.sharedFontScale = it
+                    sharedFontScale = lyricSettings.sharedFontScale
                 },
-                onClusterFontScaleChange = {
-                    lyricSettings.clusterFontScale = it
-                    lyricClusterFontScale = lyricSettings.clusterFontScale
+                onSharedTextColorChange = {
+                    lyricSettings.sharedTextColor = it
+                    sharedTextColor = lyricSettings.sharedTextColor
+                },
+                onSharedHighlightColorChange = {
+                    lyricSettings.sharedHighlightColor = it
+                    sharedHighlightColor = lyricSettings.sharedHighlightColor
+                },
+                onSharedFontStyleChange = {
+                    lyricSettings.sharedFontStyleId = it
+                    sharedFontStyleId = lyricSettings.sharedFontStyleId
+                },
+                onSharedMotionPresetChange = {
+                    lyricSettings.sharedMotionPresetId = it
+                    sharedMotionPresetId = lyricSettings.sharedMotionPresetId
                 },
                 onClusterWidthScaleChange = {
                     lyricSettings.clusterWidthScale = it
-                    lyricClusterWidthScale = lyricSettings.clusterWidthScale
-                },
-                onClusterAlphaChange = {
-                    lyricSettings.clusterAlpha = it
-                    lyricClusterAlpha = lyricSettings.clusterAlpha
+                    clusterWidthScale = lyricSettings.clusterWidthScale
                 },
                 onClusterXChange = {
                     lyricSettings.clusterXPct = it.roundToInt()
-                    lyricClusterX = lyricSettings.clusterXPct.toFloat()
+                    clusterX = lyricSettings.clusterXPct.toFloat()
                 },
                 onClusterYChange = {
                     lyricSettings.clusterYPct = it.roundToInt()
-                    lyricClusterY = lyricSettings.clusterYPct.toFloat()
+                    clusterY = lyricSettings.clusterYPct.toFloat()
                 },
                 onSyncOffsetChange = {
                     val snapped = (it / 50f).roundToInt() * 50
                     lyricSettings.syncOffsetMs = snapped
-                    lyricSyncOffset = lyricSettings.syncOffsetMs.toFloat()
-                },
-                onKaraokeChange = {
-                    lyricSettings.karaokeEnabled = it
-                    lyricKaraokeEnabled = lyricSettings.karaokeEnabled
-                },
-                onFontStyleChange = {
-                    lyricSettings.fontStyleId = it
-                    lyricFontStyleId = lyricSettings.fontStyleId
-                },
-                onMotionPresetChange = {
-                    lyricSettings.motionPresetId = it
-                    lyricMotionPresetId = lyricSettings.motionPresetId
-                },
-                onColorPresetChange = {
-                    lyricSettings.colorPresetId = it
-                    lyricColorPresetId = lyricSettings.colorPresetId
+                    syncOffset = lyricSettings.syncOffsetMs.toFloat()
                 },
             ),
         )

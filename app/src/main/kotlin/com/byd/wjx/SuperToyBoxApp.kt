@@ -1,6 +1,8 @@
 package com.byd.wjx
 
+import android.app.Activity
 import android.app.Application
+import android.os.Bundle
 import org.lsposed.hiddenapibypass.HiddenApiBypass
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
@@ -24,6 +26,7 @@ class SuperToyBoxApp : Application(), Configuration.Provider {
     @Inject lateinit var workerFactory: HiltWorkerFactory
     @Inject lateinit var activationManager: com.byd.wjx.activation.ActivationManager
     @Inject lateinit var xiaozhiWakeController: com.byd.wjx.xiaozhi.wake.XiaozhiWakeController
+    @Inject lateinit var foregroundAppMonitor: com.byd.wjx.data.foreground.ForegroundAppMonitor
     @Volatile private var unlockedRuntimeInitialized = false
 
     override val workManagerConfiguration: Configuration
@@ -34,6 +37,7 @@ class SuperToyBoxApp : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         installUnifiedCrashLogger()
+        registerForegroundLifecycleCallbacks()
         WjxFileLogger.i("SuperToyBoxApp", "application onCreate package=$packageName version=${BuildConfig.VERSION_NAME}/${BuildConfig.VERSION_CODE}")
         // Allow in-process ServiceManager.getService() on Android 9+ to reach the helper
         // binder service without hidden-API restrictions (UnsatisfiedLinkError / NoSuchMethodError).
@@ -67,6 +71,31 @@ class SuperToyBoxApp : Application(), Configuration.Provider {
     }
 
     fun isUnlockedRuntimeInitialized(): Boolean = unlockedRuntimeInitialized
+
+    private fun registerForegroundLifecycleCallbacks() {
+        var resumedActivities = 0
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityResumed(activity: Activity) {
+                resumedActivities += 1
+                if (resumedActivities == 1) {
+                    foregroundAppMonitor.setOwnAppForeground(true, "app_resumed")
+                }
+            }
+
+            override fun onActivityPaused(activity: Activity) {
+                resumedActivities = (resumedActivities - 1).coerceAtLeast(0)
+                if (resumedActivities == 0) {
+                    foregroundAppMonitor.setOwnAppForeground(false, "app_paused")
+                }
+            }
+
+            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
+            override fun onActivityStarted(activity: Activity) = Unit
+            override fun onActivityStopped(activity: Activity) = Unit
+            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
+            override fun onActivityDestroyed(activity: Activity) = Unit
+        })
+    }
 
     private fun installUnifiedCrashLogger() {
         val previous = Thread.getDefaultUncaughtExceptionHandler()

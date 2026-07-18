@@ -32,9 +32,9 @@ class ClusterLyricOverlayController(
         ensureDisplayStillValid()
         if (container == null) show()
         lyricView?.apply {
-            setTextSizeSp(18f * settings.clusterFontScale)
-            setVisibleLineCount(settings.clusterLineCount)
-            setDisplayStyle(settings.displayStyle())
+            setTextSizeSp(18f * settings.sharedFontScale)
+            setVisibleLineCount(settings.sharedLineCount)
+            setDisplayStyle(settings.clusterDisplayStyle())
             setFrame(frame, animate)
         }
         val lp = params ?: return
@@ -142,17 +142,17 @@ class ClusterLyricOverlayController(
     }
 
     private fun windowWidth(): Int =
-        (density() * 420f * settings.clusterFontScale * settings.clusterWidthScale)
+        (density() * 420f * settings.sharedFontScale * settings.clusterWidthScale)
             .roundToInt()
             .coerceIn(120, clusterWidth)
 
     private fun windowHeight(): Int =
         LyricOverlayView.desiredHeightPx(
-            textSizeSp = 18f * settings.clusterFontScale,
-            style = settings.displayStyle(),
+            textSizeSp = 18f * settings.sharedFontScale,
+            style = settings.clusterDisplayStyle(),
             density = density(),
             scaledDensity = scaledDensity(),
-            lineCount = settings.clusterLineCount,
+            lineCount = settings.sharedLineCount,
         ).coerceIn(64, clusterHeight)
 
     private fun density(): Float =

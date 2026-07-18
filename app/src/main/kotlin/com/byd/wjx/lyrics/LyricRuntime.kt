@@ -1,7 +1,5 @@
 package com.byd.wjx.lyrics
 
-import android.app.usage.UsageEvents
-import android.app.usage.UsageStatsManager
 import android.content.ComponentName
 import android.content.Context
 import android.os.SystemClock
@@ -10,6 +8,7 @@ import android.service.notification.NotificationListenerService
 import com.byd.wjx.activation.ActivationManager
 import com.byd.wjx.activation.PremiumFeature
 import com.byd.wjx.data.autoservice.AdbOnDeviceClient
+import com.byd.wjx.data.foreground.ForegroundAppMonitor
 import com.byd.wjx.data.vehicle.HelperBootstrap
 import com.byd.wjx.data.vehicle.HelperClient
 import com.byd.wjx.log.WjxFileLogger
@@ -39,6 +38,7 @@ class LyricRuntime @Inject constructor(
     private val helperBootstrap: HelperBootstrap,
     private val helperClient: HelperClient,
     private val activationManager: ActivationManager,
+    private val foregroundAppMonitor: ForegroundAppMonitor,
     okHttpClient: OkHttpClient,
 ) {
     private val appContext = context.applicationContext
@@ -47,7 +47,6 @@ class LyricRuntime @Inject constructor(
     private val desktopOverlay = DesktopLyricOverlayController(appContext, settings)
     private val clusterOverlay = ClusterLyricOverlayController(appContext, settings)
     private val poller = MusicPlaybackPoller(adb)
-    private val usageStatsManager = appContext.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
     private val homePackages by lazy { resolveHomePackages() }
 
     private var scope: CoroutineScope? = null
@@ -60,8 +59,6 @@ class LyricRuntime @Inject constructor(
     private var suppressNextFrameAnimation = false
     private var lyricLoadJob: Job? = null
     private var grantAttempted = false
-    private var lastForegroundPackage: String? = null
-    private var lastForegroundQueryAt = 0L
     private var cachedLyricsAllowed = false
     private var lastLyricsAllowedCheckAt = Long.MIN_VALUE
 
@@ -281,32 +278,11 @@ class LyricRuntime @Inject constructor(
     }
 
     private fun isHomeForeground(): Boolean {
-        val now = System.currentTimeMillis()
-        if (now - lastForegroundQueryAt > FOREGROUND_QUERY_INTERVAL_MS) {
-            lastForegroundQueryAt = now
-            lastForegroundPackage = queryForegroundPackage(now) ?: lastForegroundPackage
-        }
-        val pkg = lastForegroundPackage
-        return pkg == null ||
-            pkg == appContext.packageName ||
-            HomePackageResolver.isHomePackage(pkg, homePackages)
-    }
-
-    private fun queryForegroundPackage(now: Long): String? {
-        return runCatching {
-            val events = usageStatsManager.queryEvents(now - FOREGROUND_LOOKBACK_MS, now + 1)
-            val ev = UsageEvents.Event()
-            var latestTs = -1L
-            var latestPkg: String? = null
-            while (events.hasNextEvent()) {
-                events.getNextEvent(ev)
-                if (ev.eventType == UsageEvents.Event.ACTIVITY_RESUMED && ev.timeStamp > latestTs) {
-                    latestTs = ev.timeStamp
-                    latestPkg = ev.packageName
-                }
-            }
-            latestPkg
-        }.getOrNull()
+        val foreground = foregroundAppMonitor.foreground.value
+        val pkg = foreground.packageName?.takeIf(String::isNotBlank) ?: return false
+        return pkg != appContext.packageName &&
+            HomePackageResolver.isHomePackage(pkg, homePackages) &&
+            !HomePackageResolver.isLauncherSubpage(foreground.className)
     }
 
     private fun resolveHomePackages(): Set<String> {
@@ -319,7 +295,5 @@ class LyricRuntime @Inject constructor(
         private const val ACTIVATION_CHECK_INTERVAL_MS = 2_000L
         private const val TRACK_CHANGE_HOLD_MS = 2_500L
         private const val POSITION_DRIFT_RESET_MS = 2_500L
-        private const val FOREGROUND_QUERY_INTERVAL_MS = 1200L
-        private const val FOREGROUND_LOOKBACK_MS = 4500L
     }
 }

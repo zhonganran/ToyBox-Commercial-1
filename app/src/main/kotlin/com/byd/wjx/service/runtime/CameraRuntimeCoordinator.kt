@@ -34,7 +34,7 @@ class CameraRuntimeCoordinator @Inject constructor(
             // fresh install whose first UsageEvents query raced ahead of ADB authorization.
             cameraStateMonitor.requestImmediateRescan("usage_stats_checked")
         }
-        cameraStateMonitor.start()
+        cameraStateMonitor.start(scope)
         stateJob = scope.launch {
             cameraStateMonitor.active.collect(trackingStateStore::setCameraActive)
         }

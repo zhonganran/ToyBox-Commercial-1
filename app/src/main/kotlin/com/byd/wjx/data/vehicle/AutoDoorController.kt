@@ -42,6 +42,27 @@ internal data class AutoDoorDisplayDecision(
     val rememberedMotion: AutoDoorMotionDirection?,
 )
 
+internal fun autoDoorSpeedLimitKmh(commandValue: Int, defaultLimitKmh: Float): Float =
+    if (commandValue == 1) minOf(AUTO_DOOR_OPEN_SPEED_LIMIT_KMH, defaultLimitKmh) else defaultLimitKmh
+
+internal fun isAutoDoorCommandBlockedBySpeed(
+    commandValue: Int,
+    speedKmh: Float,
+    defaultLimitKmh: Float,
+): Boolean = abs(speedKmh) >= autoDoorSpeedLimitKmh(commandValue, defaultLimitKmh)
+
+internal fun resolveAutoDoorToggleCommand(
+    action: Int?,
+    percent: Int?,
+    fallbackCommand: Int,
+): Int = when {
+    action == 2 -> 2
+    action == 3 -> 1
+    percent == 100 -> 2
+    percent != null && percent in 0..2 -> 1
+    else -> fallbackCommand
+}
+
 /**
  * Mirrors Settings' state machine:
  * 100% is fully open, 0..2% is fully closed, and a stopped intermediate door
@@ -79,6 +100,20 @@ class AutoDoorController @Inject constructor(
     private val helper: HelperClient,
 ) {
     private val lastMotionBySide = ConcurrentHashMap<String, AutoDoorMotionDirection>()
+
+    suspend fun toggleDoor(slotKey: String): AutoDoorControlResult {
+        val snapshot = readDoorStates(listOf(slotKey)).firstOrNull()
+            ?: return AutoDoorControlResult(
+                success = false,
+                message = "电滑门控制失败：未知车门 $slotKey",
+            )
+        val command = resolveAutoDoorToggleCommand(
+            action = snapshot.action,
+            percent = snapshot.percent,
+            fallbackCommand = snapshot.nextCommand,
+        )
+        return runDoorCommand(slotKey, command)
+    }
 
     suspend fun runDoorCommand(slotKey: String, commandValue: Int): AutoDoorControlResult = withContext(Dispatchers.IO) {
         val startedAt = SystemClock.elapsedRealtime()
@@ -135,8 +170,14 @@ class AutoDoorController @Inject constructor(
         }
 
         if (speed == null) return@withContext blockedResult("无法确认车速")
-        if (abs(speed) >= target.maxSafeSpeedKmh) {
-            return@withContext blockedResult("车速达到或超过官方安全阈值（${"%.2f".format(Locale.US, speed)}km/h >= ${target.maxSafeSpeedKmh}km/h）")
+        val commandSpeedLimit = autoDoorSpeedLimitKmh(commandValue, target.maxSafeSpeedKmh)
+        if (isAutoDoorCommandBlockedBySpeed(commandValue, speed, target.maxSafeSpeedKmh)) {
+            val reason = if (commandValue == 1) {
+                "开门要求车速低于 ${commandSpeedLimit.toInt()}km/h（当前 ${"%.2f".format(Locale.US, speed)}km/h）"
+            } else {
+                "车速达到或超过安全阈值（${"%.2f".format(Locale.US, speed)}km/h >= ${commandSpeedLimit}km/h）"
+            }
+            return@withContext blockedResult(reason)
         }
         if (slideReady == null) return@withContext blockedResult("无法确认电滑门准备状态")
         if (slideReady != 1) return@withContext blockedResult("电滑门未就绪，官方要求 BODYWORK_ELEC_SLIDE_STATE=1")
@@ -357,3 +398,5 @@ class AutoDoorController @Inject constructor(
         )
     }
 }
+
+private const val AUTO_DOOR_OPEN_SPEED_LIMIT_KMH = 1.0f
