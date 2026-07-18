@@ -38,10 +38,9 @@ import android.os.IBinder
  *   TX_STOP_LOCK_SOUND : writeInt(kind)                    -> reply: writeInt(status), writeInt(stopped)
  *   TX_EXEC_SHELL : writeString(command)                   -> reply: writeInt(status), writeInt(exitCode), writeString(output)
  *   TX_CAMERA_START : writeInt(viewpoint), writeInt(fps), Surface.writeToParcel(surface)
- *       -> reply: writeInt(status), writeInt(activeViewpoint)
- *   TX_CAMERA_SWITCH_VIEW : writeInt(viewpoint)             -> reply: writeInt(status), writeInt(activeViewpoint)
+ *       -> reply: writeInt(status), writeInt(0)
+ *   TX_CAMERA_SWITCH_VIEW : writeInt(viewpoint)             -> reply: writeInt(status), writeInt(0)
  *   TX_CAMERA_STOP : (no args)                              -> reply: writeInt(status), writeInt(0)
- *   TX_CAMERA_STATUS : (no args)                            -> reply: writeInt(active), writeInt(activeViewpoint)
  *
  * Projection status: 0 = success, <0 = error/unavailable. Surface is written LAST so a
  * marshalling test can assert the scalar args without round-tripping the Surface.
@@ -52,11 +51,11 @@ object HelperBinderProtocol {
     const val SERVICE_NAME = "wjx_helper"
     const val PROCESS_NAME = "wjx_helper"   // app_process --nice-name + ps lookup
     const val DESCRIPTOR = "com.byd.wjx.helper.IHelper"
-    // v9 carries first-frame-safe TextureView output plus the instance BmmCameraInfo and
-    // signature-compatible AVMCamera reflection paths used by the electronic mirror. This is a
+    // v10 caches the validated AVMCamera capability route and removes the unused camera-status
+    // transaction. This is a
     // runtime build marker, not a preference/data migration: a shell-uid app_process can outlive
     // an APK uninstall, so a freshly installed app must reject that stale in-memory daemon.
-    const val CURRENT_VERSION = 9
+    const val CURRENT_VERSION = 10
 
     const val TX_PING = IBinder.FIRST_CALL_TRANSACTION       // 1
     const val TX_READ = IBinder.FIRST_CALL_TRANSACTION + 1   // 2
@@ -88,7 +87,7 @@ object HelperBinderProtocol {
     const val TX_CAMERA_START = IBinder.FIRST_CALL_TRANSACTION + 27             // 28
     const val TX_CAMERA_SWITCH_VIEW = IBinder.FIRST_CALL_TRANSACTION + 28       // 29
     const val TX_CAMERA_STOP = IBinder.FIRST_CALL_TRANSACTION + 29              // 30
-    const val TX_CAMERA_STATUS = IBinder.FIRST_CALL_TRANSACTION + 30            // 31
+    // tx 31 retired (unused electronic-mirror status query).
 
     /** Hard upper bound keeps a malformed caller from creating an oversized Binder reply. */
     const val MAX_BATCH_READS = 128

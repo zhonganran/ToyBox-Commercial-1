@@ -51,6 +51,7 @@ class ElectronicMirrorCoordinator @Inject constructor(
     private var retryScene: ElectronicMirrorScene? = null
     private var consecutiveFailures = 0
     private var currentConfig: ElectronicMirrorConfig = preferences.snapshot()
+    private var overlayPermissionReady = false
 
     fun start(originalCameraState: StateFlow<Boolean>) {
         if (cameraStateJob?.isActive == true) return
@@ -200,14 +201,16 @@ class ElectronicMirrorCoordinator @Inject constructor(
             setInactiveStatus("原车影像占用，电子后视镜让行")
             return
         }
-        helper.grantOverlayPermission()
-        if (!awaitOverlayPermission()) {
+        if (!ensureOverlayPermission()) {
             scheduleRetryLocked(scene, "悬浮窗权限未生效")
             return
         }
 
         val handle = overlayController.show(scene)
         if (handle == null) {
+            // PROJECT_MEDIA has no public read API. Allow one fresh grant attempt on the retry in
+            // case the cluster display was hidden by a revoked vendor app-op.
+            overlayPermissionReady = false
             scheduleRetryLocked(scene, "无法创建${targetName(scene.target)}画面窗口")
             return
         }
@@ -382,11 +385,19 @@ class ElectronicMirrorCoordinator @Inject constructor(
         consecutiveFailures = 0
     }
 
-    private suspend fun awaitOverlayPermission(): Boolean {
-        if (Settings.canDrawOverlays(appContext)) return true
+    private suspend fun ensureOverlayPermission(): Boolean {
+        if (overlayPermissionReady && Settings.canDrawOverlays(appContext)) return true
+        helper.grantOverlayPermission()
+        if (Settings.canDrawOverlays(appContext)) {
+            overlayPermissionReady = true
+            return true
+        }
         repeat(10) {
             delay(200L)
-            if (Settings.canDrawOverlays(appContext)) return true
+            if (Settings.canDrawOverlays(appContext)) {
+                overlayPermissionReady = true
+                return true
+            }
         }
         return false
     }

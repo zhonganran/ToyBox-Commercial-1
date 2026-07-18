@@ -28,6 +28,8 @@ internal class ElectronicMirrorCameraRuntime(
     private var setPanoThree: Method? = null
     private var currentViewpoint: Int = VIEW_NONE
     private var currentPreviewChannel: Int = VIEW_NONE
+    private var cameraApi: CameraApi? = null
+    private var fpsSetterSupported: Boolean? = null
 
     fun start(surface: Surface, viewpoint: Int, fps: Int): Int = synchronized(lock) {
         if (!surface.isValid) {
@@ -44,33 +46,28 @@ internal class ElectronicMirrorCameraRuntime(
         // assigning it before reflection guarantees every early failure releases it via stopLocked.
         previewSurface = surface
         try {
-            val cameraClass = Class.forName(AVM_CAMERA_CLASS)
-            val cameraIds = resolveApaCameraIds()
-            logCameraApi(cameraClass, cameraIds)
-            val openedCamera = cameraIds.firstNotNullOfOrNull { cameraId ->
-                openCamera(cameraClass, cameraId)?.let { cameraId to it }
+            val api = resolveCameraApi()
+            val openedCamera = api.cameraIds.firstNotNullOfOrNull { cameraId ->
+                openCamera(api, cameraId)?.let { cameraId to it }
             }
             if (openedCamera == null) {
                 stopLocked()
                 return@synchronized fail(
                     STATUS_OPEN_FAILED,
-                    "AVMCamera open paths failed cameraIds=${cameraIds.joinToString()}",
+                    "AVMCamera open paths failed cameraIds=${api.cameraIds.joinToString()}",
                 )
             }
             val (cameraId, opened) = openedCamera
 
             camera = opened
 
-            val reportedCameraId = readInt(opened, "getCameraId")
-            val reportedPreviewSize = resolveReportedPreviewSize(opened, cameraId)
-            val singlePreviewSize = resolveSinglePreviewSize(cameraClass)
             val previewSizeApplied = invokeBoolean(
                 opened,
                 "setPreviewSize",
-                singlePreviewSize.width,
-                singlePreviewSize.height,
+                api.singlePreviewSize.width,
+                api.singlePreviewSize.height,
             )
-            val previewChannel = resolvePreviewChannel(cameraClass, viewpoint)
+            val previewChannel = resolvePreviewChannel(api, viewpoint)
             val bindingMethod = bindPreviewSurface(opened, surface, previewChannel)
             if (bindingMethod == null) {
                 stopLocked()
@@ -82,7 +79,7 @@ internal class ElectronicMirrorCameraRuntime(
             currentPreviewChannel = previewChannel
 
             val fpsValue = fps.coerceIn(15, 30)
-            val fpsApplied = invokeBoolean(opened, "setCameraFps", fpsValue)
+            val fpsApplied = applyCameraFps(opened, fpsValue)
             if (!invokeBoolean(opened, "startPreview")) {
                 stopLocked()
                 return@synchronized fail(STATUS_PREVIEW_FAILED, "startPreview returned false")
@@ -91,12 +88,10 @@ internal class ElectronicMirrorCameraRuntime(
             currentViewpoint = viewpoint
             helperLog(
                 TAG,
-                "started selectedId=$cameraId reportedId=$reportedCameraId viewpoint=$viewpoint " +
+                "started cameraId=$cameraId viewpoint=$viewpoint " +
                     "channel=$previewChannel binding=$bindingMethod fps=$fpsValue fpsApplied=$fpsApplied " +
-                    "reportedPreview=${reportedPreviewSize.first}x${reportedPreviewSize.second} " +
-                    "singlePreview=${singlePreviewSize.width}x${singlePreviewSize.height} " +
-                    "sizeApplied=$previewSizeApplied " +
-                    "isOpen=${readBoolean(opened, "isOpen")} isPreview=${readBoolean(opened, "isPreview")}",
+                    "singlePreview=${api.singlePreviewSize.width}x${api.singlePreviewSize.height} " +
+                    "sizeApplied=$previewSizeApplied",
             )
             STATUS_OK
         } catch (t: Throwable) {
@@ -115,16 +110,11 @@ internal class ElectronicMirrorCameraRuntime(
         STATUS_OK
     }
 
-    fun isActive(): Boolean = synchronized(lock) { camera != null }
-
-    fun activeViewpoint(): Int = synchronized(lock) { currentViewpoint }
-
     private fun switchViewLocked(viewpoint: Int): Int {
         val activeCamera = camera ?: return STATUS_NOT_ACTIVE
         val surface = previewSurface ?: return STATUS_NOT_ACTIVE
-        val cameraClass = activeCamera.javaClass
         val targetChannel = electronicMirrorPreviewChannel(viewpoint)
-            ?.let { resolvePreviewChannel(cameraClass, viewpoint) }
+            ?.let { resolvePreviewChannel(resolveCameraApi(), viewpoint) }
             ?: return STATUS_INVALID_VIEWPOINT
         if (currentViewpoint == viewpoint && currentPreviewChannel == targetChannel) {
             return STATUS_OK
@@ -268,17 +258,8 @@ internal class ElectronicMirrorCameraRuntime(
      * can reject a valid fallback id before touching the HAL; the private constructor + private
      * open path mirrors what L1Mini's reflectLoad_5 loader does on those builds.
      */
-    private fun openCamera(cameraClass: Class<*>, cameraId: Int): Any? {
-        val staticFactories = (cameraClass.methods.asSequence() + cameraClass.declaredMethods.asSequence())
-            .filter { method ->
-                method.name == "open" &&
-                    Modifier.isStatic(method.modifiers) &&
-                    method.parameterTypes.firstOrNull().isIntType()
-            }
-            .distinctBy(::methodSignature)
-            .sortedBy { it.parameterTypes.size }
-            .toList()
-        for (factory in staticFactories) {
+    private fun openCamera(api: CameraApi, cameraId: Int): Any? {
+        for (factory in api.staticFactories) {
             val args = defaultArguments(factory.parameterTypes, cameraId) ?: continue
             val opened = runCatching {
                 factory.isAccessible = true
@@ -286,27 +267,15 @@ internal class ElectronicMirrorCameraRuntime(
             }.onFailure {
                 helperLog(TAG, "factory ${methodSignature(factory)} failed cameraId=$cameraId: ${summary(it)}")
             }.getOrNull()
-            if (opened != null && cameraClass.isInstance(opened)) {
+            if (opened != null && api.cameraClass.isInstance(opened)) {
                 helperLog(TAG, "factory ${methodSignature(factory)} succeeded cameraId=$cameraId")
                 return opened
             }
             helperLog(TAG, "factory ${methodSignature(factory)} returned null cameraId=$cameraId")
         }
 
-        val instanceOpen = (cameraClass.methods.asSequence() + cameraClass.declaredMethods.asSequence())
-            .firstOrNull { method ->
-                method.name == "open" &&
-                    !Modifier.isStatic(method.modifiers) &&
-                    method.parameterTypes.isEmpty()
-            }
-            ?.apply { isAccessible = true }
-            ?: return null
-        val constructors = cameraClass.declaredConstructors
-            .asSequence()
-            .filter { it.parameterTypes.firstOrNull().isIntType() }
-            .sortedBy { it.parameterTypes.size }
-            .toList()
-        for (constructor in constructors) {
+        val instanceOpen = api.instanceOpen ?: return null
+        for (constructor in api.constructors) {
             val args = defaultArguments(constructor.parameterTypes, cameraId) ?: continue
             val candidate = runCatching {
                 constructor.isAccessible = true
@@ -331,6 +300,52 @@ internal class ElectronicMirrorCameraRuntime(
             runCatching { invokeBoolean(candidate, "close") }
         }
         return null
+    }
+
+    private fun resolveCameraApi(): CameraApi {
+        cameraApi?.let { return it }
+        val cameraClass = Class.forName(AVM_CAMERA_CLASS)
+        val staticFactories = (cameraClass.methods.asSequence() + cameraClass.declaredMethods.asSequence())
+            .filter { method ->
+                method.name == "open" &&
+                    Modifier.isStatic(method.modifiers) &&
+                    method.parameterTypes.firstOrNull().isIntType()
+            }
+            .distinctBy(::methodSignature)
+            .sortedBy { it.parameterTypes.size }
+            .toList()
+        val instanceOpen = (cameraClass.methods.asSequence() + cameraClass.declaredMethods.asSequence())
+            .firstOrNull { method ->
+                method.name == "open" &&
+                    !Modifier.isStatic(method.modifiers) &&
+                    method.parameterTypes.isEmpty()
+            }
+            ?.apply { isAccessible = true }
+        val constructors = cameraClass.declaredConstructors
+            .asSequence()
+            .filter { it.parameterTypes.firstOrNull().isIntType() }
+            .sortedBy { it.parameterTypes.size }
+            .toList()
+        val previewChannels = SUPPORTED_VIEWPOINTS.associateWith { viewpoint ->
+            resolvePreviewChannel(cameraClass, viewpoint)
+        }
+        return CameraApi(
+            cameraClass = cameraClass,
+            cameraIds = resolveApaCameraIds(),
+            staticFactories = staticFactories,
+            instanceOpen = instanceOpen,
+            constructors = constructors,
+            singlePreviewSize = resolveSinglePreviewSize(cameraClass),
+            previewChannels = previewChannels,
+        ).also { resolved ->
+            cameraApi = resolved
+            helperLog(
+                TAG,
+                "capabilities ids=${resolved.cameraIds.joinToString()} " +
+                    "preview=${resolved.singlePreviewSize.width}x${resolved.singlePreviewSize.height} " +
+                    "channels=${resolved.previewChannels.entries.joinToString { "${it.key}:${it.value}" }}",
+            )
+        }
     }
 
     private fun instantiateCameraInfo(clazz: Class<*>): Any? {
@@ -380,26 +395,6 @@ internal class ElectronicMirrorCameraRuntime(
         return null
     }
 
-    private fun resolveReportedPreviewSize(camera: Any, cameraId: Int): Pair<Int?, Int?> {
-        val cameraWidth = readInt(camera, "getPreviewWidth")
-        val cameraHeight = readInt(camera, "getPreviewHeight")
-        if (cameraWidth != null && cameraHeight != null && cameraWidth > 0 && cameraHeight > 0) {
-            helperLog(TAG, "reported preview source=AVMCamera id=$cameraId size=${cameraWidth}x$cameraHeight")
-            return cameraWidth to cameraHeight
-        }
-
-        val infoClass = runCatching { Class.forName(BMM_CAMERA_INFO_CLASS) }.getOrNull()
-            ?: return cameraWidth to cameraHeight
-        val width = STATIC_PREVIEW_WIDTH_METHODS.firstNotNullOfOrNull { methodName ->
-            invokeStaticInt(infoClass, methodName, cameraId)
-        }
-        val height = STATIC_PREVIEW_HEIGHT_METHODS.firstNotNullOfOrNull { methodName ->
-            invokeStaticInt(infoClass, methodName, cameraId)
-        }
-        helperLog(TAG, "reported preview source=BmmCameraInfo id=$cameraId size=${width}x$height")
-        return width?.takeIf { it > 0 } to height?.takeIf { it > 0 }
-    }
-
     private fun resolveSinglePreviewSize(cameraClass: Class<*>): ElectronicMirrorPreviewSize {
         val width = readStaticIntField(cameraClass, SINGLE_PREVIEW_WIDTH_FIELD)
         val height = readStaticIntField(cameraClass, SINGLE_PREVIEW_HEIGHT_FIELD)
@@ -410,6 +405,9 @@ internal class ElectronicMirrorCameraRuntime(
         )
         return size
     }
+
+    private fun resolvePreviewChannel(api: CameraApi, viewpoint: Int): Int =
+        api.previewChannels[viewpoint] ?: requireNotNull(electronicMirrorPreviewChannel(viewpoint))
 
     private fun resolvePreviewChannel(cameraClass: Class<*>, viewpoint: Int): Int {
         val fallback = requireNotNull(electronicMirrorPreviewChannel(viewpoint))
@@ -448,27 +446,6 @@ internal class ElectronicMirrorCameraRuntime(
         return null
     }
 
-    private fun invokeStaticInt(clazz: Class<*>, name: String, vararg args: Any?): Int? {
-        val methods = allMethods(clazz)
-            .filter { method ->
-                Modifier.isStatic(method.modifiers) &&
-                    method.name == name &&
-                    electronicMirrorArgumentsCompatible(method.parameterTypes, args)
-            }
-            .distinctBy(::methodSignature)
-            .sortedByDescending { method -> compatibilityScore(method.parameterTypes, args) }
-        for (method in methods) {
-            val value = runCatching {
-                method.isAccessible = true
-                method.invoke(null, *args)
-            }.onFailure {
-                helperLog(TAG, "invoke static ${methodSignature(method)} failed: ${summary(it)}")
-            }.getOrNull()
-            if (value is Number) return value.toInt()
-        }
-        return null
-    }
-
     private fun defaultArguments(parameterTypes: Array<Class<*>>, cameraId: Int): Array<Any?>? {
         if (!parameterTypes.firstOrNull().isIntType()) return null
         return Array(parameterTypes.size) { index ->
@@ -496,18 +473,6 @@ internal class ElectronicMirrorCameraRuntime(
 
     private fun constructorSignature(constructor: Constructor<*>): String =
         "${constructor.declaringClass.simpleName}(${constructor.parameterTypes.joinToString { it.simpleName }})"
-
-    private fun logCameraApi(cameraClass: Class<*>, cameraIds: List<Int>) {
-        val factories = (cameraClass.methods.asSequence() + cameraClass.declaredMethods.asSequence())
-            .filter { it.name == "open" }
-            .distinctBy(::methodSignature)
-            .joinToString { methodSignature(it) }
-        val constructors = cameraClass.declaredConstructors.joinToString { constructorSignature(it) }
-        helperLog(
-            TAG,
-            "camera API ids=${cameraIds.joinToString()} open=[$factories] constructors=[$constructors]",
-        )
-    }
 
     private fun readSystemProperty(name: String): String = runCatching {
         val systemProperties = Class.forName("android.os.SystemProperties")
@@ -603,21 +568,18 @@ internal class ElectronicMirrorCameraRuntime(
         return operationAccepted(invocation.value)
     }
 
+    private fun applyCameraFps(camera: Any, fps: Int): Boolean {
+        if (fpsSetterSupported == false) return false
+        val applied = invokeBoolean(camera, "setCameraFps", fps)
+        fpsSetterSupported = applied
+        if (!applied) helperLog(TAG, "setCameraFps unsupported; future starts will skip it")
+        return applied
+    }
+
     private fun operationAccepted(value: Any?): Boolean = when (value) {
         is Boolean -> value
         is Number -> value.toInt() >= 0
         else -> true
-    }
-
-    private fun readInt(target: Any, name: String): Int? =
-        (invokeCompatible(target, name)?.value as? Number)?.toInt()
-
-    private fun readBoolean(target: Any, name: String): Boolean? = when (
-        val value = invokeCompatible(target, name)?.value
-    ) {
-        is Boolean -> value
-        is Number -> value.toInt() != 0
-        else -> null
     }
 
     private fun invokeCompatible(target: Any, name: String, vararg args: Any?): Invocation? {
@@ -725,11 +687,20 @@ internal class ElectronicMirrorCameraRuntime(
         private const val SINGLE_PREVIEW_HEIGHT_FIELD = "SINGLE_PREVIEW_HEIGHT"
         private val CAMERA_ID_METHOD_NAMES = setOf("getCameraId", "getCameraID")
         private val CAMERA_TAGS = listOf("apa", "byd_apa", "pano_h", "pano_l")
-        private val STATIC_PREVIEW_WIDTH_METHODS = listOf("getDefaultPreviewWidth", "getPreviewWidth")
-        private val STATIC_PREVIEW_HEIGHT_METHODS = listOf("getDefaultPreviewHeight", "getPreviewHeight")
+        private val SUPPORTED_VIEWPOINTS = listOf(2000, 2002, 2003)
     }
 
     private data class Invocation(val value: Any?)
+
+    private data class CameraApi(
+        val cameraClass: Class<*>,
+        val cameraIds: List<Int>,
+        val staticFactories: List<Method>,
+        val instanceOpen: Method?,
+        val constructors: List<Constructor<*>>,
+        val singlePreviewSize: ElectronicMirrorPreviewSize,
+        val previewChannels: Map<Int, Int>,
+    )
 }
 
 internal fun electronicMirrorArgumentsCompatible(

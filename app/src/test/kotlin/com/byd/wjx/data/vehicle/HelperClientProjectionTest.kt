@@ -139,13 +139,9 @@ class HelperClientProjectionTest {
     }
 
     @Test
-    fun `electronic mirror switch stop and status map replies`() = runBlocking {
+    fun `electronic mirror switch and stop map replies`() = runBlocking {
         assertTrue(clientWith(capturingFake(status = 0, value = 2003)).switchElectronicMirrorView(2003))
         assertTrue(clientWith(capturingFake(status = 0, value = 0)).stopElectronicMirror())
         assertFalse(clientWith(capturingFake(status = -7, value = -1)).switchElectronicMirrorView(2002))
-
-        val status = clientWith(capturingFake(status = 1, value = 2003)).electronicMirrorStatus()
-        assertEquals(true, status?.active)
-        assertEquals(2003, status?.viewpoint)
     }
 }

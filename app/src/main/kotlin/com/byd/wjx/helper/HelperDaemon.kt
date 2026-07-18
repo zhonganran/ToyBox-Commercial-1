@@ -328,16 +328,15 @@ fun main(args: Array<String>) {
                 }.getOrElse { reply?.writeInt(-1); reply?.writeInt(0); true }
 
                 HelperBinderProtocol.TX_GRANT_OVERLAY_PERMISSION -> runCatching {
-                    // Narrow, hardcoded — NOT a generic shell passthrough. Two appops plus the
-                    // hidden capture grant AutoTark uses for cluster/lyric projection.
+                    // Narrow, hardcoded — NOT a generic shell passthrough. These two app-ops are
+                    // the permissions actually required by the overlay and fission display.
                     // SYSTEM_ALERT_WINDOW lets us draw the cluster overlay; PROJECT_MEDIA gates
                     // third-party access to the fission screen-projection display (without it
                     // DisplayManager.getDisplay(clusterId) returns null in our process).
                     val pkg = HelperBinderProtocol.APP_PACKAGE
                     val r1 = shExec("appops set \"\$1\" SYSTEM_ALERT_WINDOW allow", pkg)
                     val r2 = shExec("appops set \"\$1\" PROJECT_MEDIA allow", pkg)
-                    val r3 = shExec("pm grant \"\$1\" android.permission.CAPTURE_VIDEO_OUTPUT", pkg)
-                    helperLog("Permission", "grant overlay=${r1.code} project=${r2.code} capture=${r3.code}")
+                    helperLog("Permission", "grant overlay=${r1.code} project=${r2.code}")
                     val ok = r1.code == 0 && r2.code == 0
                     reply?.writeInt(if (ok) 0 else -1); reply?.writeInt(0)
                     true
@@ -434,7 +433,7 @@ fun main(args: Array<String>) {
                     val surface = Surface.CREATOR.createFromParcel(data)
                     val status = electronicMirrorCamera.start(surface, viewpoint, fps)
                     reply?.writeInt(status)
-                    reply?.writeInt(electronicMirrorCamera.activeViewpoint())
+                    reply?.writeInt(0)
                     true
                 }.getOrElse {
                     helperLog("ElectronicMirrorCamera", "binder start failed: ${it.javaClass.simpleName}:${it.message.orEmpty()}")
@@ -444,7 +443,7 @@ fun main(args: Array<String>) {
                 HelperBinderProtocol.TX_CAMERA_SWITCH_VIEW -> runCatching {
                     val status = electronicMirrorCamera.switchView(data.readInt())
                     reply?.writeInt(status)
-                    reply?.writeInt(electronicMirrorCamera.activeViewpoint())
+                    reply?.writeInt(0)
                     true
                 }.getOrElse {
                     helperLog("ElectronicMirrorCamera", "binder switch failed: ${it.javaClass.simpleName}:${it.message.orEmpty()}")
@@ -458,14 +457,6 @@ fun main(args: Array<String>) {
                 }.getOrElse {
                     helperLog("ElectronicMirrorCamera", "binder stop failed: ${it.javaClass.simpleName}:${it.message.orEmpty()}")
                     reply?.writeInt(-1); reply?.writeInt(0); true
-                }
-
-                HelperBinderProtocol.TX_CAMERA_STATUS -> runCatching {
-                    reply?.writeInt(if (electronicMirrorCamera.isActive()) 1 else 0)
-                    reply?.writeInt(electronicMirrorCamera.activeViewpoint())
-                    true
-                }.getOrElse {
-                    reply?.writeInt(0); reply?.writeInt(-1); true
                 }
 
                 else -> super.onTransact(code, data, reply, flags)
