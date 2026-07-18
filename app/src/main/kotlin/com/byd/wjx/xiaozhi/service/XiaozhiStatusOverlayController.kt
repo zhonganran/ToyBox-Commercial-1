@@ -13,6 +13,9 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import com.byd.wjx.log.WjxFileLogger
 import com.byd.wjx.xiaozhi.domain.XiaozhiPhase
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlin.math.roundToInt
 
 internal data class XiaozhiStatusPresentation(
@@ -51,8 +54,32 @@ internal fun xiaozhiStatusPresentation(phase: XiaozhiPhase): XiaozhiStatusPresen
         XiaozhiStatusPresentation(visible = false)
 }
 
-/** Lightweight, non-touchable desktop indicator owned by the voice foreground service. */
-internal class XiaozhiStatusOverlayController(context: Context) {
+internal fun xiaozhiWakeStatusPresentation(
+    running: Boolean,
+    status: String,
+): XiaozhiStatusPresentation {
+    if (!running) return XiaozhiStatusPresentation(visible = false)
+    return when {
+        status.contains("已唤醒") || status.contains("检测到") -> XiaozhiStatusPresentation(
+            visible = true,
+            title = "小智 · 已唤醒",
+            detail = "正在打开自动对话",
+            accentColor = 0xFF17C789.toInt(),
+        )
+        else -> XiaozhiStatusPresentation(visible = false)
+    }
+}
+
+internal fun selectXiaozhiStatusPresentation(
+    conversation: XiaozhiStatusPresentation,
+    wake: XiaozhiStatusPresentation,
+): XiaozhiStatusPresentation = conversation.takeIf { it.visible } ?: wake
+
+/** One process-wide, non-touchable desktop indicator shared by wake and conversation services. */
+@Singleton
+class XiaozhiStatusOverlayController @Inject constructor(
+    @ApplicationContext context: Context,
+) {
     private val appContext = context.applicationContext
     private val windowManager = appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var root: LinearLayout? = null
@@ -60,9 +87,28 @@ internal class XiaozhiStatusOverlayController(context: Context) {
     private var title: TextView? = null
     private var detail: TextView? = null
     private var permissionWarningLogged = false
+    private var conversationPresentation = XiaozhiStatusPresentation(visible = false)
+    private var wakePresentation = XiaozhiStatusPresentation(visible = false)
 
-    fun update(phase: XiaozhiPhase) {
-        val presentation = xiaozhiStatusPresentation(phase)
+    fun updateConversation(phase: XiaozhiPhase) {
+        conversationPresentation = xiaozhiStatusPresentation(phase)
+        render()
+    }
+
+    fun updateWake(running: Boolean, status: String) {
+        wakePresentation = xiaozhiWakeStatusPresentation(running, status)
+        render()
+    }
+
+    fun clearWake() {
+        wakePresentation = XiaozhiStatusPresentation(visible = false)
+        render()
+    }
+
+    fun refresh() = render()
+
+    private fun render() {
+        val presentation = selectXiaozhiStatusPresentation(conversationPresentation, wakePresentation)
         if (!presentation.visible) {
             hide()
             return
@@ -85,7 +131,7 @@ internal class XiaozhiStatusOverlayController(context: Context) {
         detail?.text = presentation.detail
     }
 
-    fun hide() {
+    private fun hide() {
         root?.let { view -> runCatching { windowManager.removeView(view) } }
         root = null
         dot = null

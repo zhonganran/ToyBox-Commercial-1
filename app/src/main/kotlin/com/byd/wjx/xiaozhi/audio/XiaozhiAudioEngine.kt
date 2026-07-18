@@ -5,13 +5,11 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
-import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioTrack
-import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
 import android.os.Process
@@ -29,6 +27,7 @@ import kotlin.math.max
 @Singleton
 class XiaozhiAudioEngine @Inject constructor(
     @ApplicationContext context: Context,
+    private val microphoneFactory: XiaozhiMicrophoneFactory,
 ) {
     private val appContext = context.applicationContext
     private val audioManager = appContext.getSystemService(AudioManager::class.java)
@@ -87,7 +86,11 @@ class XiaozhiAudioEngine @Inject constructor(
                 PackageManager.PERMISSION_GRANTED,
         ) { "没有麦克风权限" }
         codec.openEncoder()
-        val nextRecord = createAudioRecord() ?: error("无法初始化车内麦克风")
+        val nextRecord = microphoneFactory.create(
+            sampleRate = XiaozhiOpusCodec.INPUT_SAMPLE_RATE,
+            frameSamples = XiaozhiOpusCodec.INPUT_FRAME_SAMPLES,
+            purpose = "conversation",
+        ) ?: error("无法初始化车内麦克风")
         record = nextRecord
         echoCanceler = runCatching {
             if (AcousticEchoCanceler.isAvailable()) {
@@ -264,53 +267,6 @@ class XiaozhiAudioEngine @Inject constructor(
         }
     }
 
-    @SuppressLint("MissingPermission")
-    private fun createAudioRecord(): AudioRecord? {
-        val minBuffer = AudioRecord.getMinBufferSize(
-            XiaozhiOpusCodec.INPUT_SAMPLE_RATE,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-        )
-        if (minBuffer <= 0) return null
-        val bufferBytes = max(minBuffer, XiaozhiOpusCodec.INPUT_FRAME_SAMPLES * 2 * 4)
-        val sources = intArrayOf(
-            MediaRecorder.AudioSource.VOICE_RECOGNITION,
-            MediaRecorder.AudioSource.VOICE_COMMUNICATION,
-            MediaRecorder.AudioSource.MIC,
-            MediaRecorder.AudioSource.DEFAULT,
-        )
-        val preferred = preferredInputDevice()
-        for (source in sources) {
-            val candidate = runCatching {
-                AudioRecord(
-                    source,
-                    XiaozhiOpusCodec.INPUT_SAMPLE_RATE,
-                    AudioFormat.CHANNEL_IN_MONO,
-                    AudioFormat.ENCODING_PCM_16BIT,
-                    bufferBytes,
-                )
-            }.getOrNull() ?: continue
-            if (candidate.state != AudioRecord.STATE_INITIALIZED) {
-                candidate.release()
-                continue
-            }
-            preferred?.let { runCatching { candidate.setPreferredDevice(it) } }
-            WjxFileLogger.i(
-                TAG,
-                "record ready source=$source session=${candidate.audioSessionId} mic=${preferred?.address.orEmpty().ifBlank { "default" }}",
-            )
-            return candidate
-        }
-        return null
-    }
-
-    private fun preferredInputDevice(): AudioDeviceInfo? {
-        val devices = audioManager?.getDevices(AudioManager.GET_DEVICES_INPUTS).orEmpty()
-        return devices.firstOrNull { it.address == BYD_ECNR_MIC_ADDRESS }
-            ?: devices.firstOrNull { it.address.contains("ECNR", ignoreCase = true) }
-            ?: devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_MIC }
-    }
-
     private fun releasePlaybackResources() {
         val activeTrack = track
         track = null
@@ -343,6 +299,5 @@ class XiaozhiAudioEngine @Inject constructor(
     companion object {
         private const val TAG = "XiaozhiAudio"
         private const val PLAYBACK_QUEUE_SIZE = 48
-        private const val BYD_ECNR_MIC_ADDRESS = "COM_BYD_AUDIO_BUILTIN_MIC_ECNR"
     }
 }

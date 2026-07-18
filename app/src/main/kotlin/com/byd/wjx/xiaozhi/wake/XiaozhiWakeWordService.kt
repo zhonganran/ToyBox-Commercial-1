@@ -5,14 +5,9 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.os.Build
-import android.os.Bundle
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
+import android.media.AudioRecord
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
@@ -23,40 +18,76 @@ import com.byd.wjx.audio.AudioOwner
 import com.byd.wjx.audio.AudioUsageCoordinator
 import com.byd.wjx.log.WjxFileLogger
 import com.byd.wjx.xiaozhi.audio.XiaozhiFeedbackPlayer
+import com.byd.wjx.xiaozhi.audio.XiaozhiMicrophoneFactory
 import com.byd.wjx.xiaozhi.domain.XiaozhiPhase
 import com.byd.wjx.xiaozhi.domain.XiaozhiSessionManager
+import com.byd.wjx.xiaozhi.service.XiaozhiOverlayPermissionCoordinator
+import com.byd.wjx.xiaozhi.service.XiaozhiStatusOverlayController
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
+/**
+ * Low-power, fully local wake-word service.
+ *
+ * It owns the microphone only while Xiaozhi and realtime hailing are idle. A
+ * keyword match always closes AudioRecord before the cloud conversation starts,
+ * so the two capture pipelines never compete for the BYD cabin microphone.
+ */
 @AndroidEntryPoint
-class XiaozhiWakeWordService : LifecycleService(), RecognitionListener {
+class XiaozhiWakeWordService : LifecycleService() {
     @Inject lateinit var preferences: XiaozhiWakePreferences
     @Inject lateinit var controller: XiaozhiWakeController
     @Inject lateinit var sessionManager: XiaozhiSessionManager
     @Inject lateinit var audioUsage: AudioUsageCoordinator
     @Inject lateinit var feedbackPlayer: XiaozhiFeedbackPlayer
+    @Inject lateinit var microphoneFactory: XiaozhiMicrophoneFactory
+    @Inject lateinit var wakeEngine: SherpaOnnxWakeWordEngine
+    @Inject lateinit var statusOverlay: XiaozhiStatusOverlayController
+    @Inject lateinit var overlayPermission: XiaozhiOverlayPermissionCoordinator
 
-    private var recognizer: SpeechRecognizer? = null
-    private var recognizerActive = false
-    private var usingOnDeviceRecognizer = false
-    private var allowOnDeviceRecognizer = true
-    private var recognitionEngineLabel = "系统语音识别"
+    private val recorderLock = Any()
+    private var activeRecorder: AudioRecord? = null
     private var restartJob: Job? = null
+    private var listeningJob: Job? = null
     private var wakeJob: Job? = null
-    private var wakeTriggered = false
-    private var recognizerFailureCount = 0
-    private var gate = WakeListeningGate()
+    private var listeningGeneration = 0L
+    private var failureCount = 0
+
+    @Volatile private var destroyed = false
+    @Volatile private var gate = WakeListeningGate()
+    @Volatile private var activePhrase = ""
+    @Volatile private var wakeTriggered = false
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, notification("正在准备语音唤醒"))
-        controller.reportService(true, false, "正在准备语音唤醒")
+        startForeground(NOTIFICATION_ID, notification("正在加载本地唤醒模型"))
+        controller.reportService(
+            running = true,
+            listening = false,
+            status = "正在加载本地唤醒模型",
+            engineLabel = ENGINE_LABEL,
+        )
+        statusOverlay.updateWake(
+            running = true,
+            status = "正在加载本地唤醒模型",
+        )
+        lifecycleScope.launch {
+            overlayPermission.ensureGranted()
+            statusOverlay.refresh()
+        }
         lifecycleScope.launch {
             combine(
                 preferences.config,
@@ -86,95 +117,49 @@ class XiaozhiWakeWordService : LifecycleService(), RecognitionListener {
                 controller.setEnabled(false)
                 stopSelf()
             }
-            ACTION_RECONCILE, null -> Unit // StateFlow collector performs the actual reconciliation.
+            ACTION_RECONCILE, null -> Unit
         }
         return START_STICKY
     }
 
     override fun onDestroy() {
+        destroyed = true
         restartJob?.cancel()
         wakeJob?.cancel()
-        pauseRecognition(destroy = true)
-        controller.reportService(false, false, if (preferences.config.value.enabled) "语音唤醒服务已停止" else "语音唤醒未开启")
+        stopListening()
+        wakeEngine.release()
+        statusOverlay.clearWake()
+        controller.reportService(
+            running = false,
+            listening = false,
+            status = if (preferences.config.value.enabled) "本地唤醒服务已停止" else "本地唤醒未开启",
+            engineLabel = ENGINE_LABEL,
+        )
         super.onDestroy()
     }
 
-    override fun onReadyForSpeech(params: Bundle?) {
-        if (!recognizerActive) return
-        recognizerFailureCount = 0
-        updateStatus("等待唤醒词“${gate.phrase}”", listening = true)
-    }
-
-    override fun onBeginningOfSpeech() {
-        if (recognizerActive) updateStatus("正在识别唤醒词", listening = true)
-    }
-
-    override fun onRmsChanged(rmsdB: Float) = Unit
-    override fun onBufferReceived(buffer: ByteArray?) = Unit
-
-    override fun onEndOfSpeech() {
-        if (recognizerActive) updateStatus("正在确认唤醒词", listening = false)
-    }
-
-    override fun onError(error: Int) {
-        markRecognitionInactive()
-        if (usingOnDeviceRecognizer && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            error in setOf(SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED, SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE)
-        ) {
-            WjxFileLogger.w(TAG, "on-device recognition unavailable error=$error; falling back to system recognizer")
-            allowOnDeviceRecognizer = false
-            pauseRecognition(destroy = true)
-            scheduleRestart(300L, "正在切换系统语音识别")
-            return
-        }
-        val delayMs = when (error) {
-            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> 1_200L
-            SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> 2_500L
-            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> {
-                updateStatus("麦克风权限不可用", listening = false)
-                return
-            }
-            SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> 350L
-            else -> nextRecognizerRetryDelay()
-        }
-        if (error !in setOf(SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT)) {
-            WjxFileLogger.w(TAG, "recognition error=$error restart=${delayMs}ms")
-        }
-        scheduleRestart(delayMs, if (delayMs > 1_000L) "语音识别暂时不可用，正在重试" else "等待唤醒词“${gate.phrase}”")
-    }
-
-    override fun onResults(results: Bundle?) {
-        markRecognitionInactive()
-        if (!handleResults(results)) scheduleRestart(250L)
-    }
-
-    override fun onPartialResults(partialResults: Bundle?) {
-        handleResults(partialResults)
-    }
-
-    override fun onEvent(eventType: Int, params: Bundle?) = Unit
-
     private fun reconcileListening() {
         when {
+            destroyed -> Unit
             !gate.enabled -> stopSelf()
-            !gate.serverConfigured -> {
-                pauseRecognition()
-                updateStatus("请先完成小智服务配置", listening = false)
-            }
-            !gate.conversationIdle -> {
-                pauseRecognition()
-                updateStatus("小智正在对话，唤醒监听已暂停", listening = false)
-            }
-            gate.microphoneBusy -> {
-                pauseRecognition()
-                updateStatus("其他麦克风功能正在使用，唤醒监听已让行", listening = false)
-            }
+            !gate.serverConfigured -> pauseListening("请先完成小智服务配置")
+            !gate.conversationIdle -> pauseListening("小智正在对话，本地唤醒监听已暂停")
+            gate.microphoneBusy -> pauseListening("其他麦克风功能正在使用，唤醒监听已让行")
             wakeTriggered -> Unit
-            else -> scheduleRestart(RESTART_AFTER_RELEASE_MS)
+            listeningJob?.isActive == true && activePhrase == gate.phrase -> Unit
+            else -> {
+                stopListening()
+                scheduleStart(RESTART_AFTER_RELEASE_MS)
+            }
         }
     }
 
-    private fun scheduleRestart(delayMs: Long, status: String? = null) {
+    private fun pauseListening(status: String) {
+        stopListening()
+        updateStatus(status, listening = false)
+    }
+
+    private fun scheduleStart(delayMs: Long, status: String? = null) {
         restartJob?.cancel()
         if (!canListen()) return
         status?.let { updateStatus(it, listening = false) }
@@ -186,98 +171,140 @@ class XiaozhiWakeWordService : LifecycleService(), RecognitionListener {
 
     private fun startListening() {
         restartJob = null
-        if (!canListen() || recognizerActive) return
+        if (!canListen() || listeningJob?.isActive == true) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            updateStatus("需要麦克风权限才能开启语音唤醒", listening = false)
+            updateStatus("需要麦克风权限才能开启本地唤醒", listening = false)
             return
         }
-        val activeRecognizer = recognizer ?: createRecognizer() ?: run {
-            updateStatus("车机语音识别服务初始化失败", listening = false, available = false)
-            scheduleRestart(nextRecognizerRetryDelay(), "语音识别引擎暂时不可用，正在自动恢复")
-            return
-        }
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "zh-CN")
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "zh-CN")
-            putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, false)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
-            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 450L)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 500L)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 350L)
-            putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
-        }
-        runCatching {
-            recognizerActive = true
-            activeRecognizer.startListening(intent)
-            audioUsage.setActive(AudioOwner.WakeWordListener, true)
-            updateStatus("正在启动唤醒监听", listening = false)
-        }.onFailure {
-            markRecognitionInactive()
-            WjxFileLogger.w(TAG, "startListening failed: ${it.message}", it)
-            scheduleRestart(nextRecognizerRetryDelay(), "语音识别启动失败，正在重试")
+
+        val phrase = gate.phrase
+        val generation = ++listeningGeneration
+        activePhrase = phrase
+        updateStatus("正在加载本地唤醒模型", listening = false)
+        listeningJob = lifecycleScope.launch(Dispatchers.IO) {
+            runListeningSession(generation, phrase)
         }
     }
 
-    private fun createRecognizer(): SpeechRecognizer? = runCatching {
-        val useOnDevice = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            allowOnDeviceRecognizer &&
-            runCatching { SpeechRecognizer.isOnDeviceRecognitionAvailable(this) }.getOrDefault(false)
-        usingOnDeviceRecognizer = useOnDevice
-        val defaultRecognizerAvailable = !useOnDevice &&
-            runCatching { SpeechRecognizer.isRecognitionAvailable(this) }.getOrDefault(false)
-        val explicitRecognizer = if (useOnDevice || defaultRecognizerAvailable) {
-            null
-        } else {
-            XiaozhiRecognitionServiceResolver.resolve(this)
-        }
-        val next = when {
-            useOnDevice -> SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
-            defaultRecognizerAvailable -> SpeechRecognizer.createSpeechRecognizer(this)
-            explicitRecognizer != null -> SpeechRecognizer.createSpeechRecognizer(this, explicitRecognizer.component)
-            else -> error("车机没有可绑定的语音识别服务")
-        }
-        recognitionEngineLabel = when {
-            useOnDevice -> "系统离线语音识别"
-            explicitRecognizer != null -> explicitRecognizer.engineLabel
-            else -> "系统语音识别"
-        }
-        next.setRecognitionListener(this)
-        recognizer = next
-        controller.reportService(
-            running = true,
-            listening = false,
-            status = "正在准备语音唤醒",
-            engineLabel = recognitionEngineLabel,
-            available = true,
-        )
-        next
-    }.onFailure {
-        WjxFileLogger.w(TAG, "create recognizer failed: ${it.message}", it)
-    }.getOrNull()
+    private suspend fun runListeningSession(generation: Long, phrase: String) {
+        var recorder: AudioRecord? = null
+        var detectedPhrase: String? = null
+        var failure: Throwable? = null
+        var cancelled = false
+        var listeningStarted = false
+        try {
+            val compiled = wakeEngine.prepare(phrase).getOrThrow()
+            currentCoroutineContext().ensureActive()
+            if (!canListenFor(phrase)) throw CancellationException("wake listening gate closed")
 
-    private fun handleResults(bundle: Bundle?): Boolean {
-        if (wakeTriggered || !canListen()) return false
-        val candidates = bundle?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty()
-        candidates.firstOrNull()?.takeIf { it.isNotBlank() }?.let(controller::reportRecognition)
-        val matched = selectWakeMatch(
-            candidates = candidates,
-            confidenceScores = bundle?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES),
-            phrase = gate.phrase,
-        ) ?: return false
-        triggerWake(matched)
-        return true
+            recorder = microphoneFactory.create(
+                sampleRate = SherpaOnnxWakeWordEngine.SAMPLE_RATE,
+                frameSamples = SherpaOnnxWakeWordEngine.FRAME_SAMPLES,
+                purpose = "local_wake_word",
+            ) ?: error("无法打开车内降噪麦克风")
+
+            val registered = synchronized(recorderLock) {
+                if (!canListenFor(phrase)) {
+                    false
+                } else {
+                    recorder.startRecording()
+                    check(recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                        "车内麦克风未能开始录音"
+                    }
+                    activeRecorder = recorder
+                    audioUsage.setActive(AudioOwner.WakeWordListener, true)
+                    true
+                }
+            }
+            if (!registered) throw CancellationException("wake listening gate closed")
+            listeningStarted = true
+
+            withContext(Dispatchers.Main.immediate) {
+                if (generation == listeningGeneration && canListenFor(phrase)) {
+                    failureCount = 0
+                    updateStatus("本地监听中，等待“${compiled.displayPhrase}”", listening = true)
+                }
+            }
+
+            val samples = ShortArray(SherpaOnnxWakeWordEngine.FRAME_SAMPLES)
+            while (currentCoroutineContext().isActive && canListenFor(phrase)) {
+                val count = recorder.read(
+                    samples,
+                    0,
+                    samples.size,
+                    AudioRecord.READ_BLOCKING,
+                )
+                when {
+                    count > 0 -> {
+                        val detected = wakeEngine.accept(samples, count)
+                        if (detected != null) {
+                            detectedPhrase = detected
+                            break
+                        }
+                    }
+                    count == 0 -> delay(5L)
+                    else -> {
+                        currentCoroutineContext().ensureActive()
+                        error("麦克风读取失败：$count")
+                    }
+                }
+            }
+        } catch (_: CancellationException) {
+            cancelled = true
+        } catch (error: Throwable) {
+            failure = error
+            WjxFileLogger.w(TAG, "local wake listener failed: ${error.message}", error)
+        } finally {
+            releaseRegisteredRecorder(recorder)
+            wakeEngine.stopStream()
+        }
+
+        withContext(NonCancellable + Dispatchers.Main.immediate) {
+            onListeningFinished(
+                generation = generation,
+                phrase = phrase,
+                detectedPhrase = detectedPhrase,
+                failure = failure,
+                cancelled = cancelled,
+                listeningStarted = listeningStarted,
+            )
+        }
     }
 
-    private fun triggerWake(recognizedText: String) {
-        if (wakeTriggered) return
+    private fun onListeningFinished(
+        generation: Long,
+        phrase: String,
+        detectedPhrase: String?,
+        failure: Throwable?,
+        cancelled: Boolean,
+        listeningStarted: Boolean,
+    ) {
+        if (generation != listeningGeneration) return
+        listeningJob = null
+        activePhrase = ""
+        if (destroyed) return
+
+        when {
+            detectedPhrase != null && canListenFor(phrase) -> triggerWake(detectedPhrase)
+            failure != null && canListenFor(phrase) -> {
+                val retryDelay = nextRetryDelay()
+                val stage = if (listeningStarted) "本地监听中断" else "本地唤醒启动失败"
+                scheduleStart(retryDelay, "$stage，正在自动恢复：${failure.message.orEmpty()}")
+            }
+            !cancelled -> reconcileListening()
+        }
+    }
+
+    private fun triggerWake(detectedPhrase: String) {
+        if (wakeTriggered || !canListen()) return
         wakeTriggered = true
         restartJob?.cancel()
-        pauseRecognition()
-        controller.reportWake(recognizedText)
-        updateNotification("已唤醒，正在开始对话")
+        controller.reportWake(detectedPhrase)
+        statusOverlay.updateWake(
+            running = true,
+            status = "已唤醒，正在打开自动对话",
+        )
+        updateNotification("已在本地检测到唤醒词，正在开始对话")
         feedbackPlayer.playWakeTone()
         wakeJob?.cancel()
         wakeJob = lifecycleScope.launch {
@@ -286,50 +313,81 @@ class XiaozhiWakeWordService : LifecycleService(), RecognitionListener {
             wakeTriggered = false
             reconcileListening()
         }
-        WjxFileLogger.i(TAG, "wake matched phrase=${gate.phrase} recognized=$recognizedText")
+        WjxFileLogger.i(TAG, "local wake matched phrase=${gate.phrase}")
     }
 
-    private fun pauseRecognition(destroy: Boolean = false) {
+    private fun stopListening() {
         restartJob?.cancel()
         restartJob = null
-        val active = recognizer
-        markRecognitionInactive()
-        runCatching { active?.cancel() }
-        if (destroy) {
-            runCatching { active?.destroy() }
-            recognizer = null
-            usingOnDeviceRecognizer = false
+        listeningJob?.cancel()
+        stopActiveRecorder()
+        wakeEngine.stopStream()
+        controller.reportListening(false)
+    }
+
+    private fun stopActiveRecorder() {
+        val recorder = synchronized(recorderLock) {
+            activeRecorder.also { activeRecorder = null }
+        } ?: return
+        releaseRecorder(recorder)
+        audioUsage.setActive(AudioOwner.WakeWordListener, false)
+    }
+
+    private fun releaseRegisteredRecorder(recorder: AudioRecord?) {
+        if (recorder == null) return
+        val ownsRecorder = synchronized(recorderLock) {
+            if (activeRecorder === recorder) {
+                activeRecorder = null
+                true
+            } else {
+                false
+            }
+        }
+        if (ownsRecorder) {
+            releaseRecorder(recorder)
+            audioUsage.setActive(AudioOwner.WakeWordListener, false)
+        } else if (recorder.state == AudioRecord.STATE_INITIALIZED) {
+            releaseRecorder(recorder)
         }
     }
 
-    private fun canListen(): Boolean = gate.enabled &&
+    private fun releaseRecorder(recorder: AudioRecord) {
+        runCatching {
+            if (recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) recorder.stop()
+        }
+        runCatching { recorder.release() }
+    }
+
+    private fun canListenFor(phrase: String): Boolean = canListen() && gate.phrase == phrase
+
+    private fun canListen(): Boolean = !destroyed &&
+        gate.enabled &&
         gate.serverConfigured &&
         gate.conversationIdle &&
         !gate.microphoneBusy &&
         !wakeTriggered
 
-    private fun updateStatus(status: String, listening: Boolean, available: Boolean = true) {
+    private fun updateStatus(status: String, listening: Boolean) {
         controller.reportService(
             running = true,
             listening = listening,
             status = status,
-            engineLabel = recognitionEngineLabel,
-            available = available,
+            engineLabel = ENGINE_LABEL,
+            available = true,
+        )
+        statusOverlay.updateWake(
+            running = true,
+            status = status,
         )
         updateNotification(status)
     }
 
-    private fun markRecognitionInactive() {
-        recognizerActive = false
-        audioUsage.setActive(AudioOwner.WakeWordListener, false)
-    }
-
-    private fun nextRecognizerRetryDelay(): Long {
-        recognizerFailureCount = (recognizerFailureCount + 1).coerceAtMost(MAX_RECOGNIZER_FAILURES)
+    private fun nextRetryDelay(): Long {
+        failureCount = (failureCount + 1).coerceAtMost(MAX_FAILURES)
         return exponentialBackoffDelay(
-            attempt = recognizerFailureCount,
-            baseMs = BASE_RECOGNIZER_RETRY_MS,
-            maxMs = MAX_RECOGNIZER_RETRY_MS,
+            attempt = failureCount,
+            baseMs = BASE_RETRY_MS,
+            maxMs = MAX_RETRY_MS,
         )
     }
 
@@ -337,10 +395,10 @@ class XiaozhiWakeWordService : LifecycleService(), RecognitionListener {
         getSystemService(NotificationManager::class.java)?.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,
-                "小智语音唤醒",
+                "小智本地唤醒",
                 NotificationManager.IMPORTANCE_LOW,
             ).apply {
-                description = "后台等待自定义唤醒词"
+                description = "在车机本地等待自定义中文唤醒词"
                 setShowBadge(false)
                 enableLights(false)
                 enableVibration(false)
@@ -368,7 +426,7 @@ class XiaozhiWakeWordService : LifecycleService(), RecognitionListener {
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("超级玩具箱 · 小智唤醒")
+            .setContentTitle("超级玩具箱 · 小智本地唤醒")
             .setContentText(text)
             .setContentIntent(openPendingIntent)
             .setOngoing(true)
@@ -388,14 +446,15 @@ class XiaozhiWakeWordService : LifecycleService(), RecognitionListener {
 
     companion object {
         const val ACTION_RECONCILE = "com.byd.wjx.xiaozhi.wake.RECONCILE"
+        const val ENGINE_LABEL = "Sherpa-ONNX 本地唤醒"
         private const val ACTION_DISABLE = "com.byd.wjx.xiaozhi.wake.DISABLE"
         private const val CHANNEL_ID = "wjx_xiaozhi_wake"
         private const val NOTIFICATION_ID = 1111
         private const val TAG = "XiaozhiWake"
-        private const val RESTART_AFTER_RELEASE_MS = 650L
+        private const val RESTART_AFTER_RELEASE_MS = 350L
         private const val WAKE_GUARD_MS = 900L
-        private const val BASE_RECOGNIZER_RETRY_MS = 700L
-        private const val MAX_RECOGNIZER_RETRY_MS = 30_000L
-        private const val MAX_RECOGNIZER_FAILURES = 6
+        private const val BASE_RETRY_MS = 1_000L
+        private const val MAX_RETRY_MS = 30_000L
+        private const val MAX_FAILURES = 6
     }
 }

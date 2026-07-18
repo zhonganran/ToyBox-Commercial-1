@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.speech.SpeechRecognizer
 import androidx.core.content.ContextCompat
 import com.byd.wjx.di.ApplicationScope
 import com.byd.wjx.log.WjxFileLogger
@@ -24,6 +23,8 @@ import kotlinx.coroutines.launch
 class XiaozhiWakeController @Inject constructor(
     @ApplicationContext context: Context,
     private val preferences: XiaozhiWakePreferences,
+    private val wakeEngine: SherpaOnnxWakeWordEngine,
+    private val phraseCompiler: XiaozhiWakePhraseCompiler,
     @ApplicationScope private val applicationScope: CoroutineScope,
 ) {
     private val appContext = context.applicationContext
@@ -47,8 +48,10 @@ class XiaozhiWakeController @Inject constructor(
     }
 
     fun update(enabled: Boolean, phrase: String): String? {
-        validateWakePhrase(phrase)?.let { return it }
-        preferences.save(enabled, phrase)
+        val compiled = phraseCompiler.compile(phrase.trim()).getOrElse { error ->
+            return error.message ?: "唤醒词无法用于本地检测"
+        }
+        preferences.save(enabled, compiled.displayPhrase)
         reconcile("settings_update")
         return null
     }
@@ -64,19 +67,12 @@ class XiaozhiWakeController @Inject constructor(
         val config = preferences.config.value
         val permissionGranted = ContextCompat.checkSelfPermission(appContext, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
-        val defaultRecognizerAvailable = runCatching { SpeechRecognizer.isRecognitionAvailable(appContext) }
-            .getOrDefault(false)
-        val explicitRecognizer = if (defaultRecognizerAvailable) {
-            null
-        } else {
-            XiaozhiRecognitionServiceResolver.resolve(appContext)
-        }
-        val recognitionAvailable = defaultRecognizerAvailable || explicitRecognizer != null
-        val engineLabel = explicitRecognizer?.engineLabel
-            ?: if (defaultRecognizerAvailable) "系统语音识别" else "未检测到语音识别引擎"
+        val engineError = wakeEngine.availabilityError()
+        val engineAvailable = engineError == null
+        val engineLabel = XiaozhiWakeWordService.ENGINE_LABEL
         _state.update {
             it.copy(
-                recognitionAvailable = recognitionAvailable,
+                engineAvailable = engineAvailable,
                 engineLabel = engineLabel,
             )
         }
@@ -91,17 +87,23 @@ class XiaozhiWakeController @Inject constructor(
             reportService(false, false, "需要麦克风权限才能开启语音唤醒")
             return
         }
-        if (!recognitionAvailable) {
+        phraseCompiler.validationError(config.phrase)?.let { phraseError ->
+            cancelRetry(resetAttempts = true)
+            appContext.stopService(Intent(appContext, XiaozhiWakeWordService::class.java))
+            reportService(false, false, phraseError, engineLabel = engineLabel, available = false)
+            return
+        }
+        if (!engineAvailable) {
             cancelRetry(resetAttempts = true)
             appContext.stopService(Intent(appContext, XiaozhiWakeWordService::class.java))
             reportService(
                 running = false,
                 listening = false,
-                status = "车机没有可用的语音识别服务；按键和页面对话不受影响",
+                status = engineError ?: "本地唤醒引擎不可用",
                 engineLabel = engineLabel,
                 available = false,
             )
-            WjxFileLogger.w(TAG, "wake disabled: no RecognitionService reason=$reason")
+            WjxFileLogger.w(TAG, "wake disabled: local engine unavailable reason=$reason error=$engineError")
             return
         }
         runCatching {
@@ -127,30 +129,30 @@ class XiaozhiWakeController @Inject constructor(
         listening: Boolean,
         status: String,
         engineLabel: String = _state.value.engineLabel,
-        available: Boolean = _state.value.recognitionAvailable,
+        available: Boolean = _state.value.engineAvailable,
     ) {
         if (running) cancelRetry(resetAttempts = true)
         _state.update {
             it.copy(
                 serviceRunning = running,
                 listening = listening,
-                recognitionAvailable = available,
+                engineAvailable = available,
                 engineLabel = engineLabel,
                 statusText = status,
             )
         }
     }
 
-    fun reportRecognition(text: String) {
-        _state.update { it.copy(lastRecognizedText = text) }
+    fun reportListening(listening: Boolean) {
+        _state.update { it.copy(listening = listening) }
     }
 
     fun reportWake(text: String) {
         _state.update {
             it.copy(
                 listening = false,
-                statusText = "已听到“${it.config.phrase}”，正在开始对话",
-                lastRecognizedText = text,
+                statusText = "已在本地检测到“${it.config.phrase}”，正在开始对话",
+                lastDetectedPhrase = text,
                 lastWakeAtMs = System.currentTimeMillis(),
             )
         }

@@ -1,9 +1,6 @@
 package com.byd.wjx.xiaozhi.wake
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class XiaozhiWakeModelsTest {
@@ -14,28 +11,9 @@ class XiaozhiWakeModelsTest {
     }
 
     @Test
-    fun matchesPhraseIgnoringSpacesAndPunctuation() {
-        assertTrue(matchesWakePhrase("小智！", "小智"))
-        assertTrue(matchesWakePhrase("方宝", "方宝"))
-        assertTrue(matchesWakePhrase("方宝方宝", "方宝"))
-        assertFalse(matchesWakePhrase("你好 方宝 帮我开空调", "方宝"))
-        assertFalse(matchesWakePhrase("方豹", "方宝"))
-    }
-
-    @Test
-    fun rejectsLowConfidenceCandidatesWhenEngineProvidesScores() {
-        assertEquals(
-            "小智",
-            selectWakeMatch(listOf("小智"), floatArrayOf(0.82f), "小智"),
-        )
-        assertNull(selectWakeMatch(listOf("小智"), floatArrayOf(0.21f), "小智"))
-    }
-
-    @Test
-    fun validatesCustomWakePhraseLength() {
-        assertEquals("唤醒词至少需要 2 个字或字符", validateWakePhrase("小"))
-        assertNull(validateWakePhrase("方宝"))
-        assertEquals("唤醒词不能超过 16 个字或字符", validateWakePhrase("一二三四五六七八九十一二三四五六七八"))
+    fun normalizesDisplayTextWithoutDependingOnFullSpeechRecognition() {
+        assertEquals("小智", normalizeWakeText(" 小 智！"))
+        assertEquals("方宝", normalizeWakeText("方-宝"))
     }
 
     @Test

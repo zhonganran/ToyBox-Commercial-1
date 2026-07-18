@@ -109,7 +109,7 @@ fun XiaozhiSettingsContent(
                     Icon(Icons.Outlined.RecordVoiceOver, contentDescription = null, tint = AccentGreen)
                     Column(modifier = Modifier.weight(1f)) {
                         Text("后台语音唤醒", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
-                        Text("车机支持语音识别时，无需打开页面或按方向盘按键", color = TextSecondary, fontSize = 12.sp)
+                        Text("直接喊唤醒名字即可；监听音频只在车机本地处理", color = TextSecondary, fontSize = 12.sp)
                     }
                     Switch(
                         checked = wakeState.config.enabled,
@@ -124,10 +124,10 @@ fun XiaozhiSettingsContent(
                 }
                 OutlinedTextField(
                     value = wakePhrase,
-                    onValueChange = { wakePhrase = it.take(16) },
+                    onValueChange = { wakePhrase = it.take(6) },
                     label = { Text("唤醒名字") },
                     placeholder = { Text("默认：小智（可自定义）") },
-                    supportingText = { Text("支持 2～16 个字或字符；说出完整唤醒词后自动进入对话") },
+                    supportingText = { Text("支持 2～6 个中文汉字；检测到完整唤醒词后自动进入连续对话") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     colors = xiaozhiFieldColors(),
@@ -151,15 +151,15 @@ fun XiaozhiSettingsContent(
                 }
                 Text(
                     wakeMessage ?: wakeState.statusText,
-                    color = if (wakeMessage != null || !wakeState.recognitionAvailable) SocRed else TextSecondary,
+                    color = if (wakeMessage != null || !wakeState.engineAvailable) SocRed else TextSecondary,
                     fontSize = 12.sp,
                     lineHeight = 17.sp,
                 )
                 Text(
-                    if (wakeState.recognitionAvailable) {
-                        "当前引擎：${wakeState.engineLabel}。对话、实时喊话等功能使用麦克风时，唤醒监听会先让行，结束后自动恢复。"
+                    if (wakeState.engineAvailable) {
+                        "当前引擎：${wakeState.engineLabel}。唤醒词完全在车机本地检测，不上传监听音频；对话或实时喊话使用麦克风时会自动让行，结束后恢复。"
                     } else {
-                        "当前引擎：${wakeState.engineLabel}。后台喊名字唤醒不可用，但页面和方向盘按键对话仍可使用。"
+                        "当前引擎：${wakeState.engineLabel}。本地喊名字唤醒不可用，页面内的小智对话仍可使用。"
                     },
                     color = TextSecondary,
                     fontSize = 11.sp,

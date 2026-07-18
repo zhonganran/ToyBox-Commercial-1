@@ -32,3 +32,6 @@
 -keepclasseswithmembernames class * {
     native <methods>;
 }
+
+# Sherpa-ONNX registers these JNI classes and methods by their Java names.
+-keep class com.k2fsa.sherpa.onnx.** { *; }
