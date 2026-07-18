@@ -178,15 +178,16 @@ internal class ElectronicMirrorOverlayController(
             windowHeight,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WINDOW_FLAGS,
-            PixelFormat.TRANSLUCENT,
+            PixelFormat.OPAQUE,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             x = windowX
             y = windowY
             title = "SuperToyBox Electronic Mirror"
-            // Keep the View hierarchy rendering so TextureView receives frame callbacks, while
-            // making the composed window itself invisible until a real producer frame arrives.
-            alpha = 0f
+            // The overlay must never expose the cluster/centre display below it. Keep a solid
+            // black surface while the camera producer starts, then TextureView replaces it with
+            // the first real frame without changing window opacity.
+            alpha = 1f
         }
 
         val ready = CompletableDeferred<Surface>()
@@ -237,7 +238,7 @@ internal class ElectronicMirrorOverlayController(
             windowManager.addView(container, params)
             WjxFileLogger.i(
                 TAG,
-                "prepared hidden target=${scene.target} display=${display.displayId} " +
+                "prepared opaque target=${scene.target} display=${display.displayId} " +
                     "${windowWidth}x$windowHeight+$windowX,$windowY",
             )
             handle
