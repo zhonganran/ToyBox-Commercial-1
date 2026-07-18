@@ -55,7 +55,7 @@ data class DashboardUiState(
     val avgConsumption: Double = 0.0,
     val totalCost: Double = 0.0,
     val tripCount: Int = 0,
-    // Legacy aliases for backward compat
+    // Today-specific values remain available while the main summary follows the selected period.
     val totalKmToday: Double = 0.0,
     val totalKwhToday: Double = 0.0,
     val idleDrainKwhToday: Double = 0.0,

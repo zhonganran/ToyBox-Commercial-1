@@ -22,31 +22,42 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.byd.wjx.data.automation.AutomationNotificationPresenter
 import com.byd.wjx.log.WjxFileLogger
 import com.byd.wjx.ui.theme.AccentGreen
 import com.byd.wjx.ui.theme.CardBorder
 import com.byd.wjx.ui.theme.CardSurface
 import com.byd.wjx.ui.theme.TextPrimary
 import com.byd.wjx.ui.theme.TextSecondary
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-object OverlayNotificationManager {
+@Singleton
+class OverlayNotificationManager @Inject constructor(
+    @ApplicationContext context: Context,
+) : AutomationNotificationPresenter {
 
-    private const val TAG = "OverlayNotif"
-    private const val AUTO_DISMISS_MS = 6000L
+    private val appContext = context.applicationContext
 
-    fun canShow(context: Context): Boolean = Settings.canDrawOverlays(context)
+    private companion object {
+        const val TAG = "OverlayNotif"
+        const val AUTO_DISMISS_MS = 6000L
+    }
 
-    suspend fun show(context: Context, title: String, text: String): Boolean {
-        if (!canShow(context)) {
+    private fun canShow(): Boolean = Settings.canDrawOverlays(appContext)
+
+    override suspend fun show(title: String, text: String): Boolean {
+        if (!canShow()) {
             Log.w(TAG, "SYSTEM_ALERT_WINDOW not granted — cannot show overlay")
             WjxFileLogger.w(TAG, "SYSTEM_ALERT_WINDOW not granted; cannot show overlay title=$title")
             return false
         }
         return withContext(Dispatchers.Main) {
             try {
-                renderOverlay(context, title, text)
+                renderOverlay(appContext, title, text)
                 WjxFileLogger.i(TAG, "overlay notification shown title=$title")
                 true
             } catch (e: Exception) {

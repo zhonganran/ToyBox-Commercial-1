@@ -39,6 +39,7 @@ class ActionDispatcher @Inject constructor(
     private val autoDoorController: AutoDoorController,
     private val httpClient: OkHttpClient,
     private val sentryModeController: SentryModeController,
+    private val notificationPresenter: AutomationNotificationPresenter,
     @ApplicationContext private val context: Context,
     private val profileDetector: CarProfileDetector = CarProfileDetector(),
 ) {
@@ -323,9 +324,8 @@ class ActionDispatcher @Inject constructor(
         val title = payload?.optString("title")?.takeIf(String::isNotBlank) ?: action.displayName
         val text = payload?.optString("text") ?: ""
 
-        if (!silent && com.byd.wjx.ui.overlay.OverlayNotificationManager.canShow(context)) {
-            val shown = com.byd.wjx.ui.overlay.OverlayNotificationManager.show(context, title, text)
-            if (shown) return DispatchResult(true)
+        if (!silent && notificationPresenter.show(title, text)) {
+            return DispatchResult(true)
         }
 
         val channelId = if (silent) CHANNEL_SILENT_ID else CHANNEL_SOUND_ID

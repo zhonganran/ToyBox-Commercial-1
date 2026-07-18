@@ -86,4 +86,31 @@ class ElectronicMirrorSceneArbiterTest {
         assertEquals(ElectronicMirrorReason.MANUAL_PREVIEW, scene?.reason)
         assertEquals(ElectronicMirrorViewpoint.LEFT, scene?.viewpoint)
     }
+
+    @Test
+    fun `scene carries calibration for its selected viewpoint`() {
+        val rightCalibration = ElectronicMirrorCalibration(yawDegrees = 7)
+        val scene = ElectronicMirrorSceneArbiter.resolve(
+            ElectronicMirrorConfig(
+                enabled = true,
+                rightCalibration = rightCalibration,
+            ),
+            ElectronicMirrorSignals(turnSignalFlash = 4, gear = 4, originalCameraActive = false),
+        )
+
+        assertEquals(rightCalibration, scene?.calibration)
+    }
+
+    @Test
+    fun `scene carries mapped camera source for logical viewpoint`() {
+        val config = ElectronicMirrorConfig(enabled = true)
+            .withSource(ElectronicMirrorViewpoint.LEFT, ElectronicMirrorCameraSource.SOURCE_C)
+        val scene = ElectronicMirrorSceneArbiter.resolve(
+            config,
+            ElectronicMirrorSignals(turnSignalFlash = 2, gear = 4, originalCameraActive = false),
+        )
+
+        assertEquals(ElectronicMirrorViewpoint.LEFT, scene?.viewpoint)
+        assertEquals(ElectronicMirrorCameraSource.SOURCE_C, scene?.source)
+    }
 }

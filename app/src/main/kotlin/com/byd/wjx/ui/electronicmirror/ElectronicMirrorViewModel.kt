@@ -1,6 +1,8 @@
 package com.byd.wjx.ui.electronicmirror
 
 import androidx.lifecycle.ViewModel
+import com.byd.wjx.electronicmirror.ElectronicMirrorCalibration
+import com.byd.wjx.electronicmirror.ElectronicMirrorCameraSource
 import com.byd.wjx.electronicmirror.ElectronicMirrorConfig
 import com.byd.wjx.electronicmirror.ElectronicMirrorCoordinator
 import com.byd.wjx.electronicmirror.ElectronicMirrorDisplayTarget
@@ -24,15 +26,17 @@ class ElectronicMirrorViewModel @Inject constructor(
     val status = coordinator.status
     val active = coordinator.active
 
-    private val _savedRevision = MutableStateFlow(0)
-    val savedRevision: StateFlow<Int> = _savedRevision.asStateFlow()
-
-    fun update(transform: (ElectronicMirrorConfig) -> ElectronicMirrorConfig) {
+    private fun updateDraft(transform: (ElectronicMirrorConfig) -> ElectronicMirrorConfig) {
         _config.value = transform(_config.value).sanitized()
     }
 
+    fun updateAndApply(transform: (ElectronicMirrorConfig) -> ElectronicMirrorConfig) {
+        updateDraft(transform)
+        persistAndApply()
+    }
+
     fun updateSelectedGeometry(transform: (ElectronicMirrorGeometry) -> ElectronicMirrorGeometry) {
-        update { config ->
+        updateDraft { config ->
             when (config.displayTarget) {
                 ElectronicMirrorDisplayTarget.CLUSTER ->
                     config.copy(clusterGeometry = transform(config.clusterGeometry).sanitized())
@@ -42,19 +46,54 @@ class ElectronicMirrorViewModel @Inject constructor(
         }
     }
 
-    fun save() {
-        preferences.save(_config.value)
-        coordinator.applyPreferences()
-        _savedRevision.value += 1
+    fun commitGeometry() {
+        persistAndApply()
+    }
+
+    fun updateCalibration(
+        viewpoint: ElectronicMirrorViewpoint,
+        transform: (ElectronicMirrorCalibration) -> ElectronicMirrorCalibration,
+    ) {
+        updateDraft { config ->
+            config.withCalibration(
+                viewpoint,
+                transform(config.calibrationFor(viewpoint)).sanitized(),
+            )
+        }
+    }
+
+    fun commitCalibration() {
+        persistAndApply()
+    }
+
+    fun resetCalibration(viewpoint: ElectronicMirrorViewpoint) {
+        updateDraft { config -> config.withCalibration(viewpoint, ElectronicMirrorCalibration.DEFAULT) }
+        persistAndApply()
+    }
+
+    fun assignSource(
+        viewpoint: ElectronicMirrorViewpoint,
+        source: ElectronicMirrorCameraSource,
+    ) {
+        updateDraft { config -> config.withSource(viewpoint, source) }
+        persistAndApply()
+    }
+
+    fun resetSources() {
+        updateDraft(ElectronicMirrorConfig::resetSources)
+        persistAndApply()
     }
 
     fun preview(viewpoint: ElectronicMirrorViewpoint) {
-        preferences.save(_config.value)
         coordinator.preview(viewpoint)
-        _savedRevision.value += 1
     }
 
     fun stopPreview() {
         coordinator.stopPreview()
+    }
+
+    private fun persistAndApply() {
+        preferences.save(_config.value)
+        coordinator.applyPreferences()
     }
 }

@@ -32,10 +32,12 @@ object ElectronicMirrorSceneArbiter {
 
         return ElectronicMirrorScene(
             viewpoint = choice.first,
+            source = config.sourceFor(choice.first),
             target = config.displayTarget,
             geometry = config.geometryFor(),
             reason = choice.second,
             fps = config.fps,
+            calibration = config.calibrationFor(choice.first),
         )
     }
 }

@@ -34,6 +34,64 @@ class ElectronicMirrorPreferencesTest {
         assertEquals(ElectronicMirrorDisplayTarget.CLUSTER, config.displayTarget)
         assertEquals(ElectronicMirrorGeometry.DEFAULT_CLUSTER, config.clusterGeometry)
         assertEquals(ElectronicMirrorGeometry.DEFAULT_CENTER, config.centerGeometry)
+        assertEquals(ElectronicMirrorCalibration.DEFAULT, config.leftCalibration)
+        assertEquals(ElectronicMirrorCalibration.DEFAULT, config.rightCalibration)
+        assertEquals(ElectronicMirrorCalibration.DEFAULT, config.rearCalibration)
+        assertEquals(ElectronicMirrorCameraSource.SOURCE_A, config.leftSource)
+        assertEquals(ElectronicMirrorCameraSource.SOURCE_B, config.rightSource)
+        assertEquals(ElectronicMirrorCameraSource.SOURCE_C, config.rearSource)
+    }
+
+    @Test
+    fun `custom image order is persisted`() {
+        val changed = ElectronicMirrorConfig()
+            .withSource(ElectronicMirrorViewpoint.LEFT, ElectronicMirrorCameraSource.SOURCE_C)
+            .withSource(ElectronicMirrorViewpoint.RIGHT, ElectronicMirrorCameraSource.SOURCE_A)
+
+        preferences.save(changed)
+
+        val restored = preferences.snapshot()
+        assertEquals(changed.leftSource, restored.leftSource)
+        assertEquals(changed.rightSource, restored.rightSource)
+        assertEquals(changed.rearSource, restored.rearSource)
+    }
+
+    @Test
+    fun `left right and rear keep independent calibration`() {
+        val left = ElectronicMirrorCalibration(
+            topLeft = ElectronicMirrorCalibrationPoint(100, 120),
+            topRight = ElectronicMirrorCalibrationPoint(800, 80),
+            bottomRight = ElectronicMirrorCalibrationPoint(800, 900),
+            bottomLeft = ElectronicMirrorCalibrationPoint(100, 950),
+            yawDegrees = -4,
+        ).sanitized()
+        val right = ElectronicMirrorCalibration(
+            topLeft = ElectronicMirrorCalibrationPoint(180, 100),
+            topRight = ElectronicMirrorCalibrationPoint(940, 140),
+            bottomRight = ElectronicMirrorCalibrationPoint(940, 880),
+            bottomLeft = ElectronicMirrorCalibrationPoint(180, 920),
+            rollDegrees = 3,
+        ).sanitized()
+        val rear = ElectronicMirrorCalibration(
+            topLeft = ElectronicMirrorCalibrationPoint(120, 160),
+            topRight = ElectronicMirrorCalibrationPoint(880, 160),
+            bottomRight = ElectronicMirrorCalibrationPoint(880, 840),
+            bottomLeft = ElectronicMirrorCalibrationPoint(120, 840),
+            pitchDegrees = 5,
+        ).sanitized()
+
+        preferences.save(
+            ElectronicMirrorConfig(
+                leftCalibration = left,
+                rightCalibration = right,
+                rearCalibration = rear,
+            ),
+        )
+
+        val restored = preferences.snapshot()
+        assertEquals(left, restored.leftCalibration)
+        assertEquals(right, restored.rightCalibration)
+        assertEquals(rear, restored.rearCalibration)
     }
 
     @Test
@@ -72,4 +130,3 @@ class ElectronicMirrorPreferencesTest {
         assertEquals(ElectronicMirrorGeometry(24, 100, 0, 100), restored.clusterGeometry)
     }
 }
-

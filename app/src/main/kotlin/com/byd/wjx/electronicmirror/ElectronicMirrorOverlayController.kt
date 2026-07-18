@@ -34,11 +34,13 @@ internal class ElectronicMirrorOverlayHandle(
     val label: TextView,
     val target: ElectronicMirrorDisplayTarget,
     val layoutParams: WindowManager.LayoutParams,
+    initialCalibration: ElectronicMirrorCalibration,
 ) {
     @Volatile var intentionalRemoval: Boolean = false
     @Volatile var surface: Surface? = null
     val frameCount = AtomicLong(0L)
     @Volatile var lastFrameAtMs: Long = 0L
+    @Volatile var calibration: ElectronicMirrorCalibration = initialCalibration
 }
 
 /** Creates a non-touchable camera Surface window on either the cluster or centre display. */
@@ -88,6 +90,16 @@ internal class ElectronicMirrorOverlayController(
     suspend fun updateLabel(handle: ElectronicMirrorOverlayHandle, scene: ElectronicMirrorScene) {
         withContext(Dispatchers.Main.immediate) {
             handle.label.text = labelFor(scene)
+        }
+    }
+
+    suspend fun updateCalibration(
+        handle: ElectronicMirrorOverlayHandle,
+        calibration: ElectronicMirrorCalibration,
+    ) {
+        withContext(Dispatchers.Main.immediate) {
+            handle.calibration = calibration.sanitized()
+            applyCalibration(handle)
         }
     }
 
@@ -188,9 +200,11 @@ internal class ElectronicMirrorOverlayController(
             label,
             scene.target,
             params,
+            scene.calibration.sanitized(),
         )
         textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
             override fun onSurfaceTextureAvailable(texture: SurfaceTexture, width: Int, height: Int) {
+                applyCalibration(handle, width, height)
                 val surface = Surface(texture)
                 handle.surface = surface
                 if (!ready.isCompleted) ready.complete(surface)
@@ -198,6 +212,7 @@ internal class ElectronicMirrorOverlayController(
             }
 
             override fun onSurfaceTextureSizeChanged(texture: SurfaceTexture, width: Int, height: Int) {
+                applyCalibration(handle, width, height)
                 WjxFileLogger.i(TAG, "Surface resized target=${scene.target} size=${width}x$height")
             }
 
@@ -229,6 +244,17 @@ internal class ElectronicMirrorOverlayController(
         }.onFailure {
             WjxFileLogger.e(TAG, "add overlay failed: ${it.message}", it)
         }.getOrNull()
+    }
+
+    private fun applyCalibration(
+        handle: ElectronicMirrorOverlayHandle,
+        width: Int = handle.textureView.width,
+        height: Int = handle.textureView.height,
+    ) {
+        if (width <= 0 || height <= 0 || handle.intentionalRemoval) return
+        handle.textureView.setTransform(
+            electronicMirrorTextureMatrix(handle.calibration, width, height),
+        )
     }
 
     private fun resolveDisplay(target: ElectronicMirrorDisplayTarget): Display? {

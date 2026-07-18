@@ -3,6 +3,7 @@ package com.byd.wjx.di
 import com.byd.wjx.data.automation.AutomationActionSnapshotFieldProvider
 import com.byd.wjx.data.automation.AutomationConfirmationPresenter
 import com.byd.wjx.data.automation.AutomationConfigRepository
+import com.byd.wjx.data.automation.AutomationNotificationPresenter
 import com.byd.wjx.data.automation.RoomAutomationConfigRepository
 import com.byd.wjx.data.autoservice.AdbOnDeviceClient
 import com.byd.wjx.data.autoservice.AdbOnDeviceClientImpl
@@ -22,6 +23,7 @@ import com.byd.wjx.data.vehicle.VehicleGateway
 import com.byd.wjx.domain.tracker.DriveSessionPersistence
 import com.byd.wjx.service.SessionPersistence
 import com.byd.wjx.ui.overlay.ConfirmOverlayManager
+import com.byd.wjx.ui.overlay.OverlayNotificationManager
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -54,6 +56,11 @@ abstract class AppBindingsModule {
     abstract fun bindAutomationConfirmationPresenter(
         impl: ConfirmOverlayManager,
     ): AutomationConfirmationPresenter
+
+    @Binds @Singleton
+    abstract fun bindAutomationNotificationPresenter(
+        impl: OverlayNotificationManager,
+    ): AutomationNotificationPresenter
 
     @Binds @Singleton
     abstract fun bindEnergyFlowStatsRepository(

@@ -51,8 +51,8 @@ import javax.inject.Singleton
  * of an automation rule. Replaces the legacy notification-based confirm flow
  * for rules that have `confirmBeforeExecute = true`.
  *
- * Caller passes callbacks; the manager handles timeout auto-cancel, sound,
- * and teardown. Stateless singleton object (same shape as OverlayNotificationManager).
+ * Caller passes callbacks; the injected singleton handles timeout auto-cancel, sound,
+ * and teardown.
  */
 @Singleton
 class ConfirmOverlayManager @Inject constructor(

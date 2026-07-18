@@ -15,6 +15,10 @@ class ElectronicMirrorPreferences @Inject constructor(
         val target = prefs.getString(KEY_DISPLAY_TARGET, null)
             ?.let { raw -> ElectronicMirrorDisplayTarget.entries.firstOrNull { it.name == raw } }
             ?: ElectronicMirrorDisplayTarget.CLUSTER
+        fun readSource(key: String, default: ElectronicMirrorCameraSource): ElectronicMirrorCameraSource =
+            prefs.getString(key, null)
+                ?.let { raw -> ElectronicMirrorCameraSource.entries.firstOrNull { it.name == raw } }
+                ?: default
         return ElectronicMirrorConfig(
             enabled = prefs.getBoolean(KEY_ENABLED, false),
             displayTarget = target,
@@ -24,6 +28,12 @@ class ElectronicMirrorPreferences @Inject constructor(
             fps = prefs.getInt(KEY_FPS, ElectronicMirrorConfig.DEFAULT_FPS),
             clusterGeometry = readGeometry(PREFIX_CLUSTER, ElectronicMirrorGeometry.DEFAULT_CLUSTER),
             centerGeometry = readGeometry(PREFIX_CENTER, ElectronicMirrorGeometry.DEFAULT_CENTER),
+            leftCalibration = readCalibration(PREFIX_CALIBRATION_LEFT),
+            rightCalibration = readCalibration(PREFIX_CALIBRATION_RIGHT),
+            rearCalibration = readCalibration(PREFIX_CALIBRATION_REAR),
+            leftSource = readSource(KEY_LEFT_SOURCE, ElectronicMirrorCameraSource.SOURCE_A),
+            rightSource = readSource(KEY_RIGHT_SOURCE, ElectronicMirrorCameraSource.SOURCE_B),
+            rearSource = readSource(KEY_REAR_SOURCE, ElectronicMirrorCameraSource.SOURCE_C),
         ).sanitized()
     }
 
@@ -40,6 +50,12 @@ class ElectronicMirrorPreferences @Inject constructor(
             .putInt(KEY_FPS, safe.fps)
             .putGeometry(PREFIX_CLUSTER, safe.clusterGeometry)
             .putGeometry(PREFIX_CENTER, safe.centerGeometry)
+            .putCalibration(PREFIX_CALIBRATION_LEFT, safe.leftCalibration)
+            .putCalibration(PREFIX_CALIBRATION_RIGHT, safe.rightCalibration)
+            .putCalibration(PREFIX_CALIBRATION_REAR, safe.rearCalibration)
+            .putString(KEY_LEFT_SOURCE, safe.leftSource.name)
+            .putString(KEY_RIGHT_SOURCE, safe.rightSource.name)
+            .putString(KEY_REAR_SOURCE, safe.rearSource.name)
             .apply()
     }
 
@@ -61,6 +77,50 @@ class ElectronicMirrorPreferences @Inject constructor(
         putInt("${prefix}_offset_y_pct", geometry.offsetYPct)
     }
 
+    private fun readCalibration(prefix: String): ElectronicMirrorCalibration {
+        val default = ElectronicMirrorCalibration.DEFAULT
+        return ElectronicMirrorCalibration(
+            topLeft = readCalibrationPoint(prefix, "top_left", default.topLeft),
+            topRight = readCalibrationPoint(prefix, "top_right", default.topRight),
+            bottomRight = readCalibrationPoint(prefix, "bottom_right", default.bottomRight),
+            bottomLeft = readCalibrationPoint(prefix, "bottom_left", default.bottomLeft),
+            yawDegrees = prefs.getInt("${prefix}_yaw_degrees", default.yawDegrees),
+            rollDegrees = prefs.getInt("${prefix}_roll_degrees", default.rollDegrees),
+            pitchDegrees = prefs.getInt("${prefix}_pitch_degrees", default.pitchDegrees),
+        ).sanitized()
+    }
+
+    private fun readCalibrationPoint(
+        prefix: String,
+        name: String,
+        default: ElectronicMirrorCalibrationPoint,
+    ): ElectronicMirrorCalibrationPoint = ElectronicMirrorCalibrationPoint(
+        xPermille = prefs.getInt("${prefix}_${name}_x", default.xPermille),
+        yPermille = prefs.getInt("${prefix}_${name}_y", default.yPermille),
+    )
+
+    private fun android.content.SharedPreferences.Editor.putCalibration(
+        prefix: String,
+        calibration: ElectronicMirrorCalibration,
+    ): android.content.SharedPreferences.Editor = apply {
+        putCalibrationPoint(prefix, "top_left", calibration.topLeft)
+        putCalibrationPoint(prefix, "top_right", calibration.topRight)
+        putCalibrationPoint(prefix, "bottom_right", calibration.bottomRight)
+        putCalibrationPoint(prefix, "bottom_left", calibration.bottomLeft)
+        putInt("${prefix}_yaw_degrees", calibration.yawDegrees)
+        putInt("${prefix}_roll_degrees", calibration.rollDegrees)
+        putInt("${prefix}_pitch_degrees", calibration.pitchDegrees)
+    }
+
+    private fun android.content.SharedPreferences.Editor.putCalibrationPoint(
+        prefix: String,
+        name: String,
+        point: ElectronicMirrorCalibrationPoint,
+    ) {
+        putInt("${prefix}_${name}_x", point.xPermille)
+        putInt("${prefix}_${name}_y", point.yPermille)
+    }
+
     companion object {
         const val PREFS_NAME = "electronic_mirror"
         private const val KEY_ENABLED = "enabled"
@@ -69,7 +129,13 @@ class ElectronicMirrorPreferences @Inject constructor(
         private const val KEY_RIGHT_TURN_ENABLED = "right_turn_enabled"
         private const val KEY_REVERSE_ENABLED = "reverse_enabled"
         private const val KEY_FPS = "fps"
+        private const val KEY_LEFT_SOURCE = "left_source"
+        private const val KEY_RIGHT_SOURCE = "right_source"
+        private const val KEY_REAR_SOURCE = "rear_source"
         private const val PREFIX_CLUSTER = "cluster"
         private const val PREFIX_CENTER = "center"
+        private const val PREFIX_CALIBRATION_LEFT = "calibration_left"
+        private const val PREFIX_CALIBRATION_RIGHT = "calibration_right"
+        private const val PREFIX_CALIBRATION_REAR = "calibration_rear"
     }
 }
