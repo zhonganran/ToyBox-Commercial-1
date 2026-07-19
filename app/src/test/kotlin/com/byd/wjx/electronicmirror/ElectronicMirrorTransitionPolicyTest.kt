@@ -7,11 +7,13 @@ class ElectronicMirrorTransitionPolicyTest {
     private val base = ElectronicMirrorScene(
         viewpoint = ElectronicMirrorViewpoint.LEFT,
         source = ElectronicMirrorCameraSource.SOURCE_A,
-        target = ElectronicMirrorDisplayTarget.CLUSTER,
-        geometry = ElectronicMirrorGeometry.DEFAULT_CLUSTER,
+        target = ElectronicMirrorDisplayTarget.CENTER,
+        geometry = ElectronicMirrorGeometry.DEFAULT_CENTER,
         reason = ElectronicMirrorReason.LEFT_TURN,
-        fps = 30,
-        calibration = ElectronicMirrorCalibration.DEFAULT,
+        fps = 20,
+        projection = ElectronicMirrorProjectionSpec.DEFAULT_LEFT,
+        surfaceProfile = ElectronicMirrorSurfaceProfile.panorama(0),
+        tileIndex = ElectronicMirrorCameraSource.SOURCE_A.stripTileIndex,
     )
 
     @Test
@@ -23,24 +25,59 @@ class ElectronicMirrorTransitionPolicyTest {
     }
 
     @Test
-    fun `calibration-only change updates texture transform`() {
+    fun `projection-only change updates TextureView crop`() {
         val desired = base.copy(
-            calibration = ElectronicMirrorCalibration.DEFAULT.copy(yawDegrees = 5),
+            projection = base.projection.copy(horizontalPermille = -80),
         )
 
         assertEquals(
-            ElectronicMirrorTransition.UPDATE_TRANSFORM,
+            ElectronicMirrorTransition.UPDATE_PROJECTION,
             ElectronicMirrorTransitionPolicy.resolve(base, desired),
         )
     }
 
     @Test
-    fun `source-only change switches the existing camera window`() {
+    fun `panorama tile change keeps the producer Surface`() {
         val desired = base.copy(
             viewpoint = ElectronicMirrorViewpoint.RIGHT,
             source = ElectronicMirrorCameraSource.SOURCE_B,
             reason = ElectronicMirrorReason.RIGHT_TURN,
+            projection = ElectronicMirrorProjectionSpec.DEFAULT_RIGHT,
+            tileIndex = ElectronicMirrorCameraSource.SOURCE_B.stripTileIndex,
         )
+
+        assertEquals(
+            ElectronicMirrorTransition.UPDATE_PROJECTION,
+            ElectronicMirrorTransitionPolicy.resolve(base, desired),
+        )
+    }
+
+    @Test
+    fun `geometry-only change updates the existing window`() {
+        val desired = base.copy(geometry = base.geometry.copy(widthPct = 36))
+
+        assertEquals(
+            ElectronicMirrorTransition.UPDATE_WINDOW,
+            ElectronicMirrorTransitionPolicy.resolve(base, desired),
+        )
+    }
+
+    @Test
+    fun `target change rebuilds the window`() {
+        val desired = base.copy(
+            target = ElectronicMirrorDisplayTarget.CLUSTER,
+            geometry = ElectronicMirrorGeometry.DEFAULT_CLUSTER,
+        )
+
+        assertEquals(
+            ElectronicMirrorTransition.REBUILD_WINDOW,
+            ElectronicMirrorTransitionPolicy.resolve(base, desired),
+        )
+    }
+
+    @Test
+    fun `changing panorama Surface output switches the existing producer binding`() {
+        val desired = base.copy(surfaceProfile = ElectronicMirrorSurfaceProfile.panorama(1))
 
         assertEquals(
             ElectronicMirrorTransition.SWITCH_SOURCE,
@@ -49,10 +86,9 @@ class ElectronicMirrorTransitionPolicyTest {
     }
 
     @Test
-    fun `target or geometry change rebuilds the window`() {
+    fun `changing panorama buffer route rebuilds the Surface`() {
         val desired = base.copy(
-            target = ElectronicMirrorDisplayTarget.CENTER,
-            geometry = ElectronicMirrorGeometry.DEFAULT_CENTER,
+            surfaceProfile = base.surfaceProfile.copy(qualityWidth = 960),
         )
 
         assertEquals(

@@ -11,15 +11,16 @@ enum class ElectronicMirrorViewpoint(val displayName: String) {
     RIGHT("右后侧"),
 }
 
-/** The three validated APA camera inputs available to the electronic mirror. */
+/** Logical tiles inside BYD's rectified horizontal panorama strip. */
 enum class ElectronicMirrorCameraSource(
-    val helperValue: Int,
-    val previewChannel: Int,
+    val stripTileIndex: Int,
     val displayName: String,
 ) {
-    SOURCE_A(2002, 2, "来源 A"),
-    SOURCE_B(2003, 3, "来源 B"),
-    SOURCE_C(2000, 4, "来源 C"),
+    // AutoTark's validated strip order is rear, left, right, front. Keep A/B/C labels so the
+    // image-order editor can correct a vehicle whose configured order differs.
+    SOURCE_A(1, "来源 A"),
+    SOURCE_B(2, "来源 B"),
+    SOURCE_C(0, "来源 C"),
 }
 
 enum class ElectronicMirrorReason {
@@ -27,6 +28,7 @@ enum class ElectronicMirrorReason {
     REVERSE,
     LEFT_TURN,
     RIGHT_TURN,
+    STREAMING_REAR,
 }
 
 data class ElectronicMirrorGeometry(
@@ -42,137 +44,267 @@ data class ElectronicMirrorGeometry(
         offsetYPct = offsetYPct.coerceIn(MIN_OFFSET_PCT, MAX_OFFSET_PCT),
     )
 
+    fun sanitizedSide(): ElectronicMirrorGeometry = sanitized().copy(
+        widthPct = widthPct.coerceIn(MIN_SIDE_WIDTH_PCT, MAX_SIDE_WIDTH_PCT),
+        heightPct = heightPct.coerceIn(MIN_SIDE_HEIGHT_PCT, MAX_SIDE_HEIGHT_PCT),
+        offsetXPct = offsetXPct.coerceIn(MIN_SIDE_INSET_PCT, MAX_SIDE_INSET_PCT),
+    )
+
+    fun sanitizedStreaming(): ElectronicMirrorGeometry = sanitized().copy(
+        widthPct = widthPct.coerceIn(MIN_STREAMING_WIDTH_PCT, MAX_STREAMING_WIDTH_PCT),
+        heightPct = heightPct.coerceIn(MIN_STREAMING_HEIGHT_PCT, MAX_STREAMING_HEIGHT_PCT),
+    )
+
     companion object {
-        const val MIN_SIZE_PCT = 24
+        const val MIN_SIZE_PCT = 10
         const val MAX_SIZE_PCT = 100
         const val MIN_OFFSET_PCT = 0
         const val MAX_OFFSET_PCT = 100
+        const val MIN_SIDE_WIDTH_PCT = 16
+        const val MAX_SIDE_WIDTH_PCT = 48
+        const val MIN_SIDE_HEIGHT_PCT = 24
+        const val MAX_SIDE_HEIGHT_PCT = 80
+        const val MIN_SIDE_INSET_PCT = 0
+        const val MAX_SIDE_INSET_PCT = 50
+        const val MIN_STREAMING_WIDTH_PCT = 28
+        const val MAX_STREAMING_WIDTH_PCT = 100
+        const val MIN_STREAMING_HEIGHT_PCT = 10
+        const val MAX_STREAMING_HEIGHT_PCT = 52
 
         val DEFAULT_CLUSTER = ElectronicMirrorGeometry(
-            widthPct = 66,
-            heightPct = 92,
-            offsetXPct = 50,
-            offsetYPct = 50,
+            widthPct = 30,
+            heightPct = 80,
+            offsetXPct = 0,
+            offsetYPct = 60,
         )
         val DEFAULT_CENTER = ElectronicMirrorGeometry(
-            widthPct = 44,
-            heightPct = 56,
-            offsetXPct = 96,
-            offsetYPct = 50,
+            widthPct = 30,
+            heightPct = 80,
+            offsetXPct = 0,
+            offsetYPct = 60,
+        )
+        val DEFAULT_STREAMING_CLUSTER = ElectronicMirrorGeometry(
+            widthPct = 46,
+            heightPct = 38,
+            offsetXPct = 50,
+            offsetYPct = 8,
+        )
+        val DEFAULT_STREAMING_CENTER = ElectronicMirrorGeometry(
+            widthPct = 46,
+            heightPct = 38,
+            offsetXPct = 50,
+            offsetYPct = 8,
         )
     }
 }
 
-data class ElectronicMirrorCalibrationPoint(
-    val xPermille: Int,
-    val yPermille: Int,
+/** AutoTark-compatible crop controls for one rectified panorama tile. */
+data class ElectronicMirrorProjectionSpec(
+    val horizontalPermille: Int = 0,
+    val heightOffsetPermille: Int = 0,
+    val viewScalePermille: Int = 1000,
 ) {
-    fun sanitized(): ElectronicMirrorCalibrationPoint = copy(
-        xPermille = xPermille.coerceIn(0, ElectronicMirrorCalibration.COORDINATE_MAX),
-        yPermille = yPermille.coerceIn(0, ElectronicMirrorCalibration.COORDINATE_MAX),
+    val horizontal: Float
+        get() = horizontalPermille / 1000f
+
+    val heightOffset: Float
+        get() = heightOffsetPermille / 1000f
+
+    val verticalCenterRatio: Float
+        get() = (DEFAULT_VERTICAL_CENTER_RATIO - heightOffset)
+            .coerceIn(MIN_VERTICAL_CENTER_RATIO, MAX_VERTICAL_CENTER_RATIO)
+
+    val viewScale: Float
+        get() = viewScalePermille / 1000f
+
+    fun sanitized(): ElectronicMirrorProjectionSpec = copy(
+        horizontalPermille = horizontalPermille.coerceIn(MIN_HORIZONTAL, MAX_HORIZONTAL),
+        heightOffsetPermille = heightOffsetPermille.coerceIn(MIN_HEIGHT_OFFSET, MAX_HEIGHT_OFFSET),
+        viewScalePermille = viewScalePermille.coerceIn(MIN_VIEW_SCALE, MAX_VIEW_SCALE),
     )
-}
 
-/**
- * Source-area calibration for one panoramic-camera viewpoint.
- *
- * Points are stored in permille so the same calibration can be used on the cluster and centre
- * displays. Their order is top-left, top-right, bottom-right, bottom-left. The two points on one
- * side share their X coordinate, matching L1Mini's editor and preventing a dragged quadrilateral
- * from folding over itself.
- */
-data class ElectronicMirrorCalibration(
-    val topLeft: ElectronicMirrorCalibrationPoint = ElectronicMirrorCalibrationPoint(0, 0),
-    val topRight: ElectronicMirrorCalibrationPoint = ElectronicMirrorCalibrationPoint(1000, 0),
-    val bottomRight: ElectronicMirrorCalibrationPoint = ElectronicMirrorCalibrationPoint(1000, 1000),
-    val bottomLeft: ElectronicMirrorCalibrationPoint = ElectronicMirrorCalibrationPoint(0, 1000),
-    val yawDegrees: Int = 0,
-    val rollDegrees: Int = 0,
-    val pitchDegrees: Int = 0,
-) {
-    val points: List<ElectronicMirrorCalibrationPoint>
-        get() = listOf(topLeft, topRight, bottomRight, bottomLeft)
-
-    fun withPoint(index: Int, point: ElectronicMirrorCalibrationPoint): ElectronicMirrorCalibration {
-        val safe = point.sanitized()
-        return when (index) {
-            0 -> copy(
-                topLeft = safe,
-                bottomLeft = bottomLeft.copy(xPermille = safe.xPermille),
+    fun sanitizedFor(viewpoint: ElectronicMirrorViewpoint): ElectronicMirrorProjectionSpec {
+        val safe = sanitized()
+        return when (viewpoint) {
+            ElectronicMirrorViewpoint.LEFT -> safe.copy(
+                horizontalPermille = safe.horizontalPermille.coerceIn(
+                    MIN_SIDE_HORIZONTAL,
+                    0,
+                ),
+                heightOffsetPermille = safe.heightOffsetPermille.coerceIn(
+                    MIN_SIDE_HEIGHT_OFFSET,
+                    MAX_SIDE_HEIGHT_OFFSET,
+                ),
+                viewScalePermille = safe.viewScalePermille.coerceIn(
+                    MIN_SIDE_VIEW_SCALE,
+                    MAX_SIDE_VIEW_SCALE,
+                ),
             )
-            1 -> copy(
-                topRight = safe,
-                bottomRight = bottomRight.copy(xPermille = safe.xPermille),
+            ElectronicMirrorViewpoint.RIGHT -> safe.copy(
+                horizontalPermille = safe.horizontalPermille.coerceIn(
+                    0,
+                    MAX_SIDE_HORIZONTAL,
+                ),
+                heightOffsetPermille = safe.heightOffsetPermille.coerceIn(
+                    MIN_SIDE_HEIGHT_OFFSET,
+                    MAX_SIDE_HEIGHT_OFFSET,
+                ),
+                viewScalePermille = safe.viewScalePermille.coerceIn(
+                    MIN_SIDE_VIEW_SCALE,
+                    MAX_SIDE_VIEW_SCALE,
+                ),
             )
-            2 -> copy(
-                bottomRight = safe,
-                topRight = topRight.copy(xPermille = safe.xPermille),
+            ElectronicMirrorViewpoint.REAR -> safe.copy(
+                horizontalPermille = safe.horizontalPermille.coerceIn(
+                    MIN_REAR_HORIZONTAL,
+                    MAX_REAR_HORIZONTAL,
+                ),
+                heightOffsetPermille = safe.heightOffsetPermille.coerceIn(
+                    MIN_REAR_HEIGHT_OFFSET,
+                    MAX_REAR_HEIGHT_OFFSET,
+                ),
+                viewScalePermille = safe.viewScalePermille.coerceIn(
+                    MIN_REAR_VIEW_SCALE,
+                    MAX_REAR_VIEW_SCALE,
+                ),
             )
-            3 -> copy(
-                bottomLeft = safe,
-                topLeft = topLeft.copy(xPermille = safe.xPermille),
-            )
-            else -> this
-        }.sanitized()
-    }
-
-    fun sanitized(): ElectronicMirrorCalibration {
-        val rawTopLeft = topLeft.sanitized()
-        val rawTopRight = topRight.sanitized()
-        val rawBottomRight = bottomRight.sanitized()
-        val rawBottomLeft = bottomLeft.sanitized()
-
-        val leftX = ((rawTopLeft.xPermille + rawBottomLeft.xPermille) / 2)
-            .coerceIn(0, COORDINATE_MAX - MIN_POINT_GAP)
-        val rightX = ((rawTopRight.xPermille + rawBottomRight.xPermille) / 2)
-            .coerceIn(leftX + MIN_POINT_GAP, COORDINATE_MAX)
-        val leftTopY = rawTopLeft.yPermille.coerceIn(0, COORDINATE_MAX - MIN_POINT_GAP)
-        val leftBottomY = rawBottomLeft.yPermille.coerceIn(
-            leftTopY + MIN_POINT_GAP,
-            COORDINATE_MAX,
-        )
-        val rightTopY = rawTopRight.yPermille.coerceIn(0, COORDINATE_MAX - MIN_POINT_GAP)
-        val rightBottomY = rawBottomRight.yPermille.coerceIn(
-            rightTopY + MIN_POINT_GAP,
-            COORDINATE_MAX,
-        )
-
-        return copy(
-            topLeft = ElectronicMirrorCalibrationPoint(leftX, leftTopY),
-            topRight = ElectronicMirrorCalibrationPoint(rightX, rightTopY),
-            bottomRight = ElectronicMirrorCalibrationPoint(rightX, rightBottomY),
-            bottomLeft = ElectronicMirrorCalibrationPoint(leftX, leftBottomY),
-            yawDegrees = yawDegrees.coerceIn(MIN_ANGLE_DEGREES, MAX_ANGLE_DEGREES),
-            rollDegrees = rollDegrees.coerceIn(MIN_ANGLE_DEGREES, MAX_ANGLE_DEGREES),
-            pitchDegrees = pitchDegrees.coerceIn(MIN_ANGLE_DEGREES, MAX_ANGLE_DEGREES),
-        )
+        }
     }
 
     companion object {
-        const val COORDINATE_MAX = 1000
-        const val MIN_POINT_GAP = 80
-        const val MIN_ANGLE_DEGREES = -15
-        const val MAX_ANGLE_DEGREES = 15
+        const val MIN_HORIZONTAL = -450
+        const val MAX_HORIZONTAL = 450
+        const val MIN_HEIGHT_OFFSET = -100
+        const val MAX_HEIGHT_OFFSET = 120
+        const val MIN_VIEW_SCALE = 850
+        const val MAX_VIEW_SCALE = 2000
+        const val MIN_SIDE_HORIZONTAL = -450
+        const val MAX_SIDE_HORIZONTAL = 450
+        const val MIN_SIDE_HEIGHT_OFFSET = -80
+        const val MAX_SIDE_HEIGHT_OFFSET = 100
+        const val MIN_SIDE_VIEW_SCALE = 850
+        const val MAX_SIDE_VIEW_SCALE = 2000
+        const val MIN_REAR_HORIZONTAL = -350
+        const val MAX_REAR_HORIZONTAL = 350
+        const val MIN_REAR_HEIGHT_OFFSET = -100
+        const val MAX_REAR_HEIGHT_OFFSET = 120
+        const val MIN_REAR_VIEW_SCALE = 850
+        const val MAX_REAR_VIEW_SCALE = 1500
+        const val DEFAULT_VERTICAL_CENTER_RATIO = 0.52f
+        const val MIN_VERTICAL_CENTER_RATIO = 0.4f
+        const val MAX_VERTICAL_CENTER_RATIO = 0.62f
 
-        val DEFAULT = ElectronicMirrorCalibration()
+        val DEFAULT_LEFT = ElectronicMirrorProjectionSpec(
+            horizontalPermille = -120,
+            heightOffsetPermille = 100,
+            viewScalePermille = 1350,
+        )
+        val DEFAULT_RIGHT = ElectronicMirrorProjectionSpec(
+            horizontalPermille = 120,
+            heightOffsetPermille = 100,
+            viewScalePermille = 1350,
+        )
+        val DEFAULT_REAR = ElectronicMirrorProjectionSpec(
+            horizontalPermille = 0,
+            heightOffsetPermille = 120,
+            viewScalePermille = 1500,
+        )
+        fun defaultFor(viewpoint: ElectronicMirrorViewpoint): ElectronicMirrorProjectionSpec =
+            when (viewpoint) {
+                ElectronicMirrorViewpoint.LEFT -> DEFAULT_LEFT
+                ElectronicMirrorViewpoint.RIGHT -> DEFAULT_RIGHT
+                ElectronicMirrorViewpoint.REAR -> DEFAULT_REAR
+            }
+    }
+}
+
+/**
+ * Camera producer profile. Camera identity, Surface output, strip count and visible tile are kept
+ * separate so selecting another view never silently changes the AVMCamera output channel.
+ */
+data class ElectronicMirrorSurfaceProfile(
+    val cameraTag: String = DEFAULT_CAMERA_TAG,
+    val surfaceIndex: Int = DEFAULT_SURFACE_INDEX,
+    val tileCount: Int = DEFAULT_TILE_COUNT,
+    val qualityWidth: Int = DEFAULT_QUALITY_WIDTH,
+    val sourceWidth: Int = DEFAULT_SOURCE_WIDTH,
+    val sourceHeight: Int = DEFAULT_SOURCE_HEIGHT,
+) {
+    val bufferWidth: Int
+        get() {
+            val safeSourceWidth = sourceWidth.coerceIn(MIN_SOURCE_WIDTH, MAX_SOURCE_WIDTH)
+            val requested = qualityWidth.coerceIn(MIN_QUALITY_WIDTH, MAX_QUALITY_WIDTH) *
+                tileCount.coerceIn(1, MAX_TILE_COUNT)
+            return requested.coerceIn(MIN_BUFFER_WIDTH, safeSourceWidth)
+        }
+
+    val bufferHeight: Int
+        get() {
+            val safeSourceWidth = sourceWidth.coerceIn(MIN_SOURCE_WIDTH, MAX_SOURCE_WIDTH)
+            val safeSourceHeight = sourceHeight.coerceIn(MIN_SOURCE_HEIGHT, MAX_SOURCE_HEIGHT)
+            return ((safeSourceHeight.toLong() * bufferWidth + safeSourceWidth / 2L) / safeSourceWidth)
+                .toInt()
+                .coerceIn(MIN_BUFFER_HEIGHT, safeSourceHeight)
+        }
+
+    fun sanitized(): ElectronicMirrorSurfaceProfile = copy(
+        cameraTag = cameraTag.trim().ifEmpty { DEFAULT_CAMERA_TAG },
+        surfaceIndex = surfaceIndex.coerceIn(MIN_SURFACE_INDEX, MAX_SURFACE_INDEX),
+        tileCount = tileCount.coerceIn(1, MAX_TILE_COUNT),
+        qualityWidth = qualityWidth.coerceIn(MIN_QUALITY_WIDTH, MAX_QUALITY_WIDTH),
+        sourceWidth = sourceWidth.coerceIn(MIN_SOURCE_WIDTH, MAX_SOURCE_WIDTH),
+        sourceHeight = sourceHeight.coerceIn(MIN_SOURCE_HEIGHT, MAX_SOURCE_HEIGHT),
+    )
+
+    companion object {
+        const val DEFAULT_CAMERA_TAG = "pano_h"
+        const val DEFAULT_SURFACE_INDEX = 0
+        const val DEFAULT_TILE_COUNT = 4
+        const val DEFAULT_QUALITY_WIDTH = 750
+        const val DEFAULT_SOURCE_WIDTH = 7680
+        const val DEFAULT_SOURCE_HEIGHT = 1300
+        const val MIN_SURFACE_INDEX = 0
+        const val MAX_SURFACE_INDEX = 15
+        const val MAX_TILE_COUNT = 8
+        const val MIN_QUALITY_WIDTH = 480
+        const val MAX_QUALITY_WIDTH = 1280
+        const val MIN_SOURCE_WIDTH = 640
+        const val MAX_SOURCE_WIDTH = 8192
+        const val MIN_SOURCE_HEIGHT = 160
+        const val MAX_SOURCE_HEIGHT = 2160
+        private const val MIN_BUFFER_WIDTH = 640
+        private const val MIN_BUFFER_HEIGHT = 160
+
+        fun panorama(surfaceIndex: Int): ElectronicMirrorSurfaceProfile =
+            ElectronicMirrorSurfaceProfile(surfaceIndex = surfaceIndex).sanitized()
+
     }
 }
 
 data class ElectronicMirrorConfig(
     val enabled: Boolean = false,
-    val displayTarget: ElectronicMirrorDisplayTarget = ElectronicMirrorDisplayTarget.CLUSTER,
+    val displayTarget: ElectronicMirrorDisplayTarget = ElectronicMirrorDisplayTarget.CENTER,
     val leftTurnEnabled: Boolean = true,
     val rightTurnEnabled: Boolean = true,
     val reverseEnabled: Boolean = false,
     val fps: Int = DEFAULT_FPS,
     val clusterGeometry: ElectronicMirrorGeometry = ElectronicMirrorGeometry.DEFAULT_CLUSTER,
     val centerGeometry: ElectronicMirrorGeometry = ElectronicMirrorGeometry.DEFAULT_CENTER,
-    val leftCalibration: ElectronicMirrorCalibration = ElectronicMirrorCalibration.DEFAULT,
-    val rightCalibration: ElectronicMirrorCalibration = ElectronicMirrorCalibration.DEFAULT,
-    val rearCalibration: ElectronicMirrorCalibration = ElectronicMirrorCalibration.DEFAULT,
+    val leftProjection: ElectronicMirrorProjectionSpec = ElectronicMirrorProjectionSpec.DEFAULT_LEFT,
+    val rightProjection: ElectronicMirrorProjectionSpec = ElectronicMirrorProjectionSpec.DEFAULT_RIGHT,
+    val rearProjection: ElectronicMirrorProjectionSpec = ElectronicMirrorProjectionSpec.DEFAULT_REAR,
     val leftSource: ElectronicMirrorCameraSource = ElectronicMirrorCameraSource.SOURCE_A,
     val rightSource: ElectronicMirrorCameraSource = ElectronicMirrorCameraSource.SOURCE_B,
     val rearSource: ElectronicMirrorCameraSource = ElectronicMirrorCameraSource.SOURCE_C,
+    val streamingRearEnabled: Boolean = false,
+    val streamingRearVisible: Boolean = true,
+    val streamingRearDisplayTarget: ElectronicMirrorDisplayTarget =
+        ElectronicMirrorDisplayTarget.CENTER,
+    val streamingRearClusterGeometry: ElectronicMirrorGeometry =
+        ElectronicMirrorGeometry.DEFAULT_STREAMING_CLUSTER,
+    val streamingRearCenterGeometry: ElectronicMirrorGeometry =
+        ElectronicMirrorGeometry.DEFAULT_STREAMING_CENTER,
+    val panoramaSurfaceIndex: Int = ElectronicMirrorSurfaceProfile.DEFAULT_SURFACE_INDEX,
 ) {
     fun geometryFor(target: ElectronicMirrorDisplayTarget = displayTarget): ElectronicMirrorGeometry =
         when (target) {
@@ -180,20 +312,27 @@ data class ElectronicMirrorConfig(
             ElectronicMirrorDisplayTarget.CENTER -> centerGeometry
         }
 
-    fun calibrationFor(viewpoint: ElectronicMirrorViewpoint): ElectronicMirrorCalibration =
+    fun projectionFor(viewpoint: ElectronicMirrorViewpoint): ElectronicMirrorProjectionSpec =
         when (viewpoint) {
-            ElectronicMirrorViewpoint.LEFT -> leftCalibration
-            ElectronicMirrorViewpoint.RIGHT -> rightCalibration
-            ElectronicMirrorViewpoint.REAR -> rearCalibration
+            ElectronicMirrorViewpoint.LEFT -> leftProjection
+            ElectronicMirrorViewpoint.RIGHT -> rightProjection
+            ElectronicMirrorViewpoint.REAR -> rearProjection
         }
 
-    fun withCalibration(
+    fun streamingRearGeometryFor(
+        target: ElectronicMirrorDisplayTarget = streamingRearDisplayTarget,
+    ): ElectronicMirrorGeometry = when (target) {
+        ElectronicMirrorDisplayTarget.CLUSTER -> streamingRearClusterGeometry
+        ElectronicMirrorDisplayTarget.CENTER -> streamingRearCenterGeometry
+    }
+
+    fun withProjection(
         viewpoint: ElectronicMirrorViewpoint,
-        calibration: ElectronicMirrorCalibration,
+        projection: ElectronicMirrorProjectionSpec,
     ): ElectronicMirrorConfig = when (viewpoint) {
-        ElectronicMirrorViewpoint.LEFT -> copy(leftCalibration = calibration.sanitized())
-        ElectronicMirrorViewpoint.RIGHT -> copy(rightCalibration = calibration.sanitized())
-        ElectronicMirrorViewpoint.REAR -> copy(rearCalibration = calibration.sanitized())
+        ElectronicMirrorViewpoint.LEFT -> copy(leftProjection = projection.sanitizedFor(viewpoint))
+        ElectronicMirrorViewpoint.RIGHT -> copy(rightProjection = projection.sanitizedFor(viewpoint))
+        ElectronicMirrorViewpoint.REAR -> copy(rearProjection = projection.sanitizedFor(viewpoint))
     }
 
     fun sourceFor(viewpoint: ElectronicMirrorViewpoint): ElectronicMirrorCameraSource =
@@ -241,19 +380,25 @@ data class ElectronicMirrorConfig(
             ElectronicMirrorCameraSource.entries.size
         return copy(
             fps = fps.coerceIn(MIN_FPS, MAX_FPS),
-            clusterGeometry = clusterGeometry.sanitized(),
-            centerGeometry = centerGeometry.sanitized(),
-            leftCalibration = leftCalibration.sanitized(),
-            rightCalibration = rightCalibration.sanitized(),
-            rearCalibration = rearCalibration.sanitized(),
+            clusterGeometry = clusterGeometry.sanitizedSide(),
+            centerGeometry = centerGeometry.sanitizedSide(),
+            leftProjection = leftProjection.sanitizedFor(ElectronicMirrorViewpoint.LEFT),
+            rightProjection = rightProjection.sanitizedFor(ElectronicMirrorViewpoint.RIGHT),
+            rearProjection = rearProjection.sanitizedFor(ElectronicMirrorViewpoint.REAR),
+            streamingRearClusterGeometry = streamingRearClusterGeometry.sanitizedStreaming(),
+            streamingRearCenterGeometry = streamingRearCenterGeometry.sanitizedStreaming(),
             leftSource = if (sourcesAreUnique) leftSource else ElectronicMirrorCameraSource.SOURCE_A,
             rightSource = if (sourcesAreUnique) rightSource else ElectronicMirrorCameraSource.SOURCE_B,
             rearSource = if (sourcesAreUnique) rearSource else ElectronicMirrorCameraSource.SOURCE_C,
+            panoramaSurfaceIndex = panoramaSurfaceIndex.coerceIn(
+                ElectronicMirrorSurfaceProfile.MIN_SURFACE_INDEX,
+                ElectronicMirrorSurfaceProfile.MAX_SURFACE_INDEX,
+            ),
         )
     }
 
     companion object {
-        const val DEFAULT_FPS = 30
+        const val DEFAULT_FPS = 20
         const val MIN_FPS = 15
         const val MAX_FPS = 30
     }
@@ -273,8 +418,20 @@ data class ElectronicMirrorScene(
     val geometry: ElectronicMirrorGeometry,
     val reason: ElectronicMirrorReason,
     val fps: Int,
-    val calibration: ElectronicMirrorCalibration,
-)
+    val projection: ElectronicMirrorProjectionSpec,
+    val surfaceProfile: ElectronicMirrorSurfaceProfile,
+    val tileIndex: Int = 0,
+    val mirrorHorizontally: Boolean = false,
+) {
+    val helperSurfaceIndex: Int
+        get() = surfaceProfile.surfaceIndex
+
+    val previewBufferWidth: Int
+        get() = surfaceProfile.bufferWidth
+
+    val previewBufferHeight: Int
+        get() = surfaceProfile.bufferHeight
+}
 
 data class ElectronicMirrorRuntimeStatus(
     val active: Boolean = false,
@@ -282,6 +439,15 @@ data class ElectronicMirrorRuntimeStatus(
     val viewpoint: ElectronicMirrorViewpoint? = null,
     val target: ElectronicMirrorDisplayTarget? = null,
 )
+
+/** One physical-button press always converges to a simple visible/hidden toggle. */
+internal fun ElectronicMirrorConfig.toggledStreamingRearFromShortcut(): ElectronicMirrorConfig {
+    val currentlyVisible = streamingRearEnabled && streamingRearVisible
+    return copy(
+        streamingRearEnabled = true,
+        streamingRearVisible = !currentlyVisible,
+    ).sanitized()
+}
 
 /** Prevents cluster projection from competing with an active electronic-mirror surface. */
 object ElectronicMirrorRuntimeGuard {

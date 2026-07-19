@@ -20,7 +20,18 @@ class AutomationActionSnapshotFieldProviderTest {
             setOf("turnSignalFlash", "adasApaParkingStatus"),
             requiredRuntimeFeatureFields(
                 autoParkingSoundEnabled = false,
-                electronicMirrorEnabled = true,
+                electronicMirrorLinkageEnabled = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `streaming rear reads camera ownership without turn signal`() {
+        assertEquals(
+            setOf("adasApaParkingStatus"),
+            requiredRuntimeFeatureFields(
+                autoParkingSoundEnabled = false,
+                streamingRearEnabled = true,
             ),
         )
     }

@@ -1,5 +1,6 @@
 package com.byd.wjx.helper
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.PackageManager
@@ -9,13 +10,13 @@ import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 
 /**
- * Shell-process owner of the single APA camera instance used by the electronic mirror.
+ * Shell-process owner of the single APA/panorama camera instance used by the electronic mirror.
  *
  * All vendor classes are reached reflectively because they live in bmmcamera.jar / BYD framework
- * jars on the vehicle, not in the normal Android SDK. The helper's app_process classpath already
- * includes bmmcamera.jar, so one physical camera channel can be sent straight into the
- * app-created Surface without a JPEG encoder, socket, or per-frame allocation.
+ * jars on the vehicle, not in the normal Android SDK. Camera identity and Surface output index are
+ * separate inputs; the app selects a panorama tile with TextureView.Matrix without copying frames.
  */
+@SuppressLint("PrivateApi") // BYD camera classes are vendor framework APIs on the vehicle ROM.
 internal class ElectronicMirrorCameraRuntime(
     private val systemContext: Context?,
 ) {
@@ -23,22 +24,38 @@ internal class ElectronicMirrorCameraRuntime(
 
     private var camera: Any? = null
     private var previewSurface: Surface? = null
-    private var panoramaDevice: Any? = null
-    private var setPanoFive: Method? = null
-    private var setPanoThree: Method? = null
-    private var currentViewpoint: Int = VIEW_NONE
-    private var currentPreviewChannel: Int = VIEW_NONE
+    private var currentCameraTag: String? = null
+    private var currentSurfaceIndex: Int = SURFACE_NONE
+    private var currentTileCount: Int = 1
     private var cameraApi: CameraApi? = null
     private var fpsSetterSupported: Boolean? = null
 
-    fun start(surface: Surface, viewpoint: Int, fps: Int): Int = synchronized(lock) {
+    fun start(
+        surface: Surface,
+        cameraTag: String,
+        surfaceIndex: Int,
+        tileCount: Int,
+        bufferWidth: Int,
+        bufferHeight: Int,
+        fps: Int,
+    ): Int = synchronized(lock) {
         if (!surface.isValid) {
             surface.release()
             return@synchronized STATUS_INVALID_SURFACE
         }
-        if (electronicMirrorPreviewChannel(viewpoint) == null) {
+        val safeCameraTag = cameraTag.trim().lowercase()
+        val requestValid = safeCameraTag == PANORAMA_CAMERA_TAG &&
+            surfaceIndex in MIN_SURFACE_INDEX..MAX_SURFACE_INDEX &&
+            tileCount == PANORAMA_TILE_COUNT &&
+            bufferWidth in MIN_BUFFER_WIDTH..MAX_BUFFER_WIDTH &&
+            bufferHeight in MIN_BUFFER_HEIGHT..MAX_BUFFER_HEIGHT
+        if (!requestValid) {
             surface.release()
-            return@synchronized STATUS_INVALID_VIEWPOINT
+            return@synchronized fail(
+                STATUS_INVALID_REQUEST,
+                "invalid request cameraTag=$cameraTag surfaceIndex=$surfaceIndex tiles=$tileCount " +
+                    "buffer=${bufferWidth}x$bufferHeight",
+            )
         }
 
         stopLocked()
@@ -47,51 +64,66 @@ internal class ElectronicMirrorCameraRuntime(
         previewSurface = surface
         try {
             val api = resolveCameraApi()
-            val openedCamera = api.cameraIds.firstNotNullOfOrNull { cameraId ->
-                openCamera(api, cameraId)?.let { cameraId to it }
+            // Do not silently fall back to pano_l/APA side feeds: those are the round/door-facing
+            // images that caused the incorrect mirror view. pano_h plus the validated numeric
+            // fallback is the only producer route for this feature.
+            val cameraCandidates = resolveCameraCandidates(listOf(safeCameraTag))
+            val fpsValue = fps.coerceIn(15, 30)
+            var startedCamera: StartedCamera? = null
+            for (candidate in cameraCandidates) {
+                helperLog(
+                    TAG,
+                    "opening cameraId=${candidate.id} source=${candidate.source}",
+                )
+                val opened = openCamera(api, candidate.id) ?: continue
+                val bindingMethod = bindPreviewSurface(opened, surface, surfaceIndex)
+                if (bindingMethod == null) {
+                    helperLog(
+                        TAG,
+                        "cameraId=${candidate.id} rejected Surface index=$surfaceIndex; trying next",
+                    )
+                    closeCameraAttempt(opened, surface, surfaceIndex, surfaceBound = false)
+                    continue
+                }
+                val fpsApplied = applyCameraFps(opened, fpsValue)
+                if (!invokeBoolean(opened, "startPreview")) {
+                    helperLog(
+                        TAG,
+                        "cameraId=${candidate.id} startPreview rejected; trying next",
+                    )
+                    closeCameraAttempt(opened, surface, surfaceIndex, surfaceBound = true)
+                    continue
+                }
+                startedCamera = StartedCamera(
+                    candidate = candidate,
+                    camera = opened,
+                    bindingMethod = bindingMethod,
+                    fpsApplied = fpsApplied,
+                )
+                break
             }
-            if (openedCamera == null) {
+            if (startedCamera == null) {
                 stopLocked()
                 return@synchronized fail(
                     STATUS_OPEN_FAILED,
-                    "AVMCamera open paths failed cameraIds=${api.cameraIds.joinToString()}",
+                    "AVMCamera producer paths failed candidates=" +
+                        cameraCandidates.joinToString { "${it.id}(${it.source})" },
                 )
             }
-            val (cameraId, opened) = openedCamera
+            camera = startedCamera.camera
+            currentSurfaceIndex = surfaceIndex
+            currentCameraTag = safeCameraTag
+            currentTileCount = tileCount
 
-            camera = opened
-
-            val previewSizeApplied = invokeBoolean(
-                opened,
-                "setPreviewSize",
-                api.singlePreviewSize.width,
-                api.singlePreviewSize.height,
-            )
-            val previewChannel = resolvePreviewChannel(api, viewpoint)
-            val bindingMethod = bindPreviewSurface(opened, surface, previewChannel)
-            if (bindingMethod == null) {
-                stopLocked()
-                return@synchronized fail(
-                    STATUS_SURFACE_FAILED,
-                    "single-channel Surface rejected viewpoint=$viewpoint channel=$previewChannel",
-                )
-            }
-            currentPreviewChannel = previewChannel
-
-            val fpsValue = fps.coerceIn(15, 30)
-            val fpsApplied = applyCameraFps(opened, fpsValue)
-            if (!invokeBoolean(opened, "startPreview")) {
-                stopLocked()
-                return@synchronized fail(STATUS_PREVIEW_FAILED, "startPreview returned false")
-            }
-            applyPanoramaMode(viewpoint)
-            currentViewpoint = viewpoint
             helperLog(
                 TAG,
-                "started cameraId=$cameraId viewpoint=$viewpoint " +
-                    "channel=$previewChannel binding=$bindingMethod fps=$fpsValue fpsApplied=$fpsApplied " +
-                    "singlePreview=${api.singlePreviewSize.width}x${api.singlePreviewSize.height} " +
-                    "sizeApplied=$previewSizeApplied",
+                "started cameraId=${startedCamera.candidate.id} " +
+                    "source=${startedCamera.candidate.source} " +
+                    "cameraTag=$safeCameraTag " +
+                    "surfaceIndex=$surfaceIndex tiles=$tileCount " +
+                    "binding=${startedCamera.bindingMethod} " +
+                    "fps=$fpsValue fpsApplied=${startedCamera.fpsApplied} " +
+                    "buffer=${bufferWidth}x$bufferHeight",
             )
             STATUS_OK
         } catch (t: Throwable) {
@@ -100,9 +132,9 @@ internal class ElectronicMirrorCameraRuntime(
         }
     }
 
-    fun switchView(viewpoint: Int): Int = synchronized(lock) {
+    fun switchSurface(surfaceIndex: Int): Int = synchronized(lock) {
         if (camera == null) return@synchronized STATUS_NOT_ACTIVE
-        switchViewLocked(viewpoint)
+        switchSurfaceLocked(surfaceIndex)
     }
 
     fun stop(): Int = synchronized(lock) {
@@ -110,28 +142,21 @@ internal class ElectronicMirrorCameraRuntime(
         STATUS_OK
     }
 
-    private fun switchViewLocked(viewpoint: Int): Int {
+    private fun switchSurfaceLocked(surfaceIndex: Int): Int {
         val activeCamera = camera ?: return STATUS_NOT_ACTIVE
         val surface = previewSurface ?: return STATUS_NOT_ACTIVE
-        val targetChannel = electronicMirrorPreviewChannel(viewpoint)
-            ?.let { resolvePreviewChannel(resolveCameraApi(), viewpoint) }
-            ?: return STATUS_INVALID_VIEWPOINT
-        if (currentViewpoint == viewpoint && currentPreviewChannel == targetChannel) {
+        if (surfaceIndex !in MIN_SURFACE_INDEX..MAX_SURFACE_INDEX) return STATUS_INVALID_REQUEST
+        if (currentSurfaceIndex == surfaceIndex) {
             return STATUS_OK
         }
 
-        val oldChannel = currentPreviewChannel.takeIf { it > VIEW_DEFAULT }
-        val switchPlan = electronicMirrorSurfaceSwitchPlan(oldChannel, targetChannel)
+        val oldSurfaceIndex = currentSurfaceIndex.takeIf { it >= MIN_SURFACE_INDEX }
+        val switchPlan = electronicMirrorSurfaceSwitchPlan(oldSurfaceIndex, surfaceIndex)
         helperLog(
             TAG,
-            "switch plan viewpoint=$currentViewpoint->$viewpoint " +
+            "switch plan surface=$currentSurfaceIndex->$surfaceIndex " +
                 switchPlan.joinToString { "${it.action.name.lowercase()}:${it.channel}" },
         )
-        if (oldChannel == targetChannel) {
-            currentViewpoint = viewpoint
-            applyPanoramaMode(viewpoint)
-            return STATUS_OK
-        }
         var bindingMethod: String? = null
         for (step in switchPlan) {
             when (step.action) {
@@ -144,12 +169,12 @@ internal class ElectronicMirrorCameraRuntime(
                     )
                     helperLog(
                         TAG,
-                        "switch remove viewpoint=$currentViewpoint channel=${step.channel} accepted=$removed",
+                        "switch remove surfaceIndex=${step.channel} accepted=$removed",
                     )
                     if (!removed) {
                         return fail(
                             STATUS_SURFACE_FAILED,
-                            "cannot remove old single channel=${step.channel} before target=$targetChannel",
+                            "cannot remove old Surface index=${step.channel} before target=$surfaceIndex",
                         )
                     }
                 }
@@ -159,30 +184,28 @@ internal class ElectronicMirrorCameraRuntime(
             }
         }
         if (bindingMethod == null) {
-            val rollbackMethod = oldChannel
-                ?.takeIf { it != targetChannel }
+            val rollbackMethod = oldSurfaceIndex
+                ?.takeIf { it != surfaceIndex }
                 ?.let { bindPreviewSurface(activeCamera, surface, it) }
             helperLog(
                 TAG,
-                "switch bind failed viewpoint=$viewpoint channel=$targetChannel " +
-                    "rollbackChannel=$oldChannel rollback=$rollbackMethod",
+                "switch bind failed surfaceIndex=$surfaceIndex " +
+                    "rollbackSurface=$oldSurfaceIndex rollback=$rollbackMethod",
             )
-            if (oldChannel != null && rollbackMethod == null) {
-                currentPreviewChannel = VIEW_NONE
-                currentViewpoint = VIEW_NONE
+            if (oldSurfaceIndex != null && rollbackMethod == null) {
+                currentSurfaceIndex = SURFACE_NONE
             }
             return fail(
                 STATUS_SURFACE_FAILED,
-                "single-channel switch rejected viewpoint=$viewpoint channel=$targetChannel",
+                "Surface switch rejected index=$surfaceIndex",
             )
         }
 
-        currentPreviewChannel = targetChannel
-        currentViewpoint = viewpoint
-        applyPanoramaMode(viewpoint)
+        currentSurfaceIndex = surfaceIndex
         helperLog(
             TAG,
-            "switched viewpoint=$viewpoint channel=$targetChannel binding=$bindingMethod",
+            "switched cameraTag=$currentCameraTag surfaceIndex=$surfaceIndex " +
+                "tiles=$currentTileCount binding=$bindingMethod",
         )
         return STATUS_OK
     }
@@ -192,24 +215,63 @@ internal class ElectronicMirrorCameraRuntime(
         val surface = previewSurface
         camera = null
         previewSurface = null
-        currentViewpoint = VIEW_NONE
-        val activePreviewChannel = currentPreviewChannel
-        currentPreviewChannel = VIEW_NONE
+        currentCameraTag = null
+        currentTileCount = 1
+        val activeSurfaceIndex = currentSurfaceIndex
+        currentSurfaceIndex = SURFACE_NONE
         if (activeCamera != null) {
-            runCatching { invokeBoolean(activeCamera, "stopPreview") }
-            if (surface != null && activePreviewChannel > VIEW_DEFAULT) {
+            if (surface != null && activeSurfaceIndex >= MIN_SURFACE_INDEX) {
                 runCatching {
-                    invokeBoolean(activeCamera, "rmPreviewSurface", surface, activePreviewChannel)
+                    invokeBoolean(activeCamera, "rmPreviewSurface", surface, activeSurfaceIndex)
                 }
             }
+            runCatching { invokeBoolean(activeCamera, "stopPreview") }
             runCatching { invokeBoolean(activeCamera, "close") }
-            helperLog(TAG, "stopped channel=$activePreviewChannel")
+            helperLog(TAG, "stopped surfaceIndex=$activeSurfaceIndex")
         }
         runCatching { surface?.release() }
     }
 
-    private fun resolveApaCameraIds(): List<Int> {
-        val ids = linkedSetOf<Int>()
+    private fun closeCameraAttempt(
+        attemptedCamera: Any,
+        surface: Surface,
+        surfaceIndex: Int,
+        surfaceBound: Boolean,
+    ) {
+        if (surfaceBound) {
+            runCatching {
+                invokeBoolean(attemptedCamera, "rmPreviewSurface", surface, surfaceIndex)
+            }
+        }
+        runCatching { invokeBoolean(attemptedCamera, "stopPreview") }
+        runCatching { invokeBoolean(attemptedCamera, "close") }
+    }
+
+    private fun resolveCameraCandidates(tags: List<String>): List<CameraIdCandidate> {
+        val candidates = linkedMapOf<Int, CameraIdCandidate>()
+        fun addCandidate(id: Int?, source: String) {
+            id?.takeIf { it >= 0 }?.let { validId ->
+                candidates.putIfAbsent(validId, CameraIdCandidate(validId, source))
+            }
+        }
+
+        // Vehicle configuration is authoritative. On the tested vehicle BmmCameraInfo reports
+        // pano_h as camera 0 (the raw circular fisheye producer), while cam_sort explicitly maps
+        // pano_h to camera 1 (the rectified horizontal panorama used by AutoTark). Read both BYD
+        // property spellings before consulting BmmCameraInfo so the raw producer cannot win.
+        CAMERA_SORT_PROPERTIES.forEach { propertyName ->
+            val cameraSort = readSystemProperty(propertyName)
+            tags.forEach { tag ->
+                val propertyId = cameraIdFromProperty(cameraSort, tag)
+                helperLog(
+                    TAG,
+                    "camera property name=$propertyName tag=$tag " +
+                        "id=${propertyId ?: "unavailable"}",
+                )
+                addCandidate(propertyId, "property:$propertyName:$tag")
+            }
+        }
+
         val info = runCatching { Class.forName(BMM_CAMERA_INFO_CLASS) }.getOrNull()
         val idMethods = info?.let { clazz ->
             allMethods(clazz)
@@ -224,7 +286,7 @@ internal class ElectronicMirrorCameraRuntime(
         val infoInstance = info
             ?.takeIf { idMethods.any { method -> !Modifier.isStatic(method.modifiers) } }
             ?.let(::instantiateCameraInfo)
-        CAMERA_TAGS.forEach { tag ->
+        tags.forEach { tag ->
             var resolved: Int? = null
             for (method in idMethods) {
                 val receiver = if (Modifier.isStatic(method.modifiers)) null else infoInstance ?: continue
@@ -240,23 +302,21 @@ internal class ElectronicMirrorCameraRuntime(
                 }
             }
             helperLog(TAG, "camera tag=$tag id=${resolved ?: "unavailable"}")
-            resolved?.let(ids::add)
+            addCandidate(resolved, "BmmCameraInfo:$tag")
         }
-
-        val cameraSort = readSystemProperty(CAMERA_SORT_PROPERTY)
-        CAMERA_TAGS.forEach { tag ->
-            val propertyId = cameraIdFromProperty(cameraSort, tag)
-            helperLog(TAG, "camera property tag=$tag id=${propertyId ?: "unavailable"}")
-            propertyId?.let(ids::add)
+        addCandidate(DEFAULT_PANORAMA_CAMERA_ID, "fallback")
+        return candidates.values.toList().also { resolved ->
+            helperLog(
+                TAG,
+                "camera candidates=" + resolved.joinToString { "${it.id}(${it.source})" },
+            )
         }
-        ids += DEFAULT_APA_CAMERA_ID
-        return ids.toList()
     }
 
     /**
      * Prefer the public factory. If the vehicle's cam_sort property is unavailable, that factory
-     * can reject a valid fallback id before touching the HAL; the private constructor + private
-     * open path mirrors what L1Mini's reflectLoad_5 loader does on those builds.
+     * can reject a valid fallback id before touching the HAL; the private constructor + instance
+     * open path keeps those BYD framework variants usable without another video pipeline.
      */
     private fun openCamera(api: CameraApi, cameraId: Int): Any? {
         for (factory in api.staticFactories) {
@@ -326,24 +386,17 @@ internal class ElectronicMirrorCameraRuntime(
             .filter { it.parameterTypes.firstOrNull().isIntType() }
             .sortedBy { it.parameterTypes.size }
             .toList()
-        val previewChannels = SUPPORTED_VIEWPOINTS.associateWith { viewpoint ->
-            resolvePreviewChannel(cameraClass, viewpoint)
-        }
         return CameraApi(
             cameraClass = cameraClass,
-            cameraIds = resolveApaCameraIds(),
             staticFactories = staticFactories,
             instanceOpen = instanceOpen,
             constructors = constructors,
-            singlePreviewSize = resolveSinglePreviewSize(cameraClass),
-            previewChannels = previewChannels,
         ).also { resolved ->
             cameraApi = resolved
             helperLog(
                 TAG,
-                "capabilities ids=${resolved.cameraIds.joinToString()} " +
-                    "preview=${resolved.singlePreviewSize.width}x${resolved.singlePreviewSize.height} " +
-                    "channels=${resolved.previewChannels.entries.joinToString { "${it.key}:${it.value}" }}",
+                "capabilities factories=${resolved.staticFactories.size} " +
+                    "constructors=${resolved.constructors.size} instanceOpen=${resolved.instanceOpen != null}",
             )
         }
     }
@@ -395,54 +448,15 @@ internal class ElectronicMirrorCameraRuntime(
         return null
     }
 
-    private fun resolveSinglePreviewSize(cameraClass: Class<*>): ElectronicMirrorPreviewSize {
-        val width = readStaticIntField(cameraClass, SINGLE_PREVIEW_WIDTH_FIELD)
-        val height = readStaticIntField(cameraClass, SINGLE_PREVIEW_HEIGHT_FIELD)
-        val size = electronicMirrorSinglePreviewSize(width, height)
-        helperLog(
-            TAG,
-            "single preview constants=${width}x$height selected=${size.width}x${size.height}",
-        )
-        return size
-    }
-
-    private fun resolvePreviewChannel(api: CameraApi, viewpoint: Int): Int =
-        api.previewChannels[viewpoint] ?: requireNotNull(electronicMirrorPreviewChannel(viewpoint))
-
-    private fun resolvePreviewChannel(cameraClass: Class<*>, viewpoint: Int): Int {
-        val fallback = requireNotNull(electronicMirrorPreviewChannel(viewpoint))
-        val fieldName = "VIEW_CHANNEL_$fallback"
-        val reflected = readStaticIntField(cameraClass, fieldName)
-            ?.takeIf { it > VIEW_DEFAULT }
-        val selected = reflected ?: fallback
-        helperLog(
-            TAG,
-            "single channel viewpoint=$viewpoint field=$fieldName reflected=$reflected selected=$selected",
-        )
-        return selected
-    }
-
-    private fun readStaticIntField(clazz: Class<*>, name: String): Int? = runCatching {
-        val field = generateSequence(clazz) { it.superclass }
-            .mapNotNull { type -> runCatching { type.getDeclaredField(name) }.getOrNull() }
-            .firstOrNull()
-            ?: clazz.fields.firstOrNull { it.name == name }
-            ?: return@runCatching null
-        field.isAccessible = true
-        (field.get(null) as? Number)?.toInt()
-    }.onFailure {
-        helperLog(TAG, "static field ${clazz.simpleName}.$name failed: ${summary(it)}")
-    }.getOrNull()
-
     /**
      * setPreviewSurface is the primary binding API. addPreviewSurface is only a compatibility
      * fallback: registering the same Surface through both paths can leave two producers attached
      * and causes the flashing seen in the vehicle.
      */
-    private fun bindPreviewSurface(camera: Any, surface: Surface, channel: Int): String? {
-        check(channel > VIEW_DEFAULT) { "full panorama channel 0 is forbidden" }
-        if (invokeBoolean(camera, "setPreviewSurface", surface, channel)) return "set"
-        if (invokeBoolean(camera, "addPreviewSurface", surface, channel)) return "add"
+    private fun bindPreviewSurface(camera: Any, surface: Surface, surfaceIndex: Int): String? {
+        check(surfaceIndex >= MIN_SURFACE_INDEX) { "invalid Surface index=$surfaceIndex" }
+        if (invokeBoolean(camera, "setPreviewSurface", surface, surfaceIndex)) return "set"
+        if (invokeBoolean(camera, "addPreviewSurface", surface, surfaceIndex)) return "add"
         return null
     }
 
@@ -479,89 +493,6 @@ internal class ElectronicMirrorCameraRuntime(
         systemProperties.getMethod("get", String::class.java, String::class.java)
             .invoke(null, name, "") as? String
     }.getOrNull().orEmpty()
-
-    private fun ensurePanoramaDevice(): Boolean {
-        if (panoramaDevice != null && (setPanoFive != null || setPanoThree != null)) return true
-        val context = systemContext ?: return false
-        return try {
-            val clazz = Class.forName(PANORAMA_DEVICE_CLASS)
-            val bypassContext = PermissionBypassContext(context)
-            val instance = runCatching {
-                clazz.getDeclaredConstructor(Context::class.java).apply { isAccessible = true }
-                    .newInstance(bypassContext)
-            }.getOrNull() ?: runCatching {
-                clazz.methods.firstOrNull {
-                    it.name == "getInstance" && it.parameterTypes.contentEquals(arrayOf(Context::class.java))
-                }?.invoke(null, bypassContext)
-            }.getOrNull() ?: runCatching {
-                clazz.getDeclaredConstructor().apply { isAccessible = true }.newInstance()
-            }.getOrNull()
-            if (instance == null) return false
-
-            panoramaDevice = instance
-            setPanoFive = findMethod(clazz, "setPanoParams", 5)
-            setPanoThree = findMethod(clazz, "setPanoParams", 3)
-            helperLog(
-                TAG,
-                "panorama loaded class=${instance.javaClass.name} five=${setPanoFive != null} three=${setPanoThree != null}",
-            )
-            setPanoFive != null || setPanoThree != null
-        } catch (t: Throwable) {
-            helperLog(TAG, "panorama load failed: ${summary(t)}")
-            false
-        }
-    }
-
-    /**
-     * Panorama parameters are retained as a best-effort vendor hint. The visible image is selected
-     * exclusively by the AVMCamera channel binding above, so an unavailable panorama service must
-     * not force a fallback to the full stitched stream.
-     */
-    private fun applyPanoramaMode(viewpoint: Int): Boolean {
-        val params = viewParams(viewpoint) ?: return false
-        if (!ensurePanoramaDevice()) {
-            helperLog(TAG, "panorama hint unavailable viewpoint=$viewpoint")
-            return false
-        }
-        return try {
-            val result = when {
-                setPanoFive != null -> setPanoFive?.invoke(
-                    panoramaDevice,
-                    params[0],
-                    params[1],
-                    params[2],
-                    params[3],
-                    params[4],
-                )
-                setPanoThree != null -> setPanoThree?.invoke(
-                    panoramaDevice,
-                    params[0],
-                    params[1],
-                    params[2],
-                )
-                else -> null
-            }
-            val accepted = operationAccepted(result)
-            helperLog(
-                TAG,
-                "panorama hint viewpoint=$viewpoint params=${params.joinToString()} " +
-                    "accepted=$accepted result=$result",
-            )
-            accepted
-        } catch (t: Throwable) {
-            helperLog(TAG, "panorama hint failed viewpoint=$viewpoint: ${summary(t)}")
-            false
-        }
-    }
-
-    private fun findMethod(clazz: Class<*>, name: String, parameterCount: Int): Method? =
-        allMethods(clazz)
-            .firstOrNull { method ->
-                method.name == name &&
-                    method.parameterTypes.size == parameterCount &&
-                    method.parameterTypes.all { it.isIntType() }
-            }
-            ?.apply { isAccessible = true }
 
     private fun invokeBoolean(target: Any, name: String, vararg args: Any?): Boolean {
         val invocation = invokeCompatible(target, name, *args) ?: return false
@@ -650,13 +581,6 @@ internal class ElectronicMirrorCameraRuntime(
         return "${root.javaClass.simpleName}:${root.message.orEmpty()}"
     }
 
-    private fun viewParams(viewpoint: Int): IntArray? = when (viewpoint) {
-        2000 -> intArrayOf(3, 0, 1, 0, 0) // rear
-        2002 -> intArrayOf(4, 0, 1, 0, 0) // left side/rear
-        2003 -> intArrayOf(5, 0, 1, 0, 0) // right side/rear
-        else -> null
-    }
-
     private class PermissionBypassContext(base: Context) : ContextWrapper(base) {
         override fun checkCallingOrSelfPermission(permission: String): Int = PackageManager.PERMISSION_GRANTED
         override fun checkCallingPermission(permission: String): Int = PackageManager.PERMISSION_GRANTED
@@ -669,7 +593,7 @@ internal class ElectronicMirrorCameraRuntime(
     companion object {
         const val STATUS_OK = 0
         const val STATUS_INVALID_SURFACE = -2
-        const val STATUS_INVALID_VIEWPOINT = -3
+        const val STATUS_INVALID_REQUEST = -3
         const val STATUS_OPEN_FAILED = -4
         const val STATUS_SURFACE_FAILED = -5
         const val STATUS_PREVIEW_FAILED = -6
@@ -678,28 +602,42 @@ internal class ElectronicMirrorCameraRuntime(
         private const val TAG = "ElectronicMirrorCamera"
         private const val AVM_CAMERA_CLASS = "android.hardware.AVMCamera"
         private const val BMM_CAMERA_INFO_CLASS = "android.hardware.BmmCameraInfo"
-        private const val PANORAMA_DEVICE_CLASS = "android.hardware.bydauto.panorama.BYDAutoPanoramaDevice"
-        private const val CAMERA_SORT_PROPERTY = "vehicle.config.cam_sort"
-        private const val DEFAULT_APA_CAMERA_ID = 3
-        private const val VIEW_NONE = -1
-        private const val VIEW_DEFAULT = 0
-        private const val SINGLE_PREVIEW_WIDTH_FIELD = "SINGLE_PREVIEW_WIDTH"
-        private const val SINGLE_PREVIEW_HEIGHT_FIELD = "SINGLE_PREVIEW_HEIGHT"
+        private const val DEFAULT_PANORAMA_CAMERA_ID = 3
+        private const val PANORAMA_CAMERA_TAG = "pano_h"
+        private const val PANORAMA_TILE_COUNT = 4
+        private const val SURFACE_NONE = -1
+        private const val MIN_SURFACE_INDEX = 0
+        private const val MAX_SURFACE_INDEX = 15
+        private const val MIN_BUFFER_WIDTH = 320
+        private const val MAX_BUFFER_WIDTH = 8192
+        private const val MIN_BUFFER_HEIGHT = 160
+        private const val MAX_BUFFER_HEIGHT = 2160
         private val CAMERA_ID_METHOD_NAMES = setOf("getCameraId", "getCameraID")
-        private val CAMERA_TAGS = listOf("apa", "byd_apa", "pano_h", "pano_l")
-        private val SUPPORTED_VIEWPOINTS = listOf(2000, 2002, 2003)
+        private val CAMERA_SORT_PROPERTIES = listOf(
+            "vehicle.config.cam_sort",
+            "vendor.vehicle.config.cam_sort",
+        )
     }
 
     private data class Invocation(val value: Any?)
 
     private data class CameraApi(
         val cameraClass: Class<*>,
-        val cameraIds: List<Int>,
         val staticFactories: List<Method>,
         val instanceOpen: Method?,
         val constructors: List<Constructor<*>>,
-        val singlePreviewSize: ElectronicMirrorPreviewSize,
-        val previewChannels: Map<Int, Int>,
+    )
+
+    private data class CameraIdCandidate(
+        val id: Int,
+        val source: String,
+    )
+
+    private data class StartedCamera(
+        val candidate: CameraIdCandidate,
+        val camera: Any,
+        val bindingMethod: String,
+        val fpsApplied: Boolean,
     )
 }
 
@@ -745,11 +683,6 @@ internal fun cameraIdFromProperty(raw: String, tag: String): Int? =
         ?.toIntOrNull()
         ?.takeIf { it >= 0 }
 
-internal data class ElectronicMirrorPreviewSize(
-    val width: Int,
-    val height: Int,
-)
-
 internal enum class ElectronicMirrorSurfaceAction {
     REMOVE,
     BIND,
@@ -760,35 +693,14 @@ internal data class ElectronicMirrorSurfaceStep(
     val channel: Int,
 )
 
-/** Physical AVMCamera channels in the pano_h stream: front, left, right, rear. */
-internal fun electronicMirrorPreviewChannel(viewpoint: Int): Int? = when (viewpoint) {
-    2000 -> 4 // rear
-    2002 -> 2 // left rear
-    2003 -> 3 // right rear
-    else -> null
-}
-
-internal fun electronicMirrorSinglePreviewSize(
-    reflectedWidth: Int?,
-    reflectedHeight: Int?,
-): ElectronicMirrorPreviewSize {
-    val reflectedIsSingleChannel = reflectedWidth != null && reflectedHeight != null &&
-        reflectedWidth in 640..4096 && reflectedHeight in 360..2160
-    return if (reflectedIsSingleChannel) {
-        ElectronicMirrorPreviewSize(reflectedWidth, reflectedHeight)
-    } else {
-        ElectronicMirrorPreviewSize(width = 1280, height = 720)
-    }
-}
-
 internal fun electronicMirrorSurfaceSwitchPlan(
     currentChannel: Int?,
     targetChannel: Int,
 ): List<ElectronicMirrorSurfaceStep> {
-    require(targetChannel > 0) { "full panorama channel 0 is forbidden" }
+    require(targetChannel >= 0) { "invalid target channel=$targetChannel" }
     if (currentChannel == targetChannel) return emptyList()
     return buildList {
-        currentChannel?.takeIf { it > 0 }?.let {
+        currentChannel?.takeIf { it >= 0 }?.let {
             add(ElectronicMirrorSurfaceStep(ElectronicMirrorSurfaceAction.REMOVE, it))
         }
         add(ElectronicMirrorSurfaceStep(ElectronicMirrorSurfaceAction.BIND, targetChannel))

@@ -260,11 +260,13 @@ class SteeringWheelKeyService : AccessibilityService() {
                 WjxFileLogger.i(TAG, "shortcut automatic xiaozhi binding=${binding.id}")
                 XiaozhiVoiceService.toggleAutomaticConversation(applicationContext)
             }
-            KeyShortcutActionType.Automation -> {
-                WjxFileLogger.i(TAG, "shortcut automation fire binding=${binding.id} slot=${binding.automationButtonId}")
-                entryPoint().automationButtonDispatcher().fire(binding.automationButtonId) { matched ->
-                    WjxFileLogger.i(TAG, "shortcut automation complete slot=${binding.automationButtonId} executed=$matched")
-                }
+            KeyShortcutActionType.StreamingRearMirror -> {
+                val visible = entryPoint().electronicMirrorCoordinator()
+                    .toggleStreamingRearFromShortcut()
+                WjxFileLogger.i(
+                    TAG,
+                    "shortcut streaming rear binding=${binding.id} visible=$visible",
+                )
             }
         }
     }

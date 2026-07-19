@@ -3,7 +3,8 @@ package com.byd.wjx.electronicmirror
 /** Minimal camera operation needed when the resolved electronic-mirror scene changes. */
 enum class ElectronicMirrorTransition {
     NONE,
-    UPDATE_TRANSFORM,
+    UPDATE_PROJECTION,
+    UPDATE_WINDOW,
     SWITCH_SOURCE,
     REBUILD_WINDOW,
 }
@@ -16,15 +17,22 @@ object ElectronicMirrorTransitionPolicy {
         if (current == null) return ElectronicMirrorTransition.REBUILD_WINDOW
         if (current == desired) return ElectronicMirrorTransition.NONE
 
-        val sameWindow = current.target == desired.target &&
-            current.geometry == desired.geometry &&
-            current.fps == desired.fps
-        if (!sameWindow) return ElectronicMirrorTransition.REBUILD_WINDOW
+        val sameSurfaceRoute = current.target == desired.target &&
+            current.fps == desired.fps &&
+            current.surfaceProfile.cameraTag == desired.surfaceProfile.cameraTag &&
+            current.surfaceProfile.tileCount == desired.surfaceProfile.tileCount &&
+            current.previewBufferWidth == desired.previewBufferWidth &&
+            current.previewBufferHeight == desired.previewBufferHeight
+        if (!sameSurfaceRoute) return ElectronicMirrorTransition.REBUILD_WINDOW
 
-        return if (current.source == desired.source) {
-            ElectronicMirrorTransition.UPDATE_TRANSFORM
-        } else {
-            ElectronicMirrorTransition.SWITCH_SOURCE
+        if (current.helperSurfaceIndex != desired.helperSurfaceIndex) {
+            return ElectronicMirrorTransition.SWITCH_SOURCE
         }
+
+        if (current.geometry != desired.geometry) {
+            return ElectronicMirrorTransition.UPDATE_WINDOW
+        }
+
+        return ElectronicMirrorTransition.UPDATE_PROJECTION
     }
 }

@@ -145,7 +145,6 @@ internal data class KeyShortcutEditorState(
     val actionType: KeyShortcutActionType = KeyShortcutActionType.PlaySound,
     val soundPath: String = "",
     val soundName: String = "",
-    val automationButtonId: Int = 1,
     val enabled: Boolean = true,
 )
 
@@ -157,7 +156,6 @@ internal fun KeyShortcutBinding.toEditorState(): KeyShortcutEditorState =
         actionType = actionType,
         soundPath = soundPath,
         soundName = soundName,
-        automationButtonId = automationButtonId,
         enabled = enabled,
     )
 
@@ -169,7 +167,6 @@ internal fun KeyShortcutEditorState.toBinding(): KeyShortcutBinding =
         actionType = actionType,
         soundPath = soundPath,
         soundName = soundName,
-        automationButtonId = automationButtonId,
         enabled = enabled,
     )
 
@@ -255,7 +252,7 @@ private fun KeyShortcutRow(
                     KeyShortcutActionType.PlaySound -> "按键播放音效"
                     KeyShortcutActionType.RealtimeHailing -> "按键实时喊话"
                     KeyShortcutActionType.Xiaozhi -> "按键小智对话"
-                    KeyShortcutActionType.Automation -> "按键智能联动"
+                    KeyShortcutActionType.StreamingRearMirror -> "按键流媒体后视镜"
                 },
                 color = TextPrimary,
                 fontSize = 13.sp,
@@ -271,8 +268,6 @@ private fun KeyShortcutRow(
                     if (binding.actionType == KeyShortcutActionType.PlaySound) {
                         append(" · ")
                         append(binding.soundName.ifBlank { "未选择音效" })
-                    } else if (binding.actionType == KeyShortcutActionType.Automation) {
-                        append(" · 联动按钮 ${binding.automationButtonId}")
                     }
                 },
                 color = TextSecondary,
@@ -332,9 +327,13 @@ internal fun KeyShortcutEditorDialog(
                         onClick = { onEditorChanged(editor.copy(actionType = KeyShortcutActionType.Xiaozhi)) },
                     )
                     KeyShortcutChoiceChip(
-                        label = "智能联动",
-                        selected = editor.actionType == KeyShortcutActionType.Automation,
-                        onClick = { onEditorChanged(editor.copy(actionType = KeyShortcutActionType.Automation)) },
+                        label = "流媒体后视镜",
+                        selected = editor.actionType == KeyShortcutActionType.StreamingRearMirror,
+                        onClick = {
+                            onEditorChanged(
+                                editor.copy(actionType = KeyShortcutActionType.StreamingRearMirror),
+                            )
+                        },
                     )
                 }
 
@@ -400,19 +399,6 @@ internal fun KeyShortcutEditorDialog(
                                     },
                                 )
                             }
-                        }
-                    }
-                }
-
-                if (editor.actionType == KeyShortcutActionType.Automation) {
-                    Text("联动按钮", color = TextSecondary, fontSize = 12.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        (1..4).forEach { slot ->
-                            KeyShortcutChoiceChip(
-                                label = slot.toString(),
-                                selected = editor.automationButtonId == slot,
-                                onClick = { onEditorChanged(editor.copy(automationButtonId = slot)) },
-                            )
                         }
                     }
                 }

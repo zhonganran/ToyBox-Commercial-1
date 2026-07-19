@@ -1,60 +1,55 @@
 package com.byd.wjx.electronicmirror
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class ElectronicMirrorCalibrationTest {
+class ElectronicMirrorProjectionSpecTest {
     @Test
-    fun `default calibration is a complete identity rectangle`() {
-        val calibration = ElectronicMirrorCalibration.DEFAULT.sanitized()
+    fun `default projections match AutoTark production values`() {
+        val left = ElectronicMirrorProjectionSpec.DEFAULT_LEFT
+        val right = ElectronicMirrorProjectionSpec.DEFAULT_RIGHT
+        val rear = ElectronicMirrorProjectionSpec.DEFAULT_REAR
 
-        assertEquals(
-            listOf(
-                ElectronicMirrorCalibrationPoint(0, 0),
-                ElectronicMirrorCalibrationPoint(1000, 0),
-                ElectronicMirrorCalibrationPoint(1000, 1000),
-                ElectronicMirrorCalibrationPoint(0, 1000),
-            ),
-            calibration.points,
-        )
-        assertEquals(0, calibration.yawDegrees)
-        assertEquals(0, calibration.rollDegrees)
-        assertEquals(0, calibration.pitchDegrees)
+        assertEquals(-0.12f, left.horizontal, 0.001f)
+        assertEquals(0.12f, right.horizontal, 0.001f)
+        assertEquals(0.1f, left.heightOffset, 0.001f)
+        assertEquals(1.35f, left.viewScale, 0.001f)
+        assertEquals(0.12f, rear.heightOffset, 0.001f)
+        assertEquals(1.5f, rear.viewScale, 0.001f)
     }
 
     @Test
-    fun `invalid points and angles are constrained to a non-folding quadrilateral`() {
-        val safe = ElectronicMirrorCalibration(
-            topLeft = ElectronicMirrorCalibrationPoint(-100, 990),
-            topRight = ElectronicMirrorCalibrationPoint(10, 950),
-            bottomRight = ElectronicMirrorCalibrationPoint(20, -10),
-            bottomLeft = ElectronicMirrorCalibrationPoint(1500, 100),
-            yawDegrees = 80,
-            rollDegrees = -80,
-            pitchDegrees = 30,
+    fun `projection values are clamped to AutoTark transform limits`() {
+        val safe = ElectronicMirrorProjectionSpec(
+            horizontalPermille = 900,
+            heightOffsetPermille = -900,
+            viewScalePermille = 3000,
         ).sanitized()
 
-        assertEquals(safe.topLeft.xPermille, safe.bottomLeft.xPermille)
-        assertEquals(safe.topRight.xPermille, safe.bottomRight.xPermille)
-        assertTrue(safe.topRight.xPermille - safe.topLeft.xPermille >= ElectronicMirrorCalibration.MIN_POINT_GAP)
-        assertTrue(safe.bottomLeft.yPermille - safe.topLeft.yPermille >= ElectronicMirrorCalibration.MIN_POINT_GAP)
-        assertTrue(safe.bottomRight.yPermille - safe.topRight.yPermille >= ElectronicMirrorCalibration.MIN_POINT_GAP)
-        assertEquals(15, safe.yawDegrees)
-        assertEquals(-15, safe.rollDegrees)
-        assertEquals(15, safe.pitchDegrees)
+        assertEquals(ElectronicMirrorProjectionSpec.MAX_HORIZONTAL, safe.horizontalPermille)
+        assertEquals(ElectronicMirrorProjectionSpec.MIN_HEIGHT_OFFSET, safe.heightOffsetPermille)
+        assertEquals(ElectronicMirrorProjectionSpec.MAX_VIEW_SCALE, safe.viewScalePermille)
     }
 
     @Test
-    fun `dragging one corner keeps the matching side x linked`() {
-        val changed = ElectronicMirrorCalibration.DEFAULT.withPoint(
-            index = 0,
-            point = ElectronicMirrorCalibrationPoint(240, 180),
-        )
+    fun `left and right projection cannot cross into the opposite direction`() {
+        val left = ElectronicMirrorProjectionSpec(horizontalPermille = 300)
+            .sanitizedFor(ElectronicMirrorViewpoint.LEFT)
+        val right = ElectronicMirrorProjectionSpec(horizontalPermille = -300)
+            .sanitizedFor(ElectronicMirrorViewpoint.RIGHT)
 
-        assertEquals(240, changed.topLeft.xPermille)
-        assertEquals(240, changed.bottomLeft.xPermille)
-        assertEquals(180, changed.topLeft.yPermille)
-        assertEquals(1000, changed.bottomLeft.yPermille)
+        assertEquals(0, left.horizontalPermille)
+        assertEquals(0, right.horizontalPermille)
+    }
+
+    @Test
+    fun `real vehicle panorama profile scales 7680 by 1300 source to 3000 by 508 buffer`() {
+        val profile = ElectronicMirrorSurfaceProfile.panorama(surfaceIndex = 0)
+
+        assertEquals("pano_h", profile.cameraTag)
+        assertEquals(0, profile.surfaceIndex)
+        assertEquals(4, profile.tileCount)
+        assertEquals(3000, profile.bufferWidth)
+        assertEquals(508, profile.bufferHeight)
     }
 }

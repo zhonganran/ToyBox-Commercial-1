@@ -1,14 +1,9 @@
 package com.byd.wjx.ui.electronicmirror
 
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -27,26 +22,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.byd.wjx.electronicmirror.ElectronicMirrorCalibration
-import com.byd.wjx.electronicmirror.ElectronicMirrorCalibrationPoint
 import com.byd.wjx.electronicmirror.ElectronicMirrorConfig
+import com.byd.wjx.electronicmirror.ElectronicMirrorProjectionSpec
 import com.byd.wjx.electronicmirror.ElectronicMirrorViewpoint
 import com.byd.wjx.ui.theme.AccentGreen
 import com.byd.wjx.ui.theme.CardBorder
@@ -57,20 +41,20 @@ import com.byd.wjx.ui.theme.TextSecondary
 import kotlin.math.roundToInt
 
 @Composable
-internal fun CalibrationEditor(
+internal fun ProjectionEditor(
     config: ElectronicMirrorConfig,
     onUpdate: (
         ElectronicMirrorViewpoint,
-        (ElectronicMirrorCalibration) -> ElectronicMirrorCalibration,
+        (ElectronicMirrorProjectionSpec) -> ElectronicMirrorProjectionSpec,
     ) -> Unit,
     onCommit: () -> Unit,
     onReset: (ElectronicMirrorViewpoint) -> Unit,
     onPreview: (ElectronicMirrorViewpoint) -> Unit,
 ) {
-    var viewpointName by rememberSaveable { mutableStateOf(ElectronicMirrorViewpoint.LEFT.name) }
+    var viewpointName by rememberSaveable { mutableStateOf(ElectronicMirrorViewpoint.REAR.name) }
     val viewpoint = ElectronicMirrorViewpoint.entries.firstOrNull { it.name == viewpointName }
-        ?: ElectronicMirrorViewpoint.LEFT
-    val calibration = config.calibrationFor(viewpoint)
+        ?: ElectronicMirrorViewpoint.REAR
+    val projection = config.projectionFor(viewpoint)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -81,26 +65,26 @@ internal fun CalibrationEditor(
         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("全景画面微调", color = TextPrimary, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("画面微调", color = TextPrimary, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
                     Text(
-                        "拖动四个红点截取需要的后方区域；拖动或角度调节松手后自动保存并应用",
+                        "默认按 AutoTark 正式值：左 -0.12、右 +0.12；可继续微调后向范围",
                         color = TextMuted,
                         fontSize = 12.sp,
                     )
                 }
-                Text("GPU 透视 · 零帧拷贝", color = AccentGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("全景母流裁切 · 零帧拷贝", color = AccentGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                CalibrationViewpointChip(
+                ProjectionViewpointChip(
                     label = "左后方",
                     selected = viewpoint == ElectronicMirrorViewpoint.LEFT,
                 ) { viewpointName = ElectronicMirrorViewpoint.LEFT.name }
-                CalibrationViewpointChip(
+                ProjectionViewpointChip(
                     label = "右后方",
                     selected = viewpoint == ElectronicMirrorViewpoint.RIGHT,
                 ) { viewpointName = ElectronicMirrorViewpoint.RIGHT.name }
-                CalibrationViewpointChip(
+                ProjectionViewpointChip(
                     label = "正后方",
                     selected = viewpoint == ElectronicMirrorViewpoint.REAR,
                 ) { viewpointName = ElectronicMirrorViewpoint.REAR.name }
@@ -109,173 +93,102 @@ internal fun CalibrationEditor(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(24.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = Alignment.Top,
             ) {
-                CalibrationQuadrilateral(
-                    viewpoint = viewpoint,
-                    calibration = calibration,
-                    onChange = { changed -> onUpdate(viewpoint) { changed } },
+                ProjectionSlider(
+                    label = "左右视角",
+                    value = projection.horizontalPermille,
+                    range = when (viewpoint) {
+                        ElectronicMirrorViewpoint.LEFT ->
+                            ElectronicMirrorProjectionSpec.MIN_SIDE_HORIZONTAL..0
+                        ElectronicMirrorViewpoint.RIGHT ->
+                            0..ElectronicMirrorProjectionSpec.MAX_SIDE_HORIZONTAL
+                        ElectronicMirrorViewpoint.REAR ->
+                            ElectronicMirrorProjectionSpec.MIN_REAR_HORIZONTAL..
+                                ElectronicMirrorProjectionSpec.MAX_REAR_HORIZONTAL
+                    },
+                    displayValue = ::signedPercent,
+                    onChange = { value ->
+                        onUpdate(viewpoint) { it.copy(horizontalPermille = value).sanitized() }
+                    },
                     onCommit = onCommit,
-                    modifier = Modifier
-                        .weight(1.15f)
-                        .aspectRatio(16f / 9f),
-                )
-
-                Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                )
+                ProjectionSlider(
+                    label = "画面高度",
+                    value = projection.heightOffsetPermille,
+                    range = if (viewpoint == ElectronicMirrorViewpoint.REAR) {
+                        ElectronicMirrorProjectionSpec.MIN_REAR_HEIGHT_OFFSET..
+                            ElectronicMirrorProjectionSpec.MAX_REAR_HEIGHT_OFFSET
+                    } else {
+                        ElectronicMirrorProjectionSpec.MIN_SIDE_HEIGHT_OFFSET..
+                            ElectronicMirrorProjectionSpec.MAX_SIDE_HEIGHT_OFFSET
+                    },
+                    displayValue = ::signedPercent,
+                    onChange = { value ->
+                        onUpdate(viewpoint) { it.copy(heightOffsetPermille = value).sanitized() }
+                    },
+                    onCommit = onCommit,
+                    modifier = Modifier.weight(1f),
+                )
+                ProjectionSlider(
+                    label = "画面缩放",
+                    value = projection.viewScalePermille,
+                    range = if (viewpoint == ElectronicMirrorViewpoint.REAR) {
+                        ElectronicMirrorProjectionSpec.MIN_REAR_VIEW_SCALE..
+                            ElectronicMirrorProjectionSpec.MAX_REAR_VIEW_SCALE
+                    } else {
+                        ElectronicMirrorProjectionSpec.MIN_SIDE_VIEW_SCALE..
+                            ElectronicMirrorProjectionSpec.MAX_SIDE_VIEW_SCALE
+                    },
+                    displayValue = { "${it / 10f}%" },
+                    onChange = { value ->
+                        onUpdate(viewpoint) { it.copy(viewScalePermille = value).sanitized() }
+                    },
+                    onCommit = onCommit,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Button(
+                    onClick = { onReset(viewpoint) },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CardSurface,
+                        contentColor = TextPrimary,
+                    ),
+                    shape = RoundedCornerShape(14.dp),
                 ) {
-                    CalibrationAngleSlider(
-                        label = "偏转角",
-                        value = calibration.yawDegrees,
-                        onChange = { value -> onUpdate(viewpoint) { it.copy(yawDegrees = value).sanitized() } },
-                        onCommit = onCommit,
-                    )
-                    CalibrationAngleSlider(
-                        label = "翻滚角",
-                        value = calibration.rollDegrees,
-                        onChange = { value -> onUpdate(viewpoint) { it.copy(rollDegrees = value).sanitized() } },
-                        onCommit = onCommit,
-                    )
-                    CalibrationAngleSlider(
-                        label = "俯仰角",
-                        value = calibration.pitchDegrees,
-                        onChange = { value -> onUpdate(viewpoint) { it.copy(pitchDegrees = value).sanitized() } },
-                        onCommit = onCommit,
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Button(
-                            onClick = { onReset(viewpoint) },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = CardSurface,
-                                contentColor = TextPrimary,
-                            ),
-                            shape = RoundedCornerShape(14.dp),
-                        ) {
-                            Icon(Icons.Outlined.RestartAlt, contentDescription = null)
-                            Spacer(Modifier.width(6.dp))
-                            Text("重置", fontWeight = FontWeight.Bold)
-                        }
-                        PreviewButton("预览此视角", viewpoint, onPreview)
-                    }
+                    Icon(Icons.Outlined.RestartAlt, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("重置当前视角", fontWeight = FontWeight.Bold)
                 }
+                PreviewButton("预览当前视角", viewpoint, onPreview)
+                Text(
+                    "滑块松手即保存并立即应用",
+                    color = TextSecondary,
+                    fontSize = 12.sp,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun CalibrationQuadrilateral(
-    viewpoint: ElectronicMirrorViewpoint,
-    calibration: ElectronicMirrorCalibration,
-    onChange: (ElectronicMirrorCalibration) -> Unit,
+private fun ProjectionSlider(
+    label: String,
+    value: Int,
+    range: IntRange,
+    displayValue: (Int) -> String,
+    onChange: (Int) -> Unit,
     onCommit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val density = LocalDensity.current
-    val paddingPx = with(density) { 20.dp.toPx() }
-    val touchRadiusPx = with(density) { 42.dp.toPx() }
-    val latestCalibration = rememberUpdatedState(calibration)
-    var activePoint by remember(viewpoint) { mutableStateOf<Int?>(null) }
-    val pointColor = Color(0xFFFF5A64)
-
-    Canvas(
-        modifier = modifier
-            .clip(RoundedCornerShape(18.dp))
-            .background(
-                Brush.linearGradient(
-                    listOf(Color(0xFF07131A), Color(0xFF12303A), Color(0xFF09161D)),
-                ),
-            )
-            .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(18.dp))
-            .pointerInput(viewpoint) {
-                fun pointOffset(point: ElectronicMirrorCalibrationPoint): Offset {
-                    val usableWidth = (size.width - paddingPx * 2f).coerceAtLeast(1f)
-                    val usableHeight = (size.height - paddingPx * 2f).coerceAtLeast(1f)
-                    return Offset(
-                        x = paddingPx + usableWidth * point.xPermille / 1000f,
-                        y = paddingPx + usableHeight * point.yPermille / 1000f,
-                    )
-                }
-
-                detectDragGestures(
-                    onDragStart = { position ->
-                        activePoint = latestCalibration.value.points
-                            .mapIndexed { index, point -> index to (pointOffset(point) - position).getDistance() }
-                            .minByOrNull { it.second }
-                            ?.takeIf { it.second <= touchRadiusPx }
-                            ?.first
-                    },
-                    onDragCancel = {
-                        if (activePoint != null) onCommit()
-                        activePoint = null
-                    },
-                    onDragEnd = {
-                        if (activePoint != null) onCommit()
-                        activePoint = null
-                    },
-                    onDrag = { change, _ ->
-                        val index = activePoint ?: return@detectDragGestures
-                        val usableWidth = (size.width - paddingPx * 2f).coerceAtLeast(1f)
-                        val usableHeight = (size.height - paddingPx * 2f).coerceAtLeast(1f)
-                        val point = ElectronicMirrorCalibrationPoint(
-                            xPermille = (((change.position.x - paddingPx) / usableWidth) * 1000f).roundToInt(),
-                            yPermille = (((change.position.y - paddingPx) / usableHeight) * 1000f).roundToInt(),
-                        )
-                        onChange(latestCalibration.value.withPoint(index, point))
-                        change.consume()
-                    },
-                )
-            },
-    ) {
-        val usableWidth = (size.width - paddingPx * 2f).coerceAtLeast(1f)
-        val usableHeight = (size.height - paddingPx * 2f).coerceAtLeast(1f)
-        val offsets = calibration.points.map { point ->
-            Offset(
-                x = paddingPx + usableWidth * point.xPermille / 1000f,
-                y = paddingPx + usableHeight * point.yPermille / 1000f,
-            )
-        }
-
-        for (step in 1..3) {
-            val x = paddingPx + usableWidth * step / 4f
-            val y = paddingPx + usableHeight * step / 4f
-            drawLine(Color.White.copy(alpha = 0.08f), Offset(x, paddingPx), Offset(x, size.height - paddingPx))
-            drawLine(Color.White.copy(alpha = 0.08f), Offset(paddingPx, y), Offset(size.width - paddingPx, y))
-        }
-
-        val path = Path().apply {
-            moveTo(offsets[0].x, offsets[0].y)
-            lineTo(offsets[1].x, offsets[1].y)
-            lineTo(offsets[2].x, offsets[2].y)
-            lineTo(offsets[3].x, offsets[3].y)
-            close()
-        }
-        drawPath(path, AccentGreen.copy(alpha = 0.13f))
-        drawPath(path, AccentGreen, style = Stroke(width = 3.dp.toPx()))
-        offsets.forEachIndexed { index, offset ->
-            drawCircle(Color.White.copy(alpha = 0.9f), radius = 10.dp.toPx(), center = offset)
-            drawCircle(
-                if (activePoint == index) Color.White else pointColor,
-                radius = if (activePoint == index) 7.dp.toPx() else 6.dp.toPx(),
-                center = offset,
-            )
-        }
-    }
-}
-
-@Composable
-private fun CalibrationAngleSlider(
-    label: String,
-    value: Int,
-    onChange: (Int) -> Unit,
-    onCommit: () -> Unit,
-) {
-    Column {
+    Column(modifier = modifier) {
         Row(modifier = Modifier.fillMaxWidth()) {
             Text(label, color = TextSecondary, fontSize = 13.sp, modifier = Modifier.weight(1f))
             Text(
-                if (value > 0) "+$value°" else "$value°",
+                displayValue(value),
                 color = TextPrimary,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
@@ -285,16 +198,13 @@ private fun CalibrationAngleSlider(
             value = value.toFloat(),
             onValueChange = { onChange(it.roundToInt()) },
             onValueChangeFinished = onCommit,
-            valueRange = ElectronicMirrorCalibration.MIN_ANGLE_DEGREES.toFloat()..
-                ElectronicMirrorCalibration.MAX_ANGLE_DEGREES.toFloat(),
-            steps = ElectronicMirrorCalibration.MAX_ANGLE_DEGREES -
-                ElectronicMirrorCalibration.MIN_ANGLE_DEGREES - 1,
+            valueRange = range.first.toFloat()..range.last.toFloat(),
         )
     }
 }
 
 @Composable
-private fun CalibrationViewpointChip(
+private fun ProjectionViewpointChip(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
@@ -306,7 +216,7 @@ private fun CalibrationViewpointChip(
         colors = FilterChipDefaults.filterChipColors(
             selectedContainerColor = AccentGreen.copy(alpha = 0.18f),
             selectedLabelColor = TextPrimary,
-            containerColor = Color.Transparent,
+            containerColor = CardSurface.copy(alpha = 0.16f),
             labelColor = TextSecondary,
         ),
         border = FilterChipDefaults.filterChipBorder(
@@ -316,4 +226,9 @@ private fun CalibrationViewpointChip(
             selectedBorderColor = AccentGreen.copy(alpha = 0.6f),
         ),
     )
+}
+
+private fun signedPercent(value: Int): String {
+    val percent = value / 10f
+    return if (value > 0) "+$percent%" else "$percent%"
 }

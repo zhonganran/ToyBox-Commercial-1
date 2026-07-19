@@ -23,6 +23,15 @@ data class HelperShellResult(
     val ok: Boolean get() = status == 0 && exitCode == 0
 }
 
+data class ElectronicMirrorCameraRequest(
+    val cameraTag: String,
+    val surfaceIndex: Int,
+    val tileCount: Int,
+    val bufferWidth: Int,
+    val bufferHeight: Int,
+    val fps: Int,
+)
+
 /**
  * Client for the in-vehicle helper daemon registered as the `wjx_helper`
  * binder service (ServiceManager.getService + IBinder.transact).
@@ -89,9 +98,12 @@ interface HelperClient {
     suspend fun execShellResult(command: String): HelperShellResult? = null
     /** Generic helper-side shell execution. Keep call sites narrow and logged. */
     suspend fun execShell(command: String): String? = null
-    /** Starts AVMCamera preview directly into [surface]. Viewpoints use the validated 2000-series map. */
-    suspend fun startElectronicMirror(surface: Surface, viewpoint: Int, fps: Int): Boolean = false
-    suspend fun switchElectronicMirrorView(viewpoint: Int): Boolean = false
+    /** Starts one AVMCamera producer Surface with camera identity and output index kept separate. */
+    suspend fun startElectronicMirror(
+        surface: Surface,
+        request: ElectronicMirrorCameraRequest,
+    ): Boolean = false
+    suspend fun switchElectronicMirrorSurface(surfaceIndex: Int): Boolean = false
     suspend fun stopElectronicMirror(): Boolean = false
 }
 
@@ -282,16 +294,23 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
     override suspend fun execShell(command: String): String? =
         execShellResult(command)?.takeIf { it.status == 0 }?.output
 
-    override suspend fun startElectronicMirror(surface: Surface, viewpoint: Int, fps: Int): Boolean =
+    override suspend fun startElectronicMirror(
+        surface: Surface,
+        request: ElectronicMirrorCameraRequest,
+    ): Boolean =
         statusOk(HelperBinderProtocol.TX_CAMERA_START, timeoutMs = FORCE_TIMEOUT_MS) { data ->
-            data.writeInt(viewpoint)
-            data.writeInt(fps)
+            data.writeString(request.cameraTag)
+            data.writeInt(request.surfaceIndex)
+            data.writeInt(request.tileCount)
+            data.writeInt(request.bufferWidth)
+            data.writeInt(request.bufferHeight)
+            data.writeInt(request.fps)
             surface.writeToParcel(data, 0)
         }
 
-    override suspend fun switchElectronicMirrorView(viewpoint: Int): Boolean =
+    override suspend fun switchElectronicMirrorSurface(surfaceIndex: Int): Boolean =
         statusOk(HelperBinderProtocol.TX_CAMERA_SWITCH_VIEW, timeoutMs = FORCE_TIMEOUT_MS) { data ->
-            data.writeInt(viewpoint)
+            data.writeInt(surfaceIndex)
         }
 
     override suspend fun stopElectronicMirror(): Boolean =

@@ -1,13 +1,13 @@
 package com.byd.wjx.ui.electronicmirror
 
 import androidx.lifecycle.ViewModel
-import com.byd.wjx.electronicmirror.ElectronicMirrorCalibration
 import com.byd.wjx.electronicmirror.ElectronicMirrorCameraSource
 import com.byd.wjx.electronicmirror.ElectronicMirrorConfig
 import com.byd.wjx.electronicmirror.ElectronicMirrorCoordinator
 import com.byd.wjx.electronicmirror.ElectronicMirrorDisplayTarget
 import com.byd.wjx.electronicmirror.ElectronicMirrorGeometry
 import com.byd.wjx.electronicmirror.ElectronicMirrorPreferences
+import com.byd.wjx.electronicmirror.ElectronicMirrorProjectionSpec
 import com.byd.wjx.electronicmirror.ElectronicMirrorViewpoint
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -50,24 +50,47 @@ class ElectronicMirrorViewModel @Inject constructor(
         persistAndApply()
     }
 
-    fun updateCalibration(
-        viewpoint: ElectronicMirrorViewpoint,
-        transform: (ElectronicMirrorCalibration) -> ElectronicMirrorCalibration,
+    fun updateStreamingRearGeometry(
+        transform: (ElectronicMirrorGeometry) -> ElectronicMirrorGeometry,
     ) {
         updateDraft { config ->
-            config.withCalibration(
+            when (config.streamingRearDisplayTarget) {
+                ElectronicMirrorDisplayTarget.CLUSTER -> config.copy(
+                    streamingRearClusterGeometry = transform(config.streamingRearClusterGeometry)
+                        .sanitized(),
+                )
+                ElectronicMirrorDisplayTarget.CENTER -> config.copy(
+                    streamingRearCenterGeometry = transform(config.streamingRearCenterGeometry)
+                        .sanitized(),
+                )
+            }
+        }
+    }
+
+    fun commitStreamingRearGeometry() {
+        persistAndApply()
+    }
+
+    fun updateProjection(
+        viewpoint: ElectronicMirrorViewpoint,
+        transform: (ElectronicMirrorProjectionSpec) -> ElectronicMirrorProjectionSpec,
+    ) {
+        updateDraft { config ->
+            config.withProjection(
                 viewpoint,
-                transform(config.calibrationFor(viewpoint)).sanitized(),
+                transform(config.projectionFor(viewpoint)).sanitized(),
             )
         }
     }
 
-    fun commitCalibration() {
+    fun commitProjection() {
         persistAndApply()
     }
 
-    fun resetCalibration(viewpoint: ElectronicMirrorViewpoint) {
-        updateDraft { config -> config.withCalibration(viewpoint, ElectronicMirrorCalibration.DEFAULT) }
+    fun resetProjection(viewpoint: ElectronicMirrorViewpoint) {
+        updateDraft { config ->
+            config.withProjection(viewpoint, ElectronicMirrorProjectionSpec.defaultFor(viewpoint))
+        }
         persistAndApply()
     }
 

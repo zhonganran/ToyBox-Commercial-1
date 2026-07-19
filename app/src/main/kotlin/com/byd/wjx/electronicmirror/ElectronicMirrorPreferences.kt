@@ -14,7 +14,10 @@ class ElectronicMirrorPreferences @Inject constructor(
     fun snapshot(): ElectronicMirrorConfig {
         val target = prefs.getString(KEY_DISPLAY_TARGET, null)
             ?.let { raw -> ElectronicMirrorDisplayTarget.entries.firstOrNull { it.name == raw } }
-            ?: ElectronicMirrorDisplayTarget.CLUSTER
+            ?: ElectronicMirrorDisplayTarget.CENTER
+        val streamingTarget = prefs.getString(KEY_STREAMING_REAR_DISPLAY_TARGET, null)
+            ?.let { raw -> ElectronicMirrorDisplayTarget.entries.firstOrNull { it.name == raw } }
+            ?: ElectronicMirrorDisplayTarget.CENTER
         fun readSource(key: String, default: ElectronicMirrorCameraSource): ElectronicMirrorCameraSource =
             prefs.getString(key, null)
                 ?.let { raw -> ElectronicMirrorCameraSource.entries.firstOrNull { it.name == raw } }
@@ -28,16 +31,41 @@ class ElectronicMirrorPreferences @Inject constructor(
             fps = prefs.getInt(KEY_FPS, ElectronicMirrorConfig.DEFAULT_FPS),
             clusterGeometry = readGeometry(PREFIX_CLUSTER, ElectronicMirrorGeometry.DEFAULT_CLUSTER),
             centerGeometry = readGeometry(PREFIX_CENTER, ElectronicMirrorGeometry.DEFAULT_CENTER),
-            leftCalibration = readCalibration(PREFIX_CALIBRATION_LEFT),
-            rightCalibration = readCalibration(PREFIX_CALIBRATION_RIGHT),
-            rearCalibration = readCalibration(PREFIX_CALIBRATION_REAR),
+            leftProjection = readProjection(
+                PREFIX_PROJECTION_LEFT,
+                ElectronicMirrorProjectionSpec.DEFAULT_LEFT,
+            ),
+            rightProjection = readProjection(
+                PREFIX_PROJECTION_RIGHT,
+                ElectronicMirrorProjectionSpec.DEFAULT_RIGHT,
+            ),
+            rearProjection = readProjection(
+                PREFIX_PROJECTION_REAR,
+                ElectronicMirrorProjectionSpec.DEFAULT_REAR,
+            ),
             leftSource = readSource(KEY_LEFT_SOURCE, ElectronicMirrorCameraSource.SOURCE_A),
             rightSource = readSource(KEY_RIGHT_SOURCE, ElectronicMirrorCameraSource.SOURCE_B),
             rearSource = readSource(KEY_REAR_SOURCE, ElectronicMirrorCameraSource.SOURCE_C),
+            streamingRearEnabled = prefs.getBoolean(KEY_STREAMING_REAR_ENABLED, false),
+            streamingRearVisible = prefs.getBoolean(KEY_STREAMING_REAR_VISIBLE, true),
+            streamingRearDisplayTarget = streamingTarget,
+            streamingRearClusterGeometry = readGeometry(
+                PREFIX_STREAMING_REAR_CLUSTER,
+                ElectronicMirrorGeometry.DEFAULT_STREAMING_CLUSTER,
+            ),
+            streamingRearCenterGeometry = readGeometry(
+                PREFIX_STREAMING_REAR_CENTER,
+                ElectronicMirrorGeometry.DEFAULT_STREAMING_CENTER,
+            ),
+            panoramaSurfaceIndex = prefs.getInt(
+                KEY_PANORAMA_SURFACE_INDEX,
+                ElectronicMirrorSurfaceProfile.DEFAULT_SURFACE_INDEX,
+            ),
         ).sanitized()
     }
 
-    fun isEnabled(): Boolean = prefs.getBoolean(KEY_ENABLED, false)
+    fun isAnyEnabled(): Boolean =
+        prefs.getBoolean(KEY_ENABLED, false) || prefs.getBoolean(KEY_STREAMING_REAR_ENABLED, false)
 
     fun save(config: ElectronicMirrorConfig) {
         val safe = config.sanitized()
@@ -50,12 +78,18 @@ class ElectronicMirrorPreferences @Inject constructor(
             .putInt(KEY_FPS, safe.fps)
             .putGeometry(PREFIX_CLUSTER, safe.clusterGeometry)
             .putGeometry(PREFIX_CENTER, safe.centerGeometry)
-            .putCalibration(PREFIX_CALIBRATION_LEFT, safe.leftCalibration)
-            .putCalibration(PREFIX_CALIBRATION_RIGHT, safe.rightCalibration)
-            .putCalibration(PREFIX_CALIBRATION_REAR, safe.rearCalibration)
+            .putProjection(PREFIX_PROJECTION_LEFT, safe.leftProjection)
+            .putProjection(PREFIX_PROJECTION_RIGHT, safe.rightProjection)
+            .putProjection(PREFIX_PROJECTION_REAR, safe.rearProjection)
             .putString(KEY_LEFT_SOURCE, safe.leftSource.name)
             .putString(KEY_RIGHT_SOURCE, safe.rightSource.name)
             .putString(KEY_REAR_SOURCE, safe.rearSource.name)
+            .putBoolean(KEY_STREAMING_REAR_ENABLED, safe.streamingRearEnabled)
+            .putBoolean(KEY_STREAMING_REAR_VISIBLE, safe.streamingRearVisible)
+            .putString(KEY_STREAMING_REAR_DISPLAY_TARGET, safe.streamingRearDisplayTarget.name)
+            .putGeometry(PREFIX_STREAMING_REAR_CLUSTER, safe.streamingRearClusterGeometry)
+            .putGeometry(PREFIX_STREAMING_REAR_CENTER, safe.streamingRearCenterGeometry)
+            .putInt(KEY_PANORAMA_SURFACE_INDEX, safe.panoramaSurfaceIndex)
             .apply()
     }
 
@@ -77,48 +111,27 @@ class ElectronicMirrorPreferences @Inject constructor(
         putInt("${prefix}_offset_y_pct", geometry.offsetYPct)
     }
 
-    private fun readCalibration(prefix: String): ElectronicMirrorCalibration {
-        val default = ElectronicMirrorCalibration.DEFAULT
-        return ElectronicMirrorCalibration(
-            topLeft = readCalibrationPoint(prefix, "top_left", default.topLeft),
-            topRight = readCalibrationPoint(prefix, "top_right", default.topRight),
-            bottomRight = readCalibrationPoint(prefix, "bottom_right", default.bottomRight),
-            bottomLeft = readCalibrationPoint(prefix, "bottom_left", default.bottomLeft),
-            yawDegrees = prefs.getInt("${prefix}_yaw_degrees", default.yawDegrees),
-            rollDegrees = prefs.getInt("${prefix}_roll_degrees", default.rollDegrees),
-            pitchDegrees = prefs.getInt("${prefix}_pitch_degrees", default.pitchDegrees),
+    private fun readProjection(
+        prefix: String,
+        default: ElectronicMirrorProjectionSpec,
+    ): ElectronicMirrorProjectionSpec {
+        return ElectronicMirrorProjectionSpec(
+            horizontalPermille = prefs.getInt("${prefix}_horizontal", default.horizontalPermille),
+            heightOffsetPermille = prefs.getInt(
+                "${prefix}_height_offset",
+                default.heightOffsetPermille,
+            ),
+            viewScalePermille = prefs.getInt("${prefix}_view_scale", default.viewScalePermille),
         ).sanitized()
     }
 
-    private fun readCalibrationPoint(
+    private fun android.content.SharedPreferences.Editor.putProjection(
         prefix: String,
-        name: String,
-        default: ElectronicMirrorCalibrationPoint,
-    ): ElectronicMirrorCalibrationPoint = ElectronicMirrorCalibrationPoint(
-        xPermille = prefs.getInt("${prefix}_${name}_x", default.xPermille),
-        yPermille = prefs.getInt("${prefix}_${name}_y", default.yPermille),
-    )
-
-    private fun android.content.SharedPreferences.Editor.putCalibration(
-        prefix: String,
-        calibration: ElectronicMirrorCalibration,
+        projection: ElectronicMirrorProjectionSpec,
     ): android.content.SharedPreferences.Editor = apply {
-        putCalibrationPoint(prefix, "top_left", calibration.topLeft)
-        putCalibrationPoint(prefix, "top_right", calibration.topRight)
-        putCalibrationPoint(prefix, "bottom_right", calibration.bottomRight)
-        putCalibrationPoint(prefix, "bottom_left", calibration.bottomLeft)
-        putInt("${prefix}_yaw_degrees", calibration.yawDegrees)
-        putInt("${prefix}_roll_degrees", calibration.rollDegrees)
-        putInt("${prefix}_pitch_degrees", calibration.pitchDegrees)
-    }
-
-    private fun android.content.SharedPreferences.Editor.putCalibrationPoint(
-        prefix: String,
-        name: String,
-        point: ElectronicMirrorCalibrationPoint,
-    ) {
-        putInt("${prefix}_${name}_x", point.xPermille)
-        putInt("${prefix}_${name}_y", point.yPermille)
+        putInt("${prefix}_horizontal", projection.horizontalPermille)
+        putInt("${prefix}_height_offset", projection.heightOffsetPermille)
+        putInt("${prefix}_view_scale", projection.viewScalePermille)
     }
 
     companion object {
@@ -132,10 +145,16 @@ class ElectronicMirrorPreferences @Inject constructor(
         private const val KEY_LEFT_SOURCE = "left_source"
         private const val KEY_RIGHT_SOURCE = "right_source"
         private const val KEY_REAR_SOURCE = "rear_source"
+        private const val KEY_STREAMING_REAR_ENABLED = "streaming_rear_enabled"
+        private const val KEY_STREAMING_REAR_VISIBLE = "streaming_rear_visible"
+        private const val KEY_STREAMING_REAR_DISPLAY_TARGET = "streaming_rear_display_target"
+        private const val KEY_PANORAMA_SURFACE_INDEX = "panorama_surface_index"
         private const val PREFIX_CLUSTER = "cluster"
         private const val PREFIX_CENTER = "center"
-        private const val PREFIX_CALIBRATION_LEFT = "calibration_left"
-        private const val PREFIX_CALIBRATION_RIGHT = "calibration_right"
-        private const val PREFIX_CALIBRATION_REAR = "calibration_rear"
+        private const val PREFIX_STREAMING_REAR_CLUSTER = "streaming_rear_cluster"
+        private const val PREFIX_STREAMING_REAR_CENTER = "streaming_rear_center"
+        private const val PREFIX_PROJECTION_LEFT = "projection_left"
+        private const val PREFIX_PROJECTION_RIGHT = "projection_right"
+        private const val PREFIX_PROJECTION_REAR = "projection_rear"
     }
 }

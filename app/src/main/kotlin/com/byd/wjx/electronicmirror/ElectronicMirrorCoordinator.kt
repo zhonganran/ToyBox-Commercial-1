@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.SystemClock
 import android.provider.Settings
 import com.byd.wjx.data.remote.DiParsData
+import com.byd.wjx.data.vehicle.ElectronicMirrorCameraRequest
 import com.byd.wjx.data.vehicle.HelperBootstrap
 import com.byd.wjx.data.vehicle.HelperClient
 import com.byd.wjx.di.ApplicationScope
@@ -21,6 +22,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 
 @Singleton
 class ElectronicMirrorCoordinator @Inject constructor(
@@ -32,7 +34,7 @@ class ElectronicMirrorCoordinator @Inject constructor(
 ) {
     private val appContext = context.applicationContext
     private val mutex = Mutex()
-    private val overlayController = ElectronicMirrorOverlayController(appContext, ::onUnexpectedSurfaceLoss)
+    private val overlayController = ElectronicMirrorOverlayController(appContext, ::onUnexpectedOutputLoss)
 
     private val _active = MutableStateFlow(false)
     val active: StateFlow<Boolean> = _active.asStateFlow()
@@ -45,25 +47,25 @@ class ElectronicMirrorCoordinator @Inject constructor(
     @Volatile private var originalCameraActive = false
     @Volatile private var immediateAutoParkingActive = false
     private var manualPreview: ElectronicMirrorViewpoint? = null
-    private var activeScene: ActiveScene? = null
+    private val activeScenes = linkedMapOf<ElectronicMirrorReason, ActiveScene>()
+    private var frameHub: ElectronicMirrorFrameHub? = null
+    private var activeCameraRoute: CameraRoute? = null
+    private var cameraStarted = false
     private var retryJob: Job? = null
     private var frameWatchdogJob: Job? = null
-    private var retryScene: ElectronicMirrorScene? = null
+    private var retryScenes: List<ElectronicMirrorScene>? = null
     private var consecutiveFailures = 0
     private var currentConfig: ElectronicMirrorConfig = preferences.snapshot()
     private var overlayPermissionReady = false
+    private var lastCameraReleaseAtMs = Long.MIN_VALUE
 
     fun start(originalCameraState: StateFlow<Boolean>) {
         if (cameraStateJob?.isActive == true) return
         currentConfig = preferences.snapshot()
         cameraStateJob = applicationScope.launch {
             originalCameraState.collectLatest { active ->
-                // Publish before waiting for the mutex so an in-flight camera start can observe
-                // pre-emption and tear itself back down before becoming visible.
                 originalCameraActive = active
-                mutex.withLock {
-                    reconcileLocked()
-                }
+                mutex.withLock { reconcileLocked() }
             }
         }
     }
@@ -107,6 +109,14 @@ class ElectronicMirrorCoordinator @Inject constructor(
         }
     }
 
+    /** Steering-wheel shortcut: first press enables/shows it, following presses toggle visibility. */
+    fun toggleStreamingRearFromShortcut(): Boolean {
+        val next = preferences.snapshot().toggledStreamingRearFromShortcut()
+        preferences.save(next)
+        applyPreferences()
+        return next.streamingRearVisible
+    }
+
     fun stop() {
         cameraStateJob?.cancel()
         cameraStateJob = null
@@ -117,14 +127,54 @@ class ElectronicMirrorCoordinator @Inject constructor(
                 originalCameraActive = false
                 immediateAutoParkingActive = false
                 resetRetryLocked()
-                stopActiveLocked("服务停止")
+                stopSessionLocked("服务停止")
             }
         }
     }
 
     private suspend fun reconcileLocked() {
+        val desiredScenes = desiredScenesLocked()
+        if (desiredScenes.isEmpty()) {
+            resetRetryLocked()
+            val cameraOwnsDisplay = cameraPriorityActive()
+            if (frameHub != null || activeScenes.isNotEmpty()) {
+                stopSessionLocked(if (cameraOwnsDisplay) "原车影像优先" else "待机")
+            } else {
+                setInactiveStatus(if (cameraOwnsDisplay) "原车影像占用，电子后视镜让行" else "待机")
+            }
+            return
+        }
+
+        if (retryScenes != null && retryScenes != desiredScenes) resetRetryLocked()
+        if (retryScenes == desiredScenes) return
+
+        val desiredRoute = CameraRoute.from(desiredScenes.first())
+        if (desiredScenes.any { !desiredRoute.matches(it) }) {
+            stopSessionLocked("相机配置冲突")
+            scheduleRetryLocked(desiredScenes, "多画面相机配置不一致")
+            return
+        }
+
+        if (frameHub == null || !cameraStarted || activeCameraRoute != desiredRoute) {
+            if (frameHub != null || activeScenes.isNotEmpty()) {
+                stopSessionLocked("重建电子后视镜", publishStatus = false)
+            }
+            showSessionLocked(desiredScenes, desiredRoute)
+            return
+        }
+
+        if (!reconcileWindowsLocked(desiredScenes)) {
+            stopSessionLocked("画面窗口重建失败", publishStatus = false)
+            scheduleRetryLocked(desiredScenes, "无法创建全部电子后视镜窗口")
+            return
+        }
+        resetRetryLocked()
+        setActiveStatus(desiredScenes)
+    }
+
+    private fun desiredScenesLocked(): List<ElectronicMirrorScene> {
         val data = lastVehicleData
-        val desired = ElectronicMirrorSceneArbiter.resolve(
+        return ElectronicMirrorSceneArbiter.resolveAll(
             config = currentConfig,
             signals = ElectronicMirrorSignals(
                 turnSignalFlash = data?.turnSignalFlash,
@@ -134,67 +184,19 @@ class ElectronicMirrorCoordinator @Inject constructor(
             ),
             manualPreview = manualPreview,
         )
-        val current = activeScene
-        if (desired == null) {
-            resetRetryLocked()
-            val cameraOwnsDisplay = cameraPriorityActive()
-            if (current != null) stopActiveLocked(if (cameraOwnsDisplay) "原车影像优先" else "待机")
-            else setInactiveStatus(if (cameraOwnsDisplay) "原车影像占用，电子后视镜让行" else "待机")
-            return
-        }
-        if (retryScene != null && retryScene != desired) resetRetryLocked()
-        if (retryScene == desired) return
-
-        when (ElectronicMirrorTransitionPolicy.resolve(current?.scene, desired)) {
-            ElectronicMirrorTransition.NONE -> return
-            ElectronicMirrorTransition.UPDATE_TRANSFORM -> {
-                checkNotNull(current)
-                overlayController.updateCalibration(current.handle, desired.calibration)
-                overlayController.updateLabel(current.handle, desired)
-                activeScene = current.copy(scene = desired)
-                setActiveStatus(desired)
-                return
-            }
-            ElectronicMirrorTransition.SWITCH_SOURCE -> {
-                checkNotNull(current)
-                val frameBeforeSwitch = current.handle.frameCount.get()
-                val switched = helper.switchElectronicMirrorView(desired.source.helperValue)
-                val freshFrame = switched && awaitFrameAfter(
-                    current.handle,
-                    frameBeforeSwitch,
-                    VIEW_SWITCH_TIMEOUT_MS,
-                )
-                if (cameraPriorityActive()) {
-                    stopActiveLocked("原车影像优先")
-                    return
-                }
-                if (freshFrame) {
-                    overlayController.updateCalibration(current.handle, desired.calibration)
-                    overlayController.updateLabel(current.handle, desired)
-                    activeScene = current.copy(scene = desired)
-                    setActiveStatus(desired)
-                    return
-                }
-                WjxFileLogger.w(
-                    TAG,
-                    "view switch did not produce a fresh frame switched=$switched; rebuilding camera",
-                )
-            }
-            ElectronicMirrorTransition.REBUILD_WINDOW -> Unit
-        }
-
-        if (current != null) stopActiveLocked("切换画面")
-        showLocked(desired)
     }
 
-    private suspend fun showLocked(scene: ElectronicMirrorScene) {
+    private suspend fun showSessionLocked(
+        desiredScenes: List<ElectronicMirrorScene>,
+        route: CameraRoute,
+    ) {
         if (cameraPriorityActive()) {
             setInactiveStatus("原车影像占用，电子后视镜让行")
             return
         }
-        _status.value = ElectronicMirrorRuntimeStatus(message = "正在准备${targetName(scene.target)}画面…")
+        _status.value = ElectronicMirrorRuntimeStatus(message = "正在准备电子后视镜画面…")
         if (!bootstrap.ensureCurrent()) {
-            scheduleRetryLocked(scene, "Helper 未连接，无法打开摄像头")
+            scheduleRetryLocked(desiredScenes, "Helper 未连接，无法打开摄像头")
             return
         }
         if (cameraPriorityActive()) {
@@ -202,147 +204,206 @@ class ElectronicMirrorCoordinator @Inject constructor(
             return
         }
         if (!ensureOverlayPermission()) {
-            scheduleRetryLocked(scene, "悬浮窗权限未生效")
+            scheduleRetryLocked(desiredScenes, "悬浮窗权限未生效")
             return
         }
 
-        val handle = overlayController.show(scene)
-        if (handle == null) {
-            // PROJECT_MEDIA has no public read API. Allow one fresh grant attempt on the retry in
-            // case the cluster display was hidden by a revoked vendor app-op.
-            overlayPermissionReady = false
-            scheduleRetryLocked(scene, "无法创建${targetName(scene.target)}画面窗口")
-            return
-        }
+        awaitCameraReleaseWindowLocked()
         if (cameraPriorityActive()) {
-            overlayController.hide(handle)
             setInactiveStatus("原车影像占用，电子后视镜让行")
             return
         }
-        val surface = handle.surface
+
+        val hub = ElectronicMirrorFrameHub(
+            bufferWidth = route.bufferWidth,
+            bufferHeight = route.bufferHeight,
+            onRendererFailed = ::onFrameHubFailure,
+        )
+        frameHub = hub
+        activeCameraRoute = route
+
+        for (scene in desiredScenes) {
+            val handle = overlayController.show(scene, hub)
+            if (handle == null) {
+                overlayPermissionReady = false
+                stopSessionLocked("画面窗口创建失败", publishStatus = false)
+                scheduleRetryLocked(desiredScenes, "无法创建${targetName(scene.target)}画面窗口")
+                return
+            }
+            activeScenes[scene.reason] = ActiveScene(scene, handle)
+        }
+
+        val surface = withTimeoutOrNull(CAMERA_INPUT_SURFACE_TIMEOUT_MS) {
+            hub.inputReady.await()
+        }
         if (surface == null || !surface.isValid) {
-            overlayController.hide(handle)
-            scheduleRetryLocked(scene, "摄像头画面 Surface 已失效")
+            stopSessionLocked("相机输入 Surface 失效", publishStatus = false)
+            scheduleRetryLocked(desiredScenes, "相机输入 Surface 未准备好")
             return
         }
-        val started = helper.startElectronicMirror(surface, scene.source.helperValue, scene.fps)
+
+        val started = helper.startElectronicMirror(surface, route.request())
         if (!started) {
-            overlayController.hide(handle)
-            scheduleRetryLocked(scene, "APA 摄像头启动失败")
+            stopSessionLocked("APA 摄像头启动失败", publishStatus = false)
+            scheduleRetryLocked(desiredScenes, "APA 摄像头启动失败")
             return
         }
+        cameraStarted = true
         if (cameraPriorityActive()) {
-            helper.stopElectronicMirror()
-            overlayController.hide(handle)
-            setInactiveStatus("原车影像占用，电子后视镜让行")
+            stopSessionLocked("原车影像优先")
+            return
+        }
+        if (hub.inputSurface?.isValid != true) {
+            stopSessionLocked("摄像头启动后 Surface 已失效", publishStatus = false)
+            scheduleRetryLocked(desiredScenes, "摄像头启动后 Surface 已失效")
             return
         }
 
-        _status.value = ElectronicMirrorRuntimeStatus(message = "摄像头已启动，正在等待首帧…")
-        val firstFrameReceived = awaitFirstFrame(handle)
-        if (cameraPriorityActive()) {
-            helper.stopElectronicMirror()
-            overlayController.hide(handle)
-            setInactiveStatus("原车影像占用，电子后视镜让行")
-            return
-        }
-        if (!firstFrameReceived || handle.surface?.isValid != true) {
-            helper.stopElectronicMirror()
-            overlayController.hide(handle)
-            scheduleRetryLocked(scene, "摄像头已启动，但5秒内没有收到画面")
-            return
-        }
-        overlayController.reveal(handle)
-        if (handle.surface?.isValid != true) {
-            helper.stopElectronicMirror()
-            overlayController.hide(handle)
-            scheduleRetryLocked(scene, "首帧到达后 Surface 失效")
-            return
-        }
-
-        activeScene = ActiveScene(scene, handle)
         resetRetryLocked()
         ElectronicMirrorRuntimeGuard.isActive = true
         _active.value = true
-        setActiveStatus(scene)
-        startFrameWatchdogLocked(handle)
+        setActiveStatus(desiredScenes)
+        startFrameWatchdogLocked(hub)
         WjxFileLogger.i(
             TAG,
-            "active reason=${scene.reason} view=${scene.viewpoint} source=${scene.source} target=${scene.target}",
+            "active shared camera=${route.cameraTag} surface=${route.surfaceIndex} " +
+                "tiles=${route.tileCount} outputs=${desiredScenes.joinToString { it.reason.name }}",
         )
     }
 
-    private suspend fun stopActiveLocked(message: String, cancelWatchdog: Boolean = true) {
+    private suspend fun reconcileWindowsLocked(desiredScenes: List<ElectronicMirrorScene>): Boolean {
+        val hub = frameHub ?: return false
+        val desiredByReason = desiredScenes.associateBy(ElectronicMirrorScene::reason)
+
+        activeScenes.keys
+            .filterNot(desiredByReason::containsKey)
+            .toList()
+            .forEach { reason ->
+                activeScenes.remove(reason)?.let { active ->
+                    overlayController.hide(active.handle)
+                    WjxFileLogger.i(TAG, "output removed reason=$reason")
+                }
+            }
+
+        for (scene in desiredScenes) {
+            val current = activeScenes[scene.reason]
+            if (current == null) {
+                val handle = overlayController.show(scene, hub) ?: return false
+                activeScenes[scene.reason] = ActiveScene(scene, handle)
+                WjxFileLogger.i(TAG, "output added reason=${scene.reason}")
+                continue
+            }
+            if (current.scene.target != scene.target) {
+                overlayController.hide(current.handle)
+                activeScenes.remove(scene.reason)
+                val handle = overlayController.show(scene, hub) ?: return false
+                activeScenes[scene.reason] = ActiveScene(scene, handle)
+                continue
+            }
+            if (current.scene.geometry != scene.geometry) {
+                overlayController.updateGeometry(current.handle, scene)
+            }
+            if (current.scene != scene) {
+                overlayController.updatePresentation(current.handle, scene)
+                activeScenes[scene.reason] = current.copy(scene = scene)
+            }
+        }
+
+        ElectronicMirrorRuntimeGuard.isActive = activeScenes.isNotEmpty()
+        _active.value = activeScenes.isNotEmpty()
+        return activeScenes.keys == desiredByReason.keys
+    }
+
+    private suspend fun stopSessionLocked(
+        message: String,
+        cancelWatchdog: Boolean = true,
+        publishStatus: Boolean = true,
+    ) {
         if (cancelWatchdog) {
             frameWatchdogJob?.cancel()
             frameWatchdogJob = null
         }
-        val current = activeScene
-        activeScene = null
-        if (current != null) {
-            helper.stopElectronicMirror()
-            overlayController.hide(current.handle)
-            WjxFileLogger.i(TAG, "inactive reason=$message")
+
+        val hadCamera = cameraStarted
+        val hub = frameHub
+        val handles = activeScenes.values.map(ActiveScene::handle)
+        cameraStarted = false
+        frameHub = null
+        activeCameraRoute = null
+        activeScenes.clear()
+
+        if (hadCamera) helper.stopElectronicMirror()
+        handles.forEach { overlayController.hide(it) }
+        hub?.release()
+        if (hadCamera || hub != null) {
+            lastCameraReleaseAtMs = SystemClock.elapsedRealtime()
+            WjxFileLogger.i(TAG, "inactive reason=$message outputs=${handles.size}")
         }
+
         ElectronicMirrorRuntimeGuard.isActive = false
         _active.value = false
-        setInactiveStatus(message)
+        if (publishStatus) setInactiveStatus(message)
     }
 
-    private fun onUnexpectedSurfaceLoss(handle: ElectronicMirrorOverlayHandle) {
+    private suspend fun awaitCameraReleaseWindowLocked() {
+        if (lastCameraReleaseAtMs == Long.MIN_VALUE) return
+        val elapsed = SystemClock.elapsedRealtime() - lastCameraReleaseAtMs
+        val remaining = CAMERA_REATTACH_GUARD_MS - elapsed
+        if (remaining > 0L) {
+            WjxFileLogger.i(TAG, "camera reattach delayed ${remaining}ms after release")
+            delay(remaining)
+        }
+    }
+
+    private fun onUnexpectedOutputLoss(handle: ElectronicMirrorOverlayHandle) {
         applicationScope.launch {
             mutex.withLock {
-                val current = activeScene
+                val current = activeScenes[handle.scene.reason]
                 if (current?.handle !== handle) return@withLock
-                stopActiveLocked("画面 Surface 已失效")
-                scheduleRetryLocked(current.scene, "画面 Surface 意外丢失")
-                WjxFileLogger.w(TAG, "unexpected Surface loss target=${handle.target}")
+                activeScenes.remove(handle.scene.reason)
+                overlayController.hide(handle)
+                resetRetryLocked()
+                WjxFileLogger.w(TAG, "unexpected output loss reason=${handle.scene.reason}")
+                reconcileLocked()
             }
         }
     }
 
-    private suspend fun awaitFirstFrame(handle: ElectronicMirrorOverlayHandle): Boolean {
-        val deadline = SystemClock.elapsedRealtime() + FIRST_FRAME_TIMEOUT_MS
-        while (SystemClock.elapsedRealtime() < deadline) {
-            if (cameraPriorityActive() || handle.surface?.isValid != true) return false
-            if (handle.firstFrame.isCompleted) return true
-            delay(FRAME_POLL_MS)
+    private fun onFrameHubFailure(error: Throwable) {
+        applicationScope.launch {
+            mutex.withLock {
+                if (frameHub == null) return@withLock
+                val desired = desiredScenesLocked()
+                WjxFileLogger.e(TAG, "shared frame renderer failed: ${error.message}", error)
+                stopSessionLocked("相机画面渲染失败", publishStatus = false)
+                if (desired.isNotEmpty() && !cameraPriorityActive()) {
+                    scheduleRetryLocked(desired, "相机画面渲染失败")
+                } else {
+                    setInactiveStatus("相机画面渲染失败")
+                }
+            }
         }
-        return handle.firstFrame.isCompleted
     }
 
-    private suspend fun awaitFrameAfter(
-        handle: ElectronicMirrorOverlayHandle,
-        previousFrame: Long,
-        timeoutMs: Long,
-    ): Boolean {
-        val deadline = SystemClock.elapsedRealtime() + timeoutMs
-        while (SystemClock.elapsedRealtime() < deadline) {
-            if (cameraPriorityActive() || handle.surface?.isValid != true) return false
-            if (handle.frameCount.get() > previousFrame) return true
-            delay(FRAME_POLL_MS)
-        }
-        return handle.frameCount.get() > previousFrame
-    }
-
-    private fun startFrameWatchdogLocked(handle: ElectronicMirrorOverlayHandle) {
+    private fun startFrameWatchdogLocked(hub: ElectronicMirrorFrameHub) {
         frameWatchdogJob?.cancel()
         frameWatchdogJob = applicationScope.launch {
             while (true) {
                 delay(FRAME_WATCHDOG_INTERVAL_MS)
-                val lastFrameAt = handle.lastFrameAtMs
+                val lastFrameAt = hub.lastFrameAtMs
+                // No first-frame gate: opening a window never waits for or reveals on frame one.
                 if (lastFrameAt <= 0L || SystemClock.elapsedRealtime() - lastFrameAt <= FRAME_STALL_TIMEOUT_MS) {
                     continue
                 }
                 mutex.withLock {
-                    val current = activeScene
-                    if (current?.handle !== handle) return@withLock
-                    // This job is the watchdog being retired; avoid cancelling its own coroutine
-                    // before camera cleanup and retry scheduling have completed.
+                    if (frameHub !== hub) return@withLock
+                    val desired = desiredScenesLocked()
                     frameWatchdogJob = null
-                    stopActiveLocked("画面已中断", cancelWatchdog = false)
-                    if (!cameraPriorityActive()) {
-                        scheduleRetryLocked(current.scene, "超过3秒未收到新画面")
+                    stopSessionLocked("画面已中断", cancelWatchdog = false, publishStatus = false)
+                    if (desired.isNotEmpty() && !cameraPriorityActive()) {
+                        scheduleRetryLocked(desired, "超过3秒未收到新画面")
+                    } else {
+                        setInactiveStatus("画面已中断")
                     }
                 }
                 return@launch
@@ -350,16 +411,20 @@ class ElectronicMirrorCoordinator @Inject constructor(
         }
     }
 
-    private fun scheduleRetryLocked(scene: ElectronicMirrorScene, cause: String) {
-        if (retryScene != null && retryScene != scene) resetRetryLocked()
+    private fun scheduleRetryLocked(scenes: List<ElectronicMirrorScene>, cause: String) {
+        if (scenes.isEmpty()) {
+            setInactiveStatus(cause)
+            return
+        }
+        if (retryScenes != null && retryScenes != scenes) resetRetryLocked()
         retryJob?.cancel()
         retryJob = null
-        retryScene = scene
+        retryScenes = scenes
         consecutiveFailures += 1
         WjxFileLogger.w(
             TAG,
-            "camera unavailable failure=$consecutiveFailures cause=$cause reason=${scene.reason} " +
-                "view=${scene.viewpoint} source=${scene.source} target=${scene.target}",
+            "camera unavailable failure=$consecutiveFailures cause=$cause " +
+                "outputs=${scenes.joinToString { it.reason.name }}",
         )
         if (consecutiveFailures > MAX_AUTOMATIC_RETRIES) {
             setInactiveStatus("$cause，已停止自动重试")
@@ -370,9 +435,9 @@ class ElectronicMirrorCoordinator @Inject constructor(
         retryJob = applicationScope.launch {
             delay(delayMs)
             mutex.withLock {
-                if (retryScene != scene) return@withLock
+                if (retryScenes != scenes) return@withLock
                 retryJob = null
-                retryScene = null
+                retryScenes = null
                 reconcileLocked()
             }
         }
@@ -381,7 +446,7 @@ class ElectronicMirrorCoordinator @Inject constructor(
     private fun resetRetryLocked() {
         retryJob?.cancel()
         retryJob = null
-        retryScene = null
+        retryScenes = null
         consecutiveFailures = 0
     }
 
@@ -402,12 +467,27 @@ class ElectronicMirrorCoordinator @Inject constructor(
         return false
     }
 
-    private fun setActiveStatus(scene: ElectronicMirrorScene) {
+    private fun setActiveStatus(scenes: List<ElectronicMirrorScene>) {
+        if (scenes.isEmpty()) {
+            setInactiveStatus("待机")
+            return
+        }
+        val labels = scenes.joinToString("、") { scene ->
+            when (scene.reason) {
+                ElectronicMirrorReason.LEFT_TURN -> "左后侧"
+                ElectronicMirrorReason.RIGHT_TURN -> "右后侧"
+                ElectronicMirrorReason.STREAMING_REAR -> "流媒体后视"
+                ElectronicMirrorReason.REVERSE -> "倒挡后视"
+                ElectronicMirrorReason.MANUAL_PREVIEW -> "${scene.viewpoint.displayName}预览"
+            }
+        }
+        val targets = scenes.map(ElectronicMirrorScene::target).distinct()
+        val targetText = targets.joinToString("+") { targetName(it) }
         _status.value = ElectronicMirrorRuntimeStatus(
             active = true,
-            message = "${scene.viewpoint.displayName}影像 · ${targetName(scene.target)}",
-            viewpoint = scene.viewpoint,
-            target = scene.target,
+            message = "$labels · $targetText",
+            viewpoint = scenes.singleOrNull()?.viewpoint,
+            target = targets.singleOrNull(),
         )
     }
 
@@ -427,14 +507,55 @@ class ElectronicMirrorCoordinator @Inject constructor(
         val handle: ElectronicMirrorOverlayHandle,
     )
 
+    private data class CameraRoute(
+        val cameraTag: String,
+        val surfaceIndex: Int,
+        val tileCount: Int,
+        val bufferWidth: Int,
+        val bufferHeight: Int,
+        val fps: Int,
+    ) {
+        fun matches(scene: ElectronicMirrorScene): Boolean {
+            val profile = scene.surfaceProfile.sanitized()
+            return cameraTag == profile.cameraTag &&
+                surfaceIndex == profile.surfaceIndex &&
+                tileCount == profile.tileCount &&
+                bufferWidth == profile.bufferWidth &&
+                bufferHeight == profile.bufferHeight &&
+                fps == scene.fps
+        }
+
+        fun request(): ElectronicMirrorCameraRequest = ElectronicMirrorCameraRequest(
+            cameraTag = cameraTag,
+            surfaceIndex = surfaceIndex,
+            tileCount = tileCount,
+            bufferWidth = bufferWidth,
+            bufferHeight = bufferHeight,
+            fps = fps,
+        )
+
+        companion object {
+            fun from(scene: ElectronicMirrorScene): CameraRoute {
+                val profile = scene.surfaceProfile.sanitized()
+                return CameraRoute(
+                    cameraTag = profile.cameraTag,
+                    surfaceIndex = profile.surfaceIndex,
+                    tileCount = profile.tileCount,
+                    bufferWidth = profile.bufferWidth,
+                    bufferHeight = profile.bufferHeight,
+                    fps = scene.fps,
+                )
+            }
+        }
+    }
+
     private companion object {
         const val TAG = "ElectronicMirror"
         const val AUTO_PARKING_ACTIVE = 4
-        const val FIRST_FRAME_TIMEOUT_MS = 5_000L
-        const val VIEW_SWITCH_TIMEOUT_MS = 2_500L
+        const val CAMERA_INPUT_SURFACE_TIMEOUT_MS = 3_000L
         const val FRAME_STALL_TIMEOUT_MS = 3_000L
         const val FRAME_WATCHDOG_INTERVAL_MS = 1_000L
-        const val FRAME_POLL_MS = 50L
+        const val CAMERA_REATTACH_GUARD_MS = 360L
         const val MAX_AUTOMATIC_RETRIES = 5
     }
 }

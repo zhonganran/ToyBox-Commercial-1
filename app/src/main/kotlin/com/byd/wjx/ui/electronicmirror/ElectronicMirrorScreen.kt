@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.byd.wjx.electronicmirror.ElectronicMirrorGeometry
 import com.byd.wjx.electronicmirror.ElectronicMirrorRuntimeStatus
 import com.byd.wjx.electronicmirror.ElectronicMirrorViewpoint
 import com.byd.wjx.ui.theme.AccentGreen
@@ -99,6 +100,36 @@ fun ElectronicMirrorSettingsContent(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.Top,
         ) {
+            StreamingRearMirrorCard(
+                config = config,
+                onUpdate = viewModel::updateAndApply,
+                modifier = Modifier.weight(0.9f),
+            )
+            MirrorLayoutPreview(
+                target = config.streamingRearDisplayTarget,
+                geometry = config.streamingRearGeometryFor(),
+                modifier = Modifier.weight(1.1f),
+                windowLabel = "流媒体后视窗口",
+            )
+        }
+
+        GeometryEditor(
+            geometry = config.streamingRearGeometryFor(),
+            target = config.streamingRearDisplayTarget,
+            onUpdate = viewModel::updateStreamingRearGeometry,
+            onCommit = viewModel::commitStreamingRearGeometry,
+            title = "流媒体后视窗口调整",
+            widthRange = ElectronicMirrorGeometry.MIN_STREAMING_WIDTH_PCT..
+                ElectronicMirrorGeometry.MAX_STREAMING_WIDTH_PCT,
+            heightRange = ElectronicMirrorGeometry.MIN_STREAMING_HEIGHT_PCT..
+                ElectronicMirrorGeometry.MAX_STREAMING_HEIGHT_PCT,
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
             MirrorControlCard(
                 config = config,
                 onUpdate = viewModel::updateAndApply,
@@ -116,6 +147,14 @@ fun ElectronicMirrorSettingsContent(
             target = config.displayTarget,
             onUpdate = viewModel::updateSelectedGeometry,
             onCommit = viewModel::commitGeometry,
+            horizontalLabel = "左右窗口内收",
+            horizontalRange = ElectronicMirrorGeometry.MIN_SIDE_INSET_PCT..
+                ElectronicMirrorGeometry.MAX_SIDE_INSET_PCT,
+            widthRange = ElectronicMirrorGeometry.MIN_SIDE_WIDTH_PCT..
+                ElectronicMirrorGeometry.MAX_SIDE_WIDTH_PCT,
+            heightRange = ElectronicMirrorGeometry.MIN_SIDE_HEIGHT_PCT..
+                ElectronicMirrorGeometry.MAX_SIDE_HEIGHT_PCT,
+            heightLabel = "高度上限（16:9）",
         )
 
         SourceMappingEditor(
@@ -125,11 +164,11 @@ fun ElectronicMirrorSettingsContent(
             onPreview = viewModel::preview,
         )
 
-        CalibrationEditor(
+        ProjectionEditor(
             config = config,
-            onUpdate = viewModel::updateCalibration,
-            onCommit = viewModel::commitCalibration,
-            onReset = viewModel::resetCalibration,
+            onUpdate = viewModel::updateProjection,
+            onCommit = viewModel::commitProjection,
+            onReset = viewModel::resetProjection,
             onPreview = viewModel::preview,
         )
 
@@ -139,13 +178,13 @@ fun ElectronicMirrorSettingsContent(
         )
 
         Text(
-            "所有开关、显示位置和图像顺序点击后立即保存；滑块与裁剪在松手后自动保存。",
+            "所有开关、显示位置和图像顺序点击后立即保存；窗口与画面微调在滑块松手后自动保存。",
             color = AccentGreen,
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
         )
         Text(
-            "画面优先级：原车自动泊车/全景影像 ＞ 倒挡 ＞ 转向灯 ＞ 仪表投屏和歌词。退出转向后会自动恢复此前内容。",
+            "画面优先级：原车自动泊车/全景影像 ＞ 倒挡 ＞ 转向灯 ＞ 流媒体后视 ＞ 仪表投屏和歌词。退出临时场景后自动恢复流媒体后视。",
             color = TextMuted,
             fontSize = 13.sp,
             modifier = Modifier.padding(bottom = 12.dp),
@@ -183,7 +222,7 @@ private fun MirrorEmbeddedStatus(
                 Text(status.message, color = TextSecondary, fontSize = 12.sp)
             }
             Text(
-                "30 FPS · Surface 直出",
+                "20 FPS · 全景母流直出",
                 color = AccentGreen,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
@@ -211,7 +250,7 @@ private fun MirrorHeader(
         Spacer(Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text("电子后视镜", color = TextPrimary, fontSize = 36.sp, fontWeight = FontWeight.ExtraBold)
-            Text("转向灯触发 APA 侧后方画面，仪表盘与中控屏可分别调整布局", color = TextSecondary, fontSize = 14.sp)
+            Text("四画面母流裁切的流媒体后视，并支持转向/倒挡临时联动", color = TextSecondary, fontSize = 14.sp)
         }
         Row(
             modifier = Modifier

@@ -37,9 +37,10 @@ import android.os.IBinder
  *   TX_DEBUG_PLAY_LOCK_SOUND : writeInt(kind)              -> reply: writeInt(status), writeInt(played)
  *   TX_STOP_LOCK_SOUND : writeInt(kind)                    -> reply: writeInt(status), writeInt(stopped)
  *   TX_EXEC_SHELL : writeString(command)                   -> reply: writeInt(status), writeInt(exitCode), writeString(output)
- *   TX_CAMERA_START : writeInt(viewpoint), writeInt(fps), Surface.writeToParcel(surface)
+ *   TX_CAMERA_START : writeString(cameraTag), writeInt(surfaceIndex), writeInt(tileCount),
+ *       writeInt(bufferWidth), writeInt(bufferHeight), writeInt(fps), Surface.writeToParcel(surface)
  *       -> reply: writeInt(status), writeInt(0)
- *   TX_CAMERA_SWITCH_VIEW : writeInt(viewpoint)             -> reply: writeInt(status), writeInt(0)
+ *   TX_CAMERA_SWITCH_VIEW : writeInt(surfaceIndex)          -> reply: writeInt(status), writeInt(0)
  *   TX_CAMERA_STOP : (no args)                              -> reply: writeInt(status), writeInt(0)
  *
  * Projection status: 0 = success, <0 = error/unavailable. Surface is written LAST so a
@@ -51,11 +52,9 @@ object HelperBinderProtocol {
     const val SERVICE_NAME = "wjx_helper"
     const val PROCESS_NAME = "wjx_helper"   // app_process --nice-name + ps lookup
     const val DESCRIPTOR = "com.byd.wjx.helper.IHelper"
-    // v10 caches the validated AVMCamera capability route and removes the unused camera-status
-    // transaction. This is a
-    // runtime build marker, not a preference/data migration: a shell-uid app_process can outlive
-    // an APK uninstall, so a freshly installed app must reject that stale in-memory daemon.
-    const val CURRENT_VERSION = 10
+    // v12 separates AVMCamera identity, Surface output index and strip geometry. This is a runtime
+    // build marker, not preference migration: a shell-uid app_process can outlive an APK uninstall.
+    const val CURRENT_VERSION = 12
 
     const val TX_PING = IBinder.FIRST_CALL_TRANSACTION       // 1
     const val TX_READ = IBinder.FIRST_CALL_TRANSACTION + 1   // 2

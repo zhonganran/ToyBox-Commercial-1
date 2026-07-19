@@ -31,12 +31,25 @@ class ElectronicMirrorPreferencesTest {
         assertTrue(config.leftTurnEnabled)
         assertTrue(config.rightTurnEnabled)
         assertFalse(config.reverseEnabled)
-        assertEquals(ElectronicMirrorDisplayTarget.CLUSTER, config.displayTarget)
+        assertFalse(config.streamingRearEnabled)
+        assertTrue(config.streamingRearVisible)
+        assertEquals(20, config.fps)
+        assertEquals(ElectronicMirrorDisplayTarget.CENTER, config.displayTarget)
+        assertEquals(ElectronicMirrorDisplayTarget.CENTER, config.streamingRearDisplayTarget)
         assertEquals(ElectronicMirrorGeometry.DEFAULT_CLUSTER, config.clusterGeometry)
         assertEquals(ElectronicMirrorGeometry.DEFAULT_CENTER, config.centerGeometry)
-        assertEquals(ElectronicMirrorCalibration.DEFAULT, config.leftCalibration)
-        assertEquals(ElectronicMirrorCalibration.DEFAULT, config.rightCalibration)
-        assertEquals(ElectronicMirrorCalibration.DEFAULT, config.rearCalibration)
+        assertEquals(
+            ElectronicMirrorGeometry.DEFAULT_STREAMING_CLUSTER,
+            config.streamingRearClusterGeometry,
+        )
+        assertEquals(
+            ElectronicMirrorGeometry.DEFAULT_STREAMING_CENTER,
+            config.streamingRearCenterGeometry,
+        )
+        assertEquals(ElectronicMirrorProjectionSpec.DEFAULT_LEFT, config.leftProjection)
+        assertEquals(ElectronicMirrorProjectionSpec.DEFAULT_RIGHT, config.rightProjection)
+        assertEquals(ElectronicMirrorProjectionSpec.DEFAULT_REAR, config.rearProjection)
+        assertEquals(ElectronicMirrorSurfaceProfile.DEFAULT_SURFACE_INDEX, config.panoramaSurfaceIndex)
         assertEquals(ElectronicMirrorCameraSource.SOURCE_A, config.leftSource)
         assertEquals(ElectronicMirrorCameraSource.SOURCE_B, config.rightSource)
         assertEquals(ElectronicMirrorCameraSource.SOURCE_C, config.rearSource)
@@ -57,47 +70,41 @@ class ElectronicMirrorPreferencesTest {
     }
 
     @Test
-    fun `left right and rear keep independent calibration`() {
-        val left = ElectronicMirrorCalibration(
-            topLeft = ElectronicMirrorCalibrationPoint(100, 120),
-            topRight = ElectronicMirrorCalibrationPoint(800, 80),
-            bottomRight = ElectronicMirrorCalibrationPoint(800, 900),
-            bottomLeft = ElectronicMirrorCalibrationPoint(100, 950),
-            yawDegrees = -4,
-        ).sanitized()
-        val right = ElectronicMirrorCalibration(
-            topLeft = ElectronicMirrorCalibrationPoint(180, 100),
-            topRight = ElectronicMirrorCalibrationPoint(940, 140),
-            bottomRight = ElectronicMirrorCalibrationPoint(940, 880),
-            bottomLeft = ElectronicMirrorCalibrationPoint(180, 920),
-            rollDegrees = 3,
-        ).sanitized()
-        val rear = ElectronicMirrorCalibration(
-            topLeft = ElectronicMirrorCalibrationPoint(120, 160),
-            topRight = ElectronicMirrorCalibrationPoint(880, 160),
-            bottomRight = ElectronicMirrorCalibrationPoint(880, 840),
-            bottomLeft = ElectronicMirrorCalibrationPoint(120, 840),
-            pitchDegrees = 5,
-        ).sanitized()
+    fun `left right and rear keep independent projection`() {
+        val left = ElectronicMirrorProjectionSpec(
+            horizontalPermille = -120,
+            heightOffsetPermille = 40,
+            viewScalePermille = 1100,
+        )
+        val right = ElectronicMirrorProjectionSpec(
+            horizontalPermille = 150,
+            heightOffsetPermille = -30,
+            viewScalePermille = 1200,
+        )
+        val rear = ElectronicMirrorProjectionSpec(
+            horizontalPermille = 20,
+            heightOffsetPermille = 90,
+            viewScalePermille = 1450,
+        )
 
         preferences.save(
             ElectronicMirrorConfig(
-                leftCalibration = left,
-                rightCalibration = right,
-                rearCalibration = rear,
+                leftProjection = left,
+                rightProjection = right,
+                rearProjection = rear,
             ),
         )
 
         val restored = preferences.snapshot()
-        assertEquals(left, restored.leftCalibration)
-        assertEquals(right, restored.rightCalibration)
-        assertEquals(rear, restored.rearCalibration)
+        assertEquals(left, restored.leftProjection)
+        assertEquals(right, restored.rightProjection)
+        assertEquals(rear, restored.rearProjection)
     }
 
     @Test
     fun `cluster and center keep independent geometry`() {
-        val cluster = ElectronicMirrorGeometry(82, 91, 11, 22)
-        val center = ElectronicMirrorGeometry(47, 58, 77, 66)
+        val cluster = ElectronicMirrorGeometry(42, 72, 11, 22)
+        val center = ElectronicMirrorGeometry(47, 58, 37, 66)
         preferences.save(
             ElectronicMirrorConfig(
                 enabled = true,
@@ -117,16 +124,43 @@ class ElectronicMirrorPreferencesTest {
     }
 
     @Test
+    fun `streaming rear state and both target geometries are persisted`() {
+        val cluster = ElectronicMirrorGeometry(90, 44, 48, 3)
+        val center = ElectronicMirrorGeometry(62, 32, 51, 7)
+        preferences.save(
+            ElectronicMirrorConfig(
+                streamingRearEnabled = true,
+                streamingRearVisible = false,
+                streamingRearDisplayTarget = ElectronicMirrorDisplayTarget.CENTER,
+                streamingRearClusterGeometry = cluster,
+                streamingRearCenterGeometry = center,
+                panoramaSurfaceIndex = 3,
+            ),
+        )
+
+        val restored = preferences.snapshot()
+        assertTrue(restored.streamingRearEnabled)
+        assertFalse(restored.streamingRearVisible)
+        assertEquals(ElectronicMirrorDisplayTarget.CENTER, restored.streamingRearDisplayTarget)
+        assertEquals(cluster, restored.streamingRearClusterGeometry)
+        assertEquals(center, restored.streamingRearCenterGeometry)
+        assertEquals(3, restored.panoramaSurfaceIndex)
+        assertTrue(preferences.isAnyEnabled())
+    }
+
+    @Test
     fun `invalid geometry and fps are clamped on save`() {
         preferences.save(
             ElectronicMirrorConfig(
                 fps = 100,
                 clusterGeometry = ElectronicMirrorGeometry(1, 200, -1, 101),
+                panoramaSurfaceIndex = 99,
             ),
         )
 
         val restored = preferences.snapshot()
         assertEquals(30, restored.fps)
-        assertEquals(ElectronicMirrorGeometry(24, 100, 0, 100), restored.clusterGeometry)
+        assertEquals(ElectronicMirrorGeometry(16, 80, 0, 100), restored.clusterGeometry)
+        assertEquals(ElectronicMirrorSurfaceProfile.MAX_SURFACE_INDEX, restored.panoramaSurfaceIndex)
     }
 }

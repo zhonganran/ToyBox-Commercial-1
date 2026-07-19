@@ -15,9 +15,11 @@ class AutomationActionSnapshotFieldProvider @Inject constructor(
     private val electronicMirrorPreferences: ElectronicMirrorPreferences,
 ) : ActionSnapshotFieldProvider {
     override suspend fun additionalFields(): Set<String> {
+        val mirror = electronicMirrorPreferences.snapshot()
         val autoParkingFields = requiredRuntimeFeatureFields(
             autoParkingSoundEnabled = autoParkingSoundSettings.enabled,
-            electronicMirrorEnabled = electronicMirrorPreferences.isEnabled(),
+            electronicMirrorLinkageEnabled = mirror.enabled,
+            streamingRearEnabled = mirror.streamingRearEnabled && mirror.streamingRearVisible,
         )
         return repository.current().requiredVehicleFields + autoParkingFields
     }
@@ -25,10 +27,13 @@ class AutomationActionSnapshotFieldProvider @Inject constructor(
 
 internal fun requiredRuntimeFeatureFields(
     autoParkingSoundEnabled: Boolean,
-    electronicMirrorEnabled: Boolean = false,
+    electronicMirrorLinkageEnabled: Boolean = false,
+    streamingRearEnabled: Boolean = false,
 ): Set<String> = buildSet {
-    if (autoParkingSoundEnabled || electronicMirrorEnabled) add("adasApaParkingStatus")
-    if (electronicMirrorEnabled) add("turnSignalFlash")
+    if (autoParkingSoundEnabled || electronicMirrorLinkageEnabled || streamingRearEnabled) {
+        add("adasApaParkingStatus")
+    }
+    if (electronicMirrorLinkageEnabled) add("turnSignalFlash")
 }
 
 internal fun requiredAutomationVehicleFields(rules: List<RuleEntity>): Set<String> = buildSet {

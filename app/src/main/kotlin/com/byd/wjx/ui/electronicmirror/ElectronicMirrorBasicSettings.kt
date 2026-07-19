@@ -51,6 +51,95 @@ import com.byd.wjx.ui.theme.TextSecondary
 import kotlin.math.roundToInt
 
 @Composable
+internal fun StreamingRearMirrorCard(
+    config: ElectronicMirrorConfig,
+    onUpdate: ((ElectronicMirrorConfig) -> ElectronicMirrorConfig) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(containerColor = CardSurface.copy(alpha = 0.76f)),
+        shape = RoundedCornerShape(24.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, AccentGreen.copy(alpha = 0.42f)),
+    ) {
+        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            SettingSwitchRow(
+                title = "启用流媒体后视镜",
+                subtitle = "常驻后方宽屏；转向时复用同一条四画面母流，不重启摄像头",
+                checked = config.streamingRearEnabled,
+                onChecked = { value -> onUpdate { it.copy(streamingRearEnabled = value) } },
+            )
+            SettingSwitchRow(
+                title = "当前显示",
+                subtitle = "关闭只隐藏流媒体窗口，不会修改位置和画面微调参数",
+                checked = config.streamingRearVisible,
+                onChecked = { value -> onUpdate { it.copy(streamingRearVisible = value) } },
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("流媒体显示位置", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    TargetChip(
+                        label = "仪表盘",
+                        icon = Icons.Outlined.DirectionsCar,
+                        selected = config.streamingRearDisplayTarget == ElectronicMirrorDisplayTarget.CLUSTER,
+                    ) {
+                        onUpdate {
+                            it.copy(streamingRearDisplayTarget = ElectronicMirrorDisplayTarget.CLUSTER)
+                        }
+                    }
+                    TargetChip(
+                        label = "中控屏",
+                        icon = Icons.Outlined.DesktopWindows,
+                        selected = config.streamingRearDisplayTarget == ElectronicMirrorDisplayTarget.CENTER,
+                    ) {
+                        onUpdate {
+                            it.copy(streamingRearDisplayTarget = ElectronicMirrorDisplayTarget.CENTER)
+                        }
+                    }
+                }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Surface 通道（高级）", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    "AutoTark 默认使用通道 0 输出四格母流；只有实车无画面时才切换测试",
+                    color = TextMuted,
+                    fontSize = 12.sp,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    (0..4).forEach { surfaceIndex ->
+                        FilterChip(
+                            selected = config.panoramaSurfaceIndex == surfaceIndex,
+                            onClick = {
+                                onUpdate { it.copy(panoramaSurfaceIndex = surfaceIndex) }
+                            },
+                            label = { Text(surfaceIndex.toString(), fontWeight = FontWeight.Bold) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = AccentGreen.copy(alpha = 0.18f),
+                                selectedLabelColor = TextPrimary,
+                                containerColor = Color.Transparent,
+                                labelColor = TextSecondary,
+                            ),
+                            border = FilterChipDefaults.filterChipBorder(
+                                enabled = true,
+                                selected = config.panoramaSurfaceIndex == surfaceIndex,
+                                borderColor = CardBorder,
+                                selectedBorderColor = AccentGreen.copy(alpha = 0.6f),
+                            ),
+                        )
+                    }
+                }
+            }
+            Text(
+                "母流 7680×1300 按后方、左后、右后、前方排列，Surface 缩放为 3000×508；后方按真实后视镜方向水平镜像。",
+                color = AccentGreen,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+            )
+        }
+    }
+}
+
+@Composable
 internal fun MirrorControlCard(
     config: ElectronicMirrorConfig,
     onUpdate: ((ElectronicMirrorConfig) -> ElectronicMirrorConfig) -> Unit,
@@ -64,7 +153,7 @@ internal fun MirrorControlCard(
     ) {
         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             SettingSwitchRow(
-                title = "启用电子后视镜",
+                title = "启用转向/倒挡联动",
                 subtitle = "打开后按稳定转向状态自动显示，不跟随灯泡闪烁",
                 checked = config.enabled,
                 onChecked = { enabled -> onUpdate { it.copy(enabled = enabled) } },
@@ -113,6 +202,7 @@ internal fun MirrorLayoutPreview(
     target: ElectronicMirrorDisplayTarget,
     geometry: ElectronicMirrorGeometry,
     modifier: Modifier = Modifier,
+    windowLabel: String = "电子后视镜窗口",
 ) {
     Card(
         modifier = modifier,
@@ -130,7 +220,7 @@ internal fun MirrorLayoutPreview(
                         fontSize = 12.sp,
                     )
                 }
-                Text("30 FPS · Surface 直出", color = AccentGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("Surface 直出 · 纯黑不透明", color = AccentGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                 val canvasHeight = if (target == ElectronicMirrorDisplayTarget.CLUSTER) {
@@ -179,7 +269,7 @@ internal fun MirrorLayoutPreview(
                             modifier = Modifier.align(Alignment.Center).size(30.dp),
                         )
                         Text(
-                            "电子后视镜窗口",
+                            windowLabel,
                             color = Color.White,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
@@ -198,6 +288,12 @@ internal fun GeometryEditor(
     target: ElectronicMirrorDisplayTarget,
     onUpdate: ((ElectronicMirrorGeometry) -> ElectronicMirrorGeometry) -> Unit,
     onCommit: () -> Unit,
+    title: String = "${if (target == ElectronicMirrorDisplayTarget.CLUSTER) "仪表盘" else "中控屏"}窗口调整",
+    horizontalLabel: String = "左右位置",
+    horizontalRange: IntRange = 0..100,
+    widthRange: IntRange = 24..100,
+    heightRange: IntRange = 24..100,
+    heightLabel: String = "窗口高度",
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -207,14 +303,14 @@ internal fun GeometryEditor(
     ) {
         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
-                "${if (target == ElectronicMirrorDisplayTarget.CLUSTER) "仪表盘" else "中控屏"}窗口调整",
+                title,
                 color = TextPrimary,
                 fontSize = 17.sp,
                 fontWeight = FontWeight.ExtraBold,
             )
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    GeometrySlider("左右位置", geometry.offsetXPct, 0..100, onCommit) { value ->
+                    GeometrySlider(horizontalLabel, geometry.offsetXPct, horizontalRange, onCommit) { value ->
                         onUpdate { it.copy(offsetXPct = value) }
                     }
                     GeometrySlider("上下位置", geometry.offsetYPct, 0..100, onCommit) { value ->
@@ -222,10 +318,10 @@ internal fun GeometryEditor(
                     }
                 }
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    GeometrySlider("窗口宽度", geometry.widthPct, 24..100, onCommit) { value ->
+                    GeometrySlider("窗口宽度", geometry.widthPct, widthRange, onCommit) { value ->
                         onUpdate { it.copy(widthPct = value) }
                     }
-                    GeometrySlider("窗口高度", geometry.heightPct, 24..100, onCommit) { value ->
+                    GeometrySlider(heightLabel, geometry.heightPct, heightRange, onCommit) { value ->
                         onUpdate { it.copy(heightPct = value) }
                     }
                 }

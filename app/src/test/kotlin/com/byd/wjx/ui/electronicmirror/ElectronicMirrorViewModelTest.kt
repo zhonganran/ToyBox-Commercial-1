@@ -3,6 +3,7 @@ package com.byd.wjx.ui.electronicmirror
 import com.byd.wjx.electronicmirror.ElectronicMirrorConfig
 import com.byd.wjx.electronicmirror.ElectronicMirrorCoordinator
 import com.byd.wjx.electronicmirror.ElectronicMirrorPreferences
+import com.byd.wjx.electronicmirror.ElectronicMirrorProjectionSpec
 import com.byd.wjx.electronicmirror.ElectronicMirrorRuntimeStatus
 import com.byd.wjx.electronicmirror.ElectronicMirrorViewpoint
 import io.mockk.Runs
@@ -37,15 +38,15 @@ class ElectronicMirrorViewModelTest {
 
     @Test
     fun `geometry drag remains in memory until release`() {
-        viewModel.updateSelectedGeometry { it.copy(widthPct = 72) }
+        viewModel.updateSelectedGeometry { it.copy(widthPct = 42) }
 
-        assertEquals(72, viewModel.config.value.clusterGeometry.widthPct)
+        assertEquals(42, viewModel.config.value.centerGeometry.widthPct)
         verify(exactly = 0) { preferences.save(any()) }
         verify(exactly = 0) { coordinator.applyPreferences() }
 
         viewModel.commitGeometry()
 
-        verify(exactly = 1) { preferences.save(match { it.clusterGeometry.widthPct == 72 }) }
+        verify(exactly = 1) { preferences.save(match { it.centerGeometry.widthPct == 42 }) }
         verify(exactly = 1) { coordinator.applyPreferences() }
     }
 
@@ -56,5 +57,40 @@ class ElectronicMirrorViewModelTest {
 
         verify(exactly = 0) { preferences.save(any()) }
         verify(exactly = 1) { coordinator.preview(ElectronicMirrorViewpoint.LEFT) }
+    }
+
+    @Test
+    fun `streaming geometry saves only when slider is released`() {
+        viewModel.updateStreamingRearGeometry { it.copy(heightPct = 50) }
+
+        assertEquals(50, viewModel.config.value.streamingRearCenterGeometry.heightPct)
+        verify(exactly = 0) { preferences.save(any()) }
+
+        viewModel.commitStreamingRearGeometry()
+
+        verify(exactly = 1) {
+            preferences.save(match { it.streamingRearCenterGeometry.heightPct == 50 })
+        }
+        verify(exactly = 1) { coordinator.applyPreferences() }
+    }
+
+    @Test
+    fun `projection saves only when slider is released`() {
+        viewModel.updateProjection(ElectronicMirrorViewpoint.REAR) {
+            it.copy(viewScalePermille = 1350)
+        }
+
+        assertEquals(
+            ElectronicMirrorProjectionSpec.DEFAULT_REAR.copy(viewScalePermille = 1350),
+            viewModel.config.value.rearProjection,
+        )
+        verify(exactly = 0) { preferences.save(any()) }
+
+        viewModel.commitProjection()
+
+        verify(exactly = 1) {
+            preferences.save(match { it.rearProjection.viewScalePermille == 1350 })
+        }
+        verify(exactly = 1) { coordinator.applyPreferences() }
     }
 }

@@ -67,7 +67,7 @@ internal fun SourceMappingEditor(
                 Column(modifier = Modifier.weight(1f)) {
                     Text("图像顺序", color = TextPrimary, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
                     Text(
-                        "如果左、右、后方画面对应错误，请逐个预览来源后重新分配；重复来源会自动交换",
+                        "流媒体只切换四格母流中的 tile，普通联动切换独立 Surface 通道；可统一交换左、右、后方顺序",
                         color = TextMuted,
                         fontSize = 12.sp,
                     )
@@ -168,7 +168,7 @@ private fun SourceMappingColumn(
                     onClick = { onAssign(viewpoint, source) },
                     label = {
                         Text(
-                            "${source.displayName.removePrefix("来源 ")} · ${source.previewChannel}",
+                            "${source.displayName.removePrefix("来源 ")} · 格${source.stripTileIndex + 1}",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                         )
@@ -192,4 +192,4 @@ private fun SourceMappingColumn(
 }
 
 private fun sourceLabel(source: ElectronicMirrorCameraSource): String =
-    "${source.displayName} · 通道 ${source.previewChannel}"
+    "${source.displayName} · 全景母流第 ${source.stripTileIndex + 1} 格"

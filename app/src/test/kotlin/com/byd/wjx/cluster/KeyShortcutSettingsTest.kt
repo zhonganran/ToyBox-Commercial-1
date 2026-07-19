@@ -23,23 +23,21 @@ class KeyShortcutSettingsTest {
     }
 
     @Test
-    fun `automation binding survives persistence`() {
+    fun `streaming rear mirror binding survives persistence`() {
         val settings = KeyShortcutSettings(context)
         settings.save(
             listOf(
                 KeyShortcutBinding(
-                    id = "automation-1",
+                    id = "streaming-rear-1",
                     keyCode = 24,
                     pressType = KeyShortcutPressType.Double,
-                    actionType = KeyShortcutActionType.Automation,
-                    automationButtonId = 4,
+                    actionType = KeyShortcutActionType.StreamingRearMirror,
                 )
             )
         )
 
         val restored = KeyShortcutSettings(context).load().single()
-        assertEquals(KeyShortcutActionType.Automation, restored.actionType)
-        assertEquals(4, restored.automationButtonId)
+        assertEquals(KeyShortcutActionType.StreamingRearMirror, restored.actionType)
         assertTrue(restored.isConfigured)
     }
 
@@ -54,7 +52,6 @@ class KeyShortcutSettingsTest {
             .commit()
 
         val restored = KeyShortcutSettings(context).load().single()
-        assertEquals(1, restored.automationButtonId)
         assertEquals(KeyShortcutActionType.PlaySound, restored.actionType)
     }
 

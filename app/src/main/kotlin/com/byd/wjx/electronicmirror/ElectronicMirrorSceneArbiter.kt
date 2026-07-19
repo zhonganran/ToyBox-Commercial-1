@@ -1,10 +1,11 @@
 package com.byd.wjx.electronicmirror
 
 /**
- * Pure priority resolver for the electronic-mirror picture.
+ * Pure resolver for the electronic-mirror pictures.
  *
  * Original vehicle camera/auto-parking is always allowed to own the screen first. Within this
- * feature, reverse is above the turn-signal views, matching the vehicle's safety hierarchy.
+ * feature, reverse is above the turn-signal views, matching the vehicle's safety hierarchy. Side
+ * views and the streaming rear mirror share the same panorama producer and may coexist.
  */
 object ElectronicMirrorSceneArbiter {
     const val GEAR_REVERSE = 2
@@ -15,29 +16,90 @@ object ElectronicMirrorSceneArbiter {
         config: ElectronicMirrorConfig,
         signals: ElectronicMirrorSignals,
         manualPreview: ElectronicMirrorViewpoint? = null,
-    ): ElectronicMirrorScene? {
-        if (signals.originalCameraActive || signals.autoParkingActive) return null
+    ): ElectronicMirrorScene? = resolveAll(config, signals, manualPreview).firstOrNull()
 
-        val choice = when {
-            manualPreview != null -> manualPreview to ElectronicMirrorReason.MANUAL_PREVIEW
-            !config.enabled -> return null
-            config.reverseEnabled && signals.gear == GEAR_REVERSE ->
-                ElectronicMirrorViewpoint.REAR to ElectronicMirrorReason.REVERSE
-            config.leftTurnEnabled && signals.turnSignalFlash == TURN_LEFT ->
-                ElectronicMirrorViewpoint.LEFT to ElectronicMirrorReason.LEFT_TURN
-            config.rightTurnEnabled && signals.turnSignalFlash == TURN_RIGHT ->
-                ElectronicMirrorViewpoint.RIGHT to ElectronicMirrorReason.RIGHT_TURN
-            else -> return null
+    fun resolveAll(
+        config: ElectronicMirrorConfig,
+        signals: ElectronicMirrorSignals,
+        manualPreview: ElectronicMirrorViewpoint? = null,
+    ): List<ElectronicMirrorScene> {
+        if (signals.originalCameraActive || signals.autoParkingActive) return emptyList()
+
+        val streamingActive = config.streamingRearEnabled && config.streamingRearVisible
+        if (manualPreview != null) {
+            return listOf(sceneFor(config, manualPreview, ElectronicMirrorReason.MANUAL_PREVIEW))
+        }
+        if (config.enabled && config.reverseEnabled && signals.gear == GEAR_REVERSE) {
+            return listOf(
+                sceneFor(config, ElectronicMirrorViewpoint.REAR, ElectronicMirrorReason.REVERSE),
+            )
+        }
+
+        val choices = buildList {
+            when (signals.turnSignalFlash) {
+                TURN_LEFT -> if (config.enabled && config.leftTurnEnabled) {
+                    add(ElectronicMirrorViewpoint.LEFT to ElectronicMirrorReason.LEFT_TURN)
+                }
+                TURN_RIGHT -> if (config.enabled && config.rightTurnEnabled) {
+                    add(ElectronicMirrorViewpoint.RIGHT to ElectronicMirrorReason.RIGHT_TURN)
+                }
+                TURN_HAZARD -> {
+                    if (config.enabled && config.leftTurnEnabled) {
+                        add(ElectronicMirrorViewpoint.LEFT to ElectronicMirrorReason.LEFT_TURN)
+                    }
+                    if (config.enabled && config.rightTurnEnabled) {
+                        add(ElectronicMirrorViewpoint.RIGHT to ElectronicMirrorReason.RIGHT_TURN)
+                    }
+                }
+            }
+            if (streamingActive) {
+                add(ElectronicMirrorViewpoint.REAR to ElectronicMirrorReason.STREAMING_REAR)
+            }
+        }
+        return choices.map { (viewpoint, reason) -> sceneFor(config, viewpoint, reason) }
+    }
+
+    private fun sceneFor(
+        config: ElectronicMirrorConfig,
+        viewpoint: ElectronicMirrorViewpoint,
+        reason: ElectronicMirrorReason,
+    ): ElectronicMirrorScene {
+        val isStreamingRear = reason == ElectronicMirrorReason.STREAMING_REAR
+        val target = if (isStreamingRear) {
+            config.streamingRearDisplayTarget
+        } else {
+            config.displayTarget
+        }
+        val source = config.sourceFor(viewpoint)
+        // Surface 2/3/4 are independent fisheye side/rear feeds on the tested vehicle. They show
+        // the door or a round fisheye image and cannot become an AutoTark-style mirror by tuning
+        // crop values. Every view therefore stays on the same rectified four-tile pano_h strip.
+        val surfaceProfile = ElectronicMirrorSurfaceProfile.panorama(config.panoramaSurfaceIndex)
+        val geometry = if (isStreamingRear) {
+            config.streamingRearGeometryFor(target).sanitizedStreaming()
+        } else {
+            val base = config.geometryFor(target).sanitizedSide()
+            val sideInset = base.offsetXPct
+            when (viewpoint) {
+                ElectronicMirrorViewpoint.LEFT -> base.copy(offsetXPct = sideInset)
+                ElectronicMirrorViewpoint.RIGHT -> base.copy(offsetXPct = 100 - sideInset)
+                ElectronicMirrorViewpoint.REAR -> base.copy(offsetXPct = 50)
+            }
         }
 
         return ElectronicMirrorScene(
-            viewpoint = choice.first,
-            source = config.sourceFor(choice.first),
-            target = config.displayTarget,
-            geometry = config.geometryFor(),
-            reason = choice.second,
+            viewpoint = viewpoint,
+            source = source,
+            target = target,
+            geometry = geometry,
+            reason = reason,
             fps = config.fps,
-            calibration = config.calibrationFor(choice.first),
+            projection = config.projectionFor(viewpoint),
+            surfaceProfile = surfaceProfile,
+            tileIndex = source.stripTileIndex,
+            mirrorHorizontally = viewpoint == ElectronicMirrorViewpoint.REAR,
         )
     }
+
+    private const val TURN_HAZARD = 6
 }

@@ -32,11 +32,7 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.ViewInAr
 import androidx.compose.material.icons.outlined.WbSunny
 import androidx.compose.material3.Icon
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -56,7 +52,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
@@ -66,7 +61,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.byd.wjx.ui.dashboard.DashboardUiState
 import com.byd.wjx.ui.dashboard.DashboardViewModel
-import com.byd.wjx.R
 import com.byd.wjx.ui.theme.AccentBlue
 import com.byd.wjx.ui.theme.AccentGreen
 import com.byd.wjx.ui.theme.AccentOrange
@@ -107,8 +101,6 @@ fun ProAppScaffold(
 ) {
     val dashboardViewModel: DashboardViewModel = hiltViewModel()
     val vehicleState by dashboardViewModel.uiState.collectAsStateWithLifecycle()
-    val adbStatusViewModel: AdbStatusViewModel = hiltViewModel()
-    val adbState by adbStatusViewModel.uiState.collectAsStateWithLifecycle()
 
     Box(modifier = Modifier.fillMaxSize()) {
         ProDynamicBackground(
@@ -119,11 +111,7 @@ fun ProAppScaffold(
             modifier = Modifier
                 .fillMaxSize(),
         ) {
-            ProTopStatusBar(
-                state = vehicleState,
-                adbState = adbState,
-                onAdbClick = adbStatusViewModel::showAuthorizationDialog,
-            )
+            ProTopStatusBar(state = vehicleState)
             BoxWithConstraints(
                 modifier = Modifier
                     .weight(1f)
@@ -150,21 +138,12 @@ fun ProAppScaffold(
                 )
             }
         }
-        if (adbState.dialogVisible) {
-            AdbAuthorizationDialog(
-                state = adbState,
-                onAuthorize = adbStatusViewModel::requestAuthorization,
-                onDismiss = adbStatusViewModel::dismissAuthorizationDialog,
-            )
-        }
     }
 }
 
 @Composable
 private fun ProTopStatusBar(
     state: DashboardUiState,
-    adbState: AdbStatusUiState,
-    onAdbClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var clock by remember { mutableStateOf(formatClock()) }
@@ -216,42 +195,6 @@ private fun ProTopStatusBar(
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
             )
-            StatusDivider()
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable(onClick = onAdbClick)
-                    .padding(horizontal = 5.dp, vertical = 3.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(
-                            when (adbState.connected) {
-                                true -> Color(0xFF15CB55)
-                                false -> Color(0xFFFFA726)
-                                null -> TextSecondary
-                            },
-                        ),
-                )
-                Text(
-                    text = when (adbState.connected) {
-                        true -> stringResource(R.string.top_status_adb_connected)
-                        false -> stringResource(
-                            if (compact) R.string.top_status_adb_disconnected_compact
-                            else R.string.top_status_adb_disconnected,
-                        )
-                        null -> stringResource(R.string.top_status_adb_checking)
-                    },
-                    color = TextPrimary,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                )
-            }
             Spacer(modifier = Modifier.weight(1f))
             Icon(Icons.Outlined.WbSunny, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(15.dp))
             Text(
@@ -284,56 +227,6 @@ private fun ProTopStatusBar(
             }
         }
     }
-}
-
-@Composable
-private fun AdbAuthorizationDialog(
-    state: AdbStatusUiState,
-    onAuthorize: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val message = when {
-        state.connecting -> R.string.adb_auth_waiting
-        state.authorizationResult == AdbAuthorizationResult.SUCCESS -> R.string.adb_auth_success
-        state.authorizationResult == AdbAuthorizationResult.FAILURE -> R.string.adb_auth_failed
-        state.connected == true -> R.string.adb_auth_already_connected
-        else -> R.string.adb_auth_message
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.adb_auth_title), fontWeight = FontWeight.Bold) },
-        text = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                if (state.connecting) {
-                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-                }
-                Text(stringResource(message))
-            }
-        },
-        confirmButton = {
-            if (!state.connecting && state.connected != true) {
-                Button(onClick = onAuthorize) {
-                    Text(
-                        stringResource(
-                            if (state.authorizationResult == AdbAuthorizationResult.FAILURE) {
-                                R.string.adb_auth_retry
-                            } else {
-                                R.string.adb_auth_start
-                            },
-                        ),
-                    )
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.adb_auth_close))
-            }
-        },
-    )
 }
 
 @Composable

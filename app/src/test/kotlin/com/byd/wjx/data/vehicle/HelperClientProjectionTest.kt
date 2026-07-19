@@ -123,25 +123,38 @@ class HelperClientProjectionTest {
     }
 
     @Test
-    fun `electronic mirror start sends viewpoint and fps before Surface`() = runBlocking {
-        var viewpoint = 0
-        var fps = 0
-        val fake = capturingFake(status = 0, value = 2002) {
-            viewpoint = it.readInt()
-            fps = it.readInt()
+    fun `electronic mirror start sends independent surface profile before Surface`() = runBlocking {
+        var cameraTag: String? = null
+        val values = IntArray(5)
+        val fake = capturingFake(status = 0, value = 0) {
+            cameraTag = it.readString()
+            values.indices.forEach { index -> values[index] = it.readInt() }
         }
         val surface = makeSurface()
+        val request = ElectronicMirrorCameraRequest(
+            cameraTag = "pano_h",
+            surfaceIndex = 0,
+            tileCount = 4,
+            bufferWidth = 3000,
+            bufferHeight = 508,
+            fps = 30,
+        )
 
-        assertTrue(clientWith(fake).startElectronicMirror(surface, 2002, 30))
-        assertEquals(2002, viewpoint)
-        assertEquals(30, fps)
+        assertTrue(clientWith(fake).startElectronicMirror(surface, request))
+        assertEquals("pano_h", cameraTag)
+        assertArrayEquals(intArrayOf(0, 4, 3000, 508, 30), values)
         surface.release()
     }
 
     @Test
     fun `electronic mirror switch and stop map replies`() = runBlocking {
-        assertTrue(clientWith(capturingFake(status = 0, value = 2003)).switchElectronicMirrorView(2003))
+        var surfaceIndex = -1
+        assertTrue(
+            clientWith(capturingFake(status = 0, value = 0) { surfaceIndex = it.readInt() })
+                .switchElectronicMirrorSurface(3),
+        )
+        assertEquals(3, surfaceIndex)
         assertTrue(clientWith(capturingFake(status = 0, value = 0)).stopElectronicMirror())
-        assertFalse(clientWith(capturingFake(status = -7, value = -1)).switchElectronicMirrorView(2002))
+        assertFalse(clientWith(capturingFake(status = -7, value = -1)).switchElectronicMirrorSurface(2))
     }
 }

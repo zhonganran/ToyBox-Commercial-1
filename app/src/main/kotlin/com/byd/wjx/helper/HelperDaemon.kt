@@ -428,10 +428,22 @@ fun main(args: Array<String>) {
                 }
 
                 HelperBinderProtocol.TX_CAMERA_START -> runCatching {
-                    val viewpoint = data.readInt()
+                    val cameraTag = data.readString().orEmpty()
+                    val surfaceIndex = data.readInt()
+                    val tileCount = data.readInt()
+                    val bufferWidth = data.readInt()
+                    val bufferHeight = data.readInt()
                     val fps = data.readInt()
                     val surface = Surface.CREATOR.createFromParcel(data)
-                    val status = electronicMirrorCamera.start(surface, viewpoint, fps)
+                    val status = electronicMirrorCamera.start(
+                        surface = surface,
+                        cameraTag = cameraTag,
+                        surfaceIndex = surfaceIndex,
+                        tileCount = tileCount,
+                        bufferWidth = bufferWidth,
+                        bufferHeight = bufferHeight,
+                        fps = fps,
+                    )
                     reply?.writeInt(status)
                     reply?.writeInt(0)
                     true
@@ -441,7 +453,7 @@ fun main(args: Array<String>) {
                 }
 
                 HelperBinderProtocol.TX_CAMERA_SWITCH_VIEW -> runCatching {
-                    val status = electronicMirrorCamera.switchView(data.readInt())
+                    val status = electronicMirrorCamera.switchSurface(data.readInt())
                     reply?.writeInt(status)
                     reply?.writeInt(0)
                     true

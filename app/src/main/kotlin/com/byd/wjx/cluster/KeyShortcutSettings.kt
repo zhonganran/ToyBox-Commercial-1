@@ -20,7 +20,7 @@ enum class KeyShortcutActionType(val storageValue: String, val label: String) {
     PlaySound("play_sound", "播放音效"),
     RealtimeHailing("realtime_hailing", "实时喊话"),
     Xiaozhi("xiaozhi", "小智对话"),
-    Automation("automation", "智能联动");
+    StreamingRearMirror("streaming_rear_mirror", "流媒体后视镜");
 
     companion object {
         fun fromStorage(value: String?): KeyShortcutActionType =
@@ -35,7 +35,6 @@ data class KeyShortcutBinding(
     val actionType: KeyShortcutActionType = KeyShortcutActionType.PlaySound,
     val soundPath: String = "",
     val soundName: String = "",
-    val automationButtonId: Int = 1,
     val enabled: Boolean = true,
 ) {
     val isConfigured: Boolean
@@ -43,7 +42,7 @@ data class KeyShortcutBinding(
             KeyShortcutActionType.PlaySound -> soundPath.isNotBlank()
             KeyShortcutActionType.RealtimeHailing -> true
             KeyShortcutActionType.Xiaozhi -> true
-            KeyShortcutActionType.Automation -> automationButtonId in 1..4
+            KeyShortcutActionType.StreamingRearMirror -> true
         }
 }
 
@@ -65,7 +64,6 @@ class KeyShortcutSettings(context: Context) {
                             actionType = KeyShortcutActionType.fromStorage(item.optString("actionType")),
                             soundPath = item.optString("soundPath"),
                             soundName = item.optString("soundName"),
-                            automationButtonId = item.optInt("automationButtonId", 1).coerceIn(1, 4),
                             enabled = item.optBoolean("enabled", true),
                         )
                     )
@@ -108,7 +106,6 @@ class KeyShortcutSettings(context: Context) {
                     .put("actionType", binding.actionType.storageValue)
                     .put("soundPath", binding.soundPath)
                     .put("soundName", binding.soundName)
-                    .put("automationButtonId", binding.automationButtonId)
                     .put("enabled", binding.enabled)
             )
         }
