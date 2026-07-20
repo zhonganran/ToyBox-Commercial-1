@@ -4,6 +4,7 @@ import android.app.ActivityManager
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
+import com.byd.wjx.di.ApplicationScope
 import com.byd.wjx.log.WjxFileLogger
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -45,6 +46,7 @@ enum class ForegroundAppSource {
 @Singleton
 class ForegroundAppMonitor @Inject constructor(
     @ApplicationContext context: Context,
+    @ApplicationScope private val applicationScope: CoroutineScope,
 ) {
     private val appContext = context.applicationContext
     private val usageStats = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
@@ -53,41 +55,47 @@ class ForegroundAppMonitor @Inject constructor(
     val foreground: StateFlow<ForegroundApp> = _foreground.asStateFlow()
 
     private var job: Job? = null
+    private val lifecycleLock = Any()
+    private val owners = linkedSetOf<String>()
     private val rescanRequests = Channel<Unit>(Channel.CONFLATED)
     @Volatile private var lastEventTimestamp = 0L
     @Volatile private var ownAppInForeground = false
 
-    fun start(scope: CoroutineScope) {
-        if (job?.isActive == true) return
-        while (rescanRequests.tryReceive().isSuccess) Unit
-        lastEventTimestamp = 0L
-        AccessibilityForegroundBridge.setRescanListener {
-            requestImmediateRescan("accessibility_window")
-        }
-        job = scope.launch(Dispatchers.IO) {
-            while (true) {
-                readForeground()?.let { latest ->
-                    val current = _foreground.value
-                    if (latest.packageName != current.packageName ||
-                        latest.className != current.className ||
-                        latest.source != current.source
-                    ) {
-                        _foreground.value = latest
-                        WjxFileLogger.i(
-                            TAG,
-                            "foreground pkg=${latest.packageName} cls=${latest.className} " +
-                                "source=${latest.source} ts=${latest.observedAtMs}",
-                        )
-                    }
-                }
-                ensureActive()
-                val interval = if (_foreground.value.packageName == null) {
-                    UNKNOWN_POLL_INTERVAL_MS
-                } else {
-                    POLL_INTERVAL_MS
-                }
-                withTimeoutOrNull(interval) { rescanRequests.receive() }
+    fun start(owner: String) {
+        synchronized(lifecycleLock) {
+            owners.add(owner)
+            if (job?.isActive == true) return
+            while (rescanRequests.tryReceive().isSuccess) Unit
+            lastEventTimestamp = 0L
+            AccessibilityForegroundBridge.setRescanListener {
+                requestImmediateRescan("accessibility_window")
             }
+            job = applicationScope.launch(Dispatchers.IO) {
+                while (true) {
+                    readForeground()?.let { latest ->
+                        val current = _foreground.value
+                        if (latest.packageName != current.packageName ||
+                            latest.className != current.className ||
+                            latest.source != current.source
+                        ) {
+                            _foreground.value = latest
+                            WjxFileLogger.i(
+                                TAG,
+                                "foreground pkg=${latest.packageName} cls=${latest.className} " +
+                                    "source=${latest.source} ts=${latest.observedAtMs}",
+                            )
+                        }
+                    }
+                    ensureActive()
+                    val interval = if (_foreground.value.packageName == null) {
+                        UNKNOWN_POLL_INTERVAL_MS
+                    } else {
+                        POLL_INTERVAL_MS
+                    }
+                    withTimeoutOrNull(interval) { rescanRequests.receive() }
+                }
+            }
+            WjxFileLogger.i(TAG, "started owner=$owner owners=${owners.size}")
         }
     }
 
@@ -102,13 +110,21 @@ class ForegroundAppMonitor @Inject constructor(
         requestImmediateRescan(reason)
     }
 
-    fun stop() {
-        job?.cancel()
-        job = null
-        AccessibilityForegroundBridge.setRescanListener(null)
-        lastEventTimestamp = 0L
-        ownAppInForeground = false
-        _foreground.value = ForegroundApp()
+    fun stop(owner: String) {
+        synchronized(lifecycleLock) {
+            owners.remove(owner)
+            if (owners.isNotEmpty()) {
+                WjxFileLogger.i(TAG, "retained after stop owner=$owner owners=${owners.size}")
+                return
+            }
+            job?.cancel()
+            job = null
+            AccessibilityForegroundBridge.setRescanListener(null)
+            lastEventTimestamp = 0L
+            ownAppInForeground = false
+            _foreground.value = ForegroundApp()
+            WjxFileLogger.i(TAG, "stopped owner=$owner")
+        }
     }
 
     private fun readForeground(): ForegroundApp? {

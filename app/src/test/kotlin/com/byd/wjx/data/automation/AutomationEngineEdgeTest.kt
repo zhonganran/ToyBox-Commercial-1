@@ -235,34 +235,6 @@ class AutomationEngineEdgeTest {
         coVerify(exactly = 2) { ruleDao.updateLastTriggered(1, any()) }
     }
 
-    @Test fun `button trigger still requires the other AND conditions`() = runBlocking {
-        val r = rule(
-            id = 1,
-            triggers = listOf(
-                TriggerDef(
-                    param = "",
-                    chineseName = "",
-                    operator = "",
-                    value = "2",
-                    displayName = "button",
-                    kind = "button_press",
-                ),
-                paramTrigger("ExtTemp", ">", "20"),
-            ),
-        )
-        val ruleDao = mockk<RuleDao>(relaxed = true)
-        val snapshots = MutableStateFlow(snapshot(exteriorTemp = 10))
-        val vehicleRepository = mockk<VehicleStateRepository>(relaxed = true) {
-            every { fullSnapshot } returns snapshots
-        }
-        val engine = engineFor(listOf(r), ruleDao, mockk(relaxed = true), vehicleRepository)
-
-        assertEquals(0, engine.onButtonPress(2))
-        snapshots.value = snapshot(exteriorTemp = 25)
-        assertEquals(1, engine.onButtonPress(2))
-        coVerify(exactly = 1) { ruleDao.updateLastTriggered(1, any()) }
-    }
-
     private fun engineFor(
         rules: List<RuleEntity>,
         ruleDao: RuleDao,

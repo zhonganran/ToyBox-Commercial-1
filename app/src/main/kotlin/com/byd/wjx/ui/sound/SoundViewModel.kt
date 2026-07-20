@@ -606,21 +606,6 @@ class SoundViewModel @Inject constructor(
         _uiState.update { it.copy(message = null) }
     }
 
-    fun setChannelMode(mode: ExteriorChannelMode) {
-        hailingSettings.channelMode = mode
-        viewModelScope.launch(Dispatchers.IO) {
-            val profile = profileDetector.detect()
-            _uiState.update {
-                it.copy(
-                    controllerLabel = profile.seriesLabel,
-                    channelLabel = hailingSettings.channelModeLabel(profile),
-                    channelMode = hailingSettings.channelMode,
-                    message = "已切换：${hailingSettings.channelModeLabel(profile)}",
-                )
-            }
-        }
-    }
-
     private fun stopInCarPreview() {
         val player = previewPlayer ?: return
         releaseInCarPreview(player)

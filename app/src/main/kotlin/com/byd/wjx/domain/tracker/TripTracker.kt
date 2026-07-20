@@ -8,9 +8,11 @@ import com.byd.wjx.data.remote.DiParsData
 import com.byd.wjx.data.local.dao.TripPointDao
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import java.util.Collections
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 enum class TripState { IDLE, DRIVING }
 
@@ -25,6 +27,8 @@ class TripTracker @Inject constructor(
     private val recordGpsEnabled: suspend () -> Boolean = { true },
     private val clock: () -> Long = { System.currentTimeMillis() },
 ) {
+    private val stateMutex = Mutex()
+    private val currentOwner = AtomicLong(0L)
     private val _state = MutableStateFlow(TripState.IDLE)
     val state: StateFlow<TripState> = _state
 
@@ -38,7 +42,7 @@ class TripTracker @Inject constructor(
 
     private var speedAboveThresholdSince: Long? = null
     private var speedZeroSince: Long? = null
-    private val pendingPoints = Collections.synchronizedList(mutableListOf<TripPointEntity>())
+    private val pendingPoints = mutableListOf<TripPointEntity>()
     private var lastRecordedLocation: Location? = null
     private var lastRecordedAt: Long = 0L
     private var stationarySince: Long? = null
@@ -57,10 +61,13 @@ class TripTracker @Inject constructor(
         private const val NO_GPS_FILE_LOG_INTERVAL_MS = 30_000L
     }
 
-    suspend fun onData(data: DiParsData, location: Location?) {
+    fun claimOwnership(): Long = currentOwner.incrementAndGet()
+
+    suspend fun onData(owner: Long, data: DiParsData, location: Location?) = stateMutex.withLock {
+        if (owner != currentOwner.get()) return@withLock
         if (!recordGpsEnabled()) {
             stopRecordingForDisabledSetting()
-            return
+            return@withLock
         }
 
         // DiLink 4 has no readable autoservice speed fid (returns a sentinel →
@@ -200,8 +207,12 @@ class TripTracker @Inject constructor(
     /**
      * Force-end on service shutdown. Just flush remaining GPS points.
      */
-    suspend fun forceEnd(lastData: DiParsData?, lastLocation: Location?) {
-        if (_state.value != TripState.DRIVING) return
+    suspend fun forceEnd(owner: Long) = stateMutex.withLock {
+        if (owner != currentOwner.get()) {
+            WjxFileLogger.i(TAG, "forceEnd ignored for stale service owner=$owner current=${currentOwner.get()}")
+            return@withLock
+        }
+        if (_state.value != TripState.DRIVING) return@withLock
         Log.w(TAG, "forceEnd: flushing GPS points on shutdown")
         WjxFileLogger.w(TAG, "forceEnd: flushing GPS points on shutdown")
         flushPoints()
@@ -213,12 +224,9 @@ class TripTracker @Inject constructor(
     }
 
     private suspend fun flushPoints() {
-        val snapshot: List<TripPointEntity>
-        synchronized(pendingPoints) {
-            if (pendingPoints.isEmpty()) return
-            snapshot = ArrayList(pendingPoints)
-            pendingPoints.clear()
-        }
+        if (pendingPoints.isEmpty()) return
+        val snapshot = ArrayList(pendingPoints)
+        pendingPoints.clear()
         try {
             tripPointDao.insertAll(snapshot)
             Log.i(TAG, "flushPoints: saved ${snapshot.size} GPS points to DB")

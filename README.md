@@ -45,4 +45,13 @@ export WJX_PLATFORM_ADMIN_PASSWORD='replace-with-a-strong-password'
 export WJX_PLATFORM_SECRET_KEY='replace-with-a-persistent-random-secret'
 ```
 
+后台默认不信任客户端提交的代理 IP 请求头。仅当 Gunicorn 只能通过受信任的反向代理访问时，
+按实际代理层数配置，例如单层 Nginx：
+
+```bash
+export WJX_PLATFORM_TRUSTED_PROXY_COUNT=1
+```
+
+不要在 Gunicorn 端口可被公网直接访问时启用该配置。
+
 如果后台平台数据库仍使用历史默认密码，下次启动会要求上述环境变量，并自动替换为新密码。

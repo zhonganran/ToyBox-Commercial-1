@@ -464,41 +464,6 @@ fun ProGlassPanel(
 }
 
 @Composable
-fun ProInfoCard(
-    title: String,
-    value: String,
-    caption: String,
-    icon: ImageVector,
-    tint: Color,
-    modifier: Modifier = Modifier,
-    onClick: (() -> Unit)? = null,
-) {
-    val clickableModifier = if (onClick != null) Modifier.clickable { onClick() } else Modifier
-    ProGlassPanel(modifier = modifier.then(clickableModifier)) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(tint.copy(alpha = 0.14f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
-            }
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(title, color = TextSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                Text(value, color = TextPrimary, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
-                Text(caption, color = TextMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        }
-    }
-}
-
-@Composable
 fun ProSectionTitle(
     title: String,
     modifier: Modifier = Modifier,

@@ -3,15 +3,15 @@ package com.byd.wjx.data.charging
 import com.byd.wjx.data.autoservice.BatteryReading
 import com.byd.wjx.data.autoservice.ChargingReading
 import com.byd.wjx.data.local.dao.ChargeDao
-import com.byd.wjx.data.local.dao.ChargeSummary
 import com.byd.wjx.data.local.entity.ChargeEntity
-import com.byd.wjx.data.local.entity.ChargePointEntity
 import com.byd.wjx.data.nativestack.ParsReader
 import com.byd.wjx.data.remote.DiParsData
 import com.byd.wjx.data.vehicle.FakeVehicleGateway
 import com.byd.wjx.data.repository.BatteryHealthRepository
 import com.byd.wjx.data.repository.ChargeRepository
 import com.byd.wjx.data.repository.SettingsRepository
+import com.byd.wjx.data.vehicle.VehicleSnapshot
+import com.byd.wjx.data.vehicle.VehicleSnapshotKind
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -36,43 +36,13 @@ class AutoserviceChargingDetectorTest {
         }
         override suspend fun update(charge: ChargeEntity) {}
         override fun getAll(): Flow<List<ChargeEntity>> = flowOf(inserted.toList())
-        override suspend fun getById(id: Long): ChargeEntity? = inserted.find { it.id == id }
         override fun getByDateRange(from: Long, to: Long): Flow<List<ChargeEntity>> = flowOf(emptyList())
-        override suspend fun getPeriodSummary(from: Long, to: Long): ChargeSummary = ChargeSummary(0, 0.0, 0.0)
         override fun getLastCharge(): Flow<ChargeEntity?> = flowOf(inserted.lastOrNull())
-        override suspend fun getLastSuspendedCharge(): ChargeEntity? = null
-        override suspend fun getStaleSessions(cutoffTs: Long): List<ChargeEntity> = emptyList()
-        override suspend fun getLastChargeSync(): ChargeEntity? = inserted.lastOrNull()
-        override suspend fun getRecentChargesWithBatteryData(): List<ChargeEntity> = emptyList()
-        override suspend fun getMaxLifetimeKwhAtFinish(): Double? = null
         override suspend fun getAllAutoserviceCharges(): List<ChargeEntity> =
             inserted.filter { it.detectionSource?.startsWith("autoservice_") == true }
-        override suspend fun hasLegacyCharges(): Boolean =
-            inserted.any { it.detectionSource == null || it.detectionSource?.startsWith("autoservice_") != true }
-        override suspend fun deleteEmpty(): Int {
-            val before = inserted.size
-            inserted.removeAll { it.kwhCharged == null || (it.kwhCharged ?: 0.0) < 0.05 }
-            return before - inserted.size
-        }
-        override suspend fun deletePhantomAutoserviceRows(): Int {
-            val before = inserted.size
-            inserted.removeAll { ch ->
-                ch.detectionSource?.startsWith("autoservice_") == true &&
-                        Math.abs((ch.socStart ?: 0) - (ch.socEnd ?: 0)) < 1 &&
-                        (ch.kwhCharged ?: 0.0) > 1.0
-            }
-            return before - inserted.size
-        }
         override suspend fun delete(charge: ChargeEntity) {
             inserted.removeAll { it.id == charge.id }
         }
-    }
-
-    private object NullChargePointDao : com.byd.wjx.data.local.dao.ChargePointDao {
-        override suspend fun insertAll(points: List<ChargePointEntity>) {}
-        override suspend fun getByChargeId(chargeId: Long): List<ChargePointEntity> = emptyList()
-        override suspend fun getCount(): Int = 0
-        override suspend fun thinOldPoints(cutoff: Long, intervalMs: Long): Int = 0
     }
 
     private class FakeSettingsDao(initial: Map<String, String> = emptyMap()) :
@@ -93,7 +63,8 @@ class AutoserviceChargingDetectorTest {
     private class FakeParsReader(
         private val data: DiParsData? = null
     ) : ParsReader {
-        override suspend fun fetch(): DiParsData? = data
+        override suspend fun fetchVehicleSnapshot(): VehicleSnapshot? =
+            data?.let { VehicleSnapshot.synthetic(it, VehicleSnapshotKind.FULL) }
     }
 
     private class RecordingBatterySnapshotDao : com.byd.wjx.data.local.dao.BatterySnapshotDao {
@@ -107,7 +78,6 @@ class AutoserviceChargingDetectorTest {
         override fun getRecent(limit: Int): Flow<List<com.byd.wjx.data.local.entity.BatterySnapshotEntity>> =
             flowOf(emptyList())
         override suspend fun getLast(): com.byd.wjx.data.local.entity.BatterySnapshotEntity? = null
-        override suspend fun getCount(): Int = inserted.size
     }
 
     private data class TestSetup(
@@ -142,7 +112,7 @@ class AutoserviceChargingDetectorTest {
     ): TestSetup {
         val auto = FakeVehicleGateway(battery, charging, autoserviceAvailable)
         val dao = RecordingDao()
-        val chargeRepo = ChargeRepository(dao, NullChargePointDao)
+        val chargeRepo = ChargeRepository(dao)
         val snapshotDao = RecordingBatterySnapshotDao()
         val healthRepo = BatteryHealthRepository(snapshotDao)
 

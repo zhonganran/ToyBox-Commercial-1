@@ -5,7 +5,7 @@ import android.util.Log
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.byd.wjx.data.local.dao.ChargePointDao
+import com.byd.wjx.data.local.dao.RuleLogDao
 import com.byd.wjx.data.local.dao.TripPointDao
 import com.byd.wjx.data.local.dao.VehicleWriteLogDao
 import com.byd.wjx.log.WjxFileLogger
@@ -25,7 +25,7 @@ class DataThinningWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
     private val tripPointDao: TripPointDao,
-    private val chargePointDao: ChargePointDao,
+    private val ruleLogDao: RuleLogDao,
     private val vehicleWriteLogDao: VehicleWriteLogDao,
 ) : CoroutineWorker(context, params) {
 
@@ -38,35 +38,34 @@ class DataThinningWorker @AssistedInject constructor(
         private const val INTERVAL_60S = 60_000L
         private const val WRITE_LOG_RETENTION_MS = 30L * 24 * 60 * 60 * 1000
         private const val WRITE_LOG_MAX_ROWS = 2_000
+        private const val RULE_LOG_RETENTION_MS = 30L * 24 * 60 * 60 * 1000
+        private const val RULE_LOG_MAX_ROWS = 2_000
     }
 
     override suspend fun doWork(): Result {
         return try {
             val now = System.currentTimeMillis()
             val tripsBefore = tripPointDao.getCount()
-            val chargesBefore = chargePointDao.getCount()
 
             // Tier 1: 7-30 days old → keep 1 per 15 sec
             val cutoff30 = now - DAYS_30_MS
             val cutoff7 = now - DAYS_7_MS
             tripPointDao.thinOldPoints(cutoff7, INTERVAL_15S)
-            chargePointDao.thinOldPoints(cutoff7, INTERVAL_15S)
 
             // Tier 2: > 30 days old → keep 1 per 60 sec
             tripPointDao.thinOldPoints(cutoff30, INTERVAL_60S)
-            chargePointDao.thinOldPoints(cutoff30, INTERVAL_60S)
 
             vehicleWriteLogDao.deleteOlderThan(now - WRITE_LOG_RETENTION_MS)
             vehicleWriteLogDao.trimToLatest(WRITE_LOG_MAX_ROWS)
+            ruleLogDao.deleteOlderThan(now - RULE_LOG_RETENTION_MS)
+            ruleLogDao.trimToLatest(RULE_LOG_MAX_ROWS)
 
             val tripsAfter = tripPointDao.getCount()
-            val chargesAfter = chargePointDao.getCount()
             val tripsDeleted = tripsBefore - tripsAfter
-            val chargesDeleted = chargesBefore - chargesAfter
 
-            if (tripsDeleted > 0 || chargesDeleted > 0) {
-                Log.i(TAG, "Thinned: trip_points $tripsBefore→$tripsAfter (-$tripsDeleted), charge_points $chargesBefore→$chargesAfter (-$chargesDeleted)")
-                WjxFileLogger.i(TAG, "Thinned: trip_points $tripsBefore->$tripsAfter (-$tripsDeleted), charge_points $chargesBefore->$chargesAfter (-$chargesDeleted)")
+            if (tripsDeleted > 0) {
+                Log.i(TAG, "Thinned: trip_points $tripsBefore→$tripsAfter (-$tripsDeleted)")
+                WjxFileLogger.i(TAG, "Thinned: trip_points $tripsBefore->$tripsAfter (-$tripsDeleted)")
             }
 
             Result.success()

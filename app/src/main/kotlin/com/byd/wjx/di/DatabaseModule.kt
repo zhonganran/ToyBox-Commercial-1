@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.room.Room
 import com.byd.wjx.data.local.dao.BatterySnapshotDao
 import com.byd.wjx.data.local.dao.ChargeDao
-import com.byd.wjx.data.local.dao.ChargePointDao
 import com.byd.wjx.data.local.dao.IdleDrainDao
 import com.byd.wjx.data.local.dao.LastStateDao
 import com.byd.wjx.data.local.dao.OdometerSampleDao
@@ -33,13 +32,12 @@ object DatabaseModule {
         Room.databaseBuilder(context, AppDatabase::class.java, "wjx.db")
             // Schema 17 is the fresh-install commercial baseline. Every future schema change
             // must provide an explicit migration so upgrades preserve user data.
-            .addMigrations(AppDatabase.MIGRATION_17_18)
+            .addMigrations(AppDatabase.MIGRATION_17_18, AppDatabase.MIGRATION_18_19)
             .build()
 
     @Provides fun provideTripDao(db: AppDatabase): TripDao = db.tripDao()
     @Provides fun provideTripPointDao(db: AppDatabase): TripPointDao = db.tripPointDao()
     @Provides fun provideChargeDao(db: AppDatabase): ChargeDao = db.chargeDao()
-    @Provides fun provideChargePointDao(db: AppDatabase): ChargePointDao = db.chargePointDao()
     @Provides fun provideSettingsDao(db: AppDatabase): SettingsDao = db.settingsDao()
     @Provides fun provideIdleDrainDao(db: AppDatabase): IdleDrainDao = db.idleDrainDao()
     @Provides fun provideBatterySnapshotDao(db: AppDatabase): BatterySnapshotDao = db.batterySnapshotDao()

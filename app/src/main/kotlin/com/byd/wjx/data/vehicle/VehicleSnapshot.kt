@@ -5,8 +5,7 @@ import com.byd.wjx.data.remote.DiParsData
 enum class VehicleSnapshotKind { FULL, ACTION }
 
 /**
- * Parsed vehicle state plus transport diagnostics. Existing consumers continue receiving
- * [DiParsData]; new consumers can use this model to reason about freshness and data quality.
+ * Parsed vehicle state plus transport diagnostics.
  */
 data class VehicleSnapshot(
     val data: DiParsData,
@@ -22,7 +21,7 @@ data class VehicleSnapshot(
     val ageMs: Long get() = (System.currentTimeMillis() - readCompletedAtMs).coerceAtLeast(0L)
 
     companion object {
-        fun legacy(data: DiParsData, kind: VehicleSnapshotKind): VehicleSnapshot {
+        internal fun synthetic(data: DiParsData, kind: VehicleSnapshotKind): VehicleSnapshot {
             val now = System.currentTimeMillis()
             return VehicleSnapshot(
                 data = data,

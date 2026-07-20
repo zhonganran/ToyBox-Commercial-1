@@ -46,13 +46,14 @@ class TripTrackerTest {
         // DiLink 4: autoservice speed fid returns sentinel → data.speed == null.
         // GPS still reports motion, so the tracker must start collecting.
         val tracker = tracker()
+        val owner = tracker.claimOwnership()
         val data = diParsData(speed = null)
         val loc = movingLocation(15f) // ≈ 54 km/h
 
         nowMs = 1_000L
-        tracker.onData(data, loc) // arm
+        tracker.onData(owner, data, loc) // arm
         nowMs = 7_000L
-        tracker.onData(data, loc) // +6 s ≥ START_DELAY → DRIVING
+        tracker.onData(owner, data, loc) // +6 s ≥ START_DELAY → DRIVING
 
         assertEquals(TripState.DRIVING, tracker.state.value)
     }
@@ -63,13 +64,14 @@ class TripTrackerTest {
         // the raw m/s value (1) would stay below threshold and never start. Guards
         // against the conversion silently being dropped.
         val tracker = tracker()
+        val owner = tracker.claimOwnership()
         val data = diParsData(speed = null)
         val loc = movingLocation(1.2f)
 
         nowMs = 1_000L
-        tracker.onData(data, loc) // arm
+        tracker.onData(owner, data, loc) // arm
         nowMs = 7_000L
-        tracker.onData(data, loc) // +6 s ≥ START_DELAY → DRIVING (only if converted)
+        tracker.onData(owner, data, loc) // +6 s ≥ START_DELAY → DRIVING (only if converted)
 
         assertEquals(TripState.DRIVING, tracker.state.value)
     }
@@ -77,13 +79,14 @@ class TripTrackerTest {
     @Test
     fun `stays idle when both autoservice and GPS speed are unavailable`() = runTest {
         val tracker = tracker()
+        val owner = tracker.claimOwnership()
         val data = diParsData(speed = null)
         val loc = noSpeedLocation()
 
         nowMs = 1_000L
-        tracker.onData(data, loc)
+        tracker.onData(owner, data, loc)
         nowMs = 7_000L
-        tracker.onData(data, loc)
+        tracker.onData(owner, data, loc)
 
         assertEquals(TripState.IDLE, tracker.state.value)
     }
@@ -93,13 +96,34 @@ class TripTrackerTest {
         // Regression guard: where data.speed is valid (Leopard 3) the GPS
         // fallback must not change behaviour — even with a null location.
         val tracker = tracker()
+        val owner = tracker.claimOwnership()
         val data = diParsData(speed = 54)
 
         nowMs = 1_000L
-        tracker.onData(data, null) // arm
+        tracker.onData(owner, data, null) // arm
         nowMs = 7_000L
-        tracker.onData(data, null) // DRIVING
+        tracker.onData(owner, data, null) // DRIVING
 
+        assertEquals(TripState.DRIVING, tracker.state.value)
+    }
+
+    @Test
+    fun `stale service shutdown cannot end the new owners trip`() = runTest {
+        val tracker = tracker()
+        val oldOwner = tracker.claimOwnership()
+        val data = diParsData(speed = 54)
+
+        nowMs = 1_000L
+        tracker.onData(oldOwner, data, null)
+        nowMs = 7_000L
+        tracker.onData(oldOwner, data, null)
+        assertEquals(TripState.DRIVING, tracker.state.value)
+
+        val newOwner = tracker.claimOwnership()
+        tracker.forceEnd(oldOwner)
+
+        assertEquals(TripState.DRIVING, tracker.state.value)
+        tracker.onData(newOwner, data, null)
         assertEquals(TripState.DRIVING, tracker.state.value)
     }
 }

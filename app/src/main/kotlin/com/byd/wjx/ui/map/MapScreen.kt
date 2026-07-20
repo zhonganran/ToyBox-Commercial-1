@@ -30,7 +30,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -54,7 +53,6 @@ import com.byd.wjx.ui.components.formatTime
 import com.byd.wjx.SuperToyBoxApp
 import com.byd.wjx.ui.theme.*
 import com.byd.wjx.util.Gcj02Converter
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
@@ -398,8 +396,8 @@ private fun MapPeriod.panelTitle(): String = when (this) {
     MapPeriod.ALL -> "全部轨迹"
 }
 
-private fun TripPointEntity.toMapGeoPoint(isAmap: Boolean): GeoPoint {
-    val (mapLat, mapLon) = if (isAmap) Gcj02Converter.wgs84ToGcj02(lat, lon) else lat to lon
+private fun TripPointEntity.toMapGeoPoint(): GeoPoint {
+    val (mapLat, mapLon) = Gcj02Converter.wgs84ToGcj02(lat, lon)
     return GeoPoint(mapLat, mapLon)
 }
 
@@ -408,7 +406,6 @@ private fun OsmdroidMapView(state: MapUiState, fitRequest: Int) {
     val context = LocalContext.current
     val thresholds = LocalConsumptionThresholds.current
 
-    val isAmap = state.tileSource == "amap"
     val displayedRoutes = remember(state.tripRoutes, state.selectedTripId) {
         state.selectedTripId?.let { selectedId ->
             state.tripRoutes.filter { it.trip.id == selectedId }
@@ -418,24 +415,22 @@ private fun OsmdroidMapView(state: MapUiState, fitRequest: Int) {
         if (state.selectedTripId == null) state.charges else emptyList()
     }
 
-    val lastPoint = remember(displayedRoutes, state.tileSource) {
+    val lastPoint = remember(displayedRoutes) {
         displayedRoutes.lastOrNull()?.points?.lastOrNull()?.let {
-            it.toMapGeoPoint(isAmap)
+            it.toMapGeoPoint()
         }
     }
 
-    val defaultCenter = remember(state.tileSource) {
-        val (lat, lon) = if (isAmap) Gcj02Converter.wgs84ToGcj02(22.5431, 114.0579) else 22.5431 to 114.0579
+    val defaultCenter = remember {
+        val (lat, lon) = Gcj02Converter.wgs84ToGcj02(22.5431, 114.0579)
         GeoPoint(lat, lon)
     }
     val center = lastPoint ?: defaultCenter
 
-    val mapView = remember(state.tileSource) {
+    val mapView = remember(context) {
         OsmdroidRuntime.ensureInitialized(context)
         MapView(context).apply {
-            setTileSource(
-                if (state.tileSource == "amap") SuperToyBoxApp.AmapTileSource else TileSourceFactory.MAPNIK
-            )
+            setTileSource(SuperToyBoxApp.AmapTileSource)
             setMultiTouchControls(true)
             controller.setZoom(13.0)
             controller.setCenter(center)
@@ -450,7 +445,6 @@ private fun OsmdroidMapView(state: MapUiState, fitRequest: Int) {
         }
     }
 
-    key(state.tileSource) {
     AndroidView(
         factory = { mapView },
         modifier = Modifier.fillMaxSize(),
@@ -474,7 +468,7 @@ private fun OsmdroidMapView(state: MapUiState, fitRequest: Int) {
                     infoWindow = null
                 }
 
-                val pts = routePoints.map { it.toMapGeoPoint(isAmap) }
+                val pts = routePoints.map { it.toMapGeoPoint() }
                 polyline.setPoints(pts)
                 map.overlays.add(polyline)
             }
@@ -486,7 +480,7 @@ private fun OsmdroidMapView(state: MapUiState, fitRequest: Int) {
                     map.overlays.add(
                         routeBoundaryMarker(
                             mapView = map,
-                            position = first.toMapGeoPoint(isAmap),
+                            position = first.toMapGeoPoint(),
                             title = "起点 ${formatTime(route.trip.startTs)}",
                             kind = RouteBoundaryKind.Start
                         )
@@ -497,7 +491,7 @@ private fun OsmdroidMapView(state: MapUiState, fitRequest: Int) {
                     map.overlays.add(
                         routeBoundaryMarker(
                             mapView = map,
-                            position = last.toMapGeoPoint(isAmap),
+                            position = last.toMapGeoPoint(),
                             title = endTitle,
                             kind = RouteBoundaryKind.End
                         )
@@ -509,7 +503,7 @@ private fun OsmdroidMapView(state: MapUiState, fitRequest: Int) {
             for (charge in displayedCharges) {
                 val lat = charge.lat ?: continue
                 val lon = charge.lon ?: continue
-                val (mLat, mLon) = if (isAmap) Gcj02Converter.wgs84ToGcj02(lat, lon) else lat to lon
+                val (mLat, mLon) = Gcj02Converter.wgs84ToGcj02(lat, lon)
 
                 val marker = Marker(map).apply {
                     position = GeoPoint(mLat, mLon)
@@ -526,13 +520,13 @@ private fun OsmdroidMapView(state: MapUiState, fitRequest: Int) {
             val allGeoPoints = mutableListOf<GeoPoint>()
             displayedRoutes.forEach { route ->
                 decimateTripPoints(route.points, 350).forEach {
-                    allGeoPoints.add(it.toMapGeoPoint(isAmap))
+                    allGeoPoints.add(it.toMapGeoPoint())
                 }
             }
             displayedCharges.forEach { charge ->
                 val lat = charge.lat ?: return@forEach
                 val lon = charge.lon ?: return@forEach
-                val (mLat, mLon) = if (isAmap) Gcj02Converter.wgs84ToGcj02(lat, lon) else lat to lon
+                val (mLat, mLon) = Gcj02Converter.wgs84ToGcj02(lat, lon)
                 allGeoPoints.add(GeoPoint(mLat, mLon))
             }
             if (allGeoPoints.size >= 2) {
@@ -552,5 +546,4 @@ private fun OsmdroidMapView(state: MapUiState, fitRequest: Int) {
             map.invalidate()
         }
     )
-    } // key(tileSource)
 }

@@ -16,9 +16,6 @@ interface VehicleWriteLogDao {
     )
     suspend fun complete(id: Long, readback: Int?, status: Int, error: String?): Int
 
-    @Query("SELECT * FROM vehicle_write_log ORDER BY ts DESC LIMIT 200")
-    suspend fun getLast200(): List<VehicleWriteLogEntity>
-
     @Query("DELETE FROM vehicle_write_log WHERE ts < :cutoffMs")
     suspend fun deleteOlderThan(cutoffMs: Long): Int
 

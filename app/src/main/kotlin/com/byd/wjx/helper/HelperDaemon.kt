@@ -1,6 +1,7 @@
 @file:JvmName("HelperDaemon")
 package com.byd.wjx.helper
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.hardware.display.VirtualDisplay
 import android.os.Binder
@@ -148,6 +149,7 @@ internal fun acquireSingleOwnerLock(path: String): Pair<FileChannel, FileLock>? 
  * app process. The hidden-API enforcement layer is only active for app processes, so
  * plain reflection is fine here — do NOT use HiddenApiBypass in this file.
  */
+@SuppressLint("PrivateApi")
 fun main(args: Array<String>) {
     val expectedUid = args.getOrNull(0)?.toIntOrNull() ?: run {
         System.err.println("ERR: usage: HelperDaemon <appUid>")
@@ -228,21 +230,23 @@ fun main(args: Array<String>) {
                     }
                     reply?.writeInt(0)
                     reply?.writeInt(count)
-                    repeat(count) {
-                        val tx = data.readInt()
-                        val dev = data.readInt()
-                        val fid = data.readInt()
-                        val (status, retInt) = autoserviceTransact(
-                            svc,
-                            autoIface,
-                            tx,
-                            dev,
-                            fid,
-                            0,
-                            writeValue = false,
-                        )
-                        reply?.writeInt(status)
-                        reply?.writeInt(retInt)
+                    withAutoserviceTransactionLock {
+                        repeat(count) {
+                            val tx = data.readInt()
+                            val dev = data.readInt()
+                            val fid = data.readInt()
+                            val (status, retInt) = autoserviceTransact(
+                                svc,
+                                autoIface,
+                                tx,
+                                dev,
+                                fid,
+                                0,
+                                writeValue = false,
+                            )
+                            reply?.writeInt(status)
+                            reply?.writeInt(retInt)
+                        }
                     }
                     true
                 }.getOrElse {
@@ -449,16 +453,6 @@ fun main(args: Array<String>) {
                     true
                 }.getOrElse {
                     helperLog("ElectronicMirrorCamera", "binder start failed: ${it.javaClass.simpleName}:${it.message.orEmpty()}")
-                    reply?.writeInt(-1); reply?.writeInt(-1); true
-                }
-
-                HelperBinderProtocol.TX_CAMERA_SWITCH_VIEW -> runCatching {
-                    val status = electronicMirrorCamera.switchSurface(data.readInt())
-                    reply?.writeInt(status)
-                    reply?.writeInt(0)
-                    true
-                }.getOrElse {
-                    helperLog("ElectronicMirrorCamera", "binder switch failed: ${it.javaClass.simpleName}:${it.message.orEmpty()}")
                     reply?.writeInt(-1); reply?.writeInt(-1); true
                 }
 

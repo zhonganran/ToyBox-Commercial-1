@@ -211,7 +211,6 @@ class DashboardViewModel @Inject constructor(
         observeLastTrip()
         observeRecentTrips()
         observeLatestCharge()
-        loadCurrency()
         loadPeriodSummary()
         loadLocalInsight()
     }
@@ -480,19 +479,6 @@ class DashboardViewModel @Inject constructor(
      * Load today's trip summary (total km, total kWh, trip count)
      * using Calendar to compute start/end of the current day in millis.
      */
-    private fun loadCurrency() {
-        viewModelScope.launch {
-            val symbol = settingsRepository.getCurrencySymbol()
-            val dataSource = settingsRepository.getDataSource()
-            _uiState.update {
-                it.copy(
-                    currencySymbol = symbol,
-                    idleDrainAvailable = dataSource == SettingsRepository.DataSource.ENERGYDATA
-                )
-            }
-        }
-    }
-
     private fun loadPeriodSummary() {
         viewModelScope.launch {
             val period = _uiState.value.period

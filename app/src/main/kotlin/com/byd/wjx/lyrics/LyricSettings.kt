@@ -1,7 +1,6 @@
 package com.byd.wjx.lyrics
 
 import android.content.Context
-import kotlin.math.roundToInt
 
 /** One canonical lyric configuration shared by the desktop and instrument cluster. */
 class LyricSettings(context: Context) {
@@ -170,8 +169,6 @@ class LyricSettings(context: Context) {
         private const val DEFAULT_SHARED_MOTION_PRESET_ID = "soft"
         val DEFAULT_SHARED_TEXT_COLOR = LyricSolidColorPalette.colors.first { it.id == "white" }.color
         val DEFAULT_SHARED_HIGHLIGHT_COLOR = LyricSolidColorPalette.colors.first { it.id == "yellow" }.color
-
-        fun pctText(value: Float): String = "${(value * 100).roundToInt()}%"
 
         fun formatOffset(value: Int): String = when {
             value > 0 -> "提前 ${value}ms"

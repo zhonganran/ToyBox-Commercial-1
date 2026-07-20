@@ -7,6 +7,7 @@ import wave
 from datetime import datetime, timedelta
 from html import escape
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from flask import (
     Flask,
@@ -21,6 +22,7 @@ from flask import (
     url_for,
 )
 from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -49,11 +51,14 @@ from platform_config import (
     SERVICE_QR_DIR,
     SERVICE_QR_TYPES,
     SOUND_DIR,
+    TRUSTED_PROXY_COUNT,
 )
 from platform_storage import configured_admin_credentials, db, init_db, utc_now
 
 
 app = Flask(__name__)
+if TRUSTED_PROXY_COUNT > 0:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=TRUSTED_PROXY_COUNT)
 app.secret_key = os.environ.get("WJX_PLATFORM_SECRET_KEY", secrets.token_hex(32))
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_SIZE
 app.config["SESSION_COOKIE_HTTPONLY"] = True
@@ -78,8 +83,7 @@ def h(value):
 
 
 def client_key():
-    forwarded = request.headers.get("X-Forwarded-For", "").split(",", 1)[0].strip()
-    return forwarded or request.remote_addr or "unknown"
+    return request.remote_addr or "unknown"
 
 
 def csrf_token():
@@ -181,6 +185,14 @@ def config_int(conn, key, default):
         return default
 
 
+def bounded_int(value, default, minimum, maximum):
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(parsed, maximum))
+
+
 def log_event(conn, kind, message, remote_addr=None):
     conn.execute(
         "INSERT INTO audit_logs (type, message, remote_addr, created_at) VALUES (?, ?, ?, ?)",
@@ -204,6 +216,16 @@ def require_login():
     if not current_admin():
         return redirect(url_for("login", next=request.full_path))
     return None
+
+
+def safe_next_target(value):
+    target = (value or "").strip()
+    if not target or not target.startswith("/") or target.startswith("//") or "\\" in target:
+        return None
+    parsed = urlsplit(target)
+    if parsed.scheme or parsed.netloc:
+        return None
+    return target
 
 
 def public_url(path):
@@ -653,7 +675,7 @@ def login():
                 session["admin"] = username
                 record_login_success(conn, key)
                 log_event(conn, "system", f"管理员登录成功：{username}", key)
-                return redirect(request.args.get("next") or url_for("index"))
+                return redirect(safe_next_target(request.args.get("next")) or url_for("index"))
             remaining = record_login_failure(conn, key)
             log_event(conn, "security", f"管理员登录失败：{username or '空账号'}", key)
         if remaining > 0:
@@ -1387,8 +1409,8 @@ def api_sound_categories():
 
 @app.get("/api/v1/sounds")
 def api_sounds():
-    page_no = max(1, int(request.args.get("page", "1") or "1"))
-    page_size = min(50, max(1, int(request.args.get("pageSize", "30") or "30")))
+    page_no = bounded_int(request.args.get("page"), default=1, minimum=1, maximum=1_000_000)
+    page_size = bounded_int(request.args.get("pageSize"), default=30, minimum=1, maximum=50)
     query = request.args.get("q", "").strip()
     category = request.args.get("category", "").strip()
     conditions = ["enabled = 1"]

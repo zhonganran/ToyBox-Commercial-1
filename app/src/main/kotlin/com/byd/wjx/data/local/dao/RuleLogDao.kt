@@ -11,15 +11,17 @@ interface RuleLogDao {
     @Insert
     suspend fun insert(log: RuleLogEntity): Long
 
-    @Query("SELECT * FROM automation_log ORDER BY triggered_at DESC")
-    fun getAll(): Flow<List<RuleLogEntity>>
-
-    @Query("SELECT * FROM automation_log WHERE rule_id = :ruleId ORDER BY triggered_at DESC")
-    fun getByRule(ruleId: Long): Flow<List<RuleLogEntity>>
-
     @Query("SELECT * FROM automation_log ORDER BY triggered_at DESC LIMIT :limit")
     fun getRecent(limit: Int = 50): Flow<List<RuleLogEntity>>
 
     @Query("DELETE FROM automation_log WHERE triggered_at < :before")
     suspend fun deleteOlderThan(before: Long): Int
+
+    @Query(
+        """DELETE FROM automation_log
+           WHERE id NOT IN (
+               SELECT id FROM automation_log ORDER BY triggered_at DESC, id DESC LIMIT :keepCount
+           )"""
+    )
+    suspend fun trimToLatest(keepCount: Int): Int
 }

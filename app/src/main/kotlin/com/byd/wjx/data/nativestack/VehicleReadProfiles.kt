@@ -142,9 +142,6 @@ internal object VehicleReadProfiles {
     val tireTelemetry: List<FidEntry> = FidMap.entries.filter {
         it.field in tireTelemetryFields
     }
-    val adasTelemetry: List<FidEntry> = FidMap.entries.filter {
-        it.field in adasTelemetryFields
-    }
     val powertrainTelemetry: List<FidEntry> = FidMap.entries.filter {
         it.field in powertrainTelemetryFields
     }
@@ -172,7 +169,10 @@ internal object VehicleReadProfiles {
         require(tireTelemetry.map { it.field }.toSet() == tireTelemetryFields) {
             "Tire telemetry profile references an unmapped field"
         }
-        require(adasTelemetry.map { it.field }.toSet() == adasTelemetryFields) {
+        require(
+            FidMap.entries.filter { it.field in adasTelemetryFields }
+                .map { it.field }.toSet() == adasTelemetryFields
+        ) {
             "ADAS telemetry profile references an unmapped field"
         }
         require(powertrainTelemetry.map { it.field }.toSet() == powertrainTelemetryFields) {

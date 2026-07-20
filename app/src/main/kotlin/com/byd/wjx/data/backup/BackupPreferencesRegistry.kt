@@ -20,9 +20,7 @@ data class PreferenceFilePolicy(
 /** Canonical inventory of preference schemas, owners, storage scopes, and backup behavior. */
 object BackupPreferencesRegistry {
     val FILE_POLICIES: List<PreferenceFilePolicy> = listOf(
-        PreferenceFilePolicy("wjx_locale", "LocalePreferences", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("cluster_projection", "ClusterProjectionPreferences", PreferenceBackupPolicy.USER_CONFIGURATION),
-        PreferenceFilePolicy("automation", "AutomationPreferences", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("update_prefs", "UpdateChecker", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("wjx_range_prefs", "SocInterpolatorPrefsImpl", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("wjx_lyrics", "LyricSettings", PreferenceBackupPolicy.USER_CONFIGURATION),

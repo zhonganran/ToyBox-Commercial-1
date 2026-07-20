@@ -70,7 +70,7 @@ class FidMapTest {
         assertEquals(73, VehicleReadProfiles.regularFull.size)
         assertEquals(44, VehicleReadProfiles.onDemandFields.size)
         assertEquals(8, VehicleReadProfiles.tireTelemetry.size)
-        assertEquals(8, VehicleReadProfiles.adasTelemetry.size)
+        assertEquals(8, VehicleReadProfiles.adasTelemetryFields.size)
         assertEquals(8, VehicleReadProfiles.powertrainTelemetry.size)
         assertTrue(
             VehicleReadProfiles.regularFull.none {

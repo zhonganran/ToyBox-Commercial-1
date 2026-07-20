@@ -198,9 +198,9 @@ internal fun SwitchRow(
     title: String,
     subtitle: String,
     checked: Boolean,
-    enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -228,8 +228,8 @@ internal fun LyricSlider(
     range: ClosedFloatingPointRange<Float>,
     enabled: Boolean,
     onValueChange: (Float) -> Unit,
-    onValueChangeFinished: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    onValueChangeFinished: (() -> Unit)? = null,
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(

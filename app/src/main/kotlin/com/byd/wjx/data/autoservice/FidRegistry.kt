@@ -77,5 +77,4 @@ object FidRegistry {
      * Drive probe range -26..+101 matched dashboard observations.
      * See memory `reference_eng_pow_fid.md`.
      */
-    const val FID_ENGINE_POWER = 339738656
 }

@@ -38,6 +38,10 @@ LOGIN_MAX_FAILURES = int(os.environ.get("WJX_PLATFORM_LOGIN_MAX_FAILURES", "5"))
 LOGIN_LOCK_SECONDS = int(os.environ.get("WJX_PLATFORM_LOGIN_LOCK_SECONDS", "600"))
 LICENSE_MAX_FAILURES = int(os.environ.get("WJX_PLATFORM_LICENSE_MAX_FAILURES", "8"))
 LICENSE_LOCK_SECONDS = int(os.environ.get("WJX_PLATFORM_LICENSE_LOCK_SECONDS", "900"))
+TRUSTED_PROXY_COUNT = max(
+    0,
+    min(int(os.environ.get("WJX_PLATFORM_TRUSTED_PROXY_COUNT", "0")), 8),
+)
 DEFAULT_CONFIG = {
     "license_trial_days": str(DEFAULT_TRIAL_DAYS),
     "feature_auto_parking_sound": "1",

@@ -34,10 +34,10 @@ import kotlin.math.roundToInt
 /** Shared settings for the desktop and instrument-cluster lyric overlays. */
 @Composable
 fun LyricDisplayScreen(
+    modifier: Modifier = Modifier,
     showHeader: Boolean = true,
     scrollEnabled: Boolean = true,
     onEnabledStateChanged: ((Boolean) -> Unit)? = null,
-    modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current

@@ -24,9 +24,7 @@ internal class ElectronicMirrorCameraRuntime(
 
     private var camera: Any? = null
     private var previewSurface: Surface? = null
-    private var currentCameraTag: String? = null
     private var currentSurfaceIndex: Int = SURFACE_NONE
-    private var currentTileCount: Int = 1
     private var cameraApi: CameraApi? = null
     private var fpsSetterSupported: Boolean? = null
 
@@ -112,8 +110,6 @@ internal class ElectronicMirrorCameraRuntime(
             }
             camera = startedCamera.camera
             currentSurfaceIndex = surfaceIndex
-            currentCameraTag = safeCameraTag
-            currentTileCount = tileCount
 
             helperLog(
                 TAG,
@@ -132,82 +128,9 @@ internal class ElectronicMirrorCameraRuntime(
         }
     }
 
-    fun switchSurface(surfaceIndex: Int): Int = synchronized(lock) {
-        if (camera == null) return@synchronized STATUS_NOT_ACTIVE
-        switchSurfaceLocked(surfaceIndex)
-    }
-
     fun stop(): Int = synchronized(lock) {
         stopLocked()
         STATUS_OK
-    }
-
-    private fun switchSurfaceLocked(surfaceIndex: Int): Int {
-        val activeCamera = camera ?: return STATUS_NOT_ACTIVE
-        val surface = previewSurface ?: return STATUS_NOT_ACTIVE
-        if (surfaceIndex !in MIN_SURFACE_INDEX..MAX_SURFACE_INDEX) return STATUS_INVALID_REQUEST
-        if (currentSurfaceIndex == surfaceIndex) {
-            return STATUS_OK
-        }
-
-        val oldSurfaceIndex = currentSurfaceIndex.takeIf { it >= MIN_SURFACE_INDEX }
-        val switchPlan = electronicMirrorSurfaceSwitchPlan(oldSurfaceIndex, surfaceIndex)
-        helperLog(
-            TAG,
-            "switch plan surface=$currentSurfaceIndex->$surfaceIndex " +
-                switchPlan.joinToString { "${it.action.name.lowercase()}:${it.channel}" },
-        )
-        var bindingMethod: String? = null
-        for (step in switchPlan) {
-            when (step.action) {
-                ElectronicMirrorSurfaceAction.REMOVE -> {
-                    val removed = invokeBoolean(
-                        activeCamera,
-                        "rmPreviewSurface",
-                        surface,
-                        step.channel,
-                    )
-                    helperLog(
-                        TAG,
-                        "switch remove surfaceIndex=${step.channel} accepted=$removed",
-                    )
-                    if (!removed) {
-                        return fail(
-                            STATUS_SURFACE_FAILED,
-                            "cannot remove old Surface index=${step.channel} before target=$surfaceIndex",
-                        )
-                    }
-                }
-                ElectronicMirrorSurfaceAction.BIND -> {
-                    bindingMethod = bindPreviewSurface(activeCamera, surface, step.channel)
-                }
-            }
-        }
-        if (bindingMethod == null) {
-            val rollbackMethod = oldSurfaceIndex
-                ?.takeIf { it != surfaceIndex }
-                ?.let { bindPreviewSurface(activeCamera, surface, it) }
-            helperLog(
-                TAG,
-                "switch bind failed surfaceIndex=$surfaceIndex " +
-                    "rollbackSurface=$oldSurfaceIndex rollback=$rollbackMethod",
-            )
-            if (oldSurfaceIndex != null && rollbackMethod == null) {
-                currentSurfaceIndex = SURFACE_NONE
-            }
-            return fail(
-                STATUS_SURFACE_FAILED,
-                "Surface switch rejected index=$surfaceIndex",
-            )
-        }
-
-        currentSurfaceIndex = surfaceIndex
-        helperLog(
-            TAG,
-            "switched cameraTag=$currentCameraTag surfaceIndex=$surfaceIndex " +
-                "tiles=$currentTileCount binding=$bindingMethod",
-        )
-        return STATUS_OK
     }
 
     private fun stopLocked() {
@@ -215,8 +138,6 @@ internal class ElectronicMirrorCameraRuntime(
         val surface = previewSurface
         camera = null
         previewSurface = null
-        currentCameraTag = null
-        currentTileCount = 1
         val activeSurfaceIndex = currentSurfaceIndex
         currentSurfaceIndex = SURFACE_NONE
         if (activeCamera != null) {
@@ -595,9 +516,7 @@ internal class ElectronicMirrorCameraRuntime(
         const val STATUS_INVALID_SURFACE = -2
         const val STATUS_INVALID_REQUEST = -3
         const val STATUS_OPEN_FAILED = -4
-        const val STATUS_SURFACE_FAILED = -5
         const val STATUS_PREVIEW_FAILED = -6
-        const val STATUS_NOT_ACTIVE = -8
 
         private const val TAG = "ElectronicMirrorCamera"
         private const val AVM_CAMERA_CLASS = "android.hardware.AVMCamera"
@@ -682,27 +601,3 @@ internal fun cameraIdFromProperty(raw: String, tag: String): Int? =
         ?.second
         ?.toIntOrNull()
         ?.takeIf { it >= 0 }
-
-internal enum class ElectronicMirrorSurfaceAction {
-    REMOVE,
-    BIND,
-}
-
-internal data class ElectronicMirrorSurfaceStep(
-    val action: ElectronicMirrorSurfaceAction,
-    val channel: Int,
-)
-
-internal fun electronicMirrorSurfaceSwitchPlan(
-    currentChannel: Int?,
-    targetChannel: Int,
-): List<ElectronicMirrorSurfaceStep> {
-    require(targetChannel >= 0) { "invalid target channel=$targetChannel" }
-    if (currentChannel == targetChannel) return emptyList()
-    return buildList {
-        currentChannel?.takeIf { it >= 0 }?.let {
-            add(ElectronicMirrorSurfaceStep(ElectronicMirrorSurfaceAction.REMOVE, it))
-        }
-        add(ElectronicMirrorSurfaceStep(ElectronicMirrorSurfaceAction.BIND, targetChannel))
-    }
-}

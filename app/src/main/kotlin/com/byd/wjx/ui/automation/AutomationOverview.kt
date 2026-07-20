@@ -444,7 +444,6 @@ internal fun RecentAutomationLogs(
 
 private fun triggerIcon(trigger: TriggerDef?): androidx.compose.ui.graphics.vector.ImageVector = when (trigger?.kind) {
     "place_enter", "place_exit" -> Icons.Outlined.Place
-    "button_press" -> Icons.Outlined.Apps
     "network_available" -> Icons.Outlined.Wifi
     "interval" -> Icons.Outlined.Sync
     "board_vehicle", "service_start" -> Icons.Outlined.Bolt

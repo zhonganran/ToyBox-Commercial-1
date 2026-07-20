@@ -71,7 +71,7 @@ class BackupSerializationTest {
     @Test
     fun `round-trip across multiple prefs files`() {
         val input = mapOf(
-            "wjx_locale" to mapOf<String, Any?>("lang" to "ru"),
+            "update_prefs" to mapOf<String, Any?>("last_version" to "0.1"),
             "cluster_projection" to mapOf<String, Any?>(
                 "trigger_keycode" to 351,
                 "enabled" to true,
@@ -82,7 +82,7 @@ class BackupSerializationTest {
         )
         val result = BackupManager.deserializePrefs(BackupManager.serializePrefs(input))
 
-        assertEquals("ru", result["wjx_locale"]!!["lang"])
+        assertEquals("0.1", result["update_prefs"]!!["last_version"])
         assertEquals(351, result["cluster_projection"]!!["trigger_keycode"])
         assertEquals(true, result["cluster_projection"]!!["enabled"])
         val soc = result["wjx_range_prefs"]!!["soc_100_km"] as Float

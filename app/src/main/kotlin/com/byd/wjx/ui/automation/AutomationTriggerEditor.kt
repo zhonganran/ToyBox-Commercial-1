@@ -59,7 +59,6 @@ internal fun TriggerRow(
             "service_start" -> ServiceStartTriggerControls()
             "network_available" -> NetworkAvailableTriggerControls()
             "board_vehicle" -> SimpleEventTriggerControls("上车开门")
-            "button_press" -> ButtonPressTriggerControls(trigger, onUpdate)
             else -> ParamTriggerControls(trigger, onUpdate)
         }
 
@@ -80,14 +79,14 @@ private fun ParamTriggerControls(
     val context = LocalContext.current
     // Param dropdown
     CatalogDropdown(
-        selected = TRIGGER_PARAMS.find { it.param == trigger.param }?.localizedName(context) ?: trigger.param,
-        items = TRIGGER_PARAMS.map { it.localizedName(context) },
-        categories = TRIGGER_PARAMS.map { it.localizedCategory(context) },
+        selected = TRIGGER_PARAMS.find { it.param == trigger.param }?.name ?: trigger.param,
+        items = TRIGGER_PARAMS.map { it.name },
+        categories = TRIGGER_PARAMS.map { it.category },
         modifier = Modifier.width(150.dp),
         onSelect = { idx ->
             val p = TRIGGER_PARAMS[idx]
-            onUpdate(trigger.copy(param = p.param, chineseName = p.chineseName,
-                displayName = "${p.localizedName(context)} ${trigger.operator} ${trigger.value}"))
+            onUpdate(trigger.copy(param = p.param, chineseName = p.name,
+                displayName = "${p.name} ${trigger.operator} ${trigger.value}"))
         }
     )
     Spacer(Modifier.width(4.dp))
@@ -525,32 +524,6 @@ private fun NetworkAvailableTriggerControls() {
     )
 }
 
-@Composable
-private fun ButtonPressTriggerControls(
-    trigger: TriggerDef,
-    onUpdate: (TriggerDef) -> Unit,
-) {
-    Icon(
-        Icons.Outlined.Apps,
-        contentDescription = null,
-        tint = AccentGreen,
-        modifier = Modifier.size(16.dp),
-    )
-    Spacer(Modifier.width(6.dp))
-    Text("桌面按钮", fontSize = 13.sp, color = TextSecondary, fontWeight = FontWeight.SemiBold)
-    Spacer(Modifier.width(8.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        (1..4).forEach { number ->
-            AutoChip(
-                label = number.toString(),
-                selected = trigger.value.toIntOrNull() == number,
-            ) {
-                onUpdate(newButtonPressTrigger(number))
-            }
-        }
-    }
-}
-
 // --- Action Row ---
 
 
@@ -565,7 +538,6 @@ internal fun AddTriggerButton(
     onAddBoardVehicle: () -> Unit,
     onAddServiceStart: () -> Unit,
     onAddNetworkAvailable: () -> Unit,
-    onAddButtonPress: () -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     Box {
@@ -670,13 +642,6 @@ internal fun AddTriggerButton(
                     onAddServiceStart()
                 }
             )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_trigger_type_button), fontSize = 13.sp) },
-                onClick = {
-                    menuExpanded = false
-                    onAddButtonPress()
-                }
-            )
         }
     }
 }
@@ -687,7 +652,7 @@ internal fun newPlaceTrigger(place: PlaceEntity, context: android.content.Contex
         chineseName = "位置",
         operator = "==",
         value = "enter",
-        displayName = localized("进入「${place.name}」", "进入「${place.name}」", "进入「${place.name}」", context),
+        displayName = "进入「${place.name}」",
         kind = "place_enter",
         placeId = place.id,
         placeName = place.name
@@ -700,7 +665,7 @@ internal fun newServiceStartTrigger(context: android.content.Context): TriggerDe
         chineseName = "服务启动",
         operator = "==",
         value = "true",
-        displayName = localized("超级玩具箱启动", "超级玩具箱启动", "超级玩具箱启动", context),
+        displayName = "超级玩具箱启动",
         kind = "service_start"
     )
 }
@@ -711,7 +676,7 @@ internal fun newNetworkAvailableTrigger(context: android.content.Context): Trigg
         chineseName = "网络可用",
         operator = "==",
         value = "true",
-        displayName = localized("网络可用", "网络可用", "网络可用", context),
+        displayName = "网络可用",
         kind = "network_available"
     )
 }
@@ -734,26 +699,13 @@ internal fun newBoardVehicleTrigger(): TriggerDef = TriggerDef(
     kind = "board_vehicle",
 )
 
-internal fun newButtonPressTrigger(buttonId: Int): TriggerDef {
-    val number = buttonId.coerceIn(1, 4)
-    return TriggerDef(
-        param = "button",
-        chineseName = "桌面按钮",
-        operator = "==",
-        value = number.toString(),
-        displayName = "桌面按钮 $number",
-        kind = "button_press",
-    )
-}
-
-
 internal fun newTimeOfDayTrigger(context: android.content.Context): TriggerDef {
     return TriggerDef(
         param = "TimeOfDay",
         chineseName = "时间段",
         operator = "==",
         value = "NIGHT",
-        displayName = localized("夜晚", "夜晚", "夜晚", context),
+        displayName = "夜晚",
         kind = "time_of_day"
     )
 }

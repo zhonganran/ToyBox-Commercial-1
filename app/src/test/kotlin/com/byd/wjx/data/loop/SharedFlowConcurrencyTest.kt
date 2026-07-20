@@ -4,6 +4,8 @@ import com.byd.wjx.data.local.EnergyDataReader
 import com.byd.wjx.data.local.dao.LastStateDao
 import com.byd.wjx.data.nativestack.ParsReader
 import com.byd.wjx.data.remote.diParsData
+import com.byd.wjx.data.vehicle.VehicleSnapshot
+import com.byd.wjx.data.vehicle.VehicleSnapshotKind
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CoroutineDispatcher
@@ -27,12 +29,15 @@ class SharedFlowConcurrencyTest {
     private fun buildLoop(dispatcher: CoroutineDispatcher): Pair<SharedAdaptiveLoop, () -> Int> {
         var counter = 0
         val reader = object : ParsReader {
-            override suspend fun fetch() = diParsData(
-                soc = ++counter,
-                voltage12v = 12.5,
-                mileage = 1.0,
-                powerState = 3,
-                speed = 30,
+            override suspend fun fetchVehicleSnapshot() = VehicleSnapshot.synthetic(
+                diParsData(
+                    soc = ++counter,
+                    voltage12v = 12.5,
+                    mileage = 1.0,
+                    powerState = 3,
+                    speed = 30,
+                ),
+                VehicleSnapshotKind.FULL,
             )
         }
         val energy = mockk<EnergyDataReader> { every { isAvailable() } returns false }

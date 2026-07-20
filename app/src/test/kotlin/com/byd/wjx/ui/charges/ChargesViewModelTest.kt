@@ -6,12 +6,10 @@ import com.byd.wjx.data.charging.ChargingTelemetryReader
 import com.byd.wjx.data.vehicle.VehicleApi
 import com.byd.wjx.data.local.dao.BatterySnapshotDao
 import com.byd.wjx.data.local.dao.ChargeDao
-import com.byd.wjx.data.local.dao.ChargePointDao
 import com.byd.wjx.data.local.dao.ChargeSummary
 import com.byd.wjx.data.local.dao.SettingsDao
 import com.byd.wjx.data.local.entity.BatterySnapshotEntity
 import com.byd.wjx.data.local.entity.ChargeEntity
-import com.byd.wjx.data.local.entity.ChargePointEntity
 import com.byd.wjx.data.local.entity.SettingEntity
 import com.byd.wjx.data.repository.BatteryHealthRepository
 import com.byd.wjx.data.repository.ChargeRepository
@@ -20,11 +18,7 @@ import com.byd.wjx.domain.battery.BatteryStateRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import android.content.Context
-import android.content.res.Configuration
-import android.content.res.Resources
-import android.os.LocaleList
 import io.mockk.every
-import java.util.Locale
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -63,7 +57,6 @@ class ChargesViewModelTest {
     ) : SettingsDao {
         val map = mutableMapOf(
             SettingsRepository.KEY_BATTERY_CAPACITY to batteryCapacity,
-            SettingsRepository.KEY_CURRENCY to SettingsRepository.DEFAULT_CURRENCY
         )
         override suspend fun get(key: String): String? = map[key]
         override fun observe(key: String): Flow<String?> = flowOf(map[key])
@@ -75,7 +68,6 @@ class ChargesViewModelTest {
     private class FakeChargeDao(
         val chargesFlow: MutableStateFlow<List<ChargeEntity>> = MutableStateFlow(emptyList()),
         private val autoserviceCharges: List<ChargeEntity> = emptyList(),
-        private val legacyExists: Boolean = false
     ) : ChargeDao {
         var lastInserted: ChargeEntity? = null
         var lastUpdated: ChargeEntity? = null
@@ -91,36 +83,13 @@ class ChargesViewModelTest {
             lastUpdated = charge
         }
         override fun getAll(): Flow<List<ChargeEntity>> = chargesFlow
-        override suspend fun getById(id: Long): ChargeEntity? = null
         override fun getByDateRange(from: Long, to: Long): Flow<List<ChargeEntity>> =
             flowOf(chargesFlow.value.filter { it.startTs in from..to })
-        override suspend fun getPeriodSummary(from: Long, to: Long): ChargeSummary =
-            ChargeSummary(0, 0.0, 0.0)
         override fun getLastCharge(): Flow<ChargeEntity?> = flowOf(null)
-        override suspend fun getLastSuspendedCharge(): ChargeEntity? = null
-        override suspend fun getStaleSessions(cutoffTs: Long): List<ChargeEntity> = emptyList()
-        override suspend fun getLastChargeSync(): ChargeEntity? = null
-        override suspend fun getRecentChargesWithBatteryData(): List<ChargeEntity> = emptyList()
-        override suspend fun getMaxLifetimeKwhAtFinish(): Double? = null
         override suspend fun getAllAutoserviceCharges(): List<ChargeEntity> = autoserviceCharges
-        override suspend fun hasLegacyCharges(): Boolean = legacyExists
-        override suspend fun deleteEmpty(): Int {
-            val before = chargesFlow.value
-            val after = before.filter { it.kwhCharged != null && it.kwhCharged >= 0.05 }
-            chargesFlow.value = after
-            return before.size - after.size
-        }
-        override suspend fun deletePhantomAutoserviceRows(): Int = 0
         override suspend fun delete(charge: ChargeEntity) {
             chargesFlow.value = chargesFlow.value.filter { it.id != charge.id }
         }
-    }
-
-    private class StubChargePointDao : ChargePointDao {
-        override suspend fun insertAll(points: List<ChargePointEntity>) {}
-        override suspend fun getByChargeId(chargeId: Long): List<ChargePointEntity> = emptyList()
-        override suspend fun getCount(): Int = 0
-        override suspend fun thinOldPoints(cutoff: Long, intervalMs: Long): Int = 0
     }
 
     private class FakeBatterySnapshotDao(
@@ -130,7 +99,6 @@ class ChargesViewModelTest {
         override fun getRecent(limit: Int): Flow<List<BatterySnapshotEntity>> = flowOf(snapshots.take(limit))
         override suspend fun insert(snapshot: BatterySnapshotEntity): Long = 0L
         override suspend fun getLast(): BatterySnapshotEntity? = snapshots.firstOrNull()
-        override suspend fun getCount(): Int = snapshots.size
     }
 
     private class FakeVehicleApi(
@@ -169,21 +137,19 @@ class ChargesViewModelTest {
     private fun buildViewModel(
         chargesFlow: MutableStateFlow<List<ChargeEntity>> = MutableStateFlow(emptyList()),
         autoserviceCharges: List<ChargeEntity> = emptyList(),
-        legacyExists: Boolean = false,
         batteryReading: BatteryReading? = null,
         autoserviceAvailable: Boolean = true,
         snapshots: List<BatterySnapshotEntity> = emptyList(),
         batteryCapacityKwh: String = "72.9",
         chargingReading: ChargingReading? = null,
     ): ChargesViewModel = buildViewModelAndDao(
-        chargesFlow, autoserviceCharges, legacyExists,
+        chargesFlow, autoserviceCharges,
         batteryReading, autoserviceAvailable, snapshots, batteryCapacityKwh, chargingReading
     ).first
 
     private fun buildViewModelAndDao(
         chargesFlow: MutableStateFlow<List<ChargeEntity>> = MutableStateFlow(emptyList()),
         autoserviceCharges: List<ChargeEntity> = emptyList(),
-        legacyExists: Boolean = false,
         batteryReading: BatteryReading? = null,
         autoserviceAvailable: Boolean = true,
         snapshots: List<BatterySnapshotEntity> = emptyList(),
@@ -193,26 +159,18 @@ class ChargesViewModelTest {
         val settingsDao = FakeSettingsDao(batteryCapacityKwh)
         val settingsRepo = SettingsRepository(settingsDao)
 
-        val chargeDao = FakeChargeDao(chargesFlow, autoserviceCharges, legacyExists)
-        val chargeRepo = ChargeRepository(chargeDao, StubChargePointDao())
+        val chargeDao = FakeChargeDao(chargesFlow, autoserviceCharges)
+        val chargeRepo = ChargeRepository(chargeDao)
 
         val snapshotDao = FakeBatterySnapshotDao(snapshots)
         val autoservice = FakeVehicleApi(batteryReading, autoserviceAvailable)
         val batteryHealthRepo = BatteryHealthRepository(snapshotDao)
         val batteryStateRepo = BatteryStateRepository(autoservice, batteryHealthRepo)
 
-        // Minimal Context mock — only locale lookup used in ChargesViewModel.groupChargesByMonthDay.
-        val mockLocaleList = mockk<LocaleList> { every { get(0) } returns Locale("ru") }
-        val config = mockk<Configuration> { every { locales } returns mockLocaleList }
-        val res = mockk<Resources>(relaxed = true) { every { configuration } returns config }
         val ctx = mockk<Context>(relaxed = true) {
-            every { resources } returns res
             every { getString(any()) } returns ""
             every { getString(any(), any()) } returns ""
         }
-        // appLocalizedContext() rebuilds a localized context via createConfigurationContext;
-        // route it back to the same mock so locale ("ru") and getString stubs still apply.
-        every { ctx.createConfigurationContext(any()) } returns ctx
         return ChargesViewModel(
             ctx,
             chargeRepo,
@@ -571,22 +529,6 @@ class ChargesViewModelTest {
     }
 
     @Test
-    fun `hasLegacyCharges_onlyAutoservice_returnsFalse`() = runTest {
-        val vm = buildViewModel(legacyExists = false)
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        assertFalse(vm.uiState.value.hasLegacyCharges)
-    }
-
-    @Test
-    fun `hasLegacyCharges_someLegacy_returnsTrue`() = runTest {
-        val vm = buildViewModel(legacyExists = true)
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        assertTrue(vm.uiState.value.hasLegacyCharges)
-    }
-
-    @Test
     fun `sohSeries_populatedFromSnapshots`() = runTest {
         val snapshots = listOf(
             BatterySnapshotEntity(id = 1, timestamp = 1000L, socStart = 10, socEnd = 80,
@@ -687,20 +629,10 @@ class ChargesViewModelTest {
     }
 
     @Test
-    fun `initialAutoserviceCheckDone_becomesTrueAfterPhase1_noLegacy`() = runTest {
-        val vm = buildViewModel(legacyExists = false)
+    fun `initialAutoserviceCheckDone_becomesTrueBeforeBinderResult`() = runTest {
+        val vm = buildViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertTrue(vm.uiState.value.initialAutoserviceCheckDone)
-        assertFalse(vm.uiState.value.hasLegacyCharges)
-    }
-
-    @Test
-    fun `initialAutoserviceCheckDone_withLegacy_flagTrueHasLegacyTrue`() = runTest {
-        val vm = buildViewModel(legacyExists = true)
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        assertTrue(vm.uiState.value.initialAutoserviceCheckDone)
-        assertTrue(vm.uiState.value.hasLegacyCharges)
     }
 }

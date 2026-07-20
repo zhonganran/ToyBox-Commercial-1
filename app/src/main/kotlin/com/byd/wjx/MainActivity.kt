@@ -1,30 +1,21 @@
 package com.byd.wjx
 
 import android.Manifest
-import android.content.Context
-import android.content.SharedPreferences
 import android.content.pm.PackageManager
-import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import com.byd.wjx.data.local.LocalePreferences
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.log.WjxFileLogger
 import com.byd.wjx.service.KeepAliveService
@@ -39,7 +30,6 @@ import com.byd.wjx.ui.theme.LocalAppWallpaper
 import com.byd.wjx.ui.theme.LocalSuperToyBoxDarkTheme
 import com.byd.wjx.ui.theme.ThemeMode
 import dagger.hilt.android.AndroidEntryPoint
-import java.util.Locale
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -53,19 +43,6 @@ class MainActivity : AppCompatActivity() {
         private const val TAG = "MainActivity"
         private const val PERMISSION_REQUEST_CODE = 1001
         private const val BACKGROUND_LOCATION_REQUEST_CODE = 1002
-        private const val DEFAULT_LANG = "zh"
-    }
-
-    override fun attachBaseContext(newBase: Context) {
-        // Cold-start: read stored language and wrap baseContext with a Configuration
-        // that already has the right locale. Without this, initial layouts paint in
-        // the system locale for one frame before AppCompat catches up.
-        val lang = newBase.getSharedPreferences(LocalePreferences.FILE, Context.MODE_PRIVATE)
-            .getString(LocalePreferences.KEY_LANG, null) ?: DEFAULT_LANG
-        val locale = Locale.forLanguageTag(lang)
-        Locale.setDefault(locale)
-        val cfg = Configuration(newBase.resources.configuration).apply { setLocale(locale) }
-        super.attachBaseContext(newBase.createConfigurationContext(cfg))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -87,44 +64,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            // Runtime locale switch: listen to LocalePreferences via SharedPreferences,
-            // mutate Activity resources in place (deprecated since API 24 but functional
-            // on Android 12), then bump `lang` state. The new LocalConfiguration value
-            // triggers recomposition of every stringResource consumer in the tree.
-            // LocalContext is left untouched so Hilt's `instanceof Activity` check passes.
-            val prefs = remember {
-                applicationContext.getSharedPreferences(
-                    LocalePreferences.FILE, Context.MODE_PRIVATE
-                )
-            }
-            var lang by remember {
-                mutableStateOf(prefs.getString(LocalePreferences.KEY_LANG, null) ?: DEFAULT_LANG)
-            }
-            DisposableEffect(prefs) {
-                val listener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
-                    if (key == LocalePreferences.KEY_LANG) {
-                        val newLang = p.getString(key, DEFAULT_LANG) ?: DEFAULT_LANG
-                        if (newLang != lang) {
-                            val locale = Locale.forLanguageTag(newLang)
-                            Locale.setDefault(locale)
-                            val res = resources
-                            val cfg = Configuration(res.configuration).apply { setLocale(locale) }
-                            @Suppress("DEPRECATION")
-                            res.updateConfiguration(cfg, res.displayMetrics)
-                            lang = newLang
-                        }
-                    }
-                }
-                prefs.registerOnSharedPreferenceChangeListener(listener)
-                onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
-            }
-
-            val localizedConfig = remember(lang) {
-                Configuration(resources.configuration).apply {
-                    setLocale(Locale.forLanguageTag(lang))
-                }
-            }
-
             SuperToyBoxTheme(themeMode = ThemeMode.fromStored(storedThemeMode)) {
                 val darkTheme = LocalSuperToyBoxDarkTheme.current
                 SideEffect {
@@ -134,7 +73,6 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 CompositionLocalProvider(
-                    LocalConfiguration provides localizedConfig,
                     LocalConsumptionThresholds provides thresholds,
                     LocalAppWallpaper provides AppWallpaper.fromStored(storedAppWallpaper),
                 ) {

@@ -15,7 +15,6 @@ import com.byd.wjx.service.BootState
 import com.byd.wjx.service.ProcessRevivalReceiver
 import dagger.hilt.android.HiltAndroidApp
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.MapTileIndex
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -69,8 +68,6 @@ class SuperToyBoxApp : Application(), Configuration.Provider {
         unlockedRuntimeInitialized = true
         WjxFileLogger.i("SuperToyBoxApp", "credential runtime initialized")
     }
-
-    fun isUnlockedRuntimeInitialized(): Boolean = unlockedRuntimeInitialized
 
     private fun registerForegroundLifecycleCallbacks() {
         var resumedActivities = 0
@@ -130,8 +127,6 @@ class SuperToyBoxApp : Application(), Configuration.Provider {
                 )
             }
         }
-
-        val OsmTileSource = TileSourceFactory.MAPNIK
     }
 
     private fun scheduleDataThinning() {

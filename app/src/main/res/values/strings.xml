@@ -192,7 +192,6 @@
     <string name="automation_trigger_type_schedule">定时</string>
     <string name="automation_trigger_type_interval">定时间隔</string>
     <string name="automation_trigger_type_board_vehicle">上车开门</string>
-    <string name="automation_trigger_type_button">桌面按钮</string>
     <string name="automation_trigger_group_vehicle">车辆状态</string>
     <string name="automation_trigger_group_time">时间计划</string>
     <string name="automation_trigger_group_environment">位置与环境</string>
@@ -421,7 +420,6 @@
     <string name="settings_saved">已保存</string>
     <string name="settings_recalc_done">已重新计算：%1$d 次行程</string>
     <string name="settings_export_in_progress">导出中…</string>
-    <string name="settings_export_done">已导出：%1$d 次行程，%2$d 次充电，%3$d 个轨迹点，%4$d 次怠速耗电</string>
     <string name="settings_error_with_message">错误：%1$s</string>
     <string name="settings_error_prefix">错误</string>
     <string name="settings_log_recording_started">录制中（2 小时后自动停止）… - %1$s</string>

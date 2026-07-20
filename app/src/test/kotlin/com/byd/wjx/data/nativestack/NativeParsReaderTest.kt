@@ -109,8 +109,8 @@ class NativeParsReaderTest {
 
         // ── Run ───────────────────────────────────────────────────────────────
         val reader = NativeParsReader(gateway, settings, noAdditionalActionFields)
-        val data = reader.fetch()
-        assertNotNull("fetch() returned null", data)
+        val data = reader.fetchVehicleSnapshot()?.data
+        assertNotNull("fetchVehicleSnapshot() returned null", data)
         checkNotNull(data)
 
         // ── Assert each covered FidMap field ─────────────────────────────────
@@ -224,8 +224,9 @@ class NativeParsReaderTest {
         val settings = mockk<SettingsRepository>()
         coEvery { settings.getBatteryCapacity() } returns 72.9
 
-        val data = NativeParsReader(gateway, settings, noAdditionalActionFields).fetch()
-        assertNotNull("fetch() returned null", data)
+        val data = NativeParsReader(gateway, settings, noAdditionalActionFields)
+            .fetchVehicleSnapshot()?.data
+        assertNotNull("fetchVehicleSnapshot() returned null", data)
         checkNotNull(data)
 
         assertEquals("maxBatTemp", 11, data.maxBatTemp)
@@ -262,7 +263,8 @@ class NativeParsReaderTest {
         val settings = mockk<SettingsRepository>()
         coEvery { settings.getBatteryCapacity() } returns 72.9
 
-        val data = NativeParsReader(gateway, settings, noAdditionalActionFields).fetch()
+        val data = NativeParsReader(gateway, settings, noAdditionalActionFields)
+            .fetchVehicleSnapshot()?.data
 
         assertEquals(3, data?.powerState)
         assertEquals(13, data?.chargingStatus)
@@ -294,7 +296,8 @@ class NativeParsReaderTest {
                 intValues[base.device to base.fid] = 3
                 intValues[indicator.device to indicator.fid] = indicatorValue
             }
-            return NativeParsReader(gateway, settings, noAdditionalActionFields).fetch()?.driveMode
+            return NativeParsReader(gateway, settings, noAdditionalActionFields)
+                .fetchVehicleSnapshot()?.data?.driveMode
         }
 
         assertEquals(3, read(gearValue = 1, indicatorValue = 7))
@@ -315,7 +318,8 @@ class NativeParsReaderTest {
         val settings = mockk<SettingsRepository>(relaxed = true)
         val provider = ActionSnapshotFieldProvider { setOf("driveMode") }
 
-        val data = NativeParsReader(gateway, settings, provider).fetchAction()
+        val data = NativeParsReader(gateway, settings, provider)
+            .fetchActionVehicleSnapshot()?.data
 
         assertEquals(7, data?.driveMode)
         assertEquals(VehicleReadProfiles.actionCoreFields.size + 2, gateway.lastBatchSpecs.size)
@@ -336,7 +340,8 @@ class NativeParsReaderTest {
                 newValue?.let { intValues[instrument50.device to instrument50.fid] = it }
                 legacyValue?.let { intValues[legacy.device to legacy.fid] = it }
             }
-            return NativeParsReader(gateway, settings, noAdditionalActionFields).fetch()?.workMode
+            return NativeParsReader(gateway, settings, noAdditionalActionFields)
+                .fetchVehicleSnapshot()?.data?.workMode
         }
 
         assertEquals(3, read(newValue = 3, legacyValue = 1))
@@ -354,7 +359,8 @@ class NativeParsReaderTest {
         val settings = mockk<SettingsRepository>(relaxed = true)
         val provider = ActionSnapshotFieldProvider { setOf("workMode") }
 
-        val data = NativeParsReader(gateway, settings, provider).fetchAction()
+        val data = NativeParsReader(gateway, settings, provider)
+            .fetchActionVehicleSnapshot()?.data
 
         assertEquals(3, data?.workMode)
         assertEquals(VehicleReadProfiles.actionCoreFields.size + 2, gateway.lastBatchSpecs.size)
@@ -373,8 +379,8 @@ class NativeParsReaderTest {
         coEvery { settings.getBatteryCapacity() } returns 72.9
 
         val reader = NativeParsReader(gateway, settings, noAdditionalActionFields)
-        val result = reader.fetch()
-        assertNull("fetch() must return null when soc + mileage + voltage12v are all null", result)
+        val result = reader.fetchVehicleSnapshot()
+        assertNull("fetchVehicleSnapshot() must return null when primary fields are null", result)
     }
 
     @Test
@@ -385,7 +391,8 @@ class NativeParsReaderTest {
         }
         val settings = mockk<SettingsRepository>(relaxed = true)
 
-        val data = NativeParsReader(gateway, settings, noAdditionalActionFields).fetchAction()
+        val data = NativeParsReader(gateway, settings, noAdditionalActionFields)
+            .fetchActionVehicleSnapshot()?.data
 
         assertNotNull(data)
         assertNull(data?.batteryCapacityKwh)
@@ -402,7 +409,8 @@ class NativeParsReaderTest {
         val settings = mockk<SettingsRepository>(relaxed = true)
         val provider = ActionSnapshotFieldProvider { setOf("insideTemp") }
 
-        val data = NativeParsReader(gateway, settings, provider).fetchAction()
+        val data = NativeParsReader(gateway, settings, provider)
+            .fetchActionVehicleSnapshot()?.data
 
         assertNotNull(data)
         assertEquals(18, data?.insideTemp)
@@ -418,7 +426,8 @@ class NativeParsReaderTest {
         val settings = mockk<SettingsRepository>(relaxed = true)
         val provider = ActionSnapshotFieldProvider { setOf("seatHeatD") }
 
-        val data = NativeParsReader(gateway, settings, provider).fetchAction()
+        val data = NativeParsReader(gateway, settings, provider)
+            .fetchActionVehicleSnapshot()?.data
 
         assertNotNull(data)
         assertEquals(3, data?.seatHeatD)
@@ -594,8 +603,8 @@ class NativeParsReaderTest {
     }
 
     @Test
-    fun `ADAS telemetry profile retains official raw enums and execution speed`() = runTest {
-        val fields = VehicleReadProfiles.adasTelemetry
+    fun `automation action snapshot decodes ADAS enums and execution speed`() = runTest {
+        val fields = FidMap.entries.filter { it.field in VehicleReadProfiles.adasTelemetryFields }
         val values = mapOf(
             "adasAebState" to 1,
             "adasAvhState" to 2,
@@ -612,15 +621,20 @@ class NativeParsReaderTest {
             }
         }
         val settings = mockk<SettingsRepository>(relaxed = true)
+        val provider = ActionSnapshotFieldProvider { VehicleReadProfiles.adasTelemetryFields }
 
-        val data = NativeParsReader(gateway, settings, noAdditionalActionFields)
-            .readAdasTelemetry()
+        val data = NativeParsReader(gateway, settings, provider)
+            .fetchActionVehicleSnapshot()?.data
 
         assertEquals(1, data?.adasAebState)
         assertEquals(4, data?.adasEspState)
         assertEquals(7, data?.adasMnoaStatus)
         assertEquals(88, data?.adasExecSpeed)
-        assertEquals(8, gateway.lastBatchSpecs.size)
+        assertEquals(12, gateway.lastBatchSpecs.size)
+        assertTrue(
+            fields.map { it.device to it.fid }.toSet()
+                .all { it in gateway.lastBatchSpecs.map { spec -> spec.device to spec.fid }.toSet() },
+        )
         coVerify(exactly = 0) { settings.getBatteryCapacity() }
     }
 

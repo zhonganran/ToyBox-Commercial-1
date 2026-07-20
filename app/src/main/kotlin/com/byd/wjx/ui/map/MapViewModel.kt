@@ -6,7 +6,6 @@ import com.byd.wjx.data.local.entity.ChargeEntity
 import com.byd.wjx.data.local.entity.TripEntity
 import com.byd.wjx.data.local.entity.TripPointEntity
 import com.byd.wjx.data.repository.ChargeRepository
-import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.data.repository.TripRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -37,7 +36,6 @@ data class MapUiState(
     val totalKwh: Double = 0.0,
     val avgConsumption: Double = 0.0,
     val trips: List<TripEntity> = emptyList(),
-    val tileSource: String = SettingsRepository.DEFAULT_MAP_TILE_SOURCE,
     val selectedTripId: Long? = null
 )
 
@@ -45,7 +43,6 @@ data class MapUiState(
 class MapViewModel @Inject constructor(
     private val tripRepository: TripRepository,
     private val chargeRepository: ChargeRepository,
-    private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MapUiState())
@@ -53,10 +50,6 @@ class MapViewModel @Inject constructor(
     private var loadJob: Job? = null
 
     init {
-        viewModelScope.launch {
-            val source = settingsRepository.getMapTileSource()
-            _uiState.update { it.copy(tileSource = source) }
-        }
         loadData()
     }
 

@@ -53,20 +53,4 @@ class ElectronicMirrorCameraRuntimeTest {
             ),
         )
     }
-
-    @Test
-    fun `surface switch always removes old output before binding new output`() {
-        assertEquals(
-            listOf(
-                ElectronicMirrorSurfaceStep(ElectronicMirrorSurfaceAction.REMOVE, 2),
-                ElectronicMirrorSurfaceStep(ElectronicMirrorSurfaceAction.BIND, 3),
-            ),
-            electronicMirrorSurfaceSwitchPlan(currentChannel = 2, targetChannel = 3),
-        )
-        assertEquals(
-            listOf(ElectronicMirrorSurfaceStep(ElectronicMirrorSurfaceAction.BIND, 0)),
-            electronicMirrorSurfaceSwitchPlan(currentChannel = null, targetChannel = 0),
-        )
-        assertTrue(electronicMirrorSurfaceSwitchPlan(currentChannel = 3, targetChannel = 3).isEmpty())
-    }
 }

@@ -47,6 +47,9 @@ class MusicNotificationListenerService : NotificationListenerService() {
     private val controllers = linkedMapOf<String, MediaController>()
     private val callbacks = linkedMapOf<String, MediaController.Callback>()
     private var mediaSessionManager: MediaSessionManager? = null
+    private val sessionsChangedListener = MediaSessionManager.OnActiveSessionsChangedListener { active ->
+        syncSessions(active.orEmpty())
+    }
 
     private val scanRunnable = object : Runnable {
         override fun run() {
@@ -57,20 +60,28 @@ class MusicNotificationListenerService : NotificationListenerService() {
 
     override fun onListenerConnected() {
         super.onListenerConnected()
-        mediaSessionManager = getSystemService(MediaSessionManager::class.java)
+        val manager = getSystemService(MediaSessionManager::class.java)
+        mediaSessionManager = manager
+        val component = ComponentName(this, MusicNotificationListenerService::class.java)
+        runCatching {
+            manager.addOnActiveSessionsChangedListener(sessionsChangedListener, component, handler)
+        }.onFailure {
+            WjxFileLogger.w(TAG, "active-session listener registration failed: ${it.message}")
+        }
         WjxFileLogger.i(TAG, "listener connected")
         handler.post(scanRunnable)
     }
 
     override fun onListenerDisconnected() {
         WjxFileLogger.w(TAG, "listener disconnected")
-        handler.removeCallbacks(scanRunnable)
+        disconnectSessionManager()
         unregisterAll()
         super.onListenerDisconnected()
     }
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        disconnectSessionManager()
         unregisterAll()
         super.onDestroy()
     }
@@ -128,7 +139,11 @@ class MusicNotificationListenerService : NotificationListenerService() {
         val active = runCatching { manager.getActiveSessions(component) }
             .onFailure { WjxFileLogger.w(TAG, "getActiveSessions failed: ${it.message}") }
             .getOrDefault(emptyList())
-            .filter { SupportedMusicPackages.names.contains(it.packageName) }
+        syncSessions(active)
+    }
+
+    private fun syncSessions(activeSessions: List<MediaController>) {
+        val active = activeSessions.filter { SupportedMusicPackages.names.contains(it.packageName) }
 
         val activePackages = active.map { it.packageName }.toSet()
         controllers.keys.toList()
@@ -140,6 +155,14 @@ class MusicNotificationListenerService : NotificationListenerService() {
             .sortedWith(compareByDescending<MusicPlaybackSnapshot> { it.playing }.thenBy { it.title.isBlank() })
             .firstOrNull { it.hasSong }
             ?.let(MusicPlaybackStore::publish)
+    }
+
+    private fun disconnectSessionManager() {
+        handler.removeCallbacks(scanRunnable)
+        mediaSessionManager?.let { manager ->
+            runCatching { manager.removeOnActiveSessionsChangedListener(sessionsChangedListener) }
+        }
+        mediaSessionManager = null
     }
 
     private fun register(controller: MediaController) {
@@ -263,7 +286,9 @@ class MusicNotificationListenerService : NotificationListenerService() {
 
     companion object {
         private const val TAG = "MusicLyricsListener"
-        private const val SCAN_INTERVAL_MS = 400L
+        // MediaSession callbacks provide immediate updates. This low-frequency scan only repairs
+        // missed active-session callbacks on vendor ROMs.
+        private const val SCAN_INTERVAL_MS = 10_000L
         private const val BYD_LYRICS = "com.byd.mediacenter.metadata.LYRICS"
         private val MEDIA_URI_KEYS = listOf(
             MediaMetadata.METADATA_KEY_MEDIA_URI,

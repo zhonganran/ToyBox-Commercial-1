@@ -1,5 +1,6 @@
 package com.byd.wjx.vehicle
 
+import android.annotation.SuppressLint
 import com.byd.wjx.audio.ExteriorChannel
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -56,6 +57,7 @@ class CarProfileDetector(
             return SERIES_TOKEN_REGEX.find(trimmed)?.groupValues?.getOrNull(1)?.toIntOrNull()
         }
 
+        @SuppressLint("PrivateApi")
         private fun readSystemProperty(name: String): String {
             val direct = runCatching {
                 val type = Class.forName("android.os.SystemProperties")

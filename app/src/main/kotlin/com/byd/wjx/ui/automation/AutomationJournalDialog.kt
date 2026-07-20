@@ -105,7 +105,7 @@ private fun LogItem(log: RuleLogEntity) {
         try {
             val obj = JSONObject(log.triggersSnapshot)
             obj.keys().asSequence().joinToString(" · ") { key ->
-                val paramName = TRIGGER_PARAMS.find { it.param == key }?.localizedName(context) ?: key
+                val paramName = TRIGGER_PARAMS.find { it.param == key }?.name ?: key
                 "$paramName: ${obj.get(key)}"
             }
         } catch (_: Exception) { "" }

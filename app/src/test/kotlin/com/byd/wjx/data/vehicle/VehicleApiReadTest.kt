@@ -19,14 +19,15 @@ class VehicleApiReadTest {
     private val writeLogDao: VehicleWriteLogDao = mockk(relaxed = true)
     private val api: VehicleApi = VehicleApiImpl(parsReader, gateway, allowlist, writeLogDao)
 
-    @Test fun `readSnapshot delegates to ParsReader fetch`() = runTest {
+    @Test fun `readSnapshot delegates to ParsReader snapshot`() = runTest {
         val expected = diParsData(soc = 73, speed = 0)
-        coEvery { parsReader.fetch() } returns expected
+        coEvery { parsReader.fetchVehicleSnapshot() } returns
+            VehicleSnapshot.synthetic(expected, VehicleSnapshotKind.FULL)
         assertEquals(expected, api.readSnapshot())
     }
 
     @Test fun `readSnapshot returns null when reader returns null`() = runTest {
-        coEvery { parsReader.fetch() } returns null
+        coEvery { parsReader.fetchVehicleSnapshot() } returns null
         assertNull(api.readSnapshot())
     }
 

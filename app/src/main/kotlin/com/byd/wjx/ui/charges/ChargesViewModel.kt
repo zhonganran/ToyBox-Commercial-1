@@ -14,7 +14,6 @@ import com.byd.wjx.data.local.entity.ChargeEntity
 import com.byd.wjx.data.repository.ChargeRepository
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.domain.battery.BatteryStateRepository
-import com.byd.wjx.util.appLocalizedContext
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
@@ -65,7 +64,6 @@ data class ChargesUiState(
     val initialAutoserviceCheckDone: Boolean = false,
     val autoserviceConnected: Boolean = false,
     val autoserviceAllSentinel: Boolean = false,
-    val hasLegacyCharges: Boolean = false,
     val lifetimeAcKwh: Double = 0.0,
     val lifetimeDcKwh: Double = 0.0,
     val lifetimeTotalKwh: Double = 0.0,
@@ -110,13 +108,11 @@ class ChargesViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            val symbol = settingsRepository.getCurrencySymbol()
             val nominal = settingsRepository.getBatteryCapacity()
             val home = settingsRepository.getHomeTariff()
             val dc = settingsRepository.getDcTariff()
             _uiState.update {
                 it.copy(
-                    currencySymbol = symbol,
                     nominalCapacityKwh = nominal,
                     homeTariff = home,
                     dcTariff = dc,
@@ -230,10 +226,8 @@ class ChargesViewModel @Inject constructor(
     }
 
     internal fun groupChargesByMonthDay(charges: List<ChargeEntity>): List<ChargesMonthGroup> {
-        // @ApplicationContext is not localized — use the app-selected language so
-        // weekday/month headers and today/yesterday labels match the app's locale.
-        val ctx = appContext.appLocalizedContext()
-        val appLocale = ctx.resources.configuration.locales[0]
+        val ctx = appContext
+        val appLocale = Locale.SIMPLIFIED_CHINESE
         val monthKeyFmt = SimpleDateFormat("yyyy-MM", Locale.US)
         val dayKeyFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         val dayOfWeekFmt = SimpleDateFormat("EEE", appLocale)
@@ -303,18 +297,11 @@ class ChargesViewModel @Inject constructor(
 
     private fun loadAutoserviceState() {
         viewModelScope.launch {
-            // Phase 1: fast read from Room — no Binder probe yet.
-            // Setting initialAutoserviceCheckDone = true immediately suppresses the
+            // Mark the initial gate before the slow Binder probe. This suppresses the
             // OnboardingEmptyState flash that was visible during the ~1-2 s Binder probe.
-            val legacyExists = chargeRepository.hasLegacyCharges()
-            _uiState.update {
-                it.copy(
-                    hasLegacyCharges = legacyExists,
-                    initialAutoserviceCheckDone = true,
-                )
-            }
+            _uiState.update { it.copy(initialAutoserviceCheckDone = true) }
 
-            // Phase 2: slow Binder probe — updates connection / sentinel / BMS lifetime fields.
+            // Slow Binder probe: update connection, sentinel and BMS lifetime fields.
             val disconnectedDefault = com.byd.wjx.domain.battery.BatteryState(
                 socNow = null, voltage12v = null, sohPercent = null,
                 lifetimeKm = null, lifetimeKwh = null, autoserviceAvailable = false

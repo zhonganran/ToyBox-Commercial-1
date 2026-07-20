@@ -39,8 +39,6 @@ class UpdateChecker @Inject constructor(
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 .edit().putBoolean(KEY_AUTO_CHECK, enabled).apply()
         }
-
-        fun updateApiUrl(): String = BuildConfig.UPDATE_API_URL
     }
 
     data class UpdateInfo(

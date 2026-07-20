@@ -6,7 +6,6 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.byd.wjx.data.local.dao.BatterySnapshotDao
 import com.byd.wjx.data.local.dao.ChargeDao
-import com.byd.wjx.data.local.dao.ChargePointDao
 import com.byd.wjx.data.local.dao.IdleDrainDao
 import com.byd.wjx.data.local.dao.OdometerSampleDao
 import com.byd.wjx.data.local.dao.PlaceDao
@@ -20,7 +19,6 @@ import com.byd.wjx.data.local.dao.VehicleWriteLogDao
 import com.byd.wjx.data.local.entity.BatterySnapshotEntity
 import com.byd.wjx.data.local.entity.LastStateEntity
 import com.byd.wjx.data.local.entity.ChargeEntity
-import com.byd.wjx.data.local.entity.ChargePointEntity
 import com.byd.wjx.data.local.entity.IdleDrainEntity
 import com.byd.wjx.data.local.entity.OdometerSampleEntity
 import com.byd.wjx.data.local.entity.PlaceEntity
@@ -36,7 +34,6 @@ import com.byd.wjx.data.local.entity.VehicleWriteLogEntity
         TripEntity::class,
         TripPointEntity::class,
         ChargeEntity::class,
-        ChargePointEntity::class,
         SettingEntity::class,
         IdleDrainEntity::class,
         BatterySnapshotEntity::class,
@@ -47,7 +44,7 @@ import com.byd.wjx.data.local.entity.VehicleWriteLogEntity
         LastStateEntity::class,
         VehicleWriteLogEntity::class
     ],
-    version = 18,
+    version = 19,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -57,7 +54,7 @@ abstract class AppDatabase : RoomDatabase() {
         const val COMMERCIAL_BASELINE_SCHEMA_VERSION = 17
 
         /** Current Room schema version. Must match the @Database(version = ...) annotation above. */
-        const val SCHEMA_VERSION = 18
+        const val SCHEMA_VERSION = 19
 
         val MIGRATION_17_18 = object : Migration(17, 18) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -69,12 +66,17 @@ abstract class AppDatabase : RoomDatabase() {
                 )
             }
         }
+
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS charge_points")
+            }
+        }
     }
 
     abstract fun tripDao(): TripDao
     abstract fun tripPointDao(): TripPointDao
     abstract fun chargeDao(): ChargeDao
-    abstract fun chargePointDao(): ChargePointDao
     abstract fun settingsDao(): SettingsDao
     abstract fun idleDrainDao(): IdleDrainDao
     abstract fun batterySnapshotDao(): BatterySnapshotDao

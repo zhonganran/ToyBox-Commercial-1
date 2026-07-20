@@ -1,5 +1,6 @@
 package com.byd.wjx.data.vehicle
 
+import android.annotation.SuppressLint
 import android.os.DeadObjectException
 import android.os.IBinder
 import android.os.Parcel
@@ -55,7 +56,7 @@ interface HelperClient {
      */
     suspend fun writeStatus(dev: Int, fid: Int, value: Int): Int?
     suspend fun isAlive(): Boolean
-    /** Zero identifies a pre-version-handshake helper; null means unreachable. */
+    /** Returns the helper's exact wire-protocol version, or null for an invalid reply. */
     suspend fun protocolVersion(): Int? = null
 
     /** Creates a VirtualDisplay backed by [surface]; returns its displayId (>0) or null. */
@@ -103,7 +104,6 @@ interface HelperClient {
         surface: Surface,
         request: ElectronicMirrorCameraRequest,
     ): Boolean = false
-    suspend fun switchElectronicMirrorSurface(surfaceIndex: Int): Boolean = false
     suspend fun stopElectronicMirror(): Boolean = false
 }
 
@@ -179,8 +179,11 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
             ?.let { (status, _) -> readAccepted(status) } ?: false
 
     override suspend fun protocolVersion(): Int? =
-        transact(HelperBinderProtocol.TX_PING) { }
-            ?.let { (status, version) -> version.takeIf { readAccepted(status) } }
+        transactParsed(HelperBinderProtocol.TX_PING, { }) { reply ->
+            val status = if (reply.dataAvail() >= 4) reply.readInt() else return@transactParsed null
+            val version = if (reply.dataAvail() >= 4) reply.readInt() else return@transactParsed null
+            version.takeIf { readAccepted(status) }
+        }
 
     override suspend fun createVirtualDisplay(
         name: String, width: Int, height: Int, density: Int, flags: Int, surface: Surface,
@@ -308,11 +311,6 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
             surface.writeToParcel(data, 0)
         }
 
-    override suspend fun switchElectronicMirrorSurface(surfaceIndex: Int): Boolean =
-        statusOk(HelperBinderProtocol.TX_CAMERA_SWITCH_VIEW, timeoutMs = FORCE_TIMEOUT_MS) { data ->
-            data.writeInt(surfaceIndex)
-        }
-
     override suspend fun stopElectronicMirror(): Boolean =
         statusOk(HelperBinderProtocol.TX_CAMERA_STOP) { }
 
@@ -383,6 +381,7 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
     }
 
     /** Production: look the daemon up by name. Overridable so tests can inject a fake IBinder. */
+    @SuppressLint("PrivateApi")
     internal open fun resolveBinder(): IBinder? = try {
         val sm = Class.forName("android.os.ServiceManager")
         (sm.getMethod("getService", String::class.java)

@@ -27,7 +27,7 @@ class VehicleApiImpl @Inject constructor(
 
     // On-demand snapshots — passthroughs.
     override suspend fun readBatterySnapshot(): BatteryReading? = gateway.readBatterySnapshot()
-    override suspend fun readSnapshot(): DiParsData? = parsReader.fetch()
+    override suspend fun readSnapshot(): DiParsData? = parsReader.fetchVehicleSnapshot()?.data
 
     // ─── Writes ────────────────────────────────────────────────────────────────
 

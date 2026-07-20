@@ -40,7 +40,6 @@ import android.os.IBinder
  *   TX_CAMERA_START : writeString(cameraTag), writeInt(surfaceIndex), writeInt(tileCount),
  *       writeInt(bufferWidth), writeInt(bufferHeight), writeInt(fps), Surface.writeToParcel(surface)
  *       -> reply: writeInt(status), writeInt(0)
- *   TX_CAMERA_SWITCH_VIEW : writeInt(surfaceIndex)          -> reply: writeInt(status), writeInt(0)
  *   TX_CAMERA_STOP : (no args)                              -> reply: writeInt(status), writeInt(0)
  *
  * Projection status: 0 = success, <0 = error/unavailable. Surface is written LAST so a
@@ -52,41 +51,33 @@ object HelperBinderProtocol {
     const val SERVICE_NAME = "wjx_helper"
     const val PROCESS_NAME = "wjx_helper"   // app_process --nice-name + ps lookup
     const val DESCRIPTOR = "com.byd.wjx.helper.IHelper"
-    // v12 separates AVMCamera identity, Surface output index and strip geometry. This is a runtime
-    // build marker, not preference migration: a shell-uid app_process can outlive an APK uninstall.
-    const val CURRENT_VERSION = 12
+    // Increment whenever transaction ids or Parcel layouts change. The helper process can outlive
+    // an APK replacement, so the client verifies this marker before using vehicle transactions.
+    const val CURRENT_VERSION = 13
 
     const val TX_PING = IBinder.FIRST_CALL_TRANSACTION       // 1
     const val TX_READ = IBinder.FIRST_CALL_TRANSACTION + 1   // 2
     const val TX_WRITE = IBinder.FIRST_CALL_TRANSACTION + 2  // 3
-    // Slot 4 previously held a local diagnostic. Reusing it for the production batch-read
-    // contract is safe because no released client sends the retired diagnostic payload.
-    const val TX_READ_BATCH = IBinder.FIRST_CALL_TRANSACTION + 3 // 4
-    // tx 5 remains retired (diagnostic getInstrumentFeature).
-
-    const val TX_CREATE_VIRTUAL_DISPLAY = IBinder.FIRST_CALL_TRANSACTION + 5    // 6
-    const val TX_RELEASE_VIRTUAL_DISPLAY = IBinder.FIRST_CALL_TRANSACTION + 6   // 7
-    const val TX_LAUNCH_APP = IBinder.FIRST_CALL_TRANSACTION + 7                // 8
-    const val TX_GET_TASK_ID = IBinder.FIRST_CALL_TRANSACTION + 8               // 9
-    const val TX_MOVE_TASK_TO_DISPLAY = IBinder.FIRST_CALL_TRANSACTION + 9      // 10
-    const val TX_SET_TASK_BOUNDS = IBinder.FIRST_CALL_TRANSACTION + 10          // 11
-    const val TX_SET_FOCUSED_TASK = IBinder.FIRST_CALL_TRANSACTION + 11         // 12
-    const val TX_SET_TASK_WINDOWING_MODE = IBinder.FIRST_CALL_TRANSACTION + 12  // 13
-    const val TX_GRANT_OVERLAY_PERMISSION = IBinder.FIRST_CALL_TRANSACTION + 13 // 14
-    const val TX_LAUNCH_AND_FORCE = IBinder.FIRST_CALL_TRANSACTION + 14         // 15
-    const val TX_ENABLE_ACCESSIBILITY = IBinder.FIRST_CALL_TRANSACTION + 15     // 16
-    const val TX_READ_VEHICLE_VIN = IBinder.FIRST_CALL_TRANSACTION + 16         // 17
-    // tx 18, 19 kept empty for compatibility with earlier local probes.
-    const val TX_SENTRY_SHELL = IBinder.FIRST_CALL_TRANSACTION + 19             // 20
-    // Match AutoTark's lock-sound helper slots for easier future diffing.
-    const val TX_SYNC_LOCK_SOUND_CONFIG = IBinder.FIRST_CALL_TRANSACTION + 23   // 24
-    const val TX_DEBUG_PLAY_LOCK_SOUND = IBinder.FIRST_CALL_TRANSACTION + 24    // 25
-    const val TX_EXEC_SHELL = IBinder.FIRST_CALL_TRANSACTION + 25               // 26
-    const val TX_STOP_LOCK_SOUND = IBinder.FIRST_CALL_TRANSACTION + 26          // 27
-    const val TX_CAMERA_START = IBinder.FIRST_CALL_TRANSACTION + 27             // 28
-    const val TX_CAMERA_SWITCH_VIEW = IBinder.FIRST_CALL_TRANSACTION + 28       // 29
-    const val TX_CAMERA_STOP = IBinder.FIRST_CALL_TRANSACTION + 29              // 30
-    // tx 31 retired (unused electronic-mirror status query).
+    const val TX_READ_BATCH = IBinder.FIRST_CALL_TRANSACTION + 3                // 4
+    const val TX_CREATE_VIRTUAL_DISPLAY = IBinder.FIRST_CALL_TRANSACTION + 4    // 5
+    const val TX_RELEASE_VIRTUAL_DISPLAY = IBinder.FIRST_CALL_TRANSACTION + 5   // 6
+    const val TX_LAUNCH_APP = IBinder.FIRST_CALL_TRANSACTION + 6                // 7
+    const val TX_GET_TASK_ID = IBinder.FIRST_CALL_TRANSACTION + 7               // 8
+    const val TX_MOVE_TASK_TO_DISPLAY = IBinder.FIRST_CALL_TRANSACTION + 8      // 9
+    const val TX_SET_TASK_BOUNDS = IBinder.FIRST_CALL_TRANSACTION + 9           // 10
+    const val TX_SET_FOCUSED_TASK = IBinder.FIRST_CALL_TRANSACTION + 10         // 11
+    const val TX_SET_TASK_WINDOWING_MODE = IBinder.FIRST_CALL_TRANSACTION + 11  // 12
+    const val TX_GRANT_OVERLAY_PERMISSION = IBinder.FIRST_CALL_TRANSACTION + 12 // 13
+    const val TX_LAUNCH_AND_FORCE = IBinder.FIRST_CALL_TRANSACTION + 13         // 14
+    const val TX_ENABLE_ACCESSIBILITY = IBinder.FIRST_CALL_TRANSACTION + 14     // 15
+    const val TX_READ_VEHICLE_VIN = IBinder.FIRST_CALL_TRANSACTION + 15         // 16
+    const val TX_SENTRY_SHELL = IBinder.FIRST_CALL_TRANSACTION + 16             // 17
+    const val TX_SYNC_LOCK_SOUND_CONFIG = IBinder.FIRST_CALL_TRANSACTION + 17   // 18
+    const val TX_DEBUG_PLAY_LOCK_SOUND = IBinder.FIRST_CALL_TRANSACTION + 18    // 19
+    const val TX_STOP_LOCK_SOUND = IBinder.FIRST_CALL_TRANSACTION + 19          // 20
+    const val TX_EXEC_SHELL = IBinder.FIRST_CALL_TRANSACTION + 20               // 21
+    const val TX_CAMERA_START = IBinder.FIRST_CALL_TRANSACTION + 21             // 22
+    const val TX_CAMERA_STOP = IBinder.FIRST_CALL_TRANSACTION + 22              // 23
 
     /** Hard upper bound keeps a malformed caller from creating an oversized Binder reply. */
     const val MAX_BATCH_READS = 128
@@ -102,6 +93,4 @@ object HelperBinderProtocol {
     const val KEEPALIVE_ACCESSIBILITY_SERVICE_COMPONENT =
         "com.byd.wjx/com.byd.wjx.service.KeepAliveAccessibilityService"
 
-    /** Backwards-compatible name used by existing star-control checks. */
-    const val ACCESSIBILITY_SERVICE_COMPONENT = STAR_ACCESSIBILITY_SERVICE_COMPONENT
 }

@@ -30,10 +30,6 @@ class NativeParsReader @Inject constructor(
     private val actionSnapshotFieldProvider: ActionSnapshotFieldProvider,
 ) : ParsReader, OnDemandVehicleTelemetryReader {
 
-    override suspend fun fetch(): DiParsData? = fetchVehicleSnapshot()?.data
-
-    override suspend fun fetchAction(): DiParsData? = fetchActionVehicleSnapshot()?.data
-
     override suspend fun fetchVehicleSnapshot(): VehicleSnapshot? = fullReadMutex.withLock {
         fetchTieredFullSnapshot()
     }
@@ -63,9 +59,6 @@ class NativeParsReader @Inject constructor(
 
     override suspend fun readTireTelemetry(): DiParsData? =
         fetchPlan(TireTelemetryReadPlan, VehicleSnapshotKind.ACTION)?.data
-
-    override suspend fun readAdasTelemetry(): DiParsData? =
-        fetchPlan(AdasTelemetryReadPlan, VehicleSnapshotKind.ACTION)?.data
 
     override suspend fun readPowertrainTelemetry(): DiParsData? =
         fetchPlan(PowertrainTelemetryReadPlan, VehicleSnapshotKind.ACTION)?.data
@@ -416,7 +409,6 @@ class NativeParsReader @Inject constructor(
         private val LedBodyReadPlan = ReadPlan(VehicleReadProfiles.ledBody)
         private val LedAdasReadPlan = ReadPlan(VehicleReadProfiles.ledAdas)
         private val TireTelemetryReadPlan = ReadPlan(VehicleReadProfiles.tireTelemetry)
-        private val AdasTelemetryReadPlan = ReadPlan(VehicleReadProfiles.adasTelemetry)
         private val PowertrainTelemetryReadPlan = ReadPlan(VehicleReadProfiles.powertrainTelemetry)
     }
 

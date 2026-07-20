@@ -5,6 +5,9 @@ import com.byd.wjx.data.local.EnergyDataReader
 import com.byd.wjx.data.local.dao.LastStateDao
 import com.byd.wjx.data.nativestack.ParsReader
 import com.byd.wjx.data.remote.diParsData
+import com.byd.wjx.data.vehicle.VehicleReadSource
+import com.byd.wjx.data.vehicle.VehicleSnapshot
+import com.byd.wjx.data.vehicle.VehicleSnapshotKind
 import io.mockk.every
 import io.mockk.coEvery
 import io.mockk.mockk
@@ -28,9 +31,11 @@ class SharedAdaptiveLoopLifecycleTest {
     @Test fun `emits ticks from parsReader on the schedule`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val reader = object : ParsReader {
-            override suspend fun fetch() =
+            override suspend fun fetchVehicleSnapshot() = VehicleSnapshot.synthetic(
                 // powerState=0 (OFF) -> IDLE cadence (30s)
-                diParsData(soc = 80, mileage = 100.0, voltage12v = 12.5, powerState = 0)
+                diParsData(soc = 80, mileage = 100.0, voltage12v = 12.5, powerState = 0),
+                VehicleSnapshotKind.FULL,
+            )
         }
         val lastState = mockk<LastStateDao>(relaxed = true)
         val energy = mockk<EnergyDataReader> { every { isAvailable() } returns true }
@@ -55,12 +60,15 @@ class SharedAdaptiveLoopLifecycleTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         var n = 0
         val reader = object : ParsReader {
-            override suspend fun fetch() = diParsData(
-                soc = ++n,
-                mileage = 100.0,
-                voltage12v = 12.5,
-                powerState = 3,
-                speed = 20,
+            override suspend fun fetchVehicleSnapshot() = VehicleSnapshot.synthetic(
+                diParsData(
+                    soc = ++n,
+                    mileage = 100.0,
+                    voltage12v = 12.5,
+                    powerState = 3,
+                    speed = 20,
+                ),
+                VehicleSnapshotKind.FULL,
             )
         }
         val lastState = mockk<LastStateDao>(relaxed = true)
@@ -86,14 +94,17 @@ class SharedAdaptiveLoopLifecycleTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         var reads = 0
         val reader = object : ParsReader {
-            override suspend fun fetch(): com.byd.wjx.data.remote.DiParsData {
+            override suspend fun fetchVehicleSnapshot(): VehicleSnapshot {
                 delay(200)
-                return diParsData(
-                    soc = ++reads,
-                    mileage = 100.0,
-                    voltage12v = 12.5,
-                    powerState = 3,
-                    speed = 20,
+                return VehicleSnapshot.synthetic(
+                    diParsData(
+                        soc = ++reads,
+                        mileage = 100.0,
+                        voltage12v = 12.5,
+                        powerState = 3,
+                        speed = 20,
+                    ),
+                    VehicleSnapshotKind.FULL,
                 )
             }
         }
@@ -117,24 +128,84 @@ class SharedAdaptiveLoopLifecycleTest {
         }
     }
 
+    @Test fun `large action snapshot applies field read budget to following ticks`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        var reads = 0
+        val reader = object : ParsReader {
+            override suspend fun fetchVehicleSnapshot() = snapshot(
+                data = diParsData(
+                    soc = ++reads,
+                    mileage = 100.0,
+                    voltage12v = 12.5,
+                    powerState = 3,
+                    speed = 20,
+                ),
+                kind = VehicleSnapshotKind.FULL,
+                requestedFieldCount = 18,
+            )
+
+            override suspend fun fetchActionVehicleSnapshot() = snapshot(
+                data = diParsData(
+                    soc = ++reads,
+                    powerState = 3,
+                    speed = 20,
+                ),
+                kind = VehicleSnapshotKind.ACTION,
+                requestedFieldCount = 60,
+            )
+        }
+        val loop = SharedAdaptiveLoop(
+            reader,
+            mockk(relaxed = true),
+            mockk<EnergyDataReader> { every { isAvailable() } returns true },
+            dispatcher,
+        )
+
+        val job = loop.start(TestScope(dispatcher))
+        try {
+            loop.actionFlow.test {
+                advanceTimeBy(1L)
+                assertEquals(1, awaitItem().soc)
+
+                advanceTimeBy(300L)
+                assertEquals(2, awaitItem().soc)
+
+                // The loop subtracts real fetch time from the budget interval. Leave a small
+                // tolerance here; ActionPollingBudgetTest covers the exact 500 ms calculation.
+                advanceTimeBy(490L)
+                expectNoEvents()
+                advanceTimeBy(10L)
+                assertEquals(3, awaitItem().soc)
+            }
+        } finally {
+            job.cancel()
+        }
+    }
+
     @Test fun `action state transition forces full snapshot without waiting for idle cadence`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         var fullReads = 0
         val reader = object : ParsReader {
-            override suspend fun fetch() = diParsData(
-                soc = 80,
-                mileage = 100.0,
-                voltage12v = 12.5,
-                powerState = if (fullReads++ == 0) 0 else 3,
-                speed = if (fullReads == 1) 0 else 20,
+            override suspend fun fetchVehicleSnapshot() = VehicleSnapshot.synthetic(
+                diParsData(
+                    soc = 80,
+                    mileage = 100.0,
+                    voltage12v = 12.5,
+                    powerState = if (fullReads++ == 0) 0 else 3,
+                    speed = if (fullReads == 1) 0 else 20,
+                ),
+                VehicleSnapshotKind.FULL,
             )
 
-            override suspend fun fetchAction() = diParsData(
-                soc = 80,
-                mileage = 100.0,
-                voltage12v = 12.5,
-                powerState = 3,
-                speed = 20,
+            override suspend fun fetchActionVehicleSnapshot() = VehicleSnapshot.synthetic(
+                diParsData(
+                    soc = 80,
+                    mileage = 100.0,
+                    voltage12v = 12.5,
+                    powerState = 3,
+                    speed = 20,
+                ),
+                VehicleSnapshotKind.ACTION,
             )
         }
         val lastState = mockk<LastStateDao>(relaxed = true)
@@ -158,10 +229,25 @@ class SharedAdaptiveLoopLifecycleTest {
         }
     }
 
+    private fun snapshot(
+        data: com.byd.wjx.data.remote.DiParsData,
+        kind: VehicleSnapshotKind,
+        requestedFieldCount: Int,
+    ) = VehicleSnapshot(
+        data = data,
+        kind = kind,
+        source = VehicleReadSource.UNKNOWN,
+        readStartedAtMs = 0L,
+        readCompletedAtMs = 0L,
+        requestedFieldCount = requestedFieldCount,
+        transportSuccessCount = requestedFieldCount,
+        decodedFieldCount = requestedFieldCount,
+    )
+
     @Test fun `start is idempotent`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val reader = object : ParsReader {
-            override suspend fun fetch() = null
+            override suspend fun fetchVehicleSnapshot(): VehicleSnapshot? = null
         }
         val lastState = mockk<LastStateDao>(relaxed = true)
         val energy = mockk<EnergyDataReader>(relaxed = true)
@@ -179,7 +265,7 @@ class SharedAdaptiveLoopLifecycleTest {
         var maxActiveFetches = 0
         var totalFetches = 0
         val reader = object : ParsReader {
-            override suspend fun fetch(): com.byd.wjx.data.remote.DiParsData? {
+            override suspend fun fetchVehicleSnapshot(): VehicleSnapshot? {
                 activeFetches++
                 totalFetches++
                 maxActiveFetches = maxOf(maxActiveFetches, activeFetches)
@@ -223,11 +309,14 @@ class SharedAdaptiveLoopLifecycleTest {
     @Test fun `stop clears connected state`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val reader = object : ParsReader {
-            override suspend fun fetch() = diParsData(
-                soc = 80,
-                mileage = 100.0,
-                voltage12v = 12.5,
-                powerState = 3,
+            override suspend fun fetchVehicleSnapshot() = VehicleSnapshot.synthetic(
+                diParsData(
+                    soc = 80,
+                    mileage = 100.0,
+                    voltage12v = 12.5,
+                    powerState = 3,
+                ),
+                VehicleSnapshotKind.FULL,
             )
         }
         val loop = SharedAdaptiveLoop(
@@ -250,12 +339,15 @@ class SharedAdaptiveLoopLifecycleTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         var reads = 0
         val reader = object : ParsReader {
-            override suspend fun fetch() = diParsData(
-                soc = ++reads,
-                mileage = 100.0,
-                voltage12v = 12.5,
-                powerState = 3,
-                speed = 20,
+            override suspend fun fetchVehicleSnapshot() = VehicleSnapshot.synthetic(
+                diParsData(
+                    soc = ++reads,
+                    mileage = 100.0,
+                    voltage12v = 12.5,
+                    powerState = 3,
+                    speed = 20,
+                ),
+                VehicleSnapshotKind.FULL,
             )
         }
         val lastState = mockk<LastStateDao>(relaxed = true)

@@ -20,7 +20,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -38,7 +37,6 @@ import android.widget.Toast
 import androidx.compose.ui.res.stringResource
 import com.byd.wjx.R
 import com.byd.wjx.data.local.entity.PlaceEntity
-import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.ui.theme.AccentGreen
 import com.byd.wjx.ui.theme.CardBorder
 import com.byd.wjx.ui.theme.CardSurface
@@ -49,7 +47,6 @@ import com.byd.wjx.SuperToyBoxApp
 import com.byd.wjx.ui.map.OsmdroidRuntime
 import com.byd.wjx.util.Gcj02Converter
 import org.osmdroid.events.MapEventsReceiver
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
@@ -67,7 +64,6 @@ internal fun parseCoordinate(text: String): Double? = text.replace(',', '.').tri
 @Composable
 fun PlaceEditDialog(
     initial: PlaceEntity?,
-    tileSource: String = SettingsRepository.DEFAULT_MAP_TILE_SOURCE,
     lastLocation: android.location.Location? = null,
     onDismiss: () -> Unit,
     onSave: (id: Long?, name: String, lat: Double, lon: Double, radiusM: Int) -> Unit
@@ -106,9 +102,8 @@ fun PlaceEditDialog(
 
     // Seed text fields once when location becomes available
     val loc = currentLocation.value
-    val isAmap = tileSource == "amap"
-    val fbLat = loc?.first  ?: if (isAmap) 22.5431 else 55.7539   // 深圳 / 莫斯科
-    val fbLon = loc?.second ?: if (isAmap) 114.0579 else 37.6208
+    val fbLat = loc?.first ?: 22.5431
+    val fbLon = loc?.second ?: 114.0579
     LaunchedEffect(loc) {
         if (initial == null && latText.isEmpty() && lonText.isEmpty() && loc != null) {
             latText = "%.6f".format(loc.first)
@@ -176,7 +171,6 @@ fun PlaceEditDialog(
                         lat = effLat,
                         lon = effLon,
                         radiusM = effR,
-                        tileSource = tileSource,
                         onPick = { lat, lon ->
                             latText = "%.6f".format(lat)
                             lonText = "%.6f".format(lon)
@@ -263,22 +257,18 @@ private fun PlacePickerMap(
     lat: Double,
     lon: Double,
     radiusM: Int,
-    tileSource: String,
     onPick: (Double, Double) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val isAmap = tileSource == "amap"
 
     // Convert WGS-84 to display coords for Amap alignment
-    val (displayLat, displayLon) = if (isAmap) Gcj02Converter.wgs84ToGcj02(lat, lon) else lat to lon
+    val (displayLat, displayLon) = Gcj02Converter.wgs84ToGcj02(lat, lon)
 
-    val mapView = remember(tileSource) {
+    val mapView = remember(context) {
         OsmdroidRuntime.ensureInitialized(context)
         MapView(context).apply {
-            setTileSource(
-                if (isAmap) SuperToyBoxApp.AmapTileSource else TileSourceFactory.MAPNIK
-            )
+            setTileSource(SuperToyBoxApp.AmapTileSource)
             setMultiTouchControls(true)
             zoomController.setVisibility(
                 org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER
@@ -295,7 +285,6 @@ private fun PlacePickerMap(
         }
     }
 
-    key(tileSource) {
     AndroidView(
         factory = { mapView },
         modifier = modifier,
@@ -304,12 +293,10 @@ private fun PlacePickerMap(
 
             val center = GeoPoint(displayLat, displayLon)
 
-            // Tap handler — osmdroid returns coordinates in the tile source's
-            // coordinate system, so for Amap we must reverse-convert back to WGS-84.
+            // Amap returns GCJ-02 coordinates; persist WGS-84 coordinates in Room.
             val receiver = object : MapEventsReceiver {
                 override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
-                    val (wgsLat, wgsLon) = if (isAmap) Gcj02Converter.gcj02ToWgs84(p.latitude, p.longitude)
-                    else p.latitude to p.longitude
+                    val (wgsLat, wgsLon) = Gcj02Converter.gcj02ToWgs84(p.latitude, p.longitude)
                     onPick(wgsLat, wgsLon)
                     return true
                 }
@@ -343,5 +330,4 @@ private fun PlacePickerMap(
             map.invalidate()
         }
     )
-    } // key(tileSource)
 }

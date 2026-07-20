@@ -64,11 +64,6 @@ interface VehicleGateway {
             ?.value
             ?.let(SentinelDecoder::decodeInt)
 
-    suspend fun readFloat(device: Int, fid: Int): Float? =
-        readRaw(VehicleReadSpec(FidRegistry.TX_GET_FLOAT, device, fid))
-            ?.value
-            ?.let(SentinelDecoder::parseFloatFromShellInt)
-
     suspend fun isAvailable(): Boolean {
         val batch = readBatch(AVAILABILITY_PROBES) ?: return false
         return batch.specs.indices.any { index ->
@@ -199,9 +194,6 @@ interface VehicleGateway {
             chargeStopSoc = chargeStopSoc,
         )
     }
-
-    suspend fun getEnginePowerKw(): Int? =
-        readInt(FidRegistry.DEV_ENGINE, FidRegistry.FID_ENGINE_POWER)
 
     companion object {
         val AVAILABILITY_PROBES = listOf(

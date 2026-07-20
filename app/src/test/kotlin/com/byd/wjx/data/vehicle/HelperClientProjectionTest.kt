@@ -147,14 +147,8 @@ class HelperClientProjectionTest {
     }
 
     @Test
-    fun `electronic mirror switch and stop map replies`() = runBlocking {
-        var surfaceIndex = -1
-        assertTrue(
-            clientWith(capturingFake(status = 0, value = 0) { surfaceIndex = it.readInt() })
-                .switchElectronicMirrorSurface(3),
-        )
-        assertEquals(3, surfaceIndex)
+    fun `electronic mirror stop maps replies`() = runBlocking {
         assertTrue(clientWith(capturingFake(status = 0, value = 0)).stopElectronicMirror())
-        assertFalse(clientWith(capturingFake(status = -7, value = -1)).switchElectronicMirrorSurface(2))
+        assertFalse(clientWith(capturingFake(status = -7, value = -1)).stopElectronicMirror())
     }
 }

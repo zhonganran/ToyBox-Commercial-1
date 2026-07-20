@@ -8,7 +8,6 @@ import com.byd.wjx.data.local.dao.TripDao
 import com.byd.wjx.data.local.dao.TripPointDao
 import com.byd.wjx.data.local.database.AppDatabase
 import com.byd.wjx.data.local.EnergyDataReader
-import com.byd.wjx.data.local.LocalePreferences
 import com.byd.wjx.data.local.dao.LastStateDao
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.data.repository.DefaultVehicleStateRepository
@@ -77,11 +76,6 @@ object AppModule {
         capacityProvider = { settingsRepository.getBatteryCapacity() },
         socInterpolator = socInterpolator,
     )
-
-    @Provides
-    @Singleton
-    fun provideLocalePreferences(@ApplicationContext context: Context): LocalePreferences =
-        LocalePreferences(context)
 
     @Provides
     @Singleton

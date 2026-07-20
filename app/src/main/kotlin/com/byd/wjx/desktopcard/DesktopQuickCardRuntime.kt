@@ -32,7 +32,7 @@ class DesktopQuickCardRuntime @Inject constructor(
         if (renderJob?.isActive == true) return
         controller.start(scope)
         repository.refresh()
-        foregroundMonitor.start(scope)
+        foregroundMonitor.start(OWNER)
         renderJob = scope.launch {
             combine(
                 repository.config,
@@ -64,6 +64,7 @@ class DesktopQuickCardRuntime @Inject constructor(
         renderJob?.cancel()
         renderJob = null
         controller.stop()
+        foregroundMonitor.stop(OWNER)
         WjxFileLogger.i(TAG, "stopped")
     }
 
@@ -76,5 +77,6 @@ class DesktopQuickCardRuntime @Inject constructor(
 
     private companion object {
         const val TAG = "DesktopCardRuntime"
+        const val OWNER = "desktop_quick_card"
     }
 }

@@ -37,15 +37,6 @@ interface RuleDao {
     @Query("SELECT COUNT(*) FROM automation_rules")
     suspend fun getCount(): Int
 
-    @Query("""
-        DELETE FROM automation_rules
-        WHERE name IN (:names)
-          AND enabled = 0
-          AND trigger_count = 0
-          AND last_triggered_at IS NULL
-    """)
-    suspend fun deleteUnusedStarterTemplates(names: List<String>): Int
-
     // Count rules whose triggers JSON contains a reference to the given placeId.
     // JSON format: ..., "placeId":123, ... (followed by ',' or '}') — ensures exact numeric match.
     // Two LIKE variants cover both cases: value is followed by another field (',') or closes the object ('}').

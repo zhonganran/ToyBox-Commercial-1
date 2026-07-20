@@ -32,26 +32,14 @@ class TripRepository @Inject constructor(
         invalidateEmaCache()
     }
 
-    suspend fun getTripById(id: Long): TripEntity? = tripDao.getById(id)
-
     fun getAllTrips(): Flow<List<TripEntity>> = tripDao.getAll()
 
     fun getTripsByDateRange(from: Long, to: Long): Flow<List<TripEntity>> =
         tripDao.getByDateRange(from, to)
 
-    suspend fun getTodaySummary(dayStart: Long, dayEnd: Long): TripSummary =
-        tripDao.getTodaySummary(dayStart, dayEnd)
-
     fun getLastTrip(): Flow<TripEntity?> = tripDao.getLastTrip()
 
     fun getRecentTrips(limit: Int = 5): Flow<List<TripEntity>> = tripDao.getRecent(limit)
-
-    suspend fun getTripCount(): Int = tripDao.getCount()
-
-    suspend fun getRecentAvgConsumption(): Double {
-        val summary = tripDao.getRecentSummary()
-        return if (summary.totalKm > 0) summary.totalKwh / summary.totalKm * 100.0 else 0.0
-    }
 
     /**
      * Exponential Moving Average of consumption (kWh/100km) over recent trips.
@@ -79,54 +67,6 @@ class TripRepository @Inject constructor(
         }
         cachedEmaConsumption = ema
         ema
-    }
-
-    /**
-     * EMA of consumption (kWh/100km) over trips from the last N days.
-     * Uses the same formula as [getEmaConsumption] but bounded by time window —
-     * reacts to recent driving style / season shifts.
-     *
-     * Returns 0.0 when no eligible trips (cold install, all trips too old).
-     */
-    suspend fun getWeeklyEmaConsumption(windowDays: Int = 7, alpha: Double = 0.3): Double {
-        val fromTs = System.currentTimeMillis() - windowDays * 24L * 60L * 60L * 1000L
-        val trips = tripDao.getForEmaSince(fromTs)
-        if (trips.isEmpty()) return 0.0
-        var ema: Double? = null
-        for (t in trips.asReversed()) {
-            val km = t.distanceKm ?: continue
-            val kwh = t.kwhConsumed ?: continue
-            if (km <= 0.0) continue
-            val c = kwh / km * 100.0
-            ema = if (ema == null) c else alpha * c + (1.0 - alpha) * ema
-        }
-        return ema ?: 0.0
-    }
-
-    /**
-     * EMA of consumption (kWh/100km) over the most recent [count] trips
-     * with distanceKm >= [minKm]. Used as the consumption trend baseline —
-     * calendar-independent, so a quiet week doesn't inflate the number.
-     *
-     * Returns 0.0 when fewer than 3 eligible trips — caller should fall back
-     * to getWeeklyEmaConsumption() (cold install / sparse history).
-     */
-    suspend fun getRecentTripsEmaConsumption(
-        count: Int = 10,
-        minKm: Double = 1.0,
-        alpha: Double = 0.3,
-    ): Double {
-        val trips = tripDao.getRecentForEmaFiltered(minKm, count)
-        if (trips.size < 3) return 0.0
-        var ema: Double? = null
-        for (t in trips.asReversed()) {
-            val km = t.distanceKm ?: continue
-            val kwh = t.kwhConsumed ?: continue
-            if (km <= 0.0) continue
-            val c = kwh / km * 100.0
-            ema = if (ema == null) c else alpha * c + (1.0 - alpha) * ema
-        }
-        return ema ?: 0.0
     }
 
     /**
@@ -184,12 +124,6 @@ class TripRepository @Inject constructor(
         cachedEmaConsumption = null
     }
 
-    suspend fun insertTripPoints(points: List<TripPointEntity>) =
-        tripPointDao.insertAll(points)
-
-    suspend fun getTripPoints(tripId: Long): List<TripPointEntity> =
-        tripPointDao.getByTripId(tripId)
-
     suspend fun getTripPointsByTripIds(tripIds: List<Long>): Map<Long, List<TripPointEntity>> =
         tripIds
             .distinct()
@@ -198,12 +132,6 @@ class TripRepository @Inject constructor(
             .groupBy { it.tripId }
 
     suspend fun getPeriodSummary(from: Long, to: Long) = tripDao.getPeriodSummary(from, to)
-
-    suspend fun getTripPointsByTimeRange(from: Long, to: Long): List<TripPointEntity> =
-        tripPointDao.getByTimeRange(from, to)
-
-    suspend fun getTripsForCapacityEstimate(): List<TripEntity> =
-        tripDao.getTripsForCapacityEstimate()
 
     private companion object {
         const val SQLITE_BIND_SAFE_BATCH = 400

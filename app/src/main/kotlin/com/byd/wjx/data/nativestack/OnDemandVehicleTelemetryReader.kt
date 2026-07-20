@@ -9,7 +9,5 @@ import com.byd.wjx.data.remote.DiParsData
 interface OnDemandVehicleTelemetryReader {
     suspend fun readTireTelemetry(): DiParsData?
 
-    suspend fun readAdasTelemetry(): DiParsData?
-
     suspend fun readPowertrainTelemetry(): DiParsData?
 }

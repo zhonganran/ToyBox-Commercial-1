@@ -1,14 +1,7 @@
 package com.byd.wjx.audio
 
-import android.Manifest
 import android.annotation.SuppressLint
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.Service
 import android.content.Context
-import android.content.Intent
-import android.content.pm.PackageManager
 import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
@@ -19,31 +12,13 @@ import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.AutomaticGainControl
 import android.media.audiofx.LoudnessEnhancer
 import android.media.audiofx.NoiseSuppressor
-import android.os.Build
-import android.os.IBinder
 import android.os.Process
-import androidx.core.content.ContextCompat
-import com.byd.wjx.R
 import com.byd.wjx.log.WjxFileLogger
-import dagger.hilt.android.AndroidEntryPoint
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
-import javax.inject.Inject
-import kotlin.math.abs
 import kotlin.math.max
-import kotlin.math.roundToInt
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withTimeoutOrNull
 
 internal class RealtimeHailingEngine(
     private val context: Context,
@@ -522,4 +497,3 @@ internal class RealtimeHailingEngine(
         private val SAMPLE_RATE_CANDIDATES = intArrayOf(16_000, 48_000, 44_100)
     }
 }
-

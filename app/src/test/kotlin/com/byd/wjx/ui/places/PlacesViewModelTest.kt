@@ -7,8 +7,6 @@ import com.byd.wjx.data.local.entity.RuleEntity
 import com.byd.wjx.data.local.entity.TriggerDef
 import com.byd.wjx.data.repository.PlaceRepository
 import com.byd.wjx.data.repository.FakeTrackingStateRepository
-import com.byd.wjx.data.repository.SettingsRepository
-import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -80,7 +78,6 @@ class PlacesViewModelTest {
         override suspend fun updateLastTriggered(id: Long, ts: Long) {}
         override suspend fun setEnabled(id: Long, enabled: Boolean) {}
         override suspend fun getCount(): Int = 0
-        override suspend fun deleteUnusedStarterTemplates(names: List<String>): Int = 0
         override suspend fun countRulesUsingPlace(placeId: Long): Int = usageCounts[placeId] ?: 0
     }
 
@@ -98,9 +95,7 @@ class PlacesViewModelTest {
         val placeDao = FakePlaceDao(flow)
         val ruleDao = FakeRuleDao(usageCounts)
         val repo = PlaceRepository(placeDao, ruleDao)
-        val settingsRepository = mockk<SettingsRepository>(relaxed = true)
-        coEvery { settingsRepository.getMapTileSource() } returns SettingsRepository.DEFAULT_MAP_TILE_SOURCE
-        val vm = PlacesViewModel(repo, settingsRepository, FakeTrackingStateRepository())
+        val vm = PlacesViewModel(repo, FakeTrackingStateRepository())
         return Triple(vm, placeDao, flow)
     }
 

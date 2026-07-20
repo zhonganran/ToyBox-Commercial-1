@@ -25,7 +25,7 @@ class CameraStateMonitor @Inject constructor(
 
     fun start(scope: CoroutineScope) {
         if (job?.isActive == true) return
-        foregroundAppMonitor.start(scope)
+        foregroundAppMonitor.start(OWNER)
         job = scope.launch {
             foregroundAppMonitor.foreground
                 .map { foreground ->
@@ -54,11 +54,12 @@ class CameraStateMonitor @Inject constructor(
         job?.cancel()
         job = null
         _active.value = false
-        foregroundAppMonitor.stop()
+        foregroundAppMonitor.stop(OWNER)
         WjxFileLogger.i(TAG, "stop")
     }
 
     private companion object {
         const val TAG = "CameraMonitor"
+        const val OWNER = "camera"
     }
 }

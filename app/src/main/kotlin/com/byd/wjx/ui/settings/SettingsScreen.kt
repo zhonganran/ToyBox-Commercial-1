@@ -136,7 +136,7 @@ fun SettingsScreen(
                 Text("授权、车辆、控制和数据管理", color = TextSecondary, fontSize = 15.sp, fontWeight = FontWeight.Medium)
             }
             Text(
-                "v${state.appVersion}",
+                "V${state.appVersion}",
                 color = TextPrimary,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -377,7 +377,7 @@ private fun SettingsCategoryContent(
                 XiaozhiSettingsContent()
             }
             SettingsCategory.ElectronicMirror -> {
-                ElectronicMirrorSettingsContent(embedded = true)
+                ElectronicMirrorSettingsContent()
             }
             SettingsCategory.Led -> {
                 LedLinkSettingsSection()

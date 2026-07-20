@@ -116,7 +116,7 @@ class SteeringWheelRuntimeCoordinator @Inject constructor(
         val manager = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
             ?: return false
         val component = ComponentName.unflattenFromString(
-            HelperBinderProtocol.ACCESSIBILITY_SERVICE_COMPONENT,
+            HelperBinderProtocol.STAR_ACCESSIBILITY_SERVICE_COMPONENT,
         ) ?: return false
         return manager.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
             .any { ComponentName.unflattenFromString(it.id.orEmpty()) == component }

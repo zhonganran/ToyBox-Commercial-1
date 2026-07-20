@@ -1,5 +1,6 @@
 package com.byd.wjx.ui.overlay
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.view.MotionEvent
 import android.widget.FrameLayout
@@ -51,6 +52,8 @@ class DraggableOverlayContainer(context: Context) : FrameLayout(context) {
         return false
     }
 
+    // This container only consumes intercepted drags; child Compose views own all tap handling.
+    @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!dragging) return super.onTouchEvent(event)
         when (event.actionMasked) {

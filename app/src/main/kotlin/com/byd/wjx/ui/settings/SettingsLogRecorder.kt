@@ -5,7 +5,6 @@ import android.os.Build
 import com.byd.wjx.R
 import com.byd.wjx.data.charging.CatchUpJournal
 import com.byd.wjx.data.charging.ChargingStateStore
-import com.byd.wjx.data.local.LocalePreferences
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.log.WjxFileLogger
 import com.byd.wjx.storage.WjxDirectories
@@ -39,7 +38,6 @@ data class SettingsLogRecordingState(
 class SettingsLogRecorder @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val settingsRepository: SettingsRepository,
-    private val localePreferences: LocalePreferences,
     private val chargingStateStore: ChargingStateStore,
     private val catchUpJournal: CatchUpJournal,
 ) {
@@ -194,20 +192,13 @@ class SettingsLogRecorder @Inject constructor(
                 appendLine("设备：${Build.MANUFACTURER} ${Build.MODEL}")
                 appendLine("系统：${Build.VERSION.RELEASE}（接口级别 ${Build.VERSION.SDK_INT}）")
                 appendLine("系统指纹：${Build.FINGERPRINT}")
-                appendLine(
-                    "语言：系统=${Locale.getDefault().toLanguageTag()} " +
-                        "应用=${localePreferences.getLanguage() ?: "未设置"}",
-                )
+                appendLine("系统语言：${Locale.getDefault().toLanguageTag()}")
             } catch (error: Exception) {
                 appendLine("（获取应用和设备信息失败：${error.message}）")
             }
 
             appendLine("--- 设置 ---")
             try {
-                val dataSource = when (val name = settingsRepository.getDataSource().name) {
-                    "ENERGYDATA" -> "比亚迪能耗数据库"
-                    else -> name
-                }
                 val capacityRaw = settingsRepository.getString(
                     SettingsRepository.KEY_BATTERY_CAPACITY,
                     "",
@@ -216,7 +207,7 @@ class SettingsLogRecorder @Inject constructor(
                     SettingsRepository.KEY_FUEL_TANK_CAPACITY,
                     "",
                 )
-                appendLine("数据来源：$dataSource")
+                appendLine("数据来源：比亚迪能耗数据库")
                 appendLine(
                     "电池容量：原始=\"$capacityRaw\"，解析=${settingsRepository.getBatteryCapacity()}",
                 )

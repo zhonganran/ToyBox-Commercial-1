@@ -254,7 +254,7 @@ internal fun AppSection(state: SettingsUiState, viewModel: SettingsViewModel) {
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                "超级玩具箱 ${state.appVersion}",
+                "超级玩具箱 V${state.appVersion}",
                 color = TextPrimary,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Medium,

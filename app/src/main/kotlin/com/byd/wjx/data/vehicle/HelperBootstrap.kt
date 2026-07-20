@@ -79,11 +79,6 @@ class HelperBootstrap @Inject constructor(
         spawnAndWaitLocked("restart:$reason")
     }
 
-    /** Cheap reachability check — no side effects. */
-    suspend fun isHealthy(): Boolean = helper.isAlive().also { alive ->
-        if (!alive) noteProtocolReady(false)
-    }
-
     private suspend fun spawnAndWaitLocked(reason: String): Boolean {
         noteProtocolReady(false)
         val dispatched = HelperProcessGate.withRestart { adb.spawnHelper() }
@@ -109,7 +104,7 @@ class HelperBootstrap @Inject constructor(
 
     private suspend fun vehicleProtocolAvailable(): Boolean {
         val version = helper.protocolVersion() ?: return false
-        if (version < HelperBinderProtocol.CURRENT_VERSION) {
+        if (version != HelperBinderProtocol.CURRENT_VERSION) {
             WjxFileLogger.i(
                 TAG,
                 "helper protocol version=$version required=${HelperBinderProtocol.CURRENT_VERSION}",

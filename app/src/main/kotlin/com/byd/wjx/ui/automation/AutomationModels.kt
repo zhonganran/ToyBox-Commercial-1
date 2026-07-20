@@ -1,6 +1,5 @@
 package com.byd.wjx.ui.automation
 
-import android.content.Context
 import com.byd.wjx.data.local.entity.ActionDef
 import com.byd.wjx.data.local.entity.PlaceEntity
 import com.byd.wjx.data.local.entity.RuleEntity
@@ -9,24 +8,16 @@ import com.byd.wjx.data.local.entity.TriggerDef
 
 data class TriggerParamOption(
     val param: String,
-    val chineseName: String,
-    val displayName: String,
-    val englishName: String = displayName,
+    val name: String,
     val unit: String = "",
     val category: String,
-    val chineseCategory: String = category,
-    val englishCategory: String = category,
     val enumValues: List<Pair<String, String>>? = null,
 )
 
 data class ActionOption(
     val command: String,
-    val displayName: String,
-    val chineseName: String = displayName,
-    val englishName: String = displayName,
+    val name: String,
     val category: String,
-    val chineseCategory: String = category,
-    val englishCategory: String = category,
 )
 
 data class AutoDoorActionOption(
@@ -34,15 +25,6 @@ data class AutoDoorActionOption(
     val commandValue: Int,
     val label: String,
 )
-
-internal fun currentLang(context: Context): String = "zh"
-
-internal fun localized(zh: String, en: String, ru: String, context: Context): String = zh
-
-fun TriggerParamOption.localizedName(context: Context): String = chineseName
-fun TriggerParamOption.localizedCategory(context: Context): String = chineseCategory
-fun ActionOption.localizedName(context: Context): String = chineseName
-fun ActionOption.localizedCategory(context: Context): String = chineseCategory
 
 enum class RuleFilter { ALL, ENABLED, DISABLED }
 

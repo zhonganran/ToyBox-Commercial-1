@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -17,9 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.StopCircle
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.Button
@@ -27,7 +24,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -53,21 +49,7 @@ import com.byd.wjx.ui.theme.TextPrimary
 import com.byd.wjx.ui.theme.TextSecondary
 
 @Composable
-fun ElectronicMirrorScreen(
-    onBack: () -> Unit,
-    viewModel: ElectronicMirrorViewModel = hiltViewModel(),
-) {
-    ElectronicMirrorSettingsContent(
-        embedded = false,
-        onBack = onBack,
-        viewModel = viewModel,
-    )
-}
-
-@Composable
 fun ElectronicMirrorSettingsContent(
-    embedded: Boolean,
-    onBack: () -> Unit = {},
     viewModel: ElectronicMirrorViewModel = hiltViewModel(),
 ) {
     val config by viewModel.config.collectAsStateWithLifecycle()
@@ -79,21 +61,10 @@ fun ElectronicMirrorSettingsContent(
     }
 
     Column(
-        modifier = if (embedded) {
-            Modifier.fillMaxWidth()
-        } else {
-            Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 40.dp, vertical = 22.dp)
-        },
+        modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        if (embedded) {
-            MirrorEmbeddedStatus(active = active, status = status)
-        } else {
-            MirrorHeader(onBack = onBack, active = active, status = status)
-        }
+        MirrorEmbeddedStatus(active = active, status = status)
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -225,47 +196,6 @@ private fun MirrorEmbeddedStatus(
                 "20 FPS · 全景母流直出",
                 color = AccentGreen,
                 fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-    }
-}
-
-@Composable
-private fun MirrorHeader(
-    onBack: () -> Unit,
-    active: Boolean,
-    status: ElectronicMirrorRuntimeStatus,
-) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(
-            onClick = onBack,
-            modifier = Modifier
-                .size(48.dp)
-                .clip(CircleShape)
-                .background(CardSurface.copy(alpha = 0.72f)),
-        ) {
-            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回", tint = TextPrimary)
-        }
-        Spacer(Modifier.width(16.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text("电子后视镜", color = TextPrimary, fontSize = 36.sp, fontWeight = FontWeight.ExtraBold)
-            Text("四画面母流裁切的流媒体后视，并支持转向/倒挡临时联动", color = TextSecondary, fontSize = 14.sp)
-        }
-        Row(
-            modifier = Modifier
-                .clip(RoundedCornerShape(999.dp))
-                .background(if (active) AccentGreen.copy(alpha = 0.18f) else CardSurface.copy(alpha = 0.72f))
-                .border(1.dp, if (active) AccentGreen.copy(alpha = 0.5f) else CardBorder, RoundedCornerShape(999.dp))
-                .padding(horizontal = 16.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Box(Modifier.size(8.dp).background(if (active) AccentGreen else TextMuted, CircleShape))
-            Text(
-                status.message,
-                color = if (active) AccentGreen else TextSecondary,
-                fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
             )
         }

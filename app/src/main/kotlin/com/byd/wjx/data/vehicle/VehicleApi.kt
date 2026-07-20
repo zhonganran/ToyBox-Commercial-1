@@ -18,7 +18,7 @@ interface VehicleApi {
     suspend fun readBatterySnapshot(): BatteryReading?
     suspend fun readSnapshot(): DiParsData?
 
-    // Write entrypoints — backwards-compat dispatch + structured methods.
+    // Write entrypoints: user-facing command dispatch plus structured methods.
     // All `write*` methods wired to WriteAllowlist + HelperClient (Group C).
     // Failure reason available via Result.exceptionOrNull() as VehicleWriteError.
     suspend fun dispatch(commandString: String): Result<Unit>

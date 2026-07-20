@@ -120,14 +120,14 @@ private fun ParamActionControls(
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         CatalogDropdown(
             selected = numericSpec?.label
-                ?: ACTION_COMMANDS.find { it.command == action.command }?.localizedName(context)
+                ?: ACTION_COMMANDS.find { it.command == action.command }?.name
                 ?: action.displayName,
-            items = ACTION_COMMANDS.map { it.localizedName(context) },
-            categories = ACTION_COMMANDS.map { it.localizedCategory(context) },
+            items = ACTION_COMMANDS.map { it.name },
+            categories = ACTION_COMMANDS.map { it.category },
             modifier = Modifier.weight(1f),
             onSelect = { idx ->
                 val a = ACTION_COMMANDS[idx]
-                onUpdate(ActionDef(a.command, a.localizedName(context)))
+                onUpdate(ActionDef(a.command, a.name))
             }
         )
         numericSpec?.let { spec ->
@@ -505,24 +505,7 @@ internal fun CatalogDropdown(
 
 @Composable
 internal fun AddActionButton(
-    onAddParam: () -> Unit,
-    onAddNotification: (silent: Boolean) -> Unit,
-    onAddAppLaunch: () -> Unit,
-    onAddCall: () -> Unit,
-    onAddNavigate: () -> Unit,
-    onAddUrl: () -> Unit,
-    onAddDelay: () -> Unit,
-    onAddMediaVolume: () -> Unit,
-    onAddOutsideSound: () -> Unit,
-    onAddStopOutsideSound: () -> Unit,
-    onAddGoHome: () -> Unit,
-    onAddHttp: () -> Unit,
-    onAddPlayMusic: () -> Unit,
-    onAddStopMusic: () -> Unit,
-    onAddPlayVideo: () -> Unit,
-    onAddStopVideo: () -> Unit,
-    onAddSentryMode: () -> Unit,
-    onAddAutoDoor: () -> Unit
+    onAdd: (ActionDef) -> Unit,
 ) {
     val context = LocalContext.current
     var menuExpanded by remember { mutableStateOf(false) }
@@ -551,15 +534,19 @@ internal fun AddActionButton(
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_action_dplus_command), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddParam() }
+                onClick = {
+                    menuExpanded = false
+                    val action = ACTION_COMMANDS.first()
+                    onAdd(ActionDef(action.command, action.name))
+                }
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_action_sentry_mode), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddSentryMode() }
+                onClick = { menuExpanded = false; onAdd(newSentryModeAction()) }
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_action_auto_door), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddAutoDoor() }
+                onClick = { menuExpanded = false; onAdd(newAutoDoorAction()) }
             )
 
             AutomationMenuGroupHeader(
@@ -568,31 +555,31 @@ internal fun AddActionButton(
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_action_outside_sound), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddOutsideSound() }
+                onClick = { menuExpanded = false; onAdd(newOutsideSoundAction(context)) }
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_action_stop_outside_sound), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddStopOutsideSound() }
+                onClick = { menuExpanded = false; onAdd(newStopOutsideSoundAction()) }
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_action_play_music), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddPlayMusic() }
+                onClick = { menuExpanded = false; onAdd(newPlayMusicAction()) }
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_action_stop_music), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddStopMusic() }
+                onClick = { menuExpanded = false; onAdd(newStopMusicAction()) }
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_action_play_video), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddPlayVideo() }
+                onClick = { menuExpanded = false; onAdd(newPlayVideoAction()) }
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_action_stop_video), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddStopVideo() }
+                onClick = { menuExpanded = false; onAdd(newStopVideoAction()) }
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_action_media_volume), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddMediaVolume() }
+                onClick = { menuExpanded = false; onAdd(newMediaVolumeAction(context)) }
             )
 
             AutomationMenuGroupHeader(
@@ -601,15 +588,15 @@ internal fun AddActionButton(
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_action_app_launch), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddAppLaunch() }
+                onClick = { menuExpanded = false; onAdd(newAppLaunchAction(context)) }
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_action_go_home), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddGoHome() }
+                onClick = { menuExpanded = false; onAdd(newGoHomeAction()) }
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_action_delay), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddDelay() }
+                onClick = { menuExpanded = false; onAdd(newDelayAction(context)) }
             )
 
             AutomationMenuGroupHeader(
@@ -618,13 +605,16 @@ internal fun AddActionButton(
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_action_notification_silent), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddNotification(true) }
+                onClick = {
+                    menuExpanded = false
+                    onAdd(newNotificationAction(silent = true, context = context))
+                }
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_action_notification_sound), fontSize = 13.sp) },
                 onClick = {
                     menuExpanded = false
-                    onAddNotification(false)
+                    onAdd(newNotificationAction(silent = false, context = context))
                     if (!android.provider.Settings.canDrawOverlays(context)) {
                         showOverlayPrompt = true
                     }
@@ -632,7 +622,7 @@ internal fun AddActionButton(
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_action_call), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddCall() }
+                onClick = { menuExpanded = false; onAdd(newCallAction(context)) }
             )
 
             AutomationMenuGroupHeader(
@@ -641,15 +631,15 @@ internal fun AddActionButton(
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_action_http), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddHttp() }
+                onClick = { menuExpanded = false; onAdd(newHttpAction()) }
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_action_url), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddUrl() }
+                onClick = { menuExpanded = false; onAdd(newUrlAction(context)) }
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_action_navigate), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAddNavigate() }
+                onClick = { menuExpanded = false; onAdd(newNavigateAction(context)) }
             )
         }
     }
@@ -689,14 +679,14 @@ internal fun AddActionButton(
 
 internal fun newDelayAction(context: android.content.Context): ActionDef = ActionDef(
     command = "delay_1000",
-    displayName = localized("延迟 1 秒", "延迟 1 秒", "延迟 1 秒", context),
+    displayName = "延迟 1 秒",
     kind = "delay",
     payload = "1000"
 )
 
 internal fun newMediaVolumeAction(context: android.content.Context): ActionDef = ActionDef(
     command = "media_volume",
-    displayName = localized("媒体音量：2", "媒体音量：2", "媒体音量：2", context),
+    displayName = "媒体音量：2",
     kind = "media_volume",
     payload = "2"
 )

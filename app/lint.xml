@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- DiLink dependencies are pinned and upgraded only after explicit device compatibility tests. -->
+    <issue id="GradleDependency" severity="ignore" />
+
+    <!-- Adaptive icons require this qualifier even though the app's minSdk is newer than API 26. -->
+    <issue id="ObsoleteSdkInt">
+        <ignore path="src/main/res/mipmap-anydpi-v26" />
+    </issue>
+</lint>

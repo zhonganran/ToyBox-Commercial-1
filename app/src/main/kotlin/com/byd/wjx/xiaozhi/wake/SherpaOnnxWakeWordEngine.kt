@@ -34,8 +34,6 @@ class SherpaOnnxWakeWordEngine @Inject constructor(
         else -> null
     }
 
-    fun isSupported(): Boolean = availabilityError() == null
-
     @Synchronized
     fun prepare(phrase: String): Result<CompiledWakePhrase> = runCatching {
         availabilityError()?.let(::error)

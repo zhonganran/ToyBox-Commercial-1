@@ -5,7 +5,7 @@ import com.byd.wjx.domain.vehicle.VehicleCommandSyntax.NumericCommand
 import com.byd.wjx.domain.vehicle.VehicleCommandSyntax.WindowTarget
 
 /**
- * Maps legacy D+ Chinese command strings to (action_name, value) for VehicleApi.dispatch.
+ * Maps user-facing D+ Chinese command strings to (action_name, value) for VehicleApi.dispatch.
  *
  * Source: AutomationViewModel.ACTION_COMMANDS (49 entries) + Smart Home VPS catalog
  * (same vocabulary). Both callers historically stripped the "迪加" prefix before sending

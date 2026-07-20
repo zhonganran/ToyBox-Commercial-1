@@ -11,7 +11,6 @@ open class FakeVehicleGateway(
     var available: Boolean = true,
     val intValues: MutableMap<Pair<Int, Int>, Int> = mutableMapOf(),
     val floatValues: MutableMap<Pair<Int, Int>, Float> = mutableMapOf(),
-    var enginePowerKw: Int? = null,
 ) : VehicleGateway {
 
     var lastBatchSpecs: List<VehicleReadSpec> = emptyList()
@@ -50,6 +49,4 @@ open class FakeVehicleGateway(
     override suspend fun readChargingSnapshot(
         includeElectricalTelemetry: Boolean,
     ): ChargingReading? = charging.takeIf { available }
-
-    override suspend fun getEnginePowerKw(): Int? = enginePowerKw.takeIf { available }
 }

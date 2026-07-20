@@ -57,7 +57,7 @@ data class TriggerDef(
             displayName = json.getString("displayName"),
             kind = json.optString("kind", "param"),
             placeId = if (json.has("placeId") && !json.isNull("placeId")) json.getLong("placeId") else null,
-            placeName = if (json.has("placeName") && !json.isNull("placeName")) json.getString("placeName") else null
+            placeName = if (json.has("placeName") && !json.isNull("placeName")) json.getString("placeName") else null,
         )
 
         fun listFromJson(jsonStr: String): List<TriggerDef> = try {

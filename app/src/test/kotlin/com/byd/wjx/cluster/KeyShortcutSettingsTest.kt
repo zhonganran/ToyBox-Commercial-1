@@ -42,12 +42,12 @@ class KeyShortcutSettingsTest {
     }
 
     @Test
-    fun `legacy binding without automation slot defaults safely`() {
+    fun `sound binding without optional name loads safely`() {
         context.getSharedPreferences(KeyShortcutSettings.PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(
                 "bindings_json",
-                """[{"id":"legacy","keyCode":25,"pressType":"short","actionType":"play_sound","soundPath":"/a.mp3","enabled":true}]""",
+                """[{"id":"sound","keyCode":25,"pressType":"short","actionType":"play_sound","soundPath":"/a.mp3","enabled":true}]""",
             )
             .commit()
 

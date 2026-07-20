@@ -1,5 +1,6 @@
 package com.byd.wjx.helper
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.PackageManager
@@ -9,6 +10,7 @@ import android.hardware.display.VirtualDisplay
 import android.os.IBinder
 import android.os.Parcel
 import android.view.Surface
+import com.byd.wjx.storage.WjxDirectories
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.text.SimpleDateFormat
@@ -121,9 +123,8 @@ internal fun helperLog(tag: String, message: String) {
     val ts = synchronized(HELPER_LOG_DATE) { HELPER_LOG_DATE.format(Date()) }
     val line = "$ts I/$tag $message\n"
     runCatching {
-        val dir = File("/sdcard/WJX")
-        dir.mkdirs()
-        val log = File(dir, "wjx.log")
+        if (!WjxDirectories.ensureBaseDirs()) return@runCatching
+        val log = WjxDirectories.appLog
         trimLogIfNeeded(log)
         log.appendText(line)
     }
@@ -146,6 +147,11 @@ private fun trimLogIfNeeded(file: File) {
  *   avail >= 4 → status = reply.readInt() else -999
  *   avail >= 8 → retInt = reply.readInt() else 0
  */
+private val autoserviceTransactionLock = Any()
+
+internal fun <T> withAutoserviceTransactionLock(block: () -> T): T =
+    synchronized(autoserviceTransactionLock, block)
+
 internal fun autoserviceTransact(
     svc: IBinder,
     autoIface: String,
@@ -154,10 +160,10 @@ internal fun autoserviceTransact(
     fid: Int,
     value: Int,
     writeValue: Boolean
-): Pair<Int, Int> {
+): Pair<Int, Int> = withAutoserviceTransactionLock {
     val data2 = Parcel.obtain()
     val reply2 = Parcel.obtain()
-    return try {
+    try {
         data2.writeInterfaceToken(autoIface)
         data2.writeInt(dev)
         data2.writeInt(fid)
@@ -174,6 +180,7 @@ internal fun autoserviceTransact(
 }
 
 /** Resolves IActivityTaskManager via ActivityTaskManager.getService() (hidden API, ok under app_process). */
+@SuppressLint("PrivateApi")
 private fun activityTaskManager(): Any =
     Class.forName("android.app.ActivityTaskManager").getMethod("getService").invoke(null)
         ?: throw IllegalStateException("ActivityTaskManager.getService() returned null")
@@ -251,6 +258,7 @@ internal fun setFocusedTaskReflect(taskId: Int) {
  * Reflection (no HiddenApiBypass): the daemon runs under app_process, where hidden-API
  * enforcement is inactive.
  */
+@SuppressLint("PrivateApi")
 internal fun acquireSystemContext(): Context? = try {
     val atCls = Class.forName("android.app.ActivityThread")
     val activityThread = atCls.getMethod("systemMain").invoke(null)
@@ -264,6 +272,7 @@ internal fun acquireSystemContext(): Context? = try {
  * Shell-side VIN read. This mirrors Modi's key detail: use the system/shell process Context to
  * create BYDAutoBodyworkDevice, then read both getRealAutoVIN and getAutoVIN.
  */
+@SuppressLint("PrivateApi")
 internal fun readVehicleVinFromBodywork(systemContext: Context?): String {
     val out = StringBuilder()
     out.append(HELPER_VIN_READER_MARKER).append('\n')

@@ -30,6 +30,5 @@ class XiaozhiViewModel @Inject constructor(
     fun clearConfiguration() = sessionManager.clearConfiguration()
 
     fun updateWakeWord(enabled: Boolean, phrase: String): String? = wakeController.update(enabled, phrase)
-    fun setWakeEnabled(enabled: Boolean): String? = wakeController.setEnabled(enabled)
     fun reconcileWakeService() = wakeController.reconcile("xiaozhi_settings")
 }

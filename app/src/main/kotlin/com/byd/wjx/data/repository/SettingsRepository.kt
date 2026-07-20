@@ -30,20 +30,15 @@ open class SettingsRepository @Inject constructor(
         const val KEY_APP_WALLPAPER = "app_wallpaper"
         const val KEY_HOME_TARIFF = "home_tariff"
         const val KEY_DC_TARIFF = "dc_tariff"
-        const val KEY_UNITS = "units" // "km" or "miles"
-        const val KEY_CURRENCY = "currency" // stored ISO currency code
         const val KEY_TRIP_COST_TARIFF = "trip_cost_tariff" // "home", "dc", or numeric
         const val KEY_CONSUMPTION_GOOD = "consumption_good_threshold"
         const val KEY_CONSUMPTION_BAD = "consumption_bad_threshold"
         const val KEY_LAST_ENERGYDATA_IMPORT_TS = "last_energydata_import_ts"
-        const val KEY_MAP_TILE_SOURCE = "map_tile_source"
         const val KEY_RECORD_TRIP_GPS = "record_trip_gps"
         const val KEY_LAST_MILEAGE_KM = "last_mileage_km"
         const val KEY_LAST_CAPACITY_KWH = "last_capacity_kwh"
         const val KEY_LAST_STATE_TS = "last_state_ts"
-        // ChargingStateStore baseline. Kept separate from the legacy last-known SOC key so the
-        // cascade detector's pre-charging baseline survives and runCatchUp can compute a real
-        // SOC delta on cold start.
+        // ChargingStateStore baseline used to reconstruct an interrupted charging session.
         const val KEY_CHARGING_BASELINE_SOC = "charging_baseline_soc"
         // Set when runCatchUp saw the gun connected (a charge session is in
         // progress around the stored baseline); cleared once the session is
@@ -61,21 +56,11 @@ open class SettingsRepository @Inject constructor(
         const val DEFAULT_APP_WALLPAPER = "sakura_lake"
         const val DEFAULT_HOME_TARIFF = "0.60"
         const val DEFAULT_DC_TARIFF = "1.20"
-        const val DEFAULT_UNITS = "km"
-        const val DEFAULT_CURRENCY = "CNY"
         const val DEFAULT_CONSUMPTION_GOOD = "20"
         const val DEFAULT_CONSUMPTION_BAD = "30"
-        const val DEFAULT_MAP_TILE_SOURCE = "amap" // "osm" or "amap"
         const val DEFAULT_RECORD_TRIP_GPS = "true"
 
-        val CURRENCIES = listOf(
-            Currency("CNY", "元", "人民币"),
-        )
     }
-
-    data class Currency(val code: String, val symbol: String, val displayName: String)
-
-    enum class DataSource { ENERGYDATA }
 
     suspend fun getString(key: String, default: String): String =
         settingsDao.get(key) ?: default
@@ -145,13 +130,6 @@ open class SettingsRepository @Inject constructor(
         getString(KEY_DC_TARIFF, DEFAULT_DC_TARIFF).parseNumericSetting()
             ?: DEFAULT_DC_TARIFF.toDouble()
 
-    suspend fun getCurrency(): Currency {
-        val code = getString(KEY_CURRENCY, DEFAULT_CURRENCY)
-        return CURRENCIES.find { it.code == code } ?: CURRENCIES.first()
-    }
-
-    suspend fun getCurrencySymbol(): String = getCurrency().symbol
-
     suspend fun getTripCostTariff(): Double {
         val raw = getString(KEY_TRIP_COST_TARIFF, "home")
         return when (raw) {
@@ -163,12 +141,6 @@ open class SettingsRepository @Inject constructor(
 
     suspend fun getTripCostTariffKey(): String =
         getString(KEY_TRIP_COST_TARIFF, "home")
-
-    suspend fun getConsumptionGoodThreshold(): Double =
-        getString(KEY_CONSUMPTION_GOOD, DEFAULT_CONSUMPTION_GOOD).parseNumericSetting() ?: 20.0
-
-    suspend fun getConsumptionBadThreshold(): Double =
-        getString(KEY_CONSUMPTION_BAD, DEFAULT_CONSUMPTION_BAD).parseNumericSetting() ?: 30.0
 
     /** Live (good, bad) pair for UI coloring. Emits on every Settings edit. */
     fun observeConsumptionThresholds(): Flow<Pair<Double, Double>> = combine(
@@ -186,31 +158,17 @@ open class SettingsRepository @Inject constructor(
     suspend fun setLastEnergyImportTs(ts: Long) =
         setString(KEY_LAST_ENERGYDATA_IMPORT_TS, ts.toString())
 
-    suspend fun getMapTileSource(): String =
-        getString(KEY_MAP_TILE_SOURCE, DEFAULT_MAP_TILE_SOURCE)
-
-    suspend fun setMapTileSource(source: String) =
-        setString(KEY_MAP_TILE_SOURCE, source)
-
     suspend fun isTripGpsRecordingEnabled(): Boolean {
         cachedTripGpsRecordingEnabled?.let { return it }
         return (getString(KEY_RECORD_TRIP_GPS, DEFAULT_RECORD_TRIP_GPS)
             .toBooleanStrictOrNull() ?: true).also { cachedTripGpsRecordingEnabled = it }
     }
 
-    fun observeTripGpsRecordingEnabled(): Flow<Boolean> =
-        observeString(KEY_RECORD_TRIP_GPS).map { it?.toBooleanStrictOrNull() ?: true }
-
     suspend fun setTripGpsRecordingEnabled(enabled: Boolean) =
         setString(KEY_RECORD_TRIP_GPS, enabled.toString())
 
-    suspend fun getDataSource(): DataSource = DataSource.ENERGYDATA
-
     suspend fun getChargingBaselineSoc(): Int? =
         getString(KEY_CHARGING_BASELINE_SOC, "").toIntOrNull()
-
-    suspend fun setChargingBaselineSoc(soc: Int) =
-        setString(KEY_CHARGING_BASELINE_SOC, soc.toString())
 
     suspend fun getChargePending(): Boolean =
         getString(KEY_CHARGE_PENDING, "") == "true"
@@ -236,20 +194,11 @@ open class SettingsRepository @Inject constructor(
     suspend fun getLastMileageKm(): Float? =
         getString(KEY_LAST_MILEAGE_KM, "").toFloatOrNull()
 
-    suspend fun setLastMileageKm(km: Float?) =
-        setString(KEY_LAST_MILEAGE_KM, km?.toString() ?: "")
-
     suspend fun getLastCapacityKwh(): Float? =
         getString(KEY_LAST_CAPACITY_KWH, "").toFloatOrNull()
 
-    suspend fun setLastCapacityKwh(kwh: Float?) =
-        setString(KEY_LAST_CAPACITY_KWH, kwh?.toString() ?: "")
-
     suspend fun getLastStateTs(): Long =
         getString(KEY_LAST_STATE_TS, "0").toLongOrNull() ?: 0L
-
-    suspend fun setLastStateTs(ts: Long) =
-        setString(KEY_LAST_STATE_TS, ts.toString())
 
 }
 

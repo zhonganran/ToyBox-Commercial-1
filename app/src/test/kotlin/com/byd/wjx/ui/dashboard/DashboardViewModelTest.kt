@@ -4,8 +4,6 @@ import com.byd.wjx.data.autoservice.BatteryReading
 import com.byd.wjx.data.vehicle.VehicleApi
 import com.byd.wjx.data.local.dao.BatterySnapshotDao
 import com.byd.wjx.data.local.dao.ChargeDao
-import com.byd.wjx.data.local.dao.ChargePointDao
-import com.byd.wjx.data.local.dao.ChargeSummary
 import com.byd.wjx.data.local.dao.IdleDrainDao
 import com.byd.wjx.data.local.dao.SettingsDao
 import com.byd.wjx.data.local.dao.TripDao
@@ -13,7 +11,6 @@ import com.byd.wjx.data.local.dao.TripPointDao
 import com.byd.wjx.data.local.dao.TripSummary
 import com.byd.wjx.data.local.entity.BatterySnapshotEntity
 import com.byd.wjx.data.local.entity.ChargeEntity
-import com.byd.wjx.data.local.entity.ChargePointEntity
 import com.byd.wjx.data.local.entity.IdleDrainEntity
 import com.byd.wjx.data.local.entity.SettingEntity
 import com.byd.wjx.data.local.entity.TripEntity
@@ -69,7 +66,7 @@ class DashboardViewModelTest {
         override val state: StateFlow<VehicleState> = mutableState
 
         fun update(data: com.byd.wjx.data.remote.DiParsData) {
-            val snapshot = VehicleSnapshot.legacy(data, VehicleSnapshotKind.FULL)
+            val snapshot = VehicleSnapshot.synthetic(data, VehicleSnapshotKind.FULL)
             fullSnapshot.value = snapshot
             connected.value = true
             freshness.value = VehicleDataFreshness.FRESH
@@ -85,7 +82,6 @@ class DashboardViewModelTest {
         var data: com.byd.wjx.data.remote.DiParsData? = null,
     ) : OnDemandVehicleTelemetryReader {
         override suspend fun readTireTelemetry() = data
-        override suspend fun readAdasTelemetry() = data
         override suspend fun readPowertrainTelemetry() = data
     }
 
@@ -126,37 +122,24 @@ class DashboardViewModelTest {
         override suspend fun insert(trip: TripEntity): Long = 0L
         override suspend fun update(trip: TripEntity) {}
         override fun getAll(): Flow<List<TripEntity>> = flowOf(emptyList())
-        override suspend fun getById(id: Long): TripEntity? = null
         override fun getByDateRange(from: Long, to: Long): Flow<List<TripEntity>> = flowOf(emptyList())
-        override suspend fun getTodaySummary(dayStart: Long, dayEnd: Long): TripSummary = TripSummary(0.0, 0.0)
         override fun getLastTrip(): Flow<TripEntity?> = flowOf(null)
         override fun getRecent(limit: Int): Flow<List<TripEntity>> = flowOf(emptyList())
-        override suspend fun getCount(): Int = 0
         override suspend fun getByBydId(bydId: Long): TripEntity? = null
-        override suspend fun getTripsWithoutSoc(): List<TripEntity> = emptyList()
         override suspend fun getTripsWithoutCost(): List<TripEntity> = emptyList()
         override suspend fun getPeriodSummary(from: Long, to: Long): TripSummary = TripSummary(0.0, 0.0)
-        override suspend fun getLiveTrips(): List<TripEntity> = emptyList()
         override suspend fun getByStartTsRange(minTs: Long, maxTs: Long): TripEntity? = null
         override suspend fun getAllSnapshot(): List<TripEntity> = emptyList()
-        override suspend fun deleteById(id: Long) {}
-        override suspend fun deleteZeroKmTrips(): Int = 0
-        override suspend fun getTripsForCapacityEstimate(minSocDelta: Int, limit: Int): List<TripEntity> = emptyList()
-        override suspend fun getRecentSummary(maxTrips: Int): TripSummary = TripSummary(0.0, 0.0)
         override suspend fun getRecentForEma(limit: Int): List<TripEntity> = emptyList()
-        override suspend fun getForEmaSince(fromTs: Long): List<TripEntity> = emptyList()
         override suspend fun getRecentForEmaFiltered(minKm: Double, limit: Int): List<TripEntity> = emptyList()
     }
 
     private class StubTripPointDao : TripPointDao {
         override suspend fun insertAll(points: List<TripPointEntity>) {}
-        override suspend fun getByTripId(tripId: Long): List<TripPointEntity> = emptyList()
         override suspend fun getByTripIds(tripIds: List<Long>): List<TripPointEntity> = emptyList()
         override suspend fun getCount(): Int = 0
         override suspend fun getAll(): List<TripPointEntity> = emptyList()
         override suspend fun thinOldPoints(cutoff: Long, intervalMs: Long): Int = 0
-        override suspend fun getByTimeRange(from: Long, to: Long): List<TripPointEntity> = emptyList()
-        override suspend fun attachToTrip(tripId: Long, from: Long, to: Long): Int = 0
         override suspend fun attachToTripWithBydKey(
             tripId: Long,
             bydId: Long?,
@@ -183,12 +166,7 @@ class DashboardViewModelTest {
         override suspend fun getTodayDrainKwh(dayStart: Long, dayEnd: Long): Double = 0.0
         override suspend fun getCount(): Int = 0
         override suspend fun getAll(): List<IdleDrainEntity> = emptyList()
-        override suspend fun getTotalKwh(): Double = 0.0
-        override suspend fun deleteAll() {}
         override suspend fun getTodayDrainHours(dayStart: Long, dayEnd: Long): Double = 0.0
-        override suspend fun getKwhSince(since: Long): Double = 0.0
-        override suspend fun getHoursSince(since: Long): Double = 0.0
-        override suspend fun getKwhBetween(from: Long, to: Long): Double = 0.0
     }
 
     private class StubBatterySnapshotDao : BatterySnapshotDao {
@@ -196,7 +174,6 @@ class DashboardViewModelTest {
         override fun getRecent(limit: Int): Flow<List<BatterySnapshotEntity>> = flowOf(emptyList())
         override suspend fun insert(snapshot: BatterySnapshotEntity): Long = 0L
         override suspend fun getLast(): BatterySnapshotEntity? = null
-        override suspend fun getCount(): Int = 0
     }
 
     private class StubChargeDao(initialLastCharge: ChargeEntity? = null) : ChargeDao {
@@ -204,27 +181,10 @@ class DashboardViewModelTest {
         override suspend fun insert(charge: ChargeEntity): Long = 0L
         override suspend fun update(charge: ChargeEntity) {}
         override fun getAll(): Flow<List<ChargeEntity>> = flowOf(emptyList())
-        override suspend fun getById(id: Long): ChargeEntity? = null
         override fun getByDateRange(from: Long, to: Long): Flow<List<ChargeEntity>> = flowOf(emptyList())
-        override suspend fun getPeriodSummary(from: Long, to: Long): ChargeSummary = ChargeSummary(0, 0.0, 0.0)
         override fun getLastCharge(): Flow<ChargeEntity?> = lastCharge
-        override suspend fun getLastSuspendedCharge(): ChargeEntity? = null
-        override suspend fun getStaleSessions(cutoffTs: Long): List<ChargeEntity> = emptyList()
-        override suspend fun getLastChargeSync(): ChargeEntity? = null
-        override suspend fun getRecentChargesWithBatteryData(): List<ChargeEntity> = emptyList()
-        override suspend fun getMaxLifetimeKwhAtFinish(): Double? = null
         override suspend fun getAllAutoserviceCharges(): List<ChargeEntity> = emptyList()
-        override suspend fun hasLegacyCharges(): Boolean = false
-        override suspend fun deleteEmpty(): Int = 0
-        override suspend fun deletePhantomAutoserviceRows(): Int = 0
         override suspend fun delete(charge: ChargeEntity) {}
-    }
-
-    private class StubChargePointDao : ChargePointDao {
-        override suspend fun insertAll(points: List<ChargePointEntity>) {}
-        override suspend fun getByChargeId(chargeId: Long): List<ChargePointEntity> = emptyList()
-        override suspend fun getCount(): Int = 0
-        override suspend fun thinOldPoints(cutoff: Long, intervalMs: Long): Int = 0
     }
 
     // --- Fake vehicle API ---
@@ -266,7 +226,7 @@ class DashboardViewModelTest {
         val tripPointDao = StubTripPointDao()
         val tripRepo = TripRepository(tripDao, tripPointDao)
         val chargeDao = StubChargeDao(latestCharge)
-        val chargeRepo = ChargeRepository(chargeDao, StubChargePointDao())
+        val chargeRepo = ChargeRepository(chargeDao)
 
         val idleDrainDao = StubIdleDrainDao()
         val batterySnapshotDao = StubBatterySnapshotDao()

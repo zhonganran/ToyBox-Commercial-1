@@ -1,10 +1,6 @@
 package com.byd.wjx.ui.settings
 
-import android.Manifest
 import android.content.Context
-import android.content.pm.PackageManager
-import android.os.Environment
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import android.content.Intent
@@ -15,11 +11,7 @@ import com.byd.wjx.activation.ActivationManager
 import com.byd.wjx.activation.ActivationSnapshot
 import com.byd.wjx.activation.PremiumFeature
 import com.byd.wjx.data.backup.BackupManager
-import com.byd.wjx.data.local.EnergyDataReader
 import com.byd.wjx.data.local.HistoryImporter
-import com.byd.wjx.data.local.dao.IdleDrainDao
-import com.byd.wjx.data.local.dao.TripPointDao
-import com.byd.wjx.data.repository.ChargeRepository
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.data.repository.TripRepository
 import com.byd.wjx.data.settings.ServiceQrCache
@@ -39,7 +31,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.CancellationException
@@ -54,7 +45,6 @@ import okhttp3.Request
 import org.json.JSONObject
 import com.byd.wjx.service.BootDiagnosticsStore
 import java.io.File
-import java.io.FileWriter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -65,12 +55,8 @@ class SettingsViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val settingsRepository: SettingsRepository,
     private val tripRepository: TripRepository,
-    private val chargeRepository: ChargeRepository,
     private val updateChecker: UpdateChecker,
     private val historyImporter: HistoryImporter,
-    private val energyDataReader: EnergyDataReader,
-    private val idleDrainDao: IdleDrainDao,
-    private val tripPointDao: TripPointDao,
     private val backupManager: BackupManager,
     private val activationManager: ActivationManager,
     private val soundLibrary: SoundLibrary,
@@ -91,6 +77,7 @@ class SettingsViewModel @Inject constructor(
 
     // Tracks the in-flight update download so "Close" can cancel it (issue #23).
     private var downloadJob: Job? = null
+    private var availableUpdate: UpdateChecker.UpdateInfo? = null
 
     private fun getVersion(): String = try {
         appContext.packageManager.getPackageInfo(appContext.packageName, 0).versionName ?: "?"
@@ -442,11 +429,6 @@ class SettingsViewModel @Inject constructor(
                 SettingsRepository.KEY_DC_TARIFF,
                 SettingsRepository.DEFAULT_DC_TARIFF
             )
-            val units = settingsRepository.getString(
-                SettingsRepository.KEY_UNITS,
-                SettingsRepository.DEFAULT_UNITS
-            )
-            val currency = settingsRepository.getCurrency()
             val tripCostTariff = settingsRepository.getTripCostTariffKey()
             val consumptionGood = settingsRepository.getString(
                 SettingsRepository.KEY_CONSUMPTION_GOOD,
@@ -460,7 +442,6 @@ class SettingsViewModel @Inject constructor(
             // Read boot log from SharedPreferences
             val bootInfo = readBootInfo()
             val chainLog = readChainLog()
-            val mapTileSource = settingsRepository.getMapTileSource()
             val tripGpsRecordingEnabled = settingsRepository.isTripGpsRecordingEnabled()
             val carProfile = withContext(Dispatchers.IO) { carProfileDetector.detect() }
 
@@ -472,15 +453,11 @@ class SettingsViewModel @Inject constructor(
                     appWallpaper = appWallpaper,
                     homeTariff = homeTariff,
                     dcTariff = dcTariff,
-                    units = units,
-                    currency = currency.code,
-                    currencySymbol = currency.symbol,
                     tripCostTariff = tripCostTariff,
                     consumptionGood = consumptionGood,
                     consumptionBad = consumptionBad,
                     lastBootInfo = bootInfo,
                     chainLog = chainLog,
-                    mapTileSource = mapTileSource,
                     tripGpsRecordingEnabled = tripGpsRecordingEnabled,
                     carProfile = carProfile,
                 )
@@ -585,14 +562,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /** Save distance units preference (km or miles). */
-    fun saveUnits(value: String) {
-        _uiState.update { it.copy(units = value) }
-        viewModelScope.launch {
-            settingsRepository.setString(SettingsRepository.KEY_UNITS, value)
-        }
-    }
-
     /** Save trip cost tariff preference. */
     fun saveTripCostTariff(value: String) {
         _uiState.update { it.copy(tripCostTariff = value) }
@@ -606,192 +575,6 @@ class SettingsViewModel @Inject constructor(
     fun confirmRecalc() {
         _uiState.update { it.copy(showRecalcConfirm = false) }
         recalculateAllCosts()
-    }
-
-    /** Save currency preference. */
-    fun saveCurrency(code: String) {
-        val currency = SettingsRepository.CURRENCIES.find { it.code == code }
-            ?: SettingsRepository.CURRENCIES.first()
-        _uiState.update { it.copy(currency = currency.code, currencySymbol = currency.symbol) }
-        viewModelScope.launch {
-            settingsRepository.setString(SettingsRepository.KEY_CURRENCY, code)
-        }
-    }
-
-    /**
-     * Export all trips and charges to CSV files in the Downloads directory.
-     * Creates files with the wjx_<type>_<timestamp>.csv naming pattern.
-     */
-    fun exportCsv() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(exportStatus = appContext.getString(R.string.settings_export_in_progress)) }
-
-            try {
-                val downloadsDir = Environment.getExternalStoragePublicDirectory(
-                    Environment.DIRECTORY_DOWNLOADS
-                )
-                if (!downloadsDir.exists()) {
-                    downloadsDir.mkdirs()
-                }
-
-                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-
-                // Export trips
-                val trips = tripRepository.getAllTrips().firstOrNull() ?: emptyList()
-                val tripsFile = File(downloadsDir, "wjx_trips_$timestamp.csv")
-                FileWriter(tripsFile).use { writer ->
-                    writer.append("id,start_ts,end_ts,distance_km,kwh_consumed,kwh_per_100km,soc_start,soc_end,temp_avg_c,avg_speed_kmh,bat_temp_avg,bat_temp_max,bat_temp_min,cost,exterior_temp\n")
-                    for (trip in trips) {
-                        writer.append("${trip.id},${trip.startTs},${trip.endTs ?: ""},")
-                        writer.append("${trip.distanceKm ?: ""},${trip.kwhConsumed ?: ""},")
-                        writer.append("${trip.kwhPer100km ?: ""},${trip.socStart ?: ""},")
-                        writer.append("${trip.socEnd ?: ""},${trip.tempAvgC ?: ""},")
-                        writer.append("${trip.avgSpeedKmh ?: ""},${trip.batTempAvg ?: ""},")
-                        writer.append("${trip.batTempMax ?: ""},${trip.batTempMin ?: ""},")
-                        writer.append("${trip.cost ?: ""},${trip.exteriorTemp ?: ""}\n")
-                    }
-                }
-
-                // Export charges
-                val charges = chargeRepository.getAllCharges().firstOrNull() ?: emptyList()
-                val chargesFile = File(downloadsDir, "wjx_charges_$timestamp.csv")
-                FileWriter(chargesFile).use { writer ->
-                    writer.append("id,start_ts,end_ts,soc_start,soc_end,kwh_charged,kwh_charged_soc,max_power_kw,type,cost,lat,lon,bat_temp_avg,bat_temp_max,bat_temp_min,avg_power_kw,status,cell_voltage_min,cell_voltage_max,voltage_12v,exterior_temp,merged_count\n")
-                    for (charge in charges) {
-                        writer.append("${charge.id},${charge.startTs},${charge.endTs ?: ""},")
-                        writer.append("${charge.socStart ?: ""},${charge.socEnd ?: ""},")
-                        writer.append("${charge.kwhCharged ?: ""},${charge.kwhChargedSoc ?: ""},")
-                        writer.append("${charge.maxPowerKw ?: ""},${charge.type ?: ""},")
-                        writer.append("${charge.cost ?: ""},${charge.lat ?: ""},")
-                        writer.append("${charge.lon ?: ""},${charge.batTempAvg ?: ""},")
-                        writer.append("${charge.batTempMax ?: ""},${charge.batTempMin ?: ""},")
-                        writer.append("${charge.avgPowerKw ?: ""},${charge.status},")
-                        writer.append("${charge.cellVoltageMin ?: ""},${charge.cellVoltageMax ?: ""},")
-                        writer.append("${charge.voltage12v ?: ""},${charge.exteriorTemp ?: ""},")
-                        writer.append("${charge.mergedCount}\n")
-                    }
-                }
-
-                // Export GPS track points
-                val tripPoints = tripPointDao.getAll()
-                val pointsFile = File(downloadsDir, "wjx_trip_points_$timestamp.csv")
-                FileWriter(pointsFile).use { writer ->
-                    writer.append("id,trip_id,byd_id,byd_date,timestamp,lat,lon,speed_kmh\n")
-                    for (p in tripPoints) {
-                        writer.append("${p.id},${p.tripId},${p.bydId ?: ""},${p.bydDate ?: ""},${p.timestamp},")
-                        writer.append("${p.lat},${p.lon},${p.speedKmh ?: ""}\n")
-                    }
-                }
-
-                // Export idle drains (parked battery drain)
-                val idleDrains = idleDrainDao.getAll()
-                val drainsFile = File(downloadsDir, "wjx_idle_drains_$timestamp.csv")
-                FileWriter(drainsFile).use { writer ->
-                    writer.append("id,start_ts,end_ts,soc_start,soc_end,kwh_consumed\n")
-                    for (d in idleDrains) {
-                        writer.append("${d.id},${d.startTs},${d.endTs ?: ""},")
-                        writer.append("${d.socStart ?: ""},${d.socEnd ?: ""},${d.kwhConsumed ?: ""}\n")
-                    }
-                }
-
-                val tripCount = trips.size
-                val chargeCount = charges.size
-                _uiState.update {
-                    it.copy(
-                        exportStatus = appContext.getString(R.string.settings_export_done, tripCount, chargeCount, tripPoints.size, idleDrains.size) + "\n-> ${downloadsDir.absolutePath}"
-                    )
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(exportStatus = appContext.getString(R.string.settings_error_with_message, e.message ?: "?"))
-                }
-            }
-        }
-    }
-
-    /** Clear the export status message. */
-    fun clearExportStatus() {
-        _uiState.update { it.copy(exportStatus = null) }
-    }
-
-    /** Import trip history from the vehicle energy database. */
-    fun importBydHistory() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(importStatus = "正在导入…") }
-            val result = historyImporter.runSync()
-            if (result.isError) {
-                _uiState.update {
-                    it.copy(importStatus = "错误：${result.error}")
-                }
-            } else {
-                val status = result.details
-                    ?: "已从比亚迪导入 ${result.count} 条行程"
-                _uiState.update { it.copy(importStatus = status) }
-            }
-        }
-    }
-
-    /** Run full diagnostics: vehicle storage, local database, permissions. */
-    fun runDiagnostics() {
-        viewModelScope.launch(Dispatchers.IO) {
-            _uiState.update { it.copy(diagnosticLog = "正在诊断…") }
-
-            val sb = StringBuilder()
-            val sdf = SimpleDateFormat("dd.MM.yy HH:mm:ss", Locale.US)
-
-            sb.appendLine("=== 权限 ===")
-            val perms = listOf(
-                Manifest.permission.READ_EXTERNAL_STORAGE,
-                Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_BACKGROUND_LOCATION,
-                Manifest.permission.RECORD_AUDIO,
-            )
-            for (perm in perms) {
-                val granted = ContextCompat.checkSelfPermission(appContext, perm) ==
-                    PackageManager.PERMISSION_GRANTED
-                val name = formatPermissionName(perm)
-                sb.appendLine("$name: ${if (granted) "✓" else "✗"}")
-            }
-
-            try {
-                val bydReport = energyDataReader.diagnose()
-                sb.appendLine()
-                sb.append(bydReport)
-            } catch (e: Exception) {
-                sb.appendLine("\n比亚迪数据错误：${e.message}")
-            }
-
-            sb.appendLine("\n=== 本地数据库 ===")
-            try {
-                val trips = tripRepository.getAllTrips().first()
-                val charges = chargeRepository.getAllCharges().first()
-                val drainCount = idleDrainDao.getCount()
-                val drainKwh = idleDrainDao.getTotalKwh()
-                sb.appendLine("行程：${trips.size}")
-                sb.appendLine("充电：${charges.size}")
-                sb.appendLine("停车耗电：$drainCount（%.2f 千瓦时）".format(drainKwh))
-
-                if (trips.isNotEmpty()) {
-                    sb.appendLine("\n最近 5 条行程：")
-                    trips.take(5).forEach { t ->
-                        val startFmt = sdf.format(Date(t.startTs))
-                        val endFmt = t.endTs?.let { sdf.format(Date(it)) } ?: "无"
-                        sb.appendLine("#${t.id}: $startFmt – $endFmt")
-                        sb.appendLine(
-                            "  里程=${t.distanceKm ?: "-"}，能耗=${t.kwhConsumed ?: "-"}，" +
-                                "电量=${t.socStart ?: "-"}→${t.socEnd ?: "-"}，" +
-                                "速度=${t.avgSpeedKmh?.let { "%.0f".format(it) } ?: "-"}"
-                        )
-                        sb.appendLine("  原始时间：开始=${t.startTs}，结束=${t.endTs ?: "无"}")
-                    }
-                }
-            } catch (e: Exception) {
-                sb.appendLine("错误：${e.message}")
-            }
-
-            _uiState.update { it.copy(diagnosticLog = sb.toString()) }
-        }
     }
 
     private fun readBootInfo(): String? {
@@ -811,24 +594,8 @@ class SettingsViewModel @Inject constructor(
         else -> method
     }
 
-    private fun formatPermissionName(permission: String): String = when (permission) {
-        Manifest.permission.READ_EXTERNAL_STORAGE -> "读取存储"
-        Manifest.permission.WRITE_EXTERNAL_STORAGE -> "写入存储"
-        Manifest.permission.ACCESS_FINE_LOCATION -> "精确定位"
-        Manifest.permission.ACCESS_BACKGROUND_LOCATION -> "后台定位"
-        Manifest.permission.RECORD_AUDIO -> "麦克风"
-        else -> permission.substringAfterLast(".")
-    }
-
     private fun readChainLog(): String? {
         return BootDiagnosticsStore.read(appContext)?.chainLog
-    }
-
-    fun saveMapTileSource(source: String) {
-        _uiState.update { it.copy(mapTileSource = source) }
-        viewModelScope.launch {
-            settingsRepository.setMapTileSource(source)
-        }
     }
 
     fun setTripGpsRecordingEnabled(enabled: Boolean) {
@@ -870,6 +637,7 @@ class SettingsViewModel @Inject constructor(
         // fires the system install prompt after the user closed it (issue #23).
         downloadJob?.cancel()
         downloadJob = null
+        availableUpdate = null
         _uiState.update { it.copy(showUpdateDialog = false, updateDialogState = UpdateState.Idle) }
     }
 
@@ -881,10 +649,12 @@ class SettingsViewModel @Inject constructor(
     /** Check for app updates from the configured update backend. */
     fun checkForUpdate() {
         viewModelScope.launch {
+            availableUpdate = null
             _uiState.update { it.copy(updateDialogState = UpdateState.Checking, updateStatus = appContext.getString(R.string.settings_update_check_in_progress)) }
             try {
                 val update = updateChecker.checkForUpdate(appContext, forceCheck = true)
                 if (update != null) {
+                    availableUpdate = update
                     _uiState.update {
                         it.copy(
                             updateDialogState = UpdateState.Available(
@@ -903,6 +673,7 @@ class SettingsViewModel @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
+                availableUpdate = null
                 _uiState.update {
                     it.copy(
                         updateDialogState = UpdateState.Error(e.message ?: "未知错误"),
@@ -956,11 +727,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /** Dismiss the config backup/restore status message. */
-    fun clearConfigStatus() {
-        _uiState.update { it.copy(configStatus = null) }
-    }
-
     /**
      * Relaunch the app from scratch so Room re-opens the freshly restored DB file.
      * FLAG_ACTIVITY_CLEAR_TASK terminates all existing activities before the new launch.
@@ -978,20 +744,19 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun downloadUpdate() {
+        if (downloadJob?.isActive == true) return
+        val update = availableUpdate ?: return
         downloadJob = viewModelScope.launch {
             try {
-                val update = updateChecker.checkForUpdate(appContext, forceCheck = true)
-                if (update != null) {
-                    _uiState.update {
-                        it.copy(updateDialogState = UpdateState.Downloading(update.version, appContext.getString(R.string.update_downloading_start)))
-                    }
-                    updateChecker.downloadAndInstall(appContext, update) { progress ->
-                        // Ignore late progress after the job was cancelled (Close pressed)
-                        // so a closed dialog is never resurrected.
-                        if (isActive) {
-                            _uiState.update {
-                                it.copy(updateDialogState = UpdateState.Downloading(update.version, progress))
-                            }
+                _uiState.update {
+                    it.copy(updateDialogState = UpdateState.Downloading(update.version, appContext.getString(R.string.update_downloading_start)))
+                }
+                updateChecker.downloadAndInstall(appContext, update) { progress ->
+                    // Ignore late progress after the job was cancelled (Close pressed)
+                    // so a closed dialog is never resurrected.
+                    if (isActive) {
+                        _uiState.update {
+                            it.copy(updateDialogState = UpdateState.Downloading(update.version, progress))
                         }
                     }
                 }
@@ -999,6 +764,8 @@ class SettingsViewModel @Inject constructor(
                 throw e // cooperative cancellation from hideUpdateDialog(); not an error
             } catch (e: Exception) {
                 _uiState.update { it.copy(updateDialogState = UpdateState.Error(e.message ?: "下载失败")) }
+            } finally {
+                downloadJob = null
             }
         }
     }

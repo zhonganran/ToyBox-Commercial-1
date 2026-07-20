@@ -97,6 +97,8 @@ class SharedAdaptiveLoop constructor(
         var consecutiveNull = 0
         var regularDelayRemainingMs = 0L
         var lastCadenceState: LoopState? = null
+        var actionRequestedFieldCount = 0
+        var lastLoggedActionBudget: Pair<Int, Long>? = null
         while (true) {
             val regularDue = regularDelayRemainingMs <= 0L
             val fetchStartedAt = System.currentTimeMillis()
@@ -145,6 +147,7 @@ class SharedAdaptiveLoop constructor(
                     cadence.intervalFor(cadenceState) - fetchElapsedMs
                 ).coerceAtLeast(0L)
             } else {
+                actionRequestedFieldCount = snapshot.requestedFieldCount
                 regularDelayRemainingMs = (
                     regularDelayRemainingMs - fetchElapsedMs
                 ).coerceAtLeast(0L)
@@ -158,10 +161,29 @@ class SharedAdaptiveLoop constructor(
                     continue
                 }
             }
-            val actionIntervalMs = cadence
+            val baseActionIntervalMs = cadence
                 .actionIntervalFor(lastCadenceState ?: LoopState.DRIVE)
                 .coerceAtLeast(MIN_ACTION_INTERVAL_MS)
-            val actionDelayMs = (actionIntervalMs - fetchElapsedMs).coerceAtLeast(0L)
+            val actionIntervalMs = ActionPollingBudget.effectiveIntervalMs(
+                baseIntervalMs = baseActionIntervalMs,
+                requestedFieldCount = actionRequestedFieldCount,
+            )
+            val currentBudget = actionRequestedFieldCount to actionIntervalMs
+            if (currentBudget != lastLoggedActionBudget) {
+                if (actionIntervalMs > baseActionIntervalMs) {
+                    WjxFileLogger.i(
+                        TAG,
+                        "action polling budget fields=$actionRequestedFieldCount " +
+                            "base=${baseActionIntervalMs}ms effective=${actionIntervalMs}ms",
+                    )
+                }
+                lastLoggedActionBudget = currentBudget
+            }
+            val actionDelayMs = ActionPollingBudget.delayAfterFetchMs(
+                baseIntervalMs = baseActionIntervalMs,
+                requestedFieldCount = actionRequestedFieldCount,
+                fetchElapsedMs = fetchElapsedMs,
+            )
             val delayMs = minOf(actionDelayMs, regularDelayRemainingMs)
             if (delayMs > 0L) delay(delayMs)
             regularDelayRemainingMs = (regularDelayRemainingMs - delayMs).coerceAtLeast(0L)
@@ -217,4 +239,27 @@ class SharedAdaptiveLoop constructor(
         const val NULL_RETRY_BASE_MS = 1_000L
         const val SLOW_FETCH_LOG_MS = 1_000L
     }
+}
+
+internal object ActionPollingBudget {
+    const val MAX_ACTION_FIELD_READS_PER_SECOND = 120L
+    const val MIN_IDLE_AFTER_FETCH_MS = 40L
+
+    fun effectiveIntervalMs(baseIntervalMs: Long, requestedFieldCount: Int): Long {
+        if (requestedFieldCount <= 0) return baseIntervalMs
+        val readsPerCycle = requestedFieldCount.toLong()
+        val budgetIntervalMs = (
+            readsPerCycle * 1_000L + MAX_ACTION_FIELD_READS_PER_SECOND - 1L
+        ) / MAX_ACTION_FIELD_READS_PER_SECOND
+        return maxOf(baseIntervalMs, budgetIntervalMs)
+    }
+
+    fun delayAfterFetchMs(
+        baseIntervalMs: Long,
+        requestedFieldCount: Int,
+        fetchElapsedMs: Long,
+    ): Long = maxOf(
+        effectiveIntervalMs(baseIntervalMs, requestedFieldCount) - fetchElapsedMs,
+        MIN_IDLE_AFTER_FETCH_MS,
+    )
 }

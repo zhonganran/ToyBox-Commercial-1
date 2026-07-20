@@ -113,6 +113,7 @@ internal class WjxLockSoundRuntime(
         var coldStartChecked = false
         var lastPowerAt = 0L
         var lastPower = LockSoundPowerSnapshot(null, null, null)
+        var pollingEnabled = config.lock.enabled || config.unlock.enabled
         fun updateStableLock(value: Int, reason: String, force: Boolean = false) {
             if (stableLock == value && !force) return
             stableLock = value
@@ -122,9 +123,28 @@ internal class WjxLockSoundRuntime(
             try {
                 val cfg = config
                 if (!cfg.lock.enabled && !cfg.unlock.enabled) {
-                    signals.readLockState()?.let { stableLock = it }
+                    pollingEnabled = false
+                    stableLock = null
+                    pendingLock = null
+                    pendingSince = 0L
+                    lastFlash = null
+                    flashAt = 0L
+                    lastDriverDoorOpen = false
+                    coldStartChecked = true
+                    lastPowerAt = 0L
+                    lastPower = LockSoundPowerSnapshot(null, null, null)
                     sleepQuietly(1_000L)
                     continue
+                }
+                if (!pollingEnabled) {
+                    pollingEnabled = true
+                    stableLock = null
+                    pendingLock = null
+                    lastFlash = null
+                    flashAt = 0L
+                    lastDriverDoorOpen = false
+                    lastPowerAt = 0L
+                    lastPower = LockSoundPowerSnapshot(null, null, null)
                 }
                 val now = System.currentTimeMillis()
                 val lockState = signals.readLockState()

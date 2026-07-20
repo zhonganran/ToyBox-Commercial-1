@@ -16,6 +16,7 @@ import java.time.Instant
 import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -86,6 +87,8 @@ class ActivationManager @Inject constructor(
 ) {
     private val appContext = context.applicationContext
     private val vinReadMutex = Mutex()
+    private val statusRefreshMutex = Mutex()
+    private var statusRefreshInFlight: CompletableDeferred<ActivationSnapshot>? = null
     private var lastVinReadAt: Long = 0L
     private var lastVinReadCandidates: List<String> = emptyList()
     private val prefs
@@ -102,7 +105,7 @@ class ActivationManager @Inject constructor(
             val lastChecked = prefs.getLong(KEY_LAST_CHECKED_AT, 0L)
             val missingDevice = storedVinCode().isBlank() || storedDeviceAliases().isEmpty()
             if (missingDevice || forceAfterMs <= 0L || lastChecked <= 0L || now - lastChecked >= forceAfterMs) {
-                refreshSnapshot()
+                refreshSnapshotSingleFlight()
             } else {
                 currentSnapshot()
             }
@@ -116,6 +119,32 @@ class ActivationManager @Inject constructor(
     }
 
     suspend fun refreshSnapshot(): ActivationSnapshot = withContext(Dispatchers.IO) {
+        refreshSnapshotSingleFlight()
+    }
+
+    private suspend fun refreshSnapshotSingleFlight(): ActivationSnapshot {
+        var ownsRefresh = false
+        val inFlight = statusRefreshMutex.withLock {
+            statusRefreshInFlight ?: CompletableDeferred<ActivationSnapshot>().also {
+                statusRefreshInFlight = it
+                ownsRefresh = true
+            }
+        }
+        if (!ownsRefresh) return inFlight.await()
+
+        return try {
+            refreshSnapshotInternal().also(inFlight::complete)
+        } catch (error: Throwable) {
+            inFlight.completeExceptionally(error)
+            throw error
+        } finally {
+            statusRefreshMutex.withLock {
+                if (statusRefreshInFlight === inFlight) statusRefreshInFlight = null
+            }
+        }
+    }
+
+    private suspend fun refreshSnapshotInternal(): ActivationSnapshot {
         val now = System.currentTimeMillis()
         val firstStarted = ensureTrialStarted(now)
         val candidates = refreshDeviceCodeCandidates()
@@ -131,19 +160,12 @@ class ActivationManager @Inject constructor(
         } else {
             WjxFileLogger.w(TAG, "refreshSnapshot no stable device code")
         }
-        buildSnapshot(System.currentTimeMillis(), firstStarted, deviceCode, storedDeviceAliases(candidates))
-    }
-
-    suspend fun refreshVehicleVinCache(): String = withContext(Dispatchers.IO) {
-        val candidates = readDeviceCodeCandidates(forceHardware = false)
-        if (candidates.isNotEmpty()) {
-            saveDeviceCandidates(candidates)
-            WjxFileLogger.i(TAG, "vehicle vin cache refreshed length=${candidates.first().length}")
-            candidates.first()
-        } else {
-            WjxFileLogger.w(TAG, "vehicle vin cache refresh empty; helper bodywork returned no VIN")
-            ""
-        }
+        return buildSnapshot(
+            System.currentTimeMillis(),
+            firstStarted,
+            deviceCode,
+            storedDeviceAliases(candidates),
+        )
     }
 
     suspend fun activate(rawCode: String): ActivationResult = withContext(Dispatchers.IO) {

@@ -228,9 +228,6 @@ class AutoDoorController @Inject constructor(
         )
     }
 
-    suspend fun runBothDoors(commandValue: Int): AutoDoorControlResult =
-        runDoors(listOf("slide_l", "slide_r"), commandValue, "双门")
-
     suspend fun readDoorStates(slotKeys: List<String> = listOf("slide_l", "slide_r")): List<AutoDoorSideSnapshot> = withContext(Dispatchers.IO) {
         val requestedKeys = slotKeys.distinct().filter { it in TARGETS }
         if (requestedKeys.isEmpty()) return@withContext emptyList()

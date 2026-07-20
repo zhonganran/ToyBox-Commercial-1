@@ -1,5 +1,6 @@
 package com.byd.wjx.helper
 
+import com.byd.wjx.storage.WjxDirectories
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -16,6 +17,7 @@ internal object WjxLockSoundWatchdog {
 
     private fun install() {
         runCatching {
+            val logDir = WjxDirectories.baseDir.absolutePath
             val pidFile = File(PID_PATH)
             val versionFile = File(VERSION_PATH)
             val installedVersion = runCatching { versionFile.readText().trim().toInt() }.getOrNull()
@@ -32,8 +34,8 @@ internal object WjxLockSoundWatchdog {
             script.writeText(
                 """
                 #!/system/bin/sh
-                mkdir -p /sdcard/WJX 2>/dev/null
-                LOG="/sdcard/WJX/wjx.log"
+                mkdir -p "$logDir" 2>/dev/null
+                LOG="$logDir/wjx.log"
                 if [ -f "/data/local/tmp/wjx_lock_watch.pid" ]; then
                   OLD=${'$'}(cat "/data/local/tmp/wjx_lock_watch.pid" 2>/dev/null)
                   if [ -n "${'$'}OLD" ] && kill -0 "${'$'}OLD" 2>/dev/null; then exit 0; fi
@@ -109,6 +111,5 @@ internal object WjxLockSoundWatchdog {
     private const val PID_PATH = "/data/local/tmp/wjx_lock_watch.pid"
     private const val VERSION_PATH = "/data/local/tmp/wjx_lock_watch.version"
     private const val DISABLED_PATH = "/data/local/tmp/wjx_lock_watch.disabled"
-    private const val VERSION = 2
+    private const val VERSION = 3
 }
-

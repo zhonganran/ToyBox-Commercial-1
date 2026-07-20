@@ -452,7 +452,9 @@ class AutoserviceChargingDetector @Inject constructor(
             if ((socEnd - socStart) >= MIN_SOC_DELTA_FOR_SNAPSHOT) {
                 val capacity = batteryHealthRepo.calculateCapacity(delta, socStart, socEnd)
                 val bmsSoh = battery?.sohPercent?.toDouble()
-                val sample = lastSample ?: runCatching { parsReader.fetch() }.getOrNull()
+                val sample = lastSample ?: runCatching {
+                    parsReader.fetchVehicleSnapshot()?.data
+                }.getOrNull()
                 val cellDelta = if (sample?.maxCellVoltage != null && sample.minCellVoltage != null)
                     sample.maxCellVoltage - sample.minCellVoltage else null
                 val batTemp = sample?.avgBatTemp?.toDouble()

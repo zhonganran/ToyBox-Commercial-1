@@ -54,7 +54,6 @@ private val NON_VEHICLE_TRIGGER_KINDS = setOf(
     "service_start",
     "network_available",
     "board_vehicle",
-    "button_press",
 )
 
 private val PARAM_TO_VEHICLE_FIELDS = mapOf(

@@ -126,7 +126,7 @@ class HelperClientBinderTest {
     }
 
     @Test
-    fun `protocolVersion reads versioned ping and treats legacy ping as zero`() = runBlocking {
+    fun `protocolVersion requires status and exact version fields`() = runBlocking {
         assertEquals(
             HelperBinderProtocol.CURRENT_VERSION,
             clientWith(liveFake(0, HelperBinderProtocol.CURRENT_VERSION)).protocolVersion(),
@@ -138,7 +138,7 @@ class HelperClientBinderTest {
                 return true
             }
         }
-        assertEquals(0, clientWith(legacyBinder).protocolVersion())
+        assertNull(clientWith(legacyBinder).protocolVersion())
     }
 
     @Test

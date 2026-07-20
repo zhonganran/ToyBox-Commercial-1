@@ -60,6 +60,7 @@ class TrackingService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val helperReadiness = CompletableDeferred<Boolean>()
     private var pollingJob: Job? = null
+    private var tripTrackerOwner: Long = 0L
 
     companion object {
         private const val TAG = "TrackingService"
@@ -77,6 +78,7 @@ class TrackingService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        tripTrackerOwner = tripTracker.claimOwnership()
         WjxFileLogger.i(TAG, "onCreate: starting TrackingService")
         ChainLog.append(this, "TrackingService onCreate")
         notificationController.createChannel()
@@ -168,12 +170,11 @@ class TrackingService : Service() {
         // Flush an active GPS trip asynchronously.
         // Android gives ~5 seconds after onDestroy before killing process
         val shutdownScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val trackerOwner = tripTrackerOwner
         shutdownScope.launch {
             try {
                 withTimeout(4000L) {
-                    val lastData = vehicleStateRepository.fullSnapshot.value?.data
-                    val lastLoc = trackingStateStore.lastLocation.value
-                    tripTracker.forceEnd(lastData, lastLoc)
+                    tripTracker.forceEnd(trackerOwner)
                 }
             } catch (e: Exception) {
                 WjxFileLogger.w(TAG, "Graceful shutdown: ${e.message}", e)
@@ -298,7 +299,7 @@ class TrackingService : Service() {
                     chargingCatchUpCoordinator.onSample(data)
 
                     val loc = trackingStateStore.lastLocation.value
-                    tripTracker.onData(data, loc)
+                    tripTracker.onData(tripTrackerOwner, data, loc)
 
                     val nowMs = System.currentTimeMillis()
                     val session = driveSessionCoordinator.onSample(

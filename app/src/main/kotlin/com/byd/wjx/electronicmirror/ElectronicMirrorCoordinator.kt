@@ -12,6 +12,7 @@ import com.byd.wjx.log.WjxFileLogger
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -24,6 +25,14 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 
+internal class ElectronicMirrorLifecycleGate {
+    private val generation = AtomicLong(0L)
+
+    fun advance(): Long = generation.incrementAndGet()
+
+    fun isCurrent(candidate: Long): Boolean = generation.get() == candidate
+}
+
 @Singleton
 class ElectronicMirrorCoordinator @Inject constructor(
     @ApplicationContext context: Context,
@@ -34,6 +43,7 @@ class ElectronicMirrorCoordinator @Inject constructor(
 ) {
     private val appContext = context.applicationContext
     private val mutex = Mutex()
+    private val lifecycleGate = ElectronicMirrorLifecycleGate()
     private val overlayController = ElectronicMirrorOverlayController(appContext, ::onUnexpectedOutputLoss)
 
     private val _active = MutableStateFlow(false)
@@ -61,11 +71,15 @@ class ElectronicMirrorCoordinator @Inject constructor(
 
     fun start(originalCameraState: StateFlow<Boolean>) {
         if (cameraStateJob?.isActive == true) return
+        val generation = lifecycleGate.advance()
         currentConfig = preferences.snapshot()
         cameraStateJob = applicationScope.launch {
             originalCameraState.collectLatest { active ->
+                if (!lifecycleGate.isCurrent(generation)) return@collectLatest
                 originalCameraActive = active
-                mutex.withLock { reconcileLocked() }
+                mutex.withLock {
+                    if (lifecycleGate.isCurrent(generation)) reconcileLocked()
+                }
             }
         }
     }
@@ -118,10 +132,12 @@ class ElectronicMirrorCoordinator @Inject constructor(
     }
 
     fun stop() {
+        val generation = lifecycleGate.advance()
         cameraStateJob?.cancel()
         cameraStateJob = null
         applicationScope.launch {
             mutex.withLock {
+                if (!lifecycleGate.isCurrent(generation)) return@withLock
                 manualPreview = null
                 lastVehicleData = null
                 originalCameraActive = false
@@ -131,6 +147,7 @@ class ElectronicMirrorCoordinator @Inject constructor(
             }
         }
     }
+
 
     private suspend fun reconcileLocked() {
         val desiredScenes = desiredScenesLocked()

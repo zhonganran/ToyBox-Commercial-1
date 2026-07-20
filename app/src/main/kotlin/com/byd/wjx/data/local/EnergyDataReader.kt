@@ -212,15 +212,6 @@ open class EnergyDataReader @Inject constructor(
             .apply()
     }
 
-    /** Force re-detection on next [peekSourceChanged]. Used by one-shot recovery flows. */
-    fun resetWatermark(context: Context) {
-        context.getSharedPreferences("energydata_sync", Context.MODE_PRIVATE).edit()
-            .remove("lastModified")
-            .remove("fileSize")
-            .remove("filePath")
-            .apply()
-    }
-
     suspend fun readTripsSince(sinceTimestampSec: Long): List<BydTripRecord> = withContext(Dispatchers.IO) {
         val energyDir = File(ENERGY_DIR_PATH)
         if (!energyDir.exists()) {

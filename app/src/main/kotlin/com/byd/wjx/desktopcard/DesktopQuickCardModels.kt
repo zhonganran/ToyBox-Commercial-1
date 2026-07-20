@@ -37,8 +37,8 @@ object DesktopQuickCardCommandCatalog {
                 .map { option ->
                     DesktopQuickCardCommand(
                         command = option.command,
-                        label = option.chineseName,
-                        category = option.chineseCategory,
+                        label = option.name,
+                        category = option.category,
                     )
                 },
         )
