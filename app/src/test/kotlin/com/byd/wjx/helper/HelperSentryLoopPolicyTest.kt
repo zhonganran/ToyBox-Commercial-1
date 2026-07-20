@@ -90,7 +90,7 @@ class HelperSentryLoopPolicyTest {
                 nowMs = 25_001L,
                 lastHighRiskAtMs = 10_000L,
                 alarmTimestampChanged = true,
-                highRiskLogSeen = true,
+                highRiskLogSeen = false,
             ),
         )
     }
@@ -102,9 +102,37 @@ class HelperSentryLoopPolicyTest {
                 nowMs = 10_000L,
                 lastHighRiskAtMs = 0L,
                 alarmTimestampChanged = true,
+                highRiskLogSeen = false,
+            ),
+        )
+    }
+
+    @Test
+    fun msgThreeLog_isDirectHighConfidenceTrigger() {
+        assertTrue(
+            shouldTriggerSentryFallback(
+                nowMs = 10_000L,
+                lastHighRiskAtMs = 0L,
+                alarmTimestampChanged = false,
                 highRiskLogSeen = true,
             ),
         )
+    }
+
+    @Test
+    fun sentryFlashFallback_requiresLockedPowerOffFallingEdge() {
+        assertTrue(
+            shouldTriggerSentryFlashFallback(
+                previousFlash = 9,
+                currentFlash = 0,
+                locked = true,
+                powerBlocked = false,
+            ),
+        )
+        assertFalse(shouldTriggerSentryFlashFallback(9, 9, locked = true, powerBlocked = false))
+        assertFalse(shouldTriggerSentryFlashFallback(9, 0, locked = false, powerBlocked = false))
+        assertFalse(shouldTriggerSentryFlashFallback(9, 0, locked = true, powerBlocked = true))
+        assertFalse(shouldTriggerSentryFlashFallback(null, 0, locked = true, powerBlocked = false))
     }
 
     @Test

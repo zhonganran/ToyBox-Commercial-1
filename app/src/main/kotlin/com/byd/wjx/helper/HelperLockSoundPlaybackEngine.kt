@@ -9,6 +9,7 @@ import android.os.IBinder
 import com.byd.wjx.audio.ExteriorChannel
 import com.byd.wjx.audio.WjxAudioAttributes
 import java.io.File
+import java.util.ArrayDeque
 import kotlin.math.max
 
 internal const val LOCK_SOUND_KEY_UNLOCK = "unlock"
@@ -21,6 +22,13 @@ internal data class EventConfig(
     val enabled: Boolean = false,
     val path: String = "",
     val pcm: PcmConfig = PcmConfig(),
+)
+
+private data class PlaybackRequest(
+    val event: LockEvent,
+    val eventCfg: EventConfig,
+    val preferredChannel: ExteriorChannel,
+    val reason: String,
 )
 
 internal enum class LockEvent(val kind: Int, val key: String, val looping: Boolean = false) {
@@ -69,14 +77,12 @@ internal class WjxLockSoundPlaybackEngine(
     private var playbackTokenSeed = 0L
     private var lastOpenDoorRouteRefreshAtMs: Long? = null
     private var openDoorChannel0SwitchAttempted = false
+    private val pendingRequests = ArrayDeque<PlaybackRequest>()
 
-    val currentChannel: ExteriorChannel?
-        get() = activeChannel
+    fun hasActivePlayback(): Boolean = activeEvent != null
 
-    fun isActive(event: LockEvent): Boolean = activeEvent == event
-
-    fun keepUnlockOutsideForOpenDoor(openedEdge: Boolean, nowMs: Long): Boolean = synchronized(playLock) {
-        if (activeEvent != LockEvent.Unlock) return@synchronized true
+    fun keepActiveOutsideForOpenDoor(openedEdge: Boolean, nowMs: Long): Boolean = synchronized(playLock) {
+        val event = activeEvent ?: return@synchronized true
         val channel = activeChannel ?: return@synchronized false
         if (!shouldRefreshOpenDoorRoute(openedEdge, nowMs, lastOpenDoorRouteRefreshAtMs)) {
             return@synchronized true
@@ -86,9 +92,9 @@ internal class WjxLockSoundPlaybackEngine(
             openDoorChannel0SwitchAttempted = true
             val switched = routeController.switch(channel, ExteriorChannel.Channel0)
             if (switched == null) {
-                helperLog(TAG, "open-door route lost channel=$channel; stop unlock to prevent cabin playback")
+                helperLog(TAG, "open-door route lost event=${event.key} channel=$channel; stop to prevent cabin playback")
                 activeChannel = null
-                stopActiveLocked(
+                finishActiveLocked(
                     reason = "open_door_route_lost",
                     releaseRoute = false,
                     routeReleaseDelayMs = 0L,
@@ -115,11 +121,12 @@ internal class WjxLockSoundPlaybackEngine(
         reason: String,
         routeReleaseDelayMs: Long = ROUTE_RELEASE_DRAIN_MS,
     ): Boolean = synchronized(playLock) {
+        val removed = pendingRequests.removeAll { it.event == event }
         if (activeEvent != event) {
-            helperLog(TAG, "stop ${event.key} ignored active=$activeEvent reason=$reason")
+            helperLog(TAG, "stop ${event.key} active=$activeEvent removedQueued=$removed reason=$reason")
             return@synchronized true
         }
-        stopActiveLocked(
+        finishActiveLocked(
             reason = reason,
             releaseRoute = true,
             routeReleaseDelayMs = routeReleaseDelayMs,
@@ -142,25 +149,45 @@ internal class WjxLockSoundPlaybackEngine(
             helperLog(TAG, "skip ${event.key}: file missing path=${eventCfg.path} reason=$reason")
             return@synchronized false
         }
-        if (event.looping && activeEvent == event && (player != null || audioTrack != null)) {
-            helperLog(TAG, "keep ${event.key}: already playing reason=$reason")
+        if (activeEvent == event || pendingRequests.any { it.event == event }) {
+            helperLog(TAG, "merge ${event.key}: already active/queued reason=$reason")
             return@synchronized true
         }
-        val routes = lockSoundRouteCandidates(preferredChannel)
+        val request = PlaybackRequest(event, eventCfg, preferredChannel, reason)
+        if (activeEvent != null) {
+            if (pendingRequests.size >= MAX_PENDING_REQUESTS) {
+                helperLog(TAG, "queue full event=${event.key} active=$activeEvent reason=$reason")
+                return@synchronized false
+            }
+            pendingRequests.addLast(request)
+            helperLog(TAG, "queued event=${event.key} active=$activeEvent size=${pendingRequests.size} reason=$reason")
+            return@synchronized true
+        }
+        startRequestLocked(request)
+    }
+
+    private fun startRequestLocked(request: PlaybackRequest): Boolean {
+        val event = request.event
+        val eventCfg = request.eventCfg
+        val file = File(eventCfg.path)
+        if (!eventCfg.enabled || !file.isFile || file.length() <= 0L) {
+            helperLog(TAG, "drop queued ${event.key}: config/file unavailable reason=${request.reason}")
+            return false
+        }
+        val routes = lockSoundRouteCandidates(request.preferredChannel)
         helperLog(
             TAG,
             "play ${event.key} file=${file.name} routes=$routes " +
-                "playerVolume=1.0 playerGain=$LOCK_SOUND_PLAYER_ENHANCER_GAIN_MB pcmGain=$LOCK_SOUND_PCM_ENHANCER_GAIN_MB reason=$reason"
+                "playerVolume=1.0 playerGain=$LOCK_SOUND_PLAYER_ENHANCER_GAIN_MB pcmGain=$LOCK_SOUND_PCM_ENHANCER_GAIN_MB reason=${request.reason}"
         )
-        stopActiveLocked("new_${event.key}", releaseRoute = true)
         routes.forEachIndexed { index, channel ->
-            val routeReason = if (index == 0) reason else "$reason retry=${channel.shortLabel}"
+            val routeReason = if (index == 0) request.reason else "${request.reason} retry=${channel.shortLabel}"
             if (tryPlayEventOnChannelLocked(event, eventCfg, file, channel, routeReason)) {
-                return@synchronized true
+                return true
             }
             helperLog(TAG, "route failed event=${event.key} channel=$channel index=$index")
         }
-        false
+        return false
     }
 
     private fun tryPlayEventOnChannelLocked(
@@ -184,7 +211,7 @@ internal class WjxLockSoundPlaybackEngine(
             return false
         }
         sleepQuietly(if (channel == ExteriorChannel.Channel0) 300L else 120L)
-        if (event == LockEvent.Unlock && isDriverDoorOpen()) {
+        if (isDriverDoorOpen()) {
             if (channel == ExteriorChannel.Channel1) {
                 openDoorChannel0SwitchAttempted = true
                 val switched = routeController.switch(channel, ExteriorChannel.Channel0)
@@ -210,9 +237,11 @@ internal class WjxLockSoundPlaybackEngine(
         }
         val token = nextPlaybackTokenLocked()
         if (startPcmPlaybackLocked(event, eventCfg, file, playbackChannel, token)) {
+            startPlaybackTimeoutWatcher(event, token)
             return true
         }
         if (startMediaPlayerLocked(file, event, playbackChannel, token, "pcm_unavailable")) {
+            startPlaybackTimeoutWatcher(event, token)
             return true
         }
         stopActiveLocked("start_failed_${playbackChannel.shortLabel}", releaseRoute = true)
@@ -279,6 +308,9 @@ internal class WjxLockSoundPlaybackEngine(
             audioTrack = track
             enableEnhancer(track, channel)
             track.play()
+            if (track.playState != AudioTrack.PLAYSTATE_PLAYING) {
+                throw IllegalStateException("AudioTrack playState=${track.playState}")
+            }
             val writer = Thread({
                 writePcmPlayback(token, event, fallbackFile, channel, pcm, pcmFile, track)
             }, "WJX-LockSoundPcm-${event.key}").apply {
@@ -365,6 +397,9 @@ internal class WjxLockSoundPlaybackEngine(
             audioTrack = track
             enableEnhancer(track, channel)
             track.play()
+            if (track.playState != AudioTrack.PLAYSTATE_PLAYING) {
+                throw IllegalStateException("AudioTrack static playState=${track.playState}")
+            }
             val watcher = Thread({
                 waitForStaticPcmCompletion(token, event, fallbackFile, channel, payload.size, pcm, track)
             }, "WJX-LockSoundPcmStatic-${event.key}").apply { isDaemon = true }
@@ -534,7 +569,7 @@ internal class WjxLockSoundPlaybackEngine(
             releaseAudioTrackOnly()
             val routeChannel = activeChannel ?: channel
             if (!startMediaPlayerLocked(file, event, routeChannel, token, "pcm_error:${cause.javaClass.simpleName}")) {
-                stopActiveLocked("pcm_fallback_failed", releaseRoute = true)
+                finishActiveLocked("pcm_fallback_failed", releaseRoute = true)
             }
         }
     }
@@ -562,11 +597,25 @@ internal class WjxLockSoundPlaybackEngine(
         player = mp
         enableEnhancer(mp, channel)
         mp.start()
+        if (!mp.isPlaying) throw IllegalStateException("MediaPlayer did not enter playing state")
         helperLog(TAG, "MediaPlayer started event=${event.key} reason=$reason file=${file.name}")
         true
     }.getOrElse {
         helperLog(TAG, "MediaPlayer failed event=${event.key} reason=$reason: ${throwableSummary(it)}")
+        releaseMediaPlayerOnly()
         false
+    }
+
+    private fun startPlaybackTimeoutWatcher(event: LockEvent, token: Long) {
+        val timeoutMs = if (event.looping) LOOPING_PLAYBACK_TIMEOUT_MS else PLAYBACK_TIMEOUT_MS
+        Thread({
+            sleepQuietly(timeoutMs)
+            synchronized(playLock) {
+                if (activePlaybackToken != token || activeEvent != event) return@synchronized
+                helperLog(TAG, "playback timeout event=${event.key} timeoutMs=$timeoutMs")
+                finishActiveLocked("timeout_${event.key}", releaseRoute = true)
+            }
+        }, "WJX-LockSoundTimeout-${event.key}").apply { isDaemon = true; start() }
     }
 
     private fun completePlayback(reason: String, token: Long? = null) {
@@ -577,7 +626,7 @@ internal class WjxLockSoundPlaybackEngine(
                     return@synchronized
                 }
                 helperLog(TAG, "complete playback reason=$reason")
-                stopActiveLocked(reason, releaseRoute = true)
+                finishActiveLocked(reason, releaseRoute = true)
             }
         }, "WJX-LockSoundStop").apply { isDaemon = true; start() }
     }
@@ -600,6 +649,23 @@ internal class WjxLockSoundPlaybackEngine(
         lastOpenDoorRouteRefreshAtMs = null
         openDoorChannel0SwitchAttempted = false
         helperLog(TAG, "stopped reason=$reason channel=$channel")
+    }
+
+    private fun finishActiveLocked(
+        reason: String,
+        releaseRoute: Boolean,
+        routeReleaseDelayMs: Long = ROUTE_RELEASE_DRAIN_MS,
+    ) {
+        stopActiveLocked(reason, releaseRoute, routeReleaseDelayMs)
+        startNextLocked()
+    }
+
+    private fun startNextLocked() {
+        while (activeEvent == null && pendingRequests.isNotEmpty()) {
+            val next = pendingRequests.removeFirst()
+            helperLog(TAG, "dequeue event=${next.event.key} remaining=${pendingRequests.size}")
+            if (startRequestLocked(next)) return
+        }
     }
 
     private fun muteAndReleasePlayer() {
@@ -681,6 +747,9 @@ internal class WjxLockSoundPlaybackEngine(
         private const val PCM_WRITE_BUFFER_BYTES = 16 * 1024
         private const val PCM_LEAD_SILENCE_MS = 420L
         private const val PCM_STATIC_MAX_BYTES = 8L * 1024L * 1024L
+        private const val MAX_PENDING_REQUESTS = 8
+        private const val PLAYBACK_TIMEOUT_MS = 180_000L
+        private const val LOOPING_PLAYBACK_TIMEOUT_MS = 15L * 60L * 1000L
 
         private fun sleepQuietly(ms: Long) {
             runCatching { Thread.sleep(ms) }

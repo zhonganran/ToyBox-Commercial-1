@@ -66,17 +66,18 @@ class HelperLockSoundPlaybackPolicyTest {
     }
 
     @Test
-    fun `lock and unlock transitions require flash confirmation and confirmed power off`() {
+    fun `lock transition does not require flash while unlock still does and power blocks both`() {
         assertEquals(
             LockEvent.Lock,
-            confirmedLockSoundEvent(LOCK_SOUND_DOOR_UNLOCKED, LOCK_SOUND_DOOR_LOCKED, flashConfirmed = true, powerBlocked = false),
+            confirmedLockSoundEvent(LOCK_SOUND_DOOR_UNLOCKED, LOCK_SOUND_DOOR_LOCKED, flashConfirmed = false, powerBlocked = false),
         )
         assertEquals(
             LockEvent.Unlock,
             confirmedLockSoundEvent(LOCK_SOUND_DOOR_LOCKED, LOCK_SOUND_DOOR_UNLOCKED, flashConfirmed = true, powerBlocked = false),
         )
-        assertNull(confirmedLockSoundEvent(LOCK_SOUND_DOOR_UNLOCKED, LOCK_SOUND_DOOR_LOCKED, flashConfirmed = false, powerBlocked = false))
+        assertNull(confirmedLockSoundEvent(LOCK_SOUND_DOOR_LOCKED, LOCK_SOUND_DOOR_UNLOCKED, flashConfirmed = false, powerBlocked = false))
         assertNull(confirmedLockSoundEvent(LOCK_SOUND_DOOR_LOCKED, LOCK_SOUND_DOOR_UNLOCKED, flashConfirmed = true, powerBlocked = true))
+        assertNull(confirmedLockSoundEvent(LOCK_SOUND_DOOR_UNLOCKED, LOCK_SOUND_DOOR_LOCKED, flashConfirmed = false, powerBlocked = true))
         assertNull(confirmedLockSoundEvent(LOCK_SOUND_DOOR_LOCKED, LOCK_SOUND_DOOR_LOCKED, flashConfirmed = true, powerBlocked = false))
     }
 
@@ -104,6 +105,46 @@ class HelperLockSoundPlaybackPolicyTest {
                 currentState = LOCK_SOUND_DOOR_UNLOCKED,
                 flash = 9,
                 powerBlocked = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `startup recovery accepts recent edges and stale confirmed unlock only`() {
+        assertTrue(
+            shouldRecoverStartupLockDifference(
+                previousState = LOCK_SOUND_DOOR_UNLOCKED,
+                currentState = LOCK_SOUND_DOOR_LOCKED,
+                flashConfirmed = false,
+                powerBlocked = false,
+                sampleAgeMs = LOCK_SOUND_RECOVERY_MAX_AGE_MS,
+            ),
+        )
+        assertFalse(
+            shouldRecoverStartupLockDifference(
+                previousState = LOCK_SOUND_DOOR_UNLOCKED,
+                currentState = LOCK_SOUND_DOOR_LOCKED,
+                flashConfirmed = false,
+                powerBlocked = false,
+                sampleAgeMs = LOCK_SOUND_RECOVERY_MAX_AGE_MS + 1L,
+            ),
+        )
+        assertTrue(
+            shouldRecoverStartupLockDifference(
+                previousState = LOCK_SOUND_DOOR_LOCKED,
+                currentState = LOCK_SOUND_DOOR_UNLOCKED,
+                flashConfirmed = true,
+                powerBlocked = false,
+                sampleAgeMs = 60_000L,
+            ),
+        )
+        assertFalse(
+            shouldRecoverStartupLockDifference(
+                previousState = LOCK_SOUND_DOOR_LOCKED,
+                currentState = LOCK_SOUND_DOOR_UNLOCKED,
+                flashConfirmed = false,
+                powerBlocked = false,
+                sampleAgeMs = 60_000L,
             ),
         )
     }

@@ -23,6 +23,7 @@ import com.byd.wjx.data.repository.TripRepository
 import com.byd.wjx.data.repository.VehicleDataFreshness
 import com.byd.wjx.data.repository.VehicleState
 import com.byd.wjx.data.repository.VehicleStateRepository
+import com.byd.wjx.data.system.SystemMetricsReader
 import com.byd.wjx.data.nativestack.OnDemandVehicleTelemetryReader
 import com.byd.wjx.data.remote.diParsData
 import com.byd.wjx.data.vehicle.VehicleSnapshot
@@ -253,6 +254,7 @@ class DashboardViewModelTest {
             localInsightEngine = LocalInsightEngine(),
             onDemandTelemetryReader = onDemandTelemetryReader,
             energyFlowStatsRepository = FakeEnergyFlowStatsRepository(),
+            systemMetricsReader = SystemMetricsReader(),
         )
     }
 

@@ -24,6 +24,7 @@ internal const val SENTRY_FALLBACK_CONFIRM_WINDOW_MS = 15_000L
 internal const val SENTRY_RISK_EXIT_CONFIRM_SAMPLES = 3
 internal const val SENTRY_POST_LOCK_ARMING_MS = 15_000L
 internal const val SENTRY_PLAYBACK_COOLDOWN_MS = 15_000L
+internal const val LOCK_SOUND_RECOVERY_MAX_AGE_MS = 5_000L
 
 internal fun confirmedLockSoundEvent(
     previousState: Int?,
@@ -31,10 +32,12 @@ internal fun confirmedLockSoundEvent(
     flashConfirmed: Boolean,
     powerBlocked: Boolean,
 ): LockEvent? {
-    if (powerBlocked || !flashConfirmed) return null
+    if (powerBlocked) return null
     return when {
         previousState == LOCK_SOUND_DOOR_UNLOCKED && currentState == LOCK_SOUND_DOOR_LOCKED -> LockEvent.Lock
-        previousState == LOCK_SOUND_DOOR_LOCKED && currentState == LOCK_SOUND_DOOR_UNLOCKED -> LockEvent.Unlock
+        previousState == LOCK_SOUND_DOOR_LOCKED &&
+            currentState == LOCK_SOUND_DOOR_UNLOCKED &&
+            flashConfirmed -> LockEvent.Unlock
         else -> null
     }
 }
@@ -51,6 +54,21 @@ internal fun shouldPlayColdStartUnlock(
         flashConfirmed = flash == 9,
         powerBlocked = powerBlocked,
     ) == LockEvent.Unlock
+
+internal fun shouldRecoverStartupLockDifference(
+    previousState: Int?,
+    currentState: Int?,
+    flashConfirmed: Boolean,
+    powerBlocked: Boolean,
+    sampleAgeMs: Long,
+): Boolean =
+    sampleAgeMs in 0L..LOCK_SOUND_RECOVERY_MAX_AGE_MS ||
+        confirmedLockSoundEvent(
+            previousState = previousState,
+            currentState = currentState,
+            flashConfirmed = flashConfirmed,
+            powerBlocked = powerBlocked,
+        ) == LockEvent.Unlock
 
 internal fun isSentryCooldownComplete(nowMs: Long, lastPlaybackAtMs: Long): Boolean =
     lastPlaybackAtMs <= 0L ||
@@ -100,11 +118,24 @@ internal fun shouldTriggerSentryFallback(
     alarmTimestampChanged: Boolean,
     highRiskLogSeen: Boolean,
 ): Boolean {
-    if (!alarmTimestampChanged && !highRiskLogSeen) return false
+    if (highRiskLogSeen) return true
+    if (!alarmTimestampChanged) return false
     if (lastHighRiskAtMs <= 0L) return false
     val age = nowMs - lastHighRiskAtMs
     return age in 0L..SENTRY_FALLBACK_CONFIRM_WINDOW_MS
 }
+
+internal fun shouldTriggerSentryFlashFallback(
+    previousFlash: Int?,
+    currentFlash: Int?,
+    locked: Boolean,
+    powerBlocked: Boolean,
+): Boolean =
+    locked &&
+        !powerBlocked &&
+        previousFlash == 9 &&
+        currentFlash != null &&
+        currentFlash != 9
 
 /**
  * Acquires an exclusive file lock on [path]. Returns a (FileChannel, FileLock) pair on
@@ -428,6 +459,17 @@ fun main(args: Array<String>) {
                     true
                 }.getOrElse {
                     helperLog("LockSound", "stop failed: ${it.javaClass.simpleName}:${it.message.orEmpty()}")
+                    reply?.writeInt(-1); reply?.writeInt(0); true
+                }
+
+                HelperBinderProtocol.TX_PLAY_SENTRY_EVENT -> runCatching {
+                    val source = data.readString().orEmpty().ifBlank { "binder_sentry" }.take(200)
+                    val ok = lockSoundRuntime.playSentryEventForBinder(source)
+                    reply?.writeInt(0)
+                    reply?.writeInt(if (ok) 1 else 0)
+                    true
+                }.getOrElse {
+                    helperLog("LockSound", "sentry event failed: ${it.javaClass.simpleName}:${it.message.orEmpty()}")
                     reply?.writeInt(-1); reply?.writeInt(0); true
                 }
 

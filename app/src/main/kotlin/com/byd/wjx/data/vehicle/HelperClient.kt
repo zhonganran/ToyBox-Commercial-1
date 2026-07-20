@@ -93,6 +93,8 @@ interface HelperClient {
     suspend fun debugPlayLockSound(kind: Int): Boolean = false
     /** Stops one active helper-side vehicle-event sound. 0=unlock, 1=lock, 2=sentry. */
     suspend fun stopLockSound(kind: Int): Boolean = false
+    /** Submits a real sentry incident; helper enforces guarding, access, arming and persistent cooldown gates. */
+    suspend fun playSentryEvent(source: String): Boolean = false
     /** Restricted sentry settings helper; writes only accept the daemon allowlist. */
     suspend fun sentryShell(op: String, arg: String): String? = null
     /** Generic helper-side shell execution with AutoTark-compatible status/exit/output fields. */
@@ -274,6 +276,15 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
             val status = if (reply.dataAvail() >= 4) reply.readInt() else return@transactParsed false
             val stopped = if (reply.dataAvail() >= 4) reply.readInt() else 0
             status == 0 && stopped == 1
+        } ?: false
+
+    override suspend fun playSentryEvent(source: String): Boolean =
+        transactParsed(HelperBinderProtocol.TX_PLAY_SENTRY_EVENT, { d ->
+            d.writeString(source.take(200))
+        }, timeoutMs = FORCE_TIMEOUT_MS) { reply ->
+            val status = if (reply.dataAvail() >= 4) reply.readInt() else return@transactParsed false
+            val played = if (reply.dataAvail() >= 4) reply.readInt() else 0
+            status == 0 && played == 1
         } ?: false
 
     override suspend fun sentryShell(op: String, arg: String): String? =

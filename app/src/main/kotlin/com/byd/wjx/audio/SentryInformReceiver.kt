@@ -48,11 +48,7 @@ class SentryInformReceiver : BroadcastReceiver() {
                 // mutex and one duplicate-suppression cache instead of racing separate instances.
                 entryPoint.lockSoundConfigSync().sync("sentry_broadcast")
                 val helper = entryPoint.helperClient()
-                if (!helper.isSentryGuarding()) {
-                    WjxFileLogger.i(TAG, "skip sentry broadcast: not guarding")
-                    return@launch
-                }
-                val ok = helper.debugPlayLockSound(2)
+                val ok = helper.playSentryEvent("broadcast warn=$warn")
                 WjxFileLogger.i(TAG, "sentry helper play ok=$ok")
             } catch (e: Exception) {
                 WjxFileLogger.w(TAG, "sentry helper play failed: ${e.message}", e)
@@ -93,12 +89,6 @@ class SentryInformReceiver : BroadcastReceiver() {
             val value = runCatching { get(key) }.getOrNull()
             "$key=$value"
         }.take(500)
-    }
-
-    private suspend fun com.byd.wjx.data.vehicle.HelperClient.isSentryGuarding(): Boolean {
-        val enabled = sentryShell("get_global", "sentrymode_enabled").orEmpty().trim()
-        val state = sentryShell("get_prop", "sys.byd.sentrymode_state").orEmpty().trim()
-        return enabled == "1" || state.equals("enabled", ignoreCase = true)
     }
 
     companion object {

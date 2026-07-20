@@ -16,6 +16,8 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.lifecycleScope
+import com.byd.wjx.data.local.HistoryImporter
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.log.WjxFileLogger
 import com.byd.wjx.service.KeepAliveService
@@ -30,6 +32,9 @@ import com.byd.wjx.ui.theme.LocalAppWallpaper
 import com.byd.wjx.ui.theme.LocalSuperToyBoxDarkTheme
 import com.byd.wjx.ui.theme.ThemeMode
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -38,6 +43,8 @@ class MainActivity : AppCompatActivity() {
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var updateChecker: UpdateChecker
     @Inject lateinit var xiaozhiWakeController: com.byd.wjx.xiaozhi.wake.XiaozhiWakeController
+    @Inject lateinit var historyImporter: HistoryImporter
+    private var historySyncJob: Job? = null
 
     companion object {
         private const val TAG = "MainActivity"
@@ -85,6 +92,11 @@ class MainActivity : AppCompatActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) showSystemBars()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        syncVehicleHistory("activity_resume")
     }
 
     private fun configureSystemBars() {
@@ -180,6 +192,7 @@ class MainActivity : AppCompatActivity() {
                 // Now request background location (must be after fine location)
                 requestBackgroundLocationIfNeeded()
                 startBackgroundStack()
+                syncVehicleHistory("permission_result")
             }
             BACKGROUND_LOCATION_REQUEST_CODE -> {
                 val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
@@ -196,6 +209,19 @@ class MainActivity : AppCompatActivity() {
         WjxFileLogger.i(TAG, "startBackgroundStack")
         KeepAliveService.start(this, "main_activity")
         xiaozhiWakeController.reconcile("main_activity")
+    }
+
+    private fun syncVehicleHistory(reason: String) {
+        historySyncJob?.cancel()
+        historySyncJob = lifecycleScope.launch {
+            delay(500L)
+            val result = historyImporter.runSync()
+            WjxFileLogger.i(
+                TAG,
+                "Vehicle history sync reason=$reason count=${result.count} " +
+                    "detail=${result.details ?: result.error.orEmpty()}",
+            )
+        }
     }
 
     private fun ensureWjxDirectory() {

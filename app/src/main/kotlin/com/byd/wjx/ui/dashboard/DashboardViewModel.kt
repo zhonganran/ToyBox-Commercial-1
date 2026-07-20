@@ -15,6 +15,8 @@ import com.byd.wjx.data.repository.TrackingStateRepository
 import com.byd.wjx.data.repository.TripRepository
 import com.byd.wjx.data.repository.VehicleDataFreshness
 import com.byd.wjx.data.repository.VehicleStateRepository
+import com.byd.wjx.data.system.SystemMetricsReader
+import com.byd.wjx.data.system.SystemMetricsSnapshot
 import com.byd.wjx.domain.calculator.ConsumptionAggregator
 import com.byd.wjx.domain.calculator.ConsumptionState
 import com.byd.wjx.domain.calculator.Trend
@@ -81,6 +83,10 @@ data class DashboardUiState(
     val idleDrainExpanded: Boolean = false,
     val powertrainDiagnosticsExpanded: Boolean = false,
     val energyFlowExpanded: Boolean = false,
+    val systemMetricsExpanded: Boolean = false,
+    val systemMetrics: SystemMetricsSnapshot? = null,
+    val systemMetricsLoading: Boolean = true,
+    val systemMetricsSampleCount: Int = 0,
     val idleDrainKwhWeek: Double = 0.0,
     val idleDrainHoursWeek: Double = 0.0,
     val estimatedRangeKm: Double? = null,
@@ -199,12 +205,14 @@ class DashboardViewModel @Inject constructor(
     private val localInsightEngine: LocalInsightEngine,
     private val onDemandTelemetryReader: OnDemandVehicleTelemetryReader,
     private val energyFlowStatsRepository: EnergyFlowStatsRepository,
+    private val systemMetricsReader: SystemMetricsReader,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardUiState())
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
     private var homeTelemetryJob: Job? = null
     private var powertrainTelemetryJob: Job? = null
+    private var systemMetricsJob: Job? = null
 
     init {
         observeLiveData()
@@ -267,6 +275,32 @@ class DashboardViewModel @Inject constructor(
                         }
                     }
                 delay(POWERTRAIN_TELEMETRY_INTERVAL_MS)
+            }
+        }
+    }
+
+    fun setSystemMetricsActive(active: Boolean) {
+        if (!active) {
+            systemMetricsJob?.cancel()
+            systemMetricsJob = null
+            return
+        }
+        if (systemMetricsJob?.isActive == true) return
+        systemMetricsJob = viewModelScope.launch {
+            while (isActive) {
+                val snapshot = runCatching { systemMetricsReader.readSnapshot() }.getOrNull()
+                _uiState.update { current ->
+                    current.copy(
+                        systemMetrics = snapshot ?: current.systemMetrics,
+                        systemMetricsLoading = false,
+                        systemMetricsSampleCount = if (snapshot != null) {
+                            (current.systemMetricsSampleCount + 1).coerceAtMost(2)
+                        } else {
+                            current.systemMetricsSampleCount
+                        },
+                    )
+                }
+                delay(SYSTEM_METRICS_INTERVAL_MS)
             }
         }
     }
@@ -594,6 +628,7 @@ class DashboardViewModel @Inject constructor(
             idleDrainExpanded = false,
             powertrainDiagnosticsExpanded = false,
             energyFlowExpanded = false,
+            systemMetricsExpanded = false,
         ) }
     }
 
@@ -603,6 +638,7 @@ class DashboardViewModel @Inject constructor(
             batteryHealthExpanded = false,
             powertrainDiagnosticsExpanded = false,
             energyFlowExpanded = false,
+            systemMetricsExpanded = false,
         ) }
     }
 
@@ -612,6 +648,7 @@ class DashboardViewModel @Inject constructor(
             batteryHealthExpanded = false,
             idleDrainExpanded = false,
             energyFlowExpanded = false,
+            systemMetricsExpanded = false,
         ) }
     }
 
@@ -621,6 +658,17 @@ class DashboardViewModel @Inject constructor(
             batteryHealthExpanded = false,
             idleDrainExpanded = false,
             powertrainDiagnosticsExpanded = false,
+            systemMetricsExpanded = false,
+        ) }
+    }
+
+    fun toggleSystemMetricsExpanded() {
+        _uiState.update { it.copy(
+            systemMetricsExpanded = !it.systemMetricsExpanded,
+            batteryHealthExpanded = false,
+            idleDrainExpanded = false,
+            powertrainDiagnosticsExpanded = false,
+            energyFlowExpanded = false,
         ) }
     }
 
@@ -658,6 +706,7 @@ class DashboardViewModel @Inject constructor(
         const val HOME_TELEMETRY_INTERVAL_MS = 2_000L
         const val TIRE_TELEMETRY_EVERY_HOME_CYCLES = 5
         const val POWERTRAIN_TELEMETRY_INTERVAL_MS = 2_000L
+        const val SYSTEM_METRICS_INTERVAL_MS = 5_000L
     }
 }
 

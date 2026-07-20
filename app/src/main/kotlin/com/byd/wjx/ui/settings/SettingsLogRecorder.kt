@@ -255,6 +255,12 @@ class SettingsLogRecorder @Inject constructor(
                         }
                     }
                 }
+                val diPlusDb = File("/storage/emulated/0/vandiplus/db/van_bm_db")
+                appendLine(
+                    "DiPlus 行程库：存在=${yesNo(diPlusDb.exists())}，" +
+                        "可读=${yesNo(diPlusDb.canRead())}，大小=${diPlusDb.length()} 字节，" +
+                        "修改时间=${diPlusDb.lastModified()}",
+                )
             } catch (error: Exception) {
                 appendLine("（获取车辆数据来源失败：${error.message}）")
             }

@@ -3,6 +3,8 @@ package com.byd.wjx.helper
 import android.content.Context
 import android.os.IBinder
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Locale
 import kotlin.math.abs
 
@@ -192,6 +194,10 @@ internal class WjxLockSoundSignalReader(
             helperLog(TAG, "sentry prop baseline update=$value")
             return false
         }
+        if (!isRecentSentryAlarmTimestamp(value)) {
+            helperLog(TAG, "sentry prop changed but stale previous=$previous current=$value")
+            return false
+        }
         helperLog(TAG, "sentry prop changed previous=$previous current=$value")
         return true
     }
@@ -209,18 +215,28 @@ internal class WjxLockSoundSignalReader(
             .lastOrNull(::isHighRiskSentryLogLine)
             .orEmpty()
         if (marker.isBlank()) return ""
+        val now = System.currentTimeMillis()
+        val recent = isRecentSentryLogLine(marker, now)
 
         val cursor = File(SENTRY_LOG_CURSOR_PATH)
         val previous = runCatching { cursor.takeIf { it.isFile }?.readText()?.trim().orEmpty() }.getOrDefault("")
         if (previous.isBlank()) {
             runCatching { cursor.writeText(marker) }
-            helperLog(TAG, "sentry logcat skip backlog cursor=${marker.take(80)}")
+            if (allowTrigger && recent) {
+                helperLog(TAG, "sentry logcat first fresh=${marker.take(120)}")
+                return marker
+            }
+            helperLog(TAG, "sentry logcat skip backlog recent=$recent cursor=${marker.take(80)}")
             return ""
         }
         if (marker == previous) return ""
         runCatching { cursor.writeText(marker) }
         if (!allowTrigger) {
             helperLog(TAG, "sentry logcat baseline update=${marker.take(80)}")
+            return ""
+        }
+        if (!recent) {
+            helperLog(TAG, "sentry logcat skip stale marker=${marker.take(100)}")
             return ""
         }
         helperLog(TAG, "sentry logcat high marker=${marker.take(120)}")
@@ -230,9 +246,35 @@ internal class WjxLockSoundSignalReader(
     private fun isHighRiskSentryLogLine(line: String): Boolean {
         val lower = line.lowercase(Locale.US)
         return lower.contains("lockvideohandler") &&
-            lower.contains("msg.what = 3") &&
+            SENTRY_MSG3_REGEX.containsMatchIn(lower) &&
             !lower.contains("responseinform warn:")
     }
+
+    private fun isRecentSentryLogLine(line: String, nowMs: Long): Boolean {
+        val timestamp = parseSentryLogTimestamp(line, nowMs) ?: return false
+        return timestamp >= nowMs - SENTRY_LOG_FRESH_MS && timestamp <= nowMs + SENTRY_LOG_FUTURE_SKEW_MS
+    }
+
+    internal fun parseSentryLogTimestamp(line: String, nowMs: Long): Long? {
+        val trimmed = line.trimStart()
+        FULL_LOG_TIME_REGEX.find(trimmed)?.groupValues?.getOrNull(1)?.let { raw ->
+            return parseLogTime("yyyy-MM-dd HH:mm:ss.SSS", raw)
+        }
+        val short = SHORT_LOG_TIME_REGEX.find(trimmed)?.groupValues ?: return null
+        val monthDay = short.getOrNull(1) ?: return null
+        val time = short.getOrNull(2) ?: return null
+        val currentYear = Calendar.getInstance().apply { timeInMillis = nowMs }.get(Calendar.YEAR)
+        var parsed = parseLogTime("yyyy-MM-dd HH:mm:ss.SSS", "$currentYear-$monthDay $time") ?: return null
+        if (parsed > nowMs + ONE_DAY_MS) {
+            parsed = parseLogTime("yyyy-MM-dd HH:mm:ss.SSS", "${currentYear - 1}-$monthDay $time") ?: parsed
+        }
+        return parsed
+    }
+
+    private fun parseLogTime(pattern: String, raw: String): Long? =
+        runCatching {
+            SimpleDateFormat(pattern, Locale.US).apply { isLenient = false }.parse(raw)?.time
+        }.getOrNull()
 
     private fun readTurnSignalFlashBySdk(): Int? =
         invokeBydDeviceInt(
@@ -302,6 +344,9 @@ internal class WjxLockSoundSignalReader(
     private companion object {
         private const val TAG = "LockSound"
         private const val SENTRY_PROP_FIRST_FRESH_SECONDS = 120L
+        private const val SENTRY_LOG_FRESH_MS = 120_000L
+        private const val SENTRY_LOG_FUTURE_SKEW_MS = 10_000L
+        private const val ONE_DAY_MS = 24L * 60L * 60L * 1000L
         private const val SENTRY_LOG_CURSOR_PATH = "/data/local/tmp/wjx_sentry_msg3_cursor.txt"
         private const val SENTRY_PROP_CURSOR_PATH = "/data/local/tmp/wjx_sentry_alarm_ts_cursor.txt"
         private val SDK_POWER_STATE_RANGE = 0..4
@@ -317,5 +362,8 @@ internal class WjxLockSoundSignalReader(
         private const val TRUNK_OPEN_STATE_FID = 1074790416
         private const val HOOD_OPEN_STATE_FID = 692060188
         private const val DRIVER_DOOR_OPEN_STATE = FRONT_LEFT_DOOR_OPEN_STATE_FID
+        private val SENTRY_MSG3_REGEX = Regex("msg\\.what\\s*=\\s*3(?:\\D|$)")
+        private val FULL_LOG_TIME_REGEX = Regex("^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3})")
+        private val SHORT_LOG_TIME_REGEX = Regex("^(\\d{2}-\\d{2}) (\\d{2}:\\d{2}:\\d{2}\\.\\d{3})")
     }
 }

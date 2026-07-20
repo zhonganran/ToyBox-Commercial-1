@@ -8,11 +8,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -41,7 +41,9 @@ import com.byd.wjx.ui.charges.ChargesScreen
 import com.byd.wjx.ui.dashboard.DashboardScreen
 import com.byd.wjx.ui.places.PlacesScreen
 import com.byd.wjx.ui.desktopcomponents.DesktopComponentsScreen
+import com.byd.wjx.ui.home.BatteryHealthScreen
 import com.byd.wjx.ui.home.ProHomeScreen
+import com.byd.wjx.ui.home.VehicleEnvironmentScreen
 import com.byd.wjx.ui.legal.DisclaimerScreen
 import com.byd.wjx.ui.map.MapScreen
 import com.byd.wjx.ui.pro.ProAppScaffold
@@ -56,7 +58,7 @@ import com.byd.wjx.xiaozhi.ui.XiaozhiScreen
 enum class Screen(val route: String, val label: String, val icon: ImageVector) {
     Home("home", "首页", Icons.Outlined.Home),
     Sound("sound", "个性音效", Icons.AutoMirrored.Outlined.VolumeUp),
-    DesktopComponents("desktop_components", "歌词组件", Icons.Outlined.Subtitles),
+    DesktopComponents("desktop_components", "桌面组件", Icons.Outlined.Apps),
     Automation("automation", "智能联动", Icons.Outlined.Bolt),
     Xiaozhi("xiaozhi", "小智", Icons.Outlined.RecordVoiceOver),
     Settings("settings", "设置", Icons.Outlined.Settings)
@@ -82,6 +84,8 @@ fun AppNavigation(
     var showTripMap by rememberSaveable { mutableStateOf(false) }
     var showCharges by rememberSaveable { mutableStateOf(false) }
     var showDashboard by rememberSaveable { mutableStateOf(false) }
+    var showBatteryHealth by rememberSaveable { mutableStateOf(false) }
+    var showVehicleEnvironment by rememberSaveable { mutableStateOf(false) }
     var settingsInitialCategory by rememberSaveable { mutableStateOf<String?>(null) }
     val screenStateHolder = rememberSaveableStateHolder()
 
@@ -163,7 +167,7 @@ fun AppNavigation(
     }
     val scaffoldRoute = when {
         showPlaces -> Screen.Settings.route
-        showTripMap || showCharges || showDashboard -> Screen.Home.route
+        showTripMap || showCharges || showDashboard || showBatteryHealth || showVehicleEnvironment -> Screen.Home.route
         else -> selectedRoute
     }
 
@@ -182,19 +186,30 @@ fun AppNavigation(
     BackHandler(enabled = disclaimerAccepted && showDashboard) {
         showDashboard = false
     }
+    BackHandler(enabled = disclaimerAccepted && showBatteryHealth) {
+        showBatteryHealth = false
+    }
+    BackHandler(enabled = disclaimerAccepted && showVehicleEnvironment) {
+        showVehicleEnvironment = false
+    }
     ProAppScaffold(
             navItems = navItems,
             selectedRoute = scaffoldRoute,
             animateBackground = selectedRoute == Screen.Home.route &&
-                !showPlaces && !showTripMap && !showCharges && !showDashboard,
+                !showPlaces && !showTripMap && !showCharges && !showDashboard &&
+                !showBatteryHealth && !showVehicleEnvironment,
             onNavigate = { route ->
-                if (selectedRoute != route || showPlaces || showTripMap || showCharges || showDashboard) {
+                if (selectedRoute != route || showPlaces || showTripMap || showCharges || showDashboard ||
+                    showBatteryHealth || showVehicleEnvironment
+                ) {
                     selectedRoute = route
                     if (route == Screen.Settings.route) settingsInitialCategory = null
                     showPlaces = false
                     showTripMap = false
                     showCharges = false
                     showDashboard = false
+                    showBatteryHealth = false
+                    showVehicleEnvironment = false
                 }
             },
         ) {
@@ -216,8 +231,18 @@ fun AppNavigation(
                                 showTripMap = false
                                 showCharges = false
                                 showDashboard = false
+                                showBatteryHealth = false
+                                showVehicleEnvironment = false
                             },
                         )
+                    }
+                } else if (showBatteryHealth) {
+                    screenStateHolder.SaveableStateProvider("battery_health") {
+                        BatteryHealthScreen(onBack = { showBatteryHealth = false })
+                    }
+                } else if (showVehicleEnvironment) {
+                    screenStateHolder.SaveableStateProvider("vehicle_environment") {
+                        VehicleEnvironmentScreen(onBack = { showVehicleEnvironment = false })
                     }
                 } else if (showDashboard) {
                     screenStateHolder.SaveableStateProvider("dashboard") {
@@ -228,6 +253,8 @@ fun AppNavigation(
                                 showTripMap = true
                                 showCharges = false
                                 showDashboard = false
+                                showBatteryHealth = false
+                                showVehicleEnvironment = false
                             },
                         )
                     }
@@ -241,6 +268,8 @@ fun AppNavigation(
                                     showTripMap = false
                                     showCharges = true
                                     showDashboard = false
+                                    showBatteryHealth = false
+                                    showVehicleEnvironment = false
                                 },
                                 onOpenDashboard = {
                                     selectedRoute = Screen.Home.route
@@ -248,6 +277,26 @@ fun AppNavigation(
                                     showTripMap = false
                                     showCharges = false
                                     showDashboard = true
+                                    showBatteryHealth = false
+                                    showVehicleEnvironment = false
+                                },
+                                onOpenBatteryHealth = {
+                                    selectedRoute = Screen.Home.route
+                                    showPlaces = false
+                                    showTripMap = false
+                                    showCharges = false
+                                    showDashboard = false
+                                    showBatteryHealth = true
+                                    showVehicleEnvironment = false
+                                },
+                                onOpenVehicleEnvironment = {
+                                    selectedRoute = Screen.Home.route
+                                    showPlaces = false
+                                    showTripMap = false
+                                    showCharges = false
+                                    showDashboard = false
+                                    showBatteryHealth = false
+                                    showVehicleEnvironment = true
                                 },
                                 onOpenTripMap = {
                                     selectedRoute = Screen.Home.route
@@ -255,6 +304,8 @@ fun AppNavigation(
                                     showTripMap = true
                                     showCharges = false
                                     showDashboard = false
+                                    showBatteryHealth = false
+                                    showVehicleEnvironment = false
                                 },
                             )
                             Screen.Sound -> SoundScreen()

@@ -10,6 +10,7 @@ import com.byd.wjx.data.local.entity.TripEntity
 import com.byd.wjx.data.repository.LastSessionRepository
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.data.repository.TripRepository
+import com.byd.wjx.data.trips.TripSource
 import com.byd.wjx.log.WjxFileLogger
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
@@ -28,11 +29,13 @@ class HistoryImporter @Inject constructor(
     private val idleDrainDao: IdleDrainDao,
     private val settingsRepository: SettingsRepository,
     private val lastSessionRepository: LastSessionRepository,
+    private val diPlusDbReader: DiPlusDbReader = DiPlusDbReader(context),
 ) {
     companion object {
         private const val TAG = "HistoryImporter"
         private const val MIN_TRIP_DURATION_SEC = 30L
         private const val DEDUP_WINDOW_MS = 300_000L // ±5 min for time-based dedup
+        private const val DIPLUS_DEDUP_WINDOW_MS = 120_000L
     }
 
     private val syncMutex = Mutex()
@@ -80,6 +83,41 @@ class HistoryImporter @Inject constructor(
         } finally {
             syncMutex.unlock()
         }
+    }
+
+    /**
+     * DiPlus stores the vehicle's existing trip history in TripInfo. This is the
+     * fallback source used by AutoTark when energydata is not present.
+     */
+    suspend fun syncFromDiPlus(): ImportResult {
+        if (!syncMutex.tryLock()) {
+            WjxFileLogger.i(TAG, "syncFromDiPlus skipped: already running")
+            return ImportResult(trips = 0, details = "同步已在进行中")
+        }
+        return try {
+            if (!diPlusDbReader.isAvailable()) {
+                return ImportResult(trips = 0, details = "未找到可读取的系统行程库")
+            }
+            if (!diPlusDbReader.peekSourceChanged()) {
+                return ImportResult(trips = 0, details = "没有变化")
+            }
+            val result = doDiPlusSync()
+            if (!result.isError) diPlusDbReader.markSourceProcessed()
+            WjxFileLogger.i(TAG, "syncFromDiPlus result trips=${result.trips} error=${result.error.orEmpty()}")
+            result
+        } catch (e: Exception) {
+            Log.e(TAG, "syncFromDiPlus failed", e)
+            WjxFileLogger.e(TAG, "syncFromDiPlus failed: ${e.message}", e)
+            ImportResult(trips = 0, error = e.message ?: e.toString())
+        } finally {
+            syncMutex.unlock()
+        }
+    }
+
+    suspend fun syncFromVehicleHistory(): ImportResult = when {
+        energyDataReader.isAvailable() -> syncFromEnergyData()
+        diPlusDbReader.isAvailable() -> syncFromDiPlus()
+        else -> ImportResult(trips = 0, details = "未找到车机系统行程数据库")
     }
 
     private suspend fun doSync(): ImportResult {
@@ -199,6 +237,53 @@ class HistoryImporter @Inject constructor(
         )
     }
 
+    private suspend fun doDiPlusSync(): ImportResult {
+        val records = diPlusDbReader.readTripInfo()
+        if (records.isEmpty()) {
+            return ImportResult(trips = 0, details = "系统行程库暂无记录")
+        }
+
+        var imported = 0
+        var updated = 0
+        var skipped = 0
+        records.forEach { record ->
+            val incoming = record.toTripEntity() ?: run {
+                skipped++
+                return@forEach
+            }
+            val existing = tripDao.getByStartTsRange(
+                incoming.startTs - DIPLUS_DEDUP_WINDOW_MS,
+                incoming.startTs + DIPLUS_DEDUP_WINDOW_MS,
+            )
+            if (existing == null) {
+                tripRepository.insertTrip(incoming)
+                imported++
+            } else if (existing.source != TripSource.ENERGYDATA) {
+                tripRepository.updateTrip(
+                    existing.copy(
+                        startTs = incoming.startTs,
+                        endTs = incoming.endTs,
+                        distanceKm = incoming.distanceKm,
+                        kwhConsumed = incoming.kwhConsumed ?: existing.kwhConsumed,
+                        kwhPer100km = incoming.kwhPer100km ?: existing.kwhPer100km,
+                        socStart = incoming.socStart ?: existing.socStart,
+                        socEnd = incoming.socEnd ?: existing.socEnd,
+                        avgSpeedKmh = incoming.avgSpeedKmh ?: existing.avgSpeedKmh,
+                        source = TripSource.DIPLUS,
+                    ),
+                )
+                updated++
+            } else {
+                skipped++
+            }
+        }
+
+        return ImportResult(
+            trips = imported + updated,
+            details = "+$imported 条系统行程，补全 $updated 条，跳过 $skipped 条重复或无效记录",
+        )
+    }
+
     /**
      * Calculate cost for trips that have kWh but no cost yet.
      */
@@ -266,9 +351,11 @@ class HistoryImporter @Inject constructor(
      * Unified sync entry point — always uses energydata pipeline.
      */
     suspend fun runSync(): ImportResult {
-        val r = syncFromEnergyData()
-        calculateMissingCosts(settingsRepository.getTripCostTariff())
-        attachGpsPoints()
+        val r = syncFromVehicleHistory()
+        if (!r.isError && r.count > 0) {
+            calculateMissingCosts(settingsRepository.getTripCostTariff())
+            attachGpsPoints()
+        }
         return r
     }
 

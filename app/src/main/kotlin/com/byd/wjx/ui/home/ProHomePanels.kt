@@ -68,7 +68,7 @@ import kotlin.math.roundToInt
 @Composable
 internal fun HomeMetricRibbon(
     state: DashboardUiState,
-    onOpenCharges: () -> Unit,
+    onOpenDashboard: () -> Unit,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
 ) {
@@ -94,7 +94,7 @@ internal fun HomeMetricRibbon(
             .clip(shape)
             .background(CardSurface.copy(alpha = 0.86f))
             .border(1.dp, GlassStroke, shape)
-            .clickable(onClick = onOpenCharges)
+            .clickable(onClick = onOpenDashboard)
             .padding(horizontal = 22.dp, vertical = 10.dp),
     ) {
         if (compact || maxWidth < 900.dp) {

@@ -41,6 +41,7 @@ import android.os.IBinder
  *       writeInt(bufferWidth), writeInt(bufferHeight), writeInt(fps), Surface.writeToParcel(surface)
  *       -> reply: writeInt(status), writeInt(0)
  *   TX_CAMERA_STOP : (no args)                              -> reply: writeInt(status), writeInt(0)
+ *   TX_PLAY_SENTRY_EVENT : writeString(source)              -> reply: writeInt(status), writeInt(played)
  *
  * Projection status: 0 = success, <0 = error/unavailable. Surface is written LAST so a
  * marshalling test can assert the scalar args without round-tripping the Surface.
@@ -53,7 +54,7 @@ object HelperBinderProtocol {
     const val DESCRIPTOR = "com.byd.wjx.helper.IHelper"
     // Increment whenever transaction ids or Parcel layouts change. The helper process can outlive
     // an APK replacement, so the client verifies this marker before using vehicle transactions.
-    const val CURRENT_VERSION = 13
+    const val CURRENT_VERSION = 14
 
     const val TX_PING = IBinder.FIRST_CALL_TRANSACTION       // 1
     const val TX_READ = IBinder.FIRST_CALL_TRANSACTION + 1   // 2
@@ -78,6 +79,7 @@ object HelperBinderProtocol {
     const val TX_EXEC_SHELL = IBinder.FIRST_CALL_TRANSACTION + 20               // 21
     const val TX_CAMERA_START = IBinder.FIRST_CALL_TRANSACTION + 21             // 22
     const val TX_CAMERA_STOP = IBinder.FIRST_CALL_TRANSACTION + 22              // 23
+    const val TX_PLAY_SENTRY_EVENT = IBinder.FIRST_CALL_TRANSACTION + 23        // 24
 
     /** Hard upper bound keeps a malformed caller from creating an oversized Binder reply. */
     const val MAX_BATCH_READS = 128

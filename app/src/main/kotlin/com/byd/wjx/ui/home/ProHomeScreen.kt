@@ -33,6 +33,8 @@ fun ProHomeScreen(
     viewModel: DashboardViewModel = hiltViewModel(),
     onOpenCharges: () -> Unit,
     onOpenDashboard: () -> Unit,
+    onOpenBatteryHealth: () -> Unit,
+    onOpenVehicleEnvironment: () -> Unit,
     onOpenTripMap: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -89,7 +91,7 @@ fun ProHomeScreen(
                 )
                 HomeMetricRibbon(
                     state = state,
-                    onOpenCharges = onOpenCharges,
+                    onOpenDashboard = onOpenDashboard,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(78.dp),
@@ -102,14 +104,14 @@ fun ProHomeScreen(
                 ) {
                     BatteryHealthPanel(
                         state = state,
-                        onClick = onOpenDashboard,
+                        onClick = onOpenBatteryHealth,
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight(),
                     )
                     VehicleEnvironmentPanel(
                         state = state,
-                        onClick = onOpenDashboard,
+                        onClick = onOpenVehicleEnvironment,
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight(),
@@ -149,7 +151,7 @@ fun ProHomeScreen(
                 )
                 HomeMetricRibbon(
                     state = state,
-                    onOpenCharges = onOpenCharges,
+                    onOpenDashboard = onOpenDashboard,
                     compact = true,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -157,12 +159,12 @@ fun ProHomeScreen(
                 )
                 BatteryHealthPanel(
                     state = state,
-                    onClick = onOpenDashboard,
+                    onClick = onOpenBatteryHealth,
                     modifier = Modifier.fillMaxWidth().height(240.dp),
                 )
                 VehicleEnvironmentPanel(
                     state = state,
-                    onClick = onOpenDashboard,
+                    onClick = onOpenVehicleEnvironment,
                     modifier = Modifier.fillMaxWidth().height(240.dp),
                 )
                 TripRoutePanel(

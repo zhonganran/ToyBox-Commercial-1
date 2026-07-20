@@ -46,6 +46,14 @@ class BackupPreferencesRegistryTest {
     }
 
     @Test
+    fun `backup includes desktop quick card configuration`() {
+        assertTrue(
+            "desktop card selection and layout are user configuration",
+            "wjx_desktop_cards" in BackupPreferencesRegistry.USER_CONFIGURATION_FILES,
+        )
+    }
+
+    @Test
     fun `no user configuration currently requires device-protected backup`() {
         assertTrue(BackupPreferencesRegistry.DEVICE_PROTECTED_USER_CONFIGURATION_FILES.isEmpty())
     }

@@ -163,6 +163,24 @@ class HelperClientBinderTest {
         )
     }
 
+    @Test
+    fun `real sentry event uses guarded binder transaction and source`() = runBlocking {
+        val binder = object : FakeIBinder() {
+            override fun transact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+                assertEquals(HelperBinderProtocol.TX_PLAY_SENTRY_EVENT, code)
+                data.setDataPosition(0)
+                data.enforceInterface(HelperBinderProtocol.DESCRIPTOR)
+                assertEquals("broadcast warn=2", data.readString())
+                reply!!.writeInt(0)
+                reply.writeInt(1)
+                reply.setDataPosition(0)
+                return true
+            }
+        }
+
+        assertTrue(clientWith(binder).playSentryEvent("broadcast warn=2"))
+    }
+
     /** TC-6: transact returning false yields null for read and false for write */
     @Test
     fun `transact returning false yields null for read and false for write`() = runBlocking {

@@ -8,11 +8,12 @@ class TripSourceTest {
     fun `constants match wire values used in DB`() {
         assertEquals("live", TripSource.LIVE)
         assertEquals("energydata", TripSource.ENERGYDATA)
+        assertEquals("diplus", TripSource.DIPLUS)
         assertEquals("native_polling", TripSource.NATIVE_POLLING)
     }
 
     @Test
     fun `all returns full set in stable order`() {
-        assertEquals(listOf("live", "energydata", "native_polling"), TripSource.all)
+        assertEquals(listOf("live", "energydata", "diplus", "native_polling"), TripSource.all)
     }
 }
