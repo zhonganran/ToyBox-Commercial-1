@@ -24,7 +24,7 @@ class AutomationTriggerEvaluatorTest {
         )
 
         assertEquals(listOf(true, true), results)
-        assertTrue(evaluator.combineByLogic(results, "AND"))
+        assertEquals(true, evaluator.combineByLogic(results, "AND"))
         assertFalse(evaluator.matchedViaEventTrigger(triggers, results, "AND"))
 
         val snapshot = JSONObject(
@@ -47,7 +47,7 @@ class AutomationTriggerEvaluatorTest {
             data = diParsData(speed = 50),
             serviceStartActive = false,
         )
-        assertTrue(evaluator.combineByLogic(stateDriven, "OR"))
+        assertEquals(true, evaluator.combineByLogic(stateDriven, "OR"))
         assertFalse(evaluator.matchedViaEventTrigger(triggers, stateDriven, "OR"))
 
         val eventDriven = evaluator.evaluate(
@@ -55,8 +55,36 @@ class AutomationTriggerEvaluatorTest {
             data = diParsData(speed = 0),
             serviceStartActive = true,
         )
-        assertTrue(evaluator.combineByLogic(eventDriven, "OR"))
+        assertEquals(true, evaluator.combineByLogic(eventDriven, "OR"))
         assertTrue(evaluator.matchedViaEventTrigger(triggers, eventDriven, "OR"))
+        assertEquals(false, evaluator.persistentMatch(triggers, eventDriven, "OR"))
+
+        val bothDriven = evaluator.evaluate(
+            triggers = triggers,
+            data = diParsData(speed = 50),
+            serviceStartActive = true,
+        )
+        assertEquals(true, evaluator.persistentMatch(triggers, bothDriven, "OR"))
+    }
+
+    @Test
+    fun `missing telemetry stays unknown through boolean composition`() {
+        val evaluator = AutomationTriggerEvaluator()
+        val missingSpeed = evaluator.evaluate(
+            triggers = listOf(paramTrigger("Speed", ">", "40")),
+            data = diParsData(speed = null),
+        )
+
+        assertEquals(listOf<Boolean?>(null), missingSpeed)
+        assertEquals(null, evaluator.combineByLogic(missingSpeed, "AND"))
+        assertEquals(
+            false,
+            evaluator.combineByLogic(listOf(false, null), "AND"),
+        )
+        assertEquals(
+            true,
+            evaluator.combineByLogic(listOf(true, null), "OR"),
+        )
     }
 
     @Test
@@ -78,7 +106,7 @@ class AutomationTriggerEvaluatorTest {
         data: DiParsData = diParsData(),
         serviceStartActive: Boolean = false,
         now: Long = 0L,
-    ): List<Boolean> = evaluateEachTrigger(
+    ): List<Boolean?> = evaluateEachTrigger(
         ruleId = 1L,
         triggers = triggers,
         data = data,

@@ -12,7 +12,9 @@ import com.byd.wjx.data.local.entity.ActionDef
 import com.byd.wjx.data.local.entity.RuleEntity
 import com.byd.wjx.data.local.entity.TriggerDef
 import com.byd.wjx.data.repository.PlaceRepository
+import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.data.vehicle.VehicleApi
+import com.byd.wjx.log.WjxFileLogger
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,6 +29,7 @@ class AutomationViewModel @Inject constructor(
     private val ruleDao: RuleDao,
     private val ruleLogDao: RuleLogDao,
     private val placeRepository: PlaceRepository,
+    private val settingsRepository: SettingsRepository,
     private val vehicleApi: VehicleApi,
     private val activationManager: ActivationManager,
     @ApplicationContext private val context: Context
@@ -37,6 +40,15 @@ class AutomationViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
+            try {
+                seedDefaultAutomationPresets(
+                    ruleDao = ruleDao,
+                    settingsRepository = settingsRepository,
+                    outsideSoundAction = newOutsideSoundAction(context),
+                )
+            } catch (e: Exception) {
+                WjxFileLogger.e("AutomationViewModel", "default automation preset initialization failed", e)
+            }
             ruleDao.getAll().collect { rules ->
                 _uiState.update { it.copy(rules = rules) }
             }
@@ -225,19 +237,12 @@ class AutomationViewModel @Inject constructor(
                 _uiState.update { it.copy(editorError = "试用已结束，未激活最多创建 3 条智能联动") }
                 return@launch
             }
-            val entity = RuleEntity(
-                id = if (e.isNew) 0 else e.id,
-                name = e.name.trim(),
-                triggerLogic = e.triggerLogic,
-                triggers = TriggerDef.listToJson(e.triggers),
-                actions = ActionDef.listToJson(e.actions),
-                exitActions = ActionDef.listToJson(e.exitActions),
-                cooldownSeconds = e.cooldownSeconds.coerceIn(AUTOMATION_COOLDOWN_MIN_SECONDS, AUTOMATION_COOLDOWN_MAX_SECONDS),
-                repeatIntervalSeconds = e.repeatIntervalSeconds.coerceIn(0, AUTOMATION_REPEAT_MAX_SECONDS),
-                requirePark = e.requirePark,
-                confirmBeforeExecute = e.confirmBeforeExecute,
-                fireOncePerTrip = e.fireOncePerTrip,
-            )
+            val existing = if (e.isNew) null else ruleDao.getById(e.id)
+            if (!e.isNew && existing == null) {
+                _uiState.update { it.copy(editorError = "规则已被删除，无法保存") }
+                return@launch
+            }
+            val entity = e.toRuleEntity(existing)
             if (e.isNew) ruleDao.insert(entity)
             else ruleDao.update(entity)
             closeEditor()
@@ -290,4 +295,27 @@ class AutomationViewModel @Inject constructor(
     fun showJournal() { _uiState.update { it.copy(showJournal = true) } }
     fun hideJournal() { _uiState.update { it.copy(showJournal = false) } }
 
+}
+
+internal fun EditingRule.toRuleEntity(existing: RuleEntity? = null): RuleEntity {
+    val base = existing ?: RuleEntity(
+        name = "",
+        triggers = "[]",
+        actions = "[]",
+    )
+    return base.copy(
+        name = name.trim(),
+        triggerLogic = triggerLogic,
+        triggers = TriggerDef.listToJson(triggers),
+        actions = ActionDef.listToJson(actions),
+        exitActions = ActionDef.listToJson(exitActions),
+        cooldownSeconds = cooldownSeconds.coerceIn(
+            AUTOMATION_COOLDOWN_MIN_SECONDS,
+            AUTOMATION_COOLDOWN_MAX_SECONDS,
+        ),
+        repeatIntervalSeconds = repeatIntervalSeconds.coerceIn(0, AUTOMATION_REPEAT_MAX_SECONDS),
+        requirePark = requirePark,
+        confirmBeforeExecute = confirmBeforeExecute,
+        fireOncePerTrip = fireOncePerTrip,
+    )
 }

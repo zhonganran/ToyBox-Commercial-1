@@ -15,7 +15,6 @@ class ExteriorRoutePlanTest {
         assertEquals(
             listOf(
                 ExteriorRouteWrite(1000, 13, -1442839775),
-                ExteriorRouteWrite(1002, -1442839775, 1),
                 ExteriorRouteWrite(1000, 891293750, 1339031619),
                 ExteriorRouteWrite(1000, 891293760, 2),
                 ExteriorRouteWrite(1000, 372244513, 2),
@@ -25,7 +24,6 @@ class ExteriorRoutePlanTest {
         assertEquals(
             listOf(
                 ExteriorRouteWrite(1000, 13, 1),
-                ExteriorRouteWrite(1002, -1442839775, 0),
                 ExteriorRouteWrite(1000, 891293750, 3),
                 ExteriorRouteWrite(1000, 891293760, 1),
             ),
@@ -34,33 +32,24 @@ class ExteriorRoutePlanTest {
     }
 
     @Test
-    fun `channel zero route keeps primary and compatibility writes`() {
+    fun `channel zero route uses only current primary write`() {
         val arm = ExteriorRoutePlan.armWrites(ExteriorChannel.Channel0)
         val disarm = ExteriorRoutePlan.disarmWrites(ExteriorChannel.Channel0)
 
         assertEquals(
-            listOf(
-                ExteriorRouteWrite(3, -1442839934, 1),
-                ExteriorRouteWrite(1000, -1796699511, 1),
-            ),
+            listOf(ExteriorRouteWrite(3, -1442839934, 1)),
             arm,
         )
         assertEquals(
-            listOf(
-                ExteriorRouteWrite(3, -1442839934, 0),
-                ExteriorRouteWrite(1000, -1796699511, 0),
-            ),
+            listOf(ExteriorRouteWrite(3, -1442839934, 0)),
             disarm,
         )
     }
 
     @Test
-    fun `channel zero compatibility write cannot replace primary route confirmation`() {
+    fun `channel zero rejects playback when primary route write fails`() {
         val writes = ExteriorRoutePlan.armWrites(ExteriorChannel.Channel0)
-        val results = mapOf(
-            writes[0] to false,
-            writes[1] to true,
-        )
+        val results = mapOf(writes[0] to false)
 
         assertFalse(
             ExteriorRoutePlan.isStronglyConfirmed(
@@ -76,10 +65,7 @@ class ExteriorRoutePlanTest {
     @Test
     fun `channel zero primary speaker and focus confirmation permits playback`() {
         val writes = ExteriorRoutePlan.armWrites(ExteriorChannel.Channel0)
-        val results = mapOf(
-            writes[0] to true,
-            writes[1] to false,
-        )
+        val results = mapOf(writes[0] to true)
 
         assertTrue(
             ExteriorRoutePlan.isStronglyConfirmed(
@@ -95,7 +81,7 @@ class ExteriorRoutePlanTest {
     @Test
     fun `channel one rejects playback when any exterior route write is missing`() {
         val writes = ExteriorRoutePlan.armWrites(ExteriorChannel.Channel1)
-        val requiredIndexes = listOf(2, 3, 4)
+        val requiredIndexes = listOf(1, 2, 3)
 
         requiredIndexes.forEach { missingIndex ->
             val results = writes.associateWith { true }.toMutableMap().apply {

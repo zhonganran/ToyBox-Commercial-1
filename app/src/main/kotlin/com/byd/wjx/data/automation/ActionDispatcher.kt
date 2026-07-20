@@ -9,7 +9,6 @@ import android.media.AudioManager
 import android.net.Uri
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.byd.wjx.audio.AutoParkingStatus
 import com.byd.wjx.audio.ExteriorHailingSettings
 import com.byd.wjx.audio.WjxOutsidePlayService
 import com.byd.wjx.data.local.entity.ActionDef
@@ -30,6 +29,8 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
+
+private const val AUTO_PARKING_ACTIVE_STATUS = 4
 
 data class DispatchResult(val success: Boolean, val reason: String? = null)
 
@@ -80,6 +81,20 @@ class ActionDispatcher @Inject constructor(
         }
 
         private val POSITION_OPEN = Regex("打开(\\d+)")
+
+        internal fun windowOpenBlockReason(command: String, speedKmh: Int?): String? {
+            if (!isWindowOpenCommand(command)) return null
+            val speed = speedKmh ?: return "当前车速未知"
+            return if (speed > 80) "车速 $speed km/h，已阻止开窗（>80）" else null
+        }
+
+        internal fun shouldSkipAutomationOutsideSound(
+            owner: String?,
+            parkingStatus: Int?,
+            allowDuringAutoParking: Boolean,
+        ): Boolean = owner?.startsWith("automation:") == true &&
+            parkingStatus == AUTO_PARKING_ACTIVE_STATUS &&
+            !allowDuringAutoParking
 
         /** Clamp a requested media volume level to the device's valid [0, max] range. Pure — unit-testable. */
         internal fun clampVolume(level: Int, max: Int): Int = level.coerceIn(0, max.coerceAtLeast(0))
@@ -145,11 +160,15 @@ class ActionDispatcher @Inject constructor(
 
     fun stopOutsideSound(owner: String) {
         WjxFileLogger.i(TAG, "stop outside sound owner=$owner")
+        if (AutomationMediaRegistry.outsideOwner == owner) {
+            AutomationMediaRegistry.outsideOwner = null
+        }
         WjxOutsidePlayService.stop(context, owner = owner)
     }
 
     private fun stopAllOutsideSound(): DispatchResult {
         WjxFileLogger.i(TAG, "stop all outside sound from automation")
+        AutomationMediaRegistry.outsideOwner = null
         WjxOutsidePlayService.stop(context)
         return DispatchResult(true)
     }
@@ -197,6 +216,13 @@ class ActionDispatcher @Inject constructor(
     }
 
     fun stopMediaOwnedByInactiveRules(activeRuleIds: Set<Long>) {
+        val outsideOwner = AutomationMediaRegistry.outsideOwner
+        val outsideRule = AutomationMediaRegistry.ruleId(outsideOwner)
+        if (outsideRule != null && outsideRule !in activeRuleIds) {
+            WjxFileLogger.i(TAG, "stop outside sound for inactive automation rule=$outsideRule")
+            AutomationMediaRegistry.outsideOwner = null
+            WjxOutsidePlayService.stop(context, outsideOwner)
+        }
         val musicOwner = AutomationMediaRegistry.musicOwner
         val musicRule = AutomationMediaRegistry.ruleId(musicOwner)
         if (musicRule != null && musicRule !in activeRuleIds) {
@@ -208,6 +234,27 @@ class ActionDispatcher @Inject constructor(
         val videoRule = AutomationMediaRegistry.ruleId(videoOwner)
         if (videoRule != null && videoRule !in activeRuleIds) {
             WjxFileLogger.i(TAG, "stop video for inactive automation rule=$videoRule")
+            AutomationMediaRegistry.videoOwner = null
+            AutomationVideoActivity.stop(context, videoOwner)
+        }
+    }
+
+    fun stopMediaOwnedByRule(ruleId: Long) {
+        val outsideOwner = AutomationMediaRegistry.outsideOwner
+        if (AutomationMediaRegistry.ruleId(outsideOwner) == ruleId) {
+            WjxFileLogger.i(TAG, "stop outside sound for edited automation rule=$ruleId")
+            AutomationMediaRegistry.outsideOwner = null
+            WjxOutsidePlayService.stop(context, outsideOwner)
+        }
+        val musicOwner = AutomationMediaRegistry.musicOwner
+        if (AutomationMediaRegistry.ruleId(musicOwner) == ruleId) {
+            WjxFileLogger.i(TAG, "stop music for edited automation rule=$ruleId")
+            AutomationMediaRegistry.musicOwner = null
+            AutomationMusicService.stop(context, musicOwner)
+        }
+        val videoOwner = AutomationMediaRegistry.videoOwner
+        if (AutomationMediaRegistry.ruleId(videoOwner) == ruleId) {
+            WjxFileLogger.i(TAG, "stop video for edited automation rule=$ruleId")
             AutomationMediaRegistry.videoOwner = null
             AutomationVideoActivity.stop(context, videoOwner)
         }
@@ -241,7 +288,8 @@ class ActionDispatcher @Inject constructor(
         val file = File(path)
         if (!file.isFile) return DispatchResult(false, "音效文件不存在：${file.name}")
         val parkingStatus = data?.adasApaParkingStatus
-        if (owner?.startsWith("automation:") == true && parkingStatus != null && AutoParkingStatus.isSoundActive(parkingStatus)) {
+        val allowDuringAutoParking = payload.optBoolean("allowDuringAutoParking", false)
+        if (shouldSkipAutomationOutsideSound(owner, parkingStatus, allowDuringAutoParking)) {
             WjxFileLogger.i(
                 TAG,
                 "skip outside sound during auto parking file=${file.name} owner=$owner adasApaParkingStatus=$parkingStatus"
@@ -257,6 +305,9 @@ class ActionDispatcher @Inject constructor(
             "play outside sound file=${file.name} loop=$loop owner=${owner.orEmpty()} " +
                 "controller=${profile.seriesLabel} channel=$channel reverse=$reverseActive"
         )
+        if (owner?.startsWith("automation:") == true) {
+            AutomationMediaRegistry.outsideOwner = owner
+        }
         WjxOutsidePlayService.play(
             context,
             file,
@@ -309,12 +360,7 @@ class ActionDispatcher @Inject constructor(
 
     private fun getBlockReason(command: String, data: DiParsData?): String? {
         if (BLOCKED_PATTERNS.any { command.contains(it) }) return "禁止执行的命令"
-        if (data == null) return null
-        if (isWindowOpenCommand(command)) {
-            val speed = data.speed ?: return "当前车速未知"
-            if (speed > 80) return "车速 ${speed} km/h，已阻止开窗（>80）"
-        }
-        return null
+        return windowOpenBlockReason(command, data?.speed)
     }
 
     // --- notifications (user-visible) ---

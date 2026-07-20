@@ -29,6 +29,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.abs
 
 @Singleton
@@ -110,14 +111,25 @@ class LyricRuntime @Inject constructor(
                     lyricLoadJob?.cancel()
                     lyricLoadJob = launch(Dispatchers.IO) {
                         val loaded = runCatching { repository.load(snapshot) }
-                            .onFailure { WjxFileLogger.w(TAG, "lyrics load failed key=${key.take(48)}: ${it.message}", it) }
+                            .onFailure {
+                                if (it !is CancellationException) {
+                                    WjxFileLogger.w(
+                                        TAG,
+                                        "lyrics load failed key=${logSafeKey(key)}: ${it.message}",
+                                        it,
+                                    )
+                                }
+                            }
                             .getOrDefault(LyricsResult(key))
                         withContext(Dispatchers.Main.immediate) {
                             if (lastSongKey == loaded.key) {
                                 latestLyrics = loaded
                                 trackChangeHoldUntilMs = 0L
                                 suppressNextFrameAnimation = true
-                                WjxFileLogger.i(TAG, "lyrics loaded key=${loaded.key.take(48)} lines=${loaded.lines.size}")
+                                WjxFileLogger.i(
+                                    TAG,
+                                    "lyrics loaded key=${logSafeKey(loaded.key)} lines=${loaded.lines.size}",
+                                )
                             }
                         }
                     }
@@ -288,6 +300,9 @@ class LyricRuntime @Inject constructor(
     private fun resolveHomePackages(): Set<String> {
         return HomePackageResolver.resolve(appContext)
     }
+
+    private fun logSafeKey(value: String): String =
+        value.replace('\u0000', '|').take(48)
 
     companion object {
         private const val TAG = "LyricRuntime"

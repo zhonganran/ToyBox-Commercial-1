@@ -17,7 +17,6 @@ import com.byd.wjx.data.repository.TripRepository
 import com.byd.wjx.data.settings.ServiceQrCache
 import com.byd.wjx.service.UpdateChecker
 import com.byd.wjx.R
-import com.byd.wjx.audio.AutoParkingSoundSettings
 import com.byd.wjx.audio.LockSoundConfig
 import com.byd.wjx.audio.LockSoundConfigSync
 import com.byd.wjx.audio.LockSoundEvent
@@ -61,7 +60,6 @@ class SettingsViewModel @Inject constructor(
     private val activationManager: ActivationManager,
     private val soundLibrary: SoundLibrary,
     private val lockSoundConfigSync: LockSoundConfigSync,
-    private val autoParkingSoundSettings: AutoParkingSoundSettings,
     private val okHttpClient: OkHttpClient,
     private val serviceQrCache: ServiceQrCache,
     private val logRecorder: SettingsLogRecorder,
@@ -147,46 +145,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun setAutoParkingSoundEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            if (enabled && !activationManager.canUse(PremiumFeature.AUTO_PARKING_SOUND)) {
-                refreshLockSoundState("试用已结束，自动泊车音效需要激活后使用")
-                return@launch
-            }
-            if (enabled && !soundLibrary.isManagedSound(autoParkingSoundSettings.soundPath)) {
-                val first = soundLibrary.listSounds().firstOrNull()
-                if (first == null) {
-                    refreshLockSoundState("WJX 音效库为空，请先下载或导入音效")
-                    return@launch
-                }
-                autoParkingSoundSettings.soundPath = first.file.absolutePath
-            }
-            autoParkingSoundSettings.enabled = enabled
-            refreshLockSoundState(if (enabled) "自动泊车音效已开启" else "自动泊车音效已关闭")
-        }
-    }
-
-    fun setAutoParkingSoundPath(path: String) {
-        viewModelScope.launch {
-            if (!activationManager.canUse(PremiumFeature.AUTO_PARKING_SOUND)) {
-                refreshLockSoundState("试用已结束，自动泊车音效需要激活后使用")
-                return@launch
-            }
-            val source = File(path)
-            if (!source.isFile) {
-                refreshLockSoundState("音效文件不存在")
-                return@launch
-            }
-            if (!soundLibrary.isManagedSound(source.absolutePath)) {
-                refreshLockSoundState("请从 WJX 音效库中选择")
-                return@launch
-            }
-            autoParkingSoundSettings.soundPath = source.absolutePath
-            autoParkingSoundSettings.enabled = true
-            refreshLockSoundState("自动泊车音效已选择：${source.nameWithoutExtension}")
-        }
-    }
-
     fun importEventSound(uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
@@ -222,7 +180,6 @@ class SettingsViewModel @Inject constructor(
                 return@launch
             }
             lockSoundSettings.clearIfPath(path)
-            autoParkingSoundSettings.clearIfPath(path)
             refreshLockSoundState("音效已删除")
             syncLockSoundConfig("event_sound_delete")
         }
@@ -263,9 +220,6 @@ class SettingsViewModel @Inject constructor(
                 lockSound = lockSoundSettings.snapshot().forVehicleEventUi(vehicleEventAllowed),
                 lockSoundChoices = choices,
                 lockSoundStatus = status ?: it.lockSoundStatus,
-                autoParkingSoundEnabled = autoParkingSoundSettings.enabled &&
-                    activationManager.canUse(PremiumFeature.AUTO_PARKING_SOUND),
-                autoParkingSoundPath = autoParkingSoundSettings.soundPath,
             )
         }
     }
@@ -277,9 +231,6 @@ class SettingsViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 lockSound = lockSoundSettings.snapshot().forVehicleEventUi(vehicleEventAllowed),
-                autoParkingSoundEnabled = autoParkingSoundSettings.enabled &&
-                    activationManager.canUse(PremiumFeature.AUTO_PARKING_SOUND),
-                autoParkingSoundPath = autoParkingSoundSettings.soundPath,
                 lockSoundSyncing = false,
                 lockSoundStatus = if (ok) "车辆事件音效已同步到后台 helper" else "helper 暂不可用，设置已保存，稍后会自动重试",
             )

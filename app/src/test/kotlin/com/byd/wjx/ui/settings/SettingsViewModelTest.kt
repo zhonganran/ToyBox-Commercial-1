@@ -176,7 +176,6 @@ class SettingsViewModelTest {
             activationManager = mockk<ActivationManager>(relaxed = true),
             soundLibrary = com.byd.wjx.storage.SoundLibrary(ctx),
             lockSoundConfigSync = mockk<com.byd.wjx.audio.LockSoundConfigSync>(relaxed = true),
-            autoParkingSoundSettings = com.byd.wjx.audio.AutoParkingSoundSettings(ctx),
             okHttpClient = httpClient,
             serviceQrCache = ServiceQrCache(ctx),
             logRecorder = logRecorder,

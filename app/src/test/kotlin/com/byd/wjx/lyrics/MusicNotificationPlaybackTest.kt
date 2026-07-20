@@ -1,6 +1,8 @@
 package com.byd.wjx.lyrics
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MusicNotificationPlaybackTest {
@@ -71,5 +73,43 @@ class MusicNotificationPlaybackTest {
 
         assertEquals(0L, resolved.positionMs)
         assertEquals(65_176L, resolved.anchorElapsedMs)
+    }
+
+    @Test
+    fun playingSong_rejectsNotificationLyricLineAsNewIdentity() {
+        val previous = MusicPlaybackSnapshot(
+            title = "Oh I Never Felt So Alive",
+            artist = "Dabin",
+            playing = true,
+            packageName = "com.byd.mediacenter",
+        )
+
+        assertFalse(
+            shouldAcceptNotificationIdentity(
+                previous = previous,
+                packageName = "com.byd.mediacenter",
+                title = "Wide open eyes I'm seeing it all",
+                artist = "Dabin",
+            ),
+        )
+    }
+
+    @Test
+    fun stoppedSong_acceptsNotificationIdentityChange() {
+        val previous = MusicPlaybackSnapshot(
+            title = "旧歌",
+            artist = "歌手",
+            playing = false,
+            packageName = "com.byd.mediacenter",
+        )
+
+        assertTrue(
+            shouldAcceptNotificationIdentity(
+                previous = previous,
+                packageName = "com.byd.mediacenter",
+                title = "新歌",
+                artist = "歌手",
+            ),
+        )
     }
 }

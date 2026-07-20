@@ -24,6 +24,7 @@ class TrackingLocationCoordinator @Inject constructor(
 ) : LocationListener {
     private var locationManager: LocationManager? = null
     private var started = false
+    private var lastFixLogAtMs = 0L
 
     @Synchronized
     fun start() {
@@ -79,6 +80,15 @@ class TrackingLocationCoordinator @Inject constructor(
 
     override fun onLocationChanged(location: Location) {
         trackingStateStore.setLastLocation(location)
+        val now = System.currentTimeMillis()
+        if (lastFixLogAtMs == 0L || now - lastFixLogAtMs >= FIX_LOG_INTERVAL_MS) {
+            lastFixLogAtMs = now
+            WjxFileLogger.i(
+                TAG,
+                "location fix provider=${location.provider} accuracyM=${location.accuracy.toInt()} " +
+                    "speedKmh=${"%.1f".format(location.speed * 3.6f)} ageMs=${(now - location.time).coerceAtLeast(0L)}",
+            )
+        }
         Log.d(
             TAG,
             "GPS fix: lat=${location.latitude} lon=${location.longitude} " +
@@ -144,5 +154,6 @@ class TrackingLocationCoordinator @Inject constructor(
         const val TAG = "TrackingLocation"
         const val LOCATION_INTERVAL_MS = 2_000L
         const val LOCATION_MIN_DISTANCE_M = 8.0f
+        const val FIX_LOG_INTERVAL_MS = 60_000L
     }
 }

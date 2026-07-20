@@ -1,6 +1,6 @@
 package com.byd.wjx.data.automation
 
-import com.byd.wjx.audio.AutoParkingSoundSettings
+import com.byd.wjx.data.local.entity.ActionDef
 import com.byd.wjx.data.local.entity.RuleEntity
 import com.byd.wjx.data.local.entity.TriggerDef
 import com.byd.wjx.data.nativestack.ActionSnapshotFieldProvider
@@ -11,39 +11,54 @@ import javax.inject.Singleton
 @Singleton
 class AutomationActionSnapshotFieldProvider @Inject constructor(
     private val repository: AutomationConfigRepository,
-    private val autoParkingSoundSettings: AutoParkingSoundSettings,
     private val electronicMirrorPreferences: ElectronicMirrorPreferences,
 ) : ActionSnapshotFieldProvider {
     override suspend fun additionalFields(): Set<String> {
         val mirror = electronicMirrorPreferences.snapshot()
-        val autoParkingFields = requiredRuntimeFeatureFields(
-            autoParkingSoundEnabled = autoParkingSoundSettings.enabled,
+        val runtimeFields = requiredRuntimeFeatureFields(
             electronicMirrorLinkageEnabled = mirror.enabled,
             streamingRearEnabled = mirror.streamingRearEnabled && mirror.streamingRearVisible,
         )
-        return repository.current().requiredVehicleFields + autoParkingFields
+        return repository.current().requiredVehicleFields + runtimeFields
     }
 }
 
 internal fun requiredRuntimeFeatureFields(
-    autoParkingSoundEnabled: Boolean,
     electronicMirrorLinkageEnabled: Boolean = false,
     streamingRearEnabled: Boolean = false,
 ): Set<String> = buildSet {
-    if (autoParkingSoundEnabled || electronicMirrorLinkageEnabled || streamingRearEnabled) {
+    if (electronicMirrorLinkageEnabled || streamingRearEnabled) {
         add("adasApaParkingStatus")
     }
     if (electronicMirrorLinkageEnabled) add("turnSignalFlash")
 }
 
 internal fun requiredAutomationVehicleFields(rules: List<RuleEntity>): Set<String> = buildSet {
-    rules.asSequence()
-        .flatMap { TriggerDef.listFromJson(it.triggers).asSequence() }
-        .filterNot { it.kind in NON_VEHICLE_TRIGGER_KINDS }
-        .forEach { trigger ->
-            PARAM_TO_VEHICLE_FIELDS[trigger.param.trim()].orEmpty().forEach(::add)
+    rules.forEach { rule ->
+        TriggerDef.listFromJson(rule.triggers).forEach { trigger ->
+            val fields = TRIGGER_KIND_TO_VEHICLE_FIELDS[trigger.kind]
+                ?: if (trigger.kind in NON_VEHICLE_TRIGGER_KINDS) {
+                    emptySet()
+                } else {
+                    PARAM_TO_VEHICLE_FIELDS[trigger.param.trim()].orEmpty()
+                }
+            fields.forEach(::add)
         }
+        sequenceOf(rule.actions, rule.exitActions)
+            .flatMap { ActionDef.listFromJson(it).asSequence() }
+            .forEach { action ->
+                ACTION_KIND_TO_VEHICLE_FIELDS[action.kind].orEmpty().forEach(::add)
+            }
+    }
 }
+
+private val TRIGGER_KIND_TO_VEHICLE_FIELDS = mapOf(
+    "board_vehicle" to setOf("doorFL", "seatbeltFL"),
+)
+
+private val ACTION_KIND_TO_VEHICLE_FIELDS = mapOf(
+    "outside_sound" to setOf("adasApaParkingStatus"),
+)
 
 private val NON_VEHICLE_TRIGGER_KINDS = setOf(
     "place_enter",

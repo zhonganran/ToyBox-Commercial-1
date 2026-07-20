@@ -1294,7 +1294,6 @@ def settings():
     {csrf}
     <label class="setting-card"><span>试用天数</span><input name="license_trial_days" type="number" min="0" max="30" value="{h(cfg.get("license_trial_days", "7"))}"><small>未激活用户的全功能试用期</small></label>
     <div class="setting-card"><span>离线授权私钥</span>{offline_key_badge}<small>{h(offline_key_detail)}</small></div>
-    <label class="setting-card toggle"><input name="feature_auto_parking_sound" type="checkbox" {checked("feature_auto_parking_sound")}><span>自动泊车音效</span><small>激活/试用期内可用</small></label>
     <label class="setting-card toggle"><input name="feature_automation_unlimited" type="checkbox" {checked("feature_automation_unlimited")}><span>自动化高级功能</span><small>超过免费规则数后需要授权</small></label>
     <label class="setting-card toggle"><input name="feature_cluster_projection" type="checkbox" {checked("feature_cluster_projection")}><span>按键映射到仪表盘</span><small>授权功能开关</small></label>
     <label class="setting-card toggle"><input name="sound_library_enabled" type="checkbox" {checked("sound_library_enabled")}><span>在线音效库</span><small>控制客户端在线资源入口</small></label>
@@ -1322,7 +1321,6 @@ def save_config():
     with db() as conn:
         config_set(conn, "license_trial_days", str(trial_days))
         for key in (
-            "feature_auto_parking_sound",
             "feature_automation_unlimited",
             "feature_cluster_projection",
             "sound_library_enabled",
@@ -1452,7 +1450,6 @@ def api_config():
             "success": True,
             "trialDays": int(values.get("license_trial_days") or DEFAULT_TRIAL_DAYS),
             "features": {
-                "autoParkingSound": values.get("feature_auto_parking_sound") == "1",
                 "automationUnlimited": values.get("feature_automation_unlimited") == "1",
                 "clusterProjection": values.get("feature_cluster_projection") == "1",
                 "soundLibrary": values.get("sound_library_enabled") == "1",

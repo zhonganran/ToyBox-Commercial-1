@@ -440,7 +440,7 @@ private val SettingsCategory.subtitle: String
         SettingsCategory.Xiaozhi -> "官网登录与激活、服务器配置和车内语音对话"
         SettingsCategory.ElectronicMirror -> "转向显示侧后方画面，支持仪表盘和中控屏"
         SettingsCategory.Led -> "蓝牙屏幕、车辆事件联动和内置画面测试"
-        SettingsCategory.EventSound -> "锁车、解锁、哨兵、自动泊车的后台车外音效"
+        SettingsCategory.EventSound -> "锁车、解锁和哨兵的后台车外音效"
         SettingsCategory.Data -> "界面主题、行程轨迹、备份恢复、更新和关于"
     }
 
@@ -454,8 +454,7 @@ private fun SettingsCategory.status(state: SettingsUiState): String =
         SettingsCategory.ElectronicMirror -> "仪表 / 中控"
         SettingsCategory.Led -> "设备联动"
         SettingsCategory.EventSound -> {
-            val count = LockSoundEvent.entries.count { state.lockSound.enabled(it) } +
-                if (state.autoParkingSoundEnabled) 1 else 0
+            val count = LockSoundEvent.entries.count { state.lockSound.enabled(it) }
             if (count > 0) "${count} 项开启" else "未开启"
         }
         SettingsCategory.Data -> when (state.themeMode) {

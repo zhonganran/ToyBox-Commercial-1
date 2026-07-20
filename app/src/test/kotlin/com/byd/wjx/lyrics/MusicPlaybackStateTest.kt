@@ -82,6 +82,8 @@ class MusicPlaybackStateTest {
     fun hasSong_ignoresPlayerPlaceholderTitle() {
         assertFalse(MusicPlaybackSnapshot(title = "无歌曲", artist = "无艺术家", playing = true).hasSong)
         assertFalse(MusicPlaybackSnapshot(title = "Unknown Title", playing = true).hasSong)
+        assertFalse(MusicPlaybackSnapshot(title = "音乐 正在播放", playing = true).hasSong)
+        assertFalse(MusicPlaybackSnapshot(title = "“音乐”正在运行", playing = true).hasSong)
     }
 
     @Test

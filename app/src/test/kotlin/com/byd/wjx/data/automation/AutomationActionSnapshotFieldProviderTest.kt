@@ -1,6 +1,7 @@
 package com.byd.wjx.data.automation
 
 import com.byd.wjx.data.local.entity.RuleEntity
+import com.byd.wjx.data.local.entity.ActionDef
 import com.byd.wjx.data.local.entity.TriggerDef
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -9,9 +10,12 @@ import org.junit.Test
 
 class AutomationActionSnapshotFieldProviderTest {
     @Test
-    fun `auto parking status is read only while its sound feature is enabled`() {
-        assertTrue(requiredRuntimeFeatureFields(false).isEmpty())
-        assertEquals(setOf("adasApaParkingStatus"), requiredRuntimeFeatureFields(true))
+    fun `runtime features do not request auto parking status when disabled`() {
+        assertTrue(requiredRuntimeFeatureFields().isEmpty())
+        assertEquals(
+            setOf("adasApaParkingStatus"),
+            requiredRuntimeFeatureFields(streamingRearEnabled = true),
+        )
     }
 
     @Test
@@ -19,7 +23,6 @@ class AutomationActionSnapshotFieldProviderTest {
         assertEquals(
             setOf("turnSignalFlash", "adasApaParkingStatus"),
             requiredRuntimeFeatureFields(
-                autoParkingSoundEnabled = false,
                 electronicMirrorLinkageEnabled = true,
             ),
         )
@@ -30,7 +33,6 @@ class AutomationActionSnapshotFieldProviderTest {
         assertEquals(
             setOf("adasApaParkingStatus"),
             requiredRuntimeFeatureFields(
-                autoParkingSoundEnabled = false,
                 streamingRearEnabled = true,
             ),
         )
@@ -63,6 +65,33 @@ class AutomationActionSnapshotFieldProviderTest {
 
         assertTrue(fields.isEmpty())
         assertFalse("speed" in fields)
+    }
+
+    @Test
+    fun `boarding trigger requests door and seatbelt fields`() {
+        val fields = requiredAutomationVehicleFields(
+            listOf(
+                rule(
+                    TriggerDef("", "上车", "", "", "上车开门", kind = "board_vehicle"),
+                ),
+            ),
+        )
+
+        assertEquals(setOf("doorFL", "seatbeltFL"), fields)
+    }
+
+    @Test
+    fun `outside sound action requests auto parking safety field`() {
+        val fields = requiredAutomationVehicleFields(
+            listOf(
+                rule(
+                    TriggerDef("Speed", "车速", "==", "0", "车速"),
+                    actions = listOf(ActionDef("outside_sound", "车外音效", "outside_sound")),
+                ),
+            ),
+        )
+
+        assertEquals(setOf("speed", "adasApaParkingStatus"), fields)
     }
 
     @Test
@@ -159,10 +188,13 @@ class AutomationActionSnapshotFieldProviderTest {
         )
     }
 
-    private fun rule(vararg triggers: TriggerDef) = RuleEntity(
+    private fun rule(
+        vararg triggers: TriggerDef,
+        actions: List<ActionDef> = emptyList(),
+    ) = RuleEntity(
         id = 1,
         name = "test",
         triggers = TriggerDef.listToJson(triggers.toList()),
-        actions = "[]",
+        actions = ActionDef.listToJson(actions),
     )
 }

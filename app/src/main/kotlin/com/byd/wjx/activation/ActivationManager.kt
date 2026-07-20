@@ -29,7 +29,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 enum class PremiumFeature {
-    AUTO_PARKING_SOUND,
     VEHICLE_EVENT_SOUNDS,
     AUTOMATION_UNLIMITED,
     CLUSTER_PROJECTION,
@@ -204,7 +203,6 @@ class ActivationManager @Inject constructor(
     fun canUse(feature: PremiumFeature): Boolean {
         val snapshot = currentSnapshot()
         return when (feature) {
-            PremiumFeature.AUTO_PARKING_SOUND,
             PremiumFeature.VEHICLE_EVENT_SOUNDS,
             PremiumFeature.AUTOMATION_UNLIMITED,
             PremiumFeature.CLUSTER_PROJECTION,

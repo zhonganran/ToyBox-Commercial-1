@@ -47,8 +47,6 @@ data class SettingsUiState(
     val lockSoundChoices: List<LockSoundChoice> = emptyList(),
     val lockSoundSyncing: Boolean = false,
     val lockSoundStatus: String? = null,
-    val autoParkingSoundEnabled: Boolean = false,
-    val autoParkingSoundPath: String = "",
     val carProfile: CarProfile? = null,
 )
 

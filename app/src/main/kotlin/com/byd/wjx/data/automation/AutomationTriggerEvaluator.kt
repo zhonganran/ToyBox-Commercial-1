@@ -12,6 +12,15 @@ import org.json.JSONObject
 internal class AutomationTriggerEvaluator {
     private val lastIntervalPulseAt = ConcurrentHashMap<String, Long>()
 
+    private companion object {
+        val EVENT_TRIGGER_KINDS = setOf(
+            "service_start",
+            "network_available",
+            "interval",
+            "board_vehicle",
+        )
+    }
+
     fun retainRules(activeRuleIds: Set<Long>) {
         lastIntervalPulseAt.keys.removeAll { key ->
             key.substringBefore(':').toLongOrNull() !in activeRuleIds
@@ -31,7 +40,7 @@ internal class AutomationTriggerEvaluator {
         boardVehicleEdge: Boolean,
         now: Long,
         allowIntervalPulse: Boolean,
-    ): List<Boolean> = triggers.mapIndexed { index, trigger ->
+    ): List<Boolean?> = triggers.mapIndexed { index, trigger ->
         when (trigger.kind) {
             "place_enter" -> evaluatePlace(trigger, location, places, enterKind = true)
             "place_exit" -> evaluatePlace(trigger, location, places, enterKind = false)
@@ -42,7 +51,7 @@ internal class AutomationTriggerEvaluator {
             "network_available" -> networkAvailableEdge
             "board_vehicle" -> boardVehicleEdge
             else -> { // "param" (default)
-                val actual = getParamValue(data, trigger.param) ?: return@mapIndexed false
+                val actual = getParamValue(data, trigger.param) ?: return@mapIndexed null
                 val expected = trigger.value.toDoubleOrNull() ?: return@mapIndexed false
                 compare(actual, trigger.operator, expected)
             }
@@ -65,9 +74,17 @@ internal class AutomationTriggerEvaluator {
         return true
     }
 
-    fun combineByLogic(results: List<Boolean>, logic: String): Boolean = when (logic) {
-        "OR" -> results.any { it }
-        else -> results.all { it }
+    fun combineByLogic(results: List<Boolean?>, logic: String): Boolean? = when (logic) {
+        "OR" -> when {
+            results.any { it == true } -> true
+            results.all { it == false } -> false
+            else -> null
+        }
+        else -> when {
+            results.any { it == false } -> false
+            results.all { it == true } -> true
+            else -> null
+        }
     }
 
     /**
@@ -80,18 +97,34 @@ internal class AutomationTriggerEvaluator {
      */
     fun matchedViaEventTrigger(
         triggers: List<TriggerDef>,
-        perTrigger: List<Boolean>,
+        perTrigger: List<Boolean?>,
         logic: String
     ): Boolean {
-        val eventKinds = setOf("service_start", "network_available", "interval", "board_vehicle")
         return when (logic) {
             // OR: at least one event-trigger must be true on its own.
-            "OR" -> triggers.zip(perTrigger).any { (t, r) -> r && t.kind in eventKinds }
+            "OR" -> triggers.zip(perTrigger).any {
+                (trigger, result) -> result == true && trigger.kind in EVENT_TRIGGER_KINDS
+            }
             // AND: every trigger must be true; if at least one of them is an
             // event, the whole composition fires only when that event was true,
             // so the rule is event-driven.
-            else -> triggers.any { it.kind in eventKinds } && perTrigger.all { it }
+            else -> triggers.any { it.kind in EVENT_TRIGGER_KINDS } && perTrigger.all { it == true }
         }
+    }
+
+    fun persistentMatch(
+        triggers: List<TriggerDef>,
+        perTrigger: List<Boolean?>,
+        logic: String,
+    ): Boolean? {
+        if (triggers.none { it.kind in EVENT_TRIGGER_KINDS }) {
+            return combineByLogic(perTrigger, logic)
+        }
+        if (logic != "OR") return false
+        val persistentResults = triggers.zip(perTrigger)
+            .filterNot { (trigger, _) -> trigger.kind in EVENT_TRIGGER_KINDS }
+            .map { (_, result) -> result }
+        return if (persistentResults.isEmpty()) false else combineByLogic(persistentResults, "OR")
     }
 
     private fun evaluatePlace(
@@ -99,8 +132,8 @@ internal class AutomationTriggerEvaluator {
         location: Location?,
         places: Map<Long, PlaceEntity>,
         enterKind: Boolean
-    ): Boolean {
-        if (location == null) return false
+    ): Boolean? {
+        if (location == null) return null
         val placeId = trigger.placeId ?: return false
         val place = places[placeId] ?: return false
         val inside = PlaceGeometry.isInside(
@@ -110,8 +143,8 @@ internal class AutomationTriggerEvaluator {
         return if (enterKind) inside else !inside
     }
 
-    private fun evaluateTimeOfDay(trigger: TriggerDef, location: Location?): Boolean {
-        val loc = location ?: return false
+    private fun evaluateTimeOfDay(trigger: TriggerDef, location: Location?): Boolean? {
+        val loc = location ?: return null
         val phase = SunTimeCalculator.currentPhase(loc)
         val target = trigger.value.uppercase()
         return phase.name == target

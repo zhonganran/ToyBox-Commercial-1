@@ -104,12 +104,6 @@ internal fun VehicleEventSoundSection(state: SettingsUiState, viewModel: Setting
                 onSoundSelected = { viewModel.setLockSoundPath(LockSoundEvent.Sentry, it.path) },
                 onSoundDeleted = viewModel::deleteEventSound,
             )
-            AutoParkingSoundEventRow(
-                state = state,
-                onEnabledChanged = viewModel::setAutoParkingSoundEnabled,
-                onSoundSelected = { viewModel.setAutoParkingSoundPath(it.path) },
-                onSoundDeleted = viewModel::deleteEventSound,
-            )
             state.lockSoundStatus?.let {
                 Text(
                     text = if (state.lockSoundSyncing) "同步中…" else it,
@@ -119,68 +113,6 @@ internal fun VehicleEventSoundSection(state: SettingsUiState, viewModel: Setting
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun AutoParkingSoundEventRow(
-    state: SettingsUiState,
-    onEnabledChanged: (Boolean) -> Unit,
-    onSoundSelected: (LockSoundChoice) -> Unit,
-    onSoundDeleted: (String) -> Unit,
-) {
-    var picking by remember { mutableStateOf(false) }
-    val selectedPath = state.autoParkingSoundPath
-    val selected = state.lockSoundChoices.firstOrNull { it.path == selectedPath }
-    val premiumAllowed = state.activation.activated || state.activation.trialActive
-
-    if (picking) {
-        LockSoundPickerDialog(
-            title = "自动泊车音效",
-            choices = state.lockSoundChoices,
-            selectedPath = selectedPath,
-            onDismiss = { picking = false },
-            onSelect = {
-                picking = false
-                onSoundSelected(it)
-            },
-            onDelete = onSoundDeleted,
-        )
-    }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(CardSurface.copy(alpha = 0.78f), RoundedCornerShape(12.dp))
-            .clickable(enabled = premiumAllowed) { picking = true }
-            .padding(horizontal = 12.dp, vertical = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
-            Text("自动泊车音效", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
-            Text("泊车执行中循环车外播放，泊车结束后停止", color = TextSecondary, fontSize = 12.sp, lineHeight = 16.sp)
-            Text(
-                if (!premiumAllowed) "需激活后使用"
-                else selected?.let { "已选择：${it.name}" } ?: if (selectedPath.isBlank()) "未选择音效" else "文件不存在：${File(selectedPath).name}",
-                color = if (!premiumAllowed) SocRed else if (selected != null) AccentBlue else TextMuted,
-                fontSize = 11.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        TextButton(onClick = { picking = true }, enabled = premiumAllowed) {
-            Text("选择", color = AccentGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        }
-        Switch(
-            checked = state.autoParkingSoundEnabled,
-            onCheckedChange = onEnabledChanged,
-            enabled = premiumAllowed,
-            colors = bydSwitchColors(),
-        )
     }
 }
 
@@ -266,7 +198,7 @@ private fun LockSoundPickerDialog(
             title = { Text("删除音效", color = TextPrimary) },
             text = {
                 Text(
-                    "确定永久删除“${choice.name}”吗？如果解锁、锁车、哨兵、自动泊车或智能联动正在使用它，对应功能可能停止播放。",
+                    "确定永久删除“${choice.name}”吗？如果解锁、锁车、哨兵或智能联动正在使用它，对应功能可能停止播放。",
                     color = TextSecondary,
                     fontSize = 13.sp,
                     lineHeight = 18.sp,

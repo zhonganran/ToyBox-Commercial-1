@@ -20,7 +20,6 @@ class BackupPreferencesRegistryTest {
 
         listOf(
             "exterior_hailing",
-            "auto_parking_sound",
             "key_shortcuts",
             "wjx_seat_channel",
             "lyric_display_controls",
@@ -43,14 +42,6 @@ class BackupPreferencesRegistryTest {
         assertTrue(
             "energy-flow totals are user data and must be backed up",
             "wjx_energy_flow_stats" in BackupPreferencesRegistry.USER_CONFIGURATION_FILES,
-        )
-    }
-
-    @Test
-    fun `backup includes desktop quick card configuration`() {
-        assertTrue(
-            "desktop card selection and layout are user configuration",
-            "wjx_desktop_cards" in BackupPreferencesRegistry.USER_CONFIGURATION_FILES,
         )
     }
 

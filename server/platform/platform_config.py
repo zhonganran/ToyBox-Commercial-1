@@ -44,7 +44,6 @@ TRUSTED_PROXY_COUNT = max(
 )
 DEFAULT_CONFIG = {
     "license_trial_days": str(DEFAULT_TRIAL_DAYS),
-    "feature_auto_parking_sound": "1",
     "feature_automation_unlimited": "1",
     "feature_cluster_projection": "1",
     "sound_library_enabled": "1",
@@ -56,7 +55,6 @@ SERVICE_QR_TYPES = {
     "payment": ("付款二维码", "请先联系客服确认后再付款", "付款后发送截图和车架号，用于开通授权"),
 }
 OFFLINE_LICENSE_FEATURES = [
-    "AUTO_PARKING_SOUND",
     "VEHICLE_EVENT_SOUNDS",
     "AUTOMATION_UNLIMITED",
     "CLUSTER_PROJECTION",

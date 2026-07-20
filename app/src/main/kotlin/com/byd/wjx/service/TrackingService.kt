@@ -12,7 +12,6 @@ import com.byd.wjx.data.repository.VehicleStateRepository
 import com.byd.wjx.domain.calculator.DrivingMetricsCoordinator
 import com.byd.wjx.domain.tracker.DriveSessionCoordinator
 import com.byd.wjx.domain.tracker.TripTracker
-import com.byd.wjx.desktopcard.DesktopQuickCardRuntime
 import com.byd.wjx.electronicmirror.ElectronicMirrorCoordinator
 import com.byd.wjx.log.WjxFileLogger
 import com.byd.wjx.service.runtime.CameraRuntimeCoordinator
@@ -41,7 +40,6 @@ class TrackingService : Service() {
     @Inject lateinit var sharedAdaptiveLoop: com.byd.wjx.data.loop.SharedAdaptiveLoop
     @Inject lateinit var tripRecorder: com.byd.wjx.data.trips.TripRecorder
     @Inject lateinit var helperBootstrap: com.byd.wjx.data.vehicle.HelperBootstrap
-    @Inject lateinit var autoParkingSoundController: com.byd.wjx.audio.AutoParkingSoundController
     @Inject lateinit var lyricRuntime: com.byd.wjx.lyrics.LyricRuntime
     @Inject lateinit var trackingStateStore: TrackingStateStore
     @Inject lateinit var vehicleStateRepository: VehicleStateRepository
@@ -55,7 +53,6 @@ class TrackingService : Service() {
     @Inject lateinit var notificationController: TrackingNotificationController
     @Inject lateinit var ledRuntimeCoordinator: com.byd.wjx.led.LedRuntimeCoordinator
     @Inject lateinit var electronicMirrorCoordinator: ElectronicMirrorCoordinator
-    @Inject lateinit var desktopQuickCardRuntime: DesktopQuickCardRuntime
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val helperReadiness = CompletableDeferred<Boolean>()
@@ -132,7 +129,6 @@ class TrackingService : Service() {
         networkAvailableMonitor.start()
         startPolling()
         cameraRuntimeCoordinator.start(serviceScope)
-        desktopQuickCardRuntime.start(serviceScope, cameraRuntimeCoordinator.active)
         electronicMirrorCoordinator.start(cameraRuntimeCoordinator.active)
         lyricRuntime.start(cameraRuntimeCoordinator.active, electronicMirrorCoordinator.active)
         ledRuntimeCoordinator.start(serviceScope)
@@ -183,7 +179,6 @@ class TrackingService : Service() {
 
         lyricRuntime.stop()
         electronicMirrorCoordinator.stop()
-        desktopQuickCardRuntime.stop()
         ledRuntimeCoordinator.stop()
         cameraRuntimeCoordinator.stop()
         steeringWheelRuntimeCoordinator.stop()
@@ -278,18 +273,6 @@ class TrackingService : Service() {
                     runCatching { electronicMirrorCoordinator.onVehicleData(data) }
                         .onFailure {
                             WjxFileLogger.e(TAG, "Electronic mirror tick failed: ${it.message}", it)
-                        }
-                }
-            }
-
-            // A dedicated sequential collector prevents a slow activation/audio operation from
-            // spawning overlapping jobs every 300 ms. SharedFlow keeps the latest sample while
-            // this consumer is busy, so parking state still catches up immediately afterward.
-            launch {
-                sharedAdaptiveLoop.actionFlow.collect { data ->
-                    runCatching { autoParkingSoundController.onVehicleData(data) }
-                        .onFailure {
-                            WjxFileLogger.e(TAG, "Auto parking sound tick failed: ${it.message}", it)
                         }
                 }
             }

@@ -42,6 +42,16 @@ internal fun resolveNotificationPlaybackAnchor(
     return NotificationPlaybackAnchor(positionMs = 0L, anchorElapsedMs = nowElapsedMs)
 }
 
+internal fun shouldAcceptNotificationIdentity(
+    previous: MusicPlaybackSnapshot,
+    packageName: String,
+    title: String,
+    artist: String,
+): Boolean {
+    if (!previous.hasSong || !previous.playing || previous.packageName != packageName) return true
+    return MusicIdentity.isSameSong(previous.title, previous.artist, title, artist)
+}
+
 class MusicNotificationListenerService : NotificationListenerService() {
     private val handler = Handler(Looper.getMainLooper())
     private val controllers = linkedMapOf<String, MediaController>()
@@ -90,11 +100,16 @@ class MusicNotificationListenerService : NotificationListenerService() {
         if (!SupportedMusicPackages.names.contains(sbn.packageName)) return
         val extras = sbn.notification?.extras ?: return
         val title = extras.getString("android.title").orEmpty().trim()
-        if (title.isBlank()) return
+        if (!MusicIdentity.hasUsableTitle(title)) return
         val artist = extras.getCharSequence("android.text")?.toString().orEmpty().trim()
         val controller = controllers[sbn.packageName]
-        val state = controller?.playbackState
+        controller?.let { snapshotFromController(it) }?.let {
+            MusicPlaybackStore.publish(it)
+            return
+        }
         val previous = MusicPlaybackStore.state.value
+        if (!shouldAcceptNotificationIdentity(previous, sbn.packageName, title, artist)) return
+        val state = controller?.playbackState
         val sameSong = previous.packageName == sbn.packageName &&
             MusicIdentity.isSameSong(previous.title, previous.artist, title, artist)
         val nowElapsedMs = SystemClock.elapsedRealtime()

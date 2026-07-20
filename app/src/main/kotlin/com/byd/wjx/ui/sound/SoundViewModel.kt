@@ -13,7 +13,6 @@ import android.provider.OpenableColumns
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.byd.wjx.audio.AutoParkingSoundSettings
 import com.byd.wjx.audio.ExteriorChannelMode
 import com.byd.wjx.audio.ExteriorHailingSettings
 import com.byd.wjx.audio.LockSoundConfigSync
@@ -80,7 +79,6 @@ class SoundViewModel @Inject constructor(
     private val remoteRepository: SoundLibraryRemoteRepository,
     private val downloadStore: SoundDownloadStore,
     private val lockSoundConfigSync: LockSoundConfigSync,
-    private val autoParkingSettings: AutoParkingSoundSettings,
     private val profileDetector: CarProfileDetector = CarProfileDetector(),
 ) : ViewModel() {
     private val hailingSettings = ExteriorHailingSettings(appContext)
@@ -571,7 +569,6 @@ class SoundViewModel @Inject constructor(
             val deleted = soundLibrary.deleteSound(soundPath)
             if (deleted) {
                 downloadStore.removeByFileName(sound.file.name)
-                autoParkingSettings.clearIfPath(soundPath)
                 lockSoundSettings.clearIfPath(soundPath)
             }
             _uiState.update {

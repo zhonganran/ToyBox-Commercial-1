@@ -28,6 +28,9 @@ interface RuleDao {
     @Query("SELECT * FROM automation_rules WHERE id = :id")
     suspend fun getById(id: Long): RuleEntity?
 
+    @Query("SELECT * FROM automation_rules WHERE name = :name LIMIT 1")
+    suspend fun getByName(name: String): RuleEntity?
+
     @Query("UPDATE automation_rules SET last_triggered_at = :ts, trigger_count = trigger_count + 1 WHERE id = :id")
     suspend fun updateLastTriggered(id: Long, ts: Long)
 

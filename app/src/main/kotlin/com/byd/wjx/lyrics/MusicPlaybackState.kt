@@ -79,7 +79,17 @@ enum class MusicPlaybackSource {
 object MusicIdentity {
     private val ARTIST_SPLIT = Regex("[,，、/／&＆;；]|\\s+feat\\.?\\s+|\\s+ft\\.?\\s+|\\s+and\\s+", RegexOption.IGNORE_CASE)
     private val WHITESPACE = Regex("\\s+")
-    private val PLACEHOLDER_TITLES = setOf("无歌曲", "无标题", "未知歌曲", "unknown", "unknown title")
+    private val PLACEHOLDER_TITLES = setOf(
+        "无歌曲",
+        "无标题",
+        "未知歌曲",
+        "音乐 正在播放",
+        "音乐正在播放",
+        "“音乐”正在运行",
+        "\"音乐\"正在运行",
+        "unknown",
+        "unknown title",
+    )
 
     fun songKey(title: String, artist: String): String =
         listOf(normalizeTitle(title), splitArtists(artist).firstOrNull().orEmpty()).joinToString("\u0000")

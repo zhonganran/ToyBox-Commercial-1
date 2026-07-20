@@ -12,14 +12,12 @@ object ExteriorRoutePlan {
         when (channel) {
             ExteriorChannel.Channel1 -> listOf(
                 ExteriorRouteWrite(DEV_AUDIO, LOCK_CAR_SOUND_PLAYBACK_STATUS_SET, LOCK_CAR_SOUND_PLAYBACK_ON),
-                ExteriorRouteWrite(DEV_AUDIO_COMPAT, LOCK_CAR_SOUND_PLAYBACK_STATUS_SET_COMPAT, 1),
                 ExteriorRouteWrite(DEV_AUDIO, EXTERIOR_SWITCH_SET, SWITCH_ON),
                 ExteriorRouteWrite(DEV_AUDIO, AVAS_ROUTE_SET, AVAS_ROUTE_ON),
                 ExteriorRouteWrite(DEV_AUDIO, AUDIO_KARAOKE_MODE_SET, KARAOKE_MODE_EXTERIOR),
             )
             ExteriorChannel.Channel0 -> listOf(
                 ExteriorRouteWrite(DEV_ADAS, ADAS_UE_BROADCAST_POSITION_SET, ADAS_BROADCAST_POSITION_ON),
-                ExteriorRouteWrite(DEV_ADAS_COMPAT, ADAS_UE_BROADCAST_POSITION_SET_COMPAT, 1),
             )
         }
 
@@ -27,13 +25,11 @@ object ExteriorRoutePlan {
         when (channel) {
             ExteriorChannel.Channel1 -> listOf(
                 ExteriorRouteWrite(DEV_AUDIO, LOCK_CAR_SOUND_PLAYBACK_STATUS_SET, LOCK_CAR_SOUND_PLAYBACK_OFF),
-                ExteriorRouteWrite(DEV_AUDIO_COMPAT, LOCK_CAR_SOUND_PLAYBACK_STATUS_SET_COMPAT, 0),
                 ExteriorRouteWrite(DEV_AUDIO, EXTERIOR_SWITCH_SET, SWITCH_OFF),
                 ExteriorRouteWrite(DEV_AUDIO, AVAS_ROUTE_SET, AVAS_ROUTE_OFF),
             )
             ExteriorChannel.Channel0 -> listOf(
                 ExteriorRouteWrite(DEV_ADAS, ADAS_UE_BROADCAST_POSITION_SET, ADAS_BROADCAST_POSITION_OFF),
-                ExteriorRouteWrite(DEV_ADAS_COMPAT, ADAS_UE_BROADCAST_POSITION_SET_COMPAT, 0),
             )
         }
 
@@ -52,20 +48,18 @@ object ExteriorRoutePlan {
                     writeResults[writes[0]] == true
 
             ExteriorChannel.Channel1 -> {
-                val lockRouteOk = writeResults[writes[0]] == true || writeResults[writes[1]] == true || lockStateOk
+                val lockRouteOk = writeResults[writes[0]] == true || lockStateOk
                 lockRouteOk &&
                     focusOk &&
+                    writeResults[writes[1]] == true &&
                     writeResults[writes[2]] == true &&
-                    writeResults[writes[3]] == true &&
-                    writeResults[writes[4]] == true
+                    writeResults[writes[3]] == true
             }
         }
     }
 
     private const val DEV_AUDIO = 1000
     private const val DEV_ADAS = 3
-    private const val DEV_AUDIO_COMPAT = 1002
-    private const val DEV_ADAS_COMPAT = 1000
     private const val EXTERIOR_SWITCH_SET = 891293750
     private const val AVAS_ROUTE_SET = 891293760
     private const val AUDIO_KARAOKE_MODE_SET = 372244513
@@ -80,6 +74,4 @@ object ExteriorRoutePlan {
     private const val ADAS_UE_BROADCAST_POSITION_SET = -1442839934
     private const val ADAS_BROADCAST_POSITION_ON = 1
     private const val ADAS_BROADCAST_POSITION_OFF = 0
-    private const val LOCK_CAR_SOUND_PLAYBACK_STATUS_SET_COMPAT = -1442839775
-    private const val ADAS_UE_BROADCAST_POSITION_SET_COMPAT = -1796699511
 }

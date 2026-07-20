@@ -221,7 +221,10 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
         statusOk(HelperBinderProtocol.TX_SET_TASK_WINDOWING_MODE) { it.writeInt(taskId); it.writeInt(windowingMode) }
 
     override suspend fun grantOverlayPermission(): Boolean =
-        statusOk(HelperBinderProtocol.TX_GRANT_OVERLAY_PERMISSION) { }
+        statusOk(
+            HelperBinderProtocol.TX_GRANT_OVERLAY_PERMISSION,
+            timeoutMs = PERMISSION_GRANT_TIMEOUT_MS,
+        ) { }
 
     override suspend fun launchAndForce(packageName: String, displayId: Int, width: Int, height: Int): Boolean =
         transactParsed(HelperBinderProtocol.TX_LAUNCH_AND_FORCE, { d ->
@@ -407,9 +410,7 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
         internal fun readAccepted(status: Int): Boolean = status == 0
         private fun isExteriorAudioWrite(dev: Int, fid: Int): Boolean =
             (dev == 3 && fid == -1442839934) ||
-                (dev == 1000 && fid == -1796699511) ||
                 (dev == 1000 && fid == 13) ||
-                (dev == 1002 && fid == -1442839775) ||
                 (dev == 1000 && fid == 891293750) ||
                 (dev == 1000 && fid == 891293760) ||
                 (dev == 1000 && fid == 372244513)
@@ -421,6 +422,7 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
 
         private const val TAG = "HelperClient"
         private const val REQ_TIMEOUT_MS = 2000L
+        private const val PERMISSION_GRANT_TIMEOUT_MS = 5000L
         private const val BATCH_TIMEOUT_BASE_MS = 3000L
         private const val BATCH_TIMEOUT_PER_READ_MS = 50L
         private const val BATCH_TIMEOUT_MAX_MS = 15000L

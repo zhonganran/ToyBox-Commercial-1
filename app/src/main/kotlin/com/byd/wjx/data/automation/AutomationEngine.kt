@@ -63,13 +63,15 @@ class AutomationEngine @Inject constructor(
         const val SERVICE_START_WINDOW_MS = 30_000L
         internal const val STATE_STABLE_SAMPLE_COUNT = 2
         internal const val LOCATION_MAX_AGE_MS = 120_000L
+        private const val STALE_LOCATION_LOG_INTERVAL_MS = 60_000L
+        private const val AUTO_PARKING_ACTIVE_VALUE = 4.0
         private const val MAX_AUTOMATION_RULES = 50
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val pendingConfirmations = ConcurrentHashMap<Int, PendingAction>()
     // Edge triggering: only fire when condition transitions from false→true.
-    // triggersHash detects rule edits, so a saved edit reseeds instead of
+    // triggersHash covers trigger and action definitions, so a saved edit reseeds instead of
     // comparing the new condition against state of the OLD one — which fired
     // rules right at save time (issue #51).
     private data class EvalState(
@@ -96,6 +98,8 @@ class AutomationEngine @Inject constructor(
     private val lastSeenNetworkAvailableAt = ConcurrentHashMap<Long, Long>()
     private val lastEnteredAtByRule = ConcurrentHashMap<Long, Long>()
     private val lastExitedAtByRule = ConcurrentHashMap<Long, Long>()
+    private var lastStaleLocationLogAtMs = 0L
+    private var lastStaleLocationTimeMs = Long.MIN_VALUE
     private val triggerEvaluator = AutomationTriggerEvaluator()
     private val boardVehicleDetector = BoardVehicleDetector()
     internal var nowProvider: () -> Long = System::currentTimeMillis
@@ -112,7 +116,8 @@ class AutomationEngine @Inject constructor(
         val actions: List<ActionDef>,
         val snapshot: String,
         val createdAt: Long,
-        val notifId: Int
+        val notifId: Int,
+        val phase: String,
     )
 
     init {
@@ -174,6 +179,13 @@ class AutomationEngine @Inject constructor(
             try {
                 val triggers = TriggerDef.listFromJson(rule.triggers)
                 if (triggers.isEmpty()) continue
+                val triggersHash = (
+                    rule.triggers + rule.triggerLogic + rule.actions + rule.exitActions
+                ).hashCode()
+                val previous = lastEvalResults[rule.id]
+                if (previous != null && previous.triggersHash != triggersHash) {
+                    actionDispatcher.stopMediaOwnedByRule(rule.id)
+                }
 
                 // network_available is an event trigger (like service_start) — fire when
                 // VALIDATED internet edge happened that this rule has not consumed yet.
@@ -221,6 +233,12 @@ class AutomationEngine @Inject constructor(
                     allowIntervalPulse = allowIntervalPulse,
                 )
                 val rawMatched = triggerEvaluator.combineByLogic(perTrigger, rule.triggerLogic)
+                if (rawMatched == null) {
+                    // Missing FIDs or a stale/unavailable location mean "unknown", not false.
+                    // Preserve the last stable state so a telemetry gap cannot run exit actions
+                    // and then re-run enter actions when data recovers.
+                    continue
+                }
 
                 // Event-style triggers (service_start, network_available) bypass edge
                 // detection ONLY when the matched=true was driven by the event itself.
@@ -238,15 +256,22 @@ class AutomationEngine @Inject constructor(
                     perTrigger,
                     rule.triggerLogic,
                 )
-                val triggersHash = (rule.triggers + rule.triggerLogic).hashCode()
-                val previous = lastEvalResults[rule.id]
                 val transition = if (matchedViaEvent) {
+                    val persistentMatched = triggerEvaluator.persistentMatch(
+                        triggers,
+                        perTrigger,
+                        rule.triggerLogic,
+                    )
                     StableTransition(
-                        // Event pulses execute an enter phase but must not become the persisted
-                        // state of the rule; otherwise the next ordinary tick would look like an
-                        // exit and incorrectly run the otherwise branch.
-                        state = previous?.takeIf { it.triggersHash == triggersHash }
-                            ?: EvalState(triggersHash, false),
+                        // Event-only pulses remain stateless. For OR rules, retain any
+                        // simultaneously true non-event condition so it cannot produce a second
+                        // enter immediately after the event has already executed the same rule.
+                        state = when (persistentMatched) {
+                            true -> EvalState(triggersHash, true)
+                            false -> EvalState(triggersHash, false)
+                            null -> previous?.takeIf { it.triggersHash == triggersHash }
+                                ?: EvalState(triggersHash, false)
+                        },
                         entered = rawMatched,
                     )
                 } else {
@@ -264,8 +289,11 @@ class AutomationEngine @Inject constructor(
                 lastEvalResults[rule.id] = transition.state
 
                 if (transition.exited) {
-                    stopLoopingOutsideSounds(rule)
-                    stopTransientMedia(rule)
+                    stopPhaseMedia(
+                        ruleId = rule.id,
+                        actions = ActionDef.listFromJson(rule.actions),
+                        ownerPhase = "enter",
+                    )
                     val exitActions = ActionDef.listFromJson(rule.exitActions)
                     if (transition.edgeEligible && dispatchRulePhase(
                             rule = rule,
@@ -283,6 +311,13 @@ class AutomationEngine @Inject constructor(
                 val repeatDue = !matchedViaEvent && transition.state.matched &&
                     !transition.entered && rule.repeatIntervalSeconds >= 2 &&
                     now - effectiveLastEnterAt(rule) >= rule.repeatIntervalSeconds * 1000L
+                if (transition.entered && previous != null) {
+                    stopPhaseMedia(
+                        ruleId = rule.id,
+                        actions = ActionDef.listFromJson(rule.exitActions),
+                        ownerPhase = "exit",
+                    )
+                }
                 if ((transition.entered && transition.edgeEligible) || repeatDue) {
                     val phase = if (repeatDue) "repeat" else "enter"
                     val actions = ActionDef.listFromJson(rule.actions)
@@ -369,9 +404,17 @@ class AutomationEngine @Inject constructor(
         location ?: return null
         val time = location.time
         if (time > 0L && now - time > LOCATION_MAX_AGE_MS) {
-            WjxFileLogger.i(TAG, "ignore stale automation location ageMs=${now - time}")
+            val shouldLog = time != lastStaleLocationTimeMs ||
+                lastStaleLocationLogAtMs == 0L ||
+                now - lastStaleLocationLogAtMs >= STALE_LOCATION_LOG_INTERVAL_MS
+            if (shouldLog) {
+                lastStaleLocationTimeMs = time
+                lastStaleLocationLogAtMs = now
+                WjxFileLogger.i(TAG, "ignore stale automation location ageMs=${now - time}")
+            }
             return null
         }
+        lastStaleLocationTimeMs = Long.MIN_VALUE
         return location
     }
 
@@ -430,7 +473,7 @@ class AutomationEngine @Inject constructor(
                 actionsSummary = actions.joinToString(", ") { it.displayName },
                 onConfirm = {
                     scope.launch {
-                        executeAndLog(rule, actions, snapshot, vehicleStateRepository.fullSnapshot.value?.data)
+                        executeConfirmed(rule, actions, snapshot, data, phase)
                     }
                 },
                 onCancel = {
@@ -448,9 +491,9 @@ class AutomationEngine @Inject constructor(
                     }
                 },
             )
-            if (!shown) showConfirmNotification(rule, actions, snapshot)
+            if (!shown) showConfirmNotification(rule, actions, snapshot, phase)
         } else {
-            scope.launch { executeAndLog(rule, actions, snapshot, data) }
+            scope.launch { executeAndLog(rule, actions, snapshot, data, phase) }
         }
         return true
     }
@@ -458,20 +501,60 @@ class AutomationEngine @Inject constructor(
 
     // --- Execution ---
 
+    private suspend fun executeConfirmed(
+        rule: RuleEntity,
+        actions: List<ActionDef>,
+        snapshot: String,
+        data: DiParsData?,
+        phase: String,
+    ) {
+        val currentRule = ruleDao.getById(rule.id)?.takeIf(RuleEntity::enabled)
+        if (currentRule == null || !sameExecutionDefinition(rule, currentRule)) {
+            ruleLogDao.insert(
+                RuleLogEntity(
+                    ruleId = rule.id,
+                    ruleName = rule.name,
+                    triggeredAt = System.currentTimeMillis(),
+                    triggersSnapshot = snapshot,
+                    actionsResult = """[{"result":"stale_confirmation","phase":"$phase"}]""",
+                    success = false,
+                ),
+            )
+            WjxFileLogger.i(TAG, "ignore stale confirmation rule='${rule.name}' phase=$phase")
+            return
+        }
+        executeAndLog(currentRule, actions, snapshot, data, phase)
+    }
+
+    private fun sameExecutionDefinition(before: RuleEntity, current: RuleEntity): Boolean =
+        before.triggerLogic == current.triggerLogic &&
+            before.triggers == current.triggers &&
+            before.actions == current.actions &&
+            before.exitActions == current.exitActions &&
+            before.cooldownSeconds == current.cooldownSeconds &&
+            before.repeatIntervalSeconds == current.repeatIntervalSeconds &&
+            before.requirePark == current.requirePark &&
+            before.confirmBeforeExecute == current.confirmBeforeExecute &&
+            before.fireOncePerTrip == current.fireOncePerTrip
+
     private suspend fun executeAndLog(
         rule: RuleEntity,
         actions: List<ActionDef>,
         snapshot: String,
-        data: DiParsData?
+        data: DiParsData?,
+        phase: String,
     ) {
         val results = JSONArray()
         var allSuccess = true
 
         for ((index, action) in actions.withIndex()) {
+            val liveData = vehicleStateRepository.actionSnapshot.value?.data
+                ?: data
+                ?: vehicleStateRepository.fullSnapshot.value?.data
             val result = actionDispatcher.dispatch(
-                action = action,
-                data = data,
-                owner = automationActionOwner(rule.id, index, action),
+                action = action.withAutoParkingSoundAllowance(rule),
+                data = liveData,
+                owner = automationActionOwner(rule.id, phase, index, action),
             )
             results.put(JSONObject().apply {
                 put("command", action.command)
@@ -496,33 +579,40 @@ class AutomationEngine @Inject constructor(
         WjxFileLogger.i(TAG, "Rule '${rule.name}' executed: success=$allSuccess results=$results")
     }
 
-    private fun stopLoopingOutsideSounds(rule: RuleEntity) {
-        val actions = ActionDef.listFromJson(rule.actions)
+    private fun stopPhaseMedia(
+        ruleId: Long,
+        actions: List<ActionDef>,
+        ownerPhase: String,
+    ) {
         actions.forEachIndexed { index, action ->
-            if (action.kind == "outside_sound" && action.outsideSoundLoop()) {
-                val owner = automationActionOwner(rule.id, index, action) ?: return@forEachIndexed
-                actionDispatcher.stopOutsideSound(owner)
-                WjxFileLogger.i(TAG, "stop looping outside sound: rule='${rule.name}' owner=$owner")
-                Log.i(TAG, "Stopped looping outside sound for rule='${rule.name}' owner=$owner")
-            }
-        }
-    }
-
-    private fun stopTransientMedia(rule: RuleEntity) {
-        val actions = ActionDef.listFromJson(rule.actions)
-        actions.forEachIndexed { index, action ->
-            val shouldStop = action.kind == "play_video" ||
+            val shouldStop = (action.kind == "outside_sound" && action.outsideSoundLoop()) ||
+                action.kind == "play_video" ||
                 (action.kind == "play_music" && action.automationMediaLoop())
             if (!shouldStop) return@forEachIndexed
-            val owner = automationActionOwner(rule.id, index, action) ?: return@forEachIndexed
-            actionDispatcher.stopTransientMedia(action.kind, owner)
-            WjxFileLogger.i(TAG, "stop transient media: rule='${rule.name}' kind=${action.kind} owner=$owner")
+            val owner = automationActionOwner(ruleId, ownerPhase, index, action)
+                ?: return@forEachIndexed
+            if (action.kind == "outside_sound") {
+                actionDispatcher.stopOutsideSound(owner)
+            } else {
+                actionDispatcher.stopTransientMedia(action.kind, owner)
+            }
+            WjxFileLogger.i(
+                TAG,
+                "stop phase media: ruleId=$ruleId phase=$ownerPhase kind=${action.kind} owner=$owner",
+            )
+            Log.i(TAG, "Stopped phase media ruleId=$ruleId phase=$ownerPhase owner=$owner")
         }
     }
 
-    private fun automationActionOwner(ruleId: Long, index: Int, action: ActionDef): String? =
+    private fun automationActionOwner(
+        ruleId: Long,
+        phase: String,
+        index: Int,
+        action: ActionDef,
+    ): String? =
         if (action.kind in setOf("outside_sound", "play_music", "play_video")) {
-            "automation:$ruleId:$index"
+            val ownerPhase = if (phase == "exit") "exit" else "enter"
+            "automation:$ruleId:$ownerPhase:$index"
         } else {
             null
         }
@@ -539,19 +629,38 @@ class AutomationEngine @Inject constructor(
         false
     }
 
+    private fun ActionDef.withAutoParkingSoundAllowance(rule: RuleEntity): ActionDef {
+        if (kind != "outside_sound" || !rule.hasActiveAutoParkingTrigger()) return this
+        val updatedPayload = try {
+            JSONObject(payload ?: "{}")
+        } catch (_: Exception) {
+            return this
+        }
+        updatedPayload.put("allowDuringAutoParking", true)
+        return copy(payload = updatedPayload.toString())
+    }
+
+    private fun RuleEntity.hasActiveAutoParkingTrigger(): Boolean =
+        TriggerDef.listFromJson(triggers).any { trigger ->
+            trigger.kind == "param" &&
+                trigger.param == "AdasApaParkingStatus" &&
+                trigger.operator == "==" &&
+                trigger.value.toDoubleOrNull() == AUTO_PARKING_ACTIVE_VALUE
+        }
 
     // --- Confirmation notifications ---
 
     private fun showConfirmNotification(
         rule: RuleEntity,
         actions: List<ActionDef>,
-        snapshot: String
+        snapshot: String,
+        phase: String,
     ) {
         val notifId = NOTIF_BASE_ID + rule.id.toInt()
 
         pendingConfirmations[notifId] = PendingAction(
             rule = rule, actions = actions, snapshot = snapshot,
-            createdAt = System.currentTimeMillis(), notifId = notifId
+            createdAt = System.currentTimeMillis(), notifId = notifId, phase = phase,
         )
 
         val summary = actions.joinToString(", ") { it.displayName }
@@ -620,8 +729,15 @@ class AutomationEngine @Inject constructor(
 
                 when (intent.action) {
                     ACTION_CONFIRM -> scope.launch {
-                        val currentData = vehicleStateRepository.fullSnapshot.value?.data
-                        executeAndLog(pending.rule, pending.actions, pending.snapshot, currentData)
+                        val currentData = vehicleStateRepository.actionSnapshot.value?.data
+                            ?: vehicleStateRepository.fullSnapshot.value?.data
+                        executeConfirmed(
+                            pending.rule,
+                            pending.actions,
+                            pending.snapshot,
+                            currentData,
+                            pending.phase,
+                        )
                     }
                     ACTION_CANCEL -> {
                         scope.launch {

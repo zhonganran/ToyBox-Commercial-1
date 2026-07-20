@@ -1,6 +1,7 @@
 package com.byd.wjx.data.automation
 
 internal object AutomationMediaRegistry {
+    @Volatile var outsideOwner: String? = null
     @Volatile var musicOwner: String? = null
     @Volatile var videoOwner: String? = null
 

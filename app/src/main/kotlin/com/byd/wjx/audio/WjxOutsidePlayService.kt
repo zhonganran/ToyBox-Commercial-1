@@ -462,7 +462,7 @@ class WjxOutsidePlayService : Service() {
         private const val ROUTE_RELEASE_TIMEOUT_MS = 1_000L
         private const val AUDIO_RESOURCE_RELEASE_TIMEOUT_MS = 2_400L
         private const val REVERSE_ROUTE_SETTLE_MS = 500L
-        private const val ROUTE_GUARD_INTERVAL_MS = 400L
+        private const val ROUTE_GUARD_INTERVAL_MS = 1_000L
         const val ACTION_PLAYBACK_STATE = "com.byd.wjx.action.OUTSIDE_PLAYBACK_STATE"
         const val EXTRA_STATE = "state"
         const val EXTRA_STATE_PATH = "state_path"

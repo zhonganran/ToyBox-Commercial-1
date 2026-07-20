@@ -66,6 +66,17 @@ class ActionDispatcherWindowBlockTest {
         assertTrue(isOpen("遮阳帘打开"))
     }
 
+    @Test fun `window open is blocked when speed is unknown`() {
+        assertTrue(
+            ActionDispatcher.windowOpenBlockReason("车窗全开", null)
+                ?.contains("车速未知") == true,
+        )
+    }
+
+    @Test fun `window open is allowed at known safe speed`() {
+        assertTrue(ActionDispatcher.windowOpenBlockReason("车窗全开", 20) == null)
+    }
+
     // ── explicit close words are not opens ────────────────────────────────────
     @Test fun `all windows close is not an open`() {
         assertFalse(isOpen("车窗关闭"))
