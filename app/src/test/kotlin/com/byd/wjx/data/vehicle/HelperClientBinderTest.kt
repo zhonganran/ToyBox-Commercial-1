@@ -209,28 +209,6 @@ class HelperClientBinderTest {
     }
 
     @Test
-    fun `native status bar replacement uses dedicated boolean transaction`() = runBlocking {
-        val values = mutableListOf<Int>()
-        val binder = object : FakeIBinder() {
-            override fun transact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
-                assertEquals(HelperBinderProtocol.TX_SET_NATIVE_STATUS_BAR_REPLACED, code)
-                data.setDataPosition(0)
-                data.enforceInterface(HelperBinderProtocol.DESCRIPTOR)
-                values += data.readInt()
-                reply!!.writeInt(0)
-                reply.writeInt(0)
-                reply.setDataPosition(0)
-                return true
-            }
-        }
-        val client = clientWith(binder)
-
-        assertTrue(client.setNativeStatusBarReplaced(true))
-        assertTrue(client.setNativeStatusBarReplaced(false))
-        assertEquals(listOf(1, 0), values)
-    }
-
-    @Test
     fun `lock sound playback state uses privileged helper transaction`() = runBlocking {
         val values = mutableListOf<Int>()
         val binder = object : FakeIBinder() {

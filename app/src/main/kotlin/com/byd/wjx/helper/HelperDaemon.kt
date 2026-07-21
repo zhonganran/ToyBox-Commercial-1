@@ -226,7 +226,6 @@ fun main(args: Array<String>) {
     val lockSoundRuntime = WjxLockSoundRuntime(svc, autoIface, systemContext)
     val electronicMirrorCamera = ElectronicMirrorCameraRuntime(systemContext)
     val systemRotation = BydSystemRotationController(systemContext)
-    val nativeStatusBar = BydNativeStatusBarController(systemContext)
 
     // Step 3: build our stub Binder.
     val helperBinder = object : Binder() {
@@ -536,17 +535,6 @@ fun main(args: Array<String>) {
                 }.getOrElse {
                     helperLog("SystemRotation", "state binder failed: ${throwableSummary(it)}")
                     reply?.writeInt(-1); reply?.writeInt(-1); true
-                }
-
-                HelperBinderProtocol.TX_SET_NATIVE_STATUS_BAR_REPLACED -> runCatching {
-                    val enabledValue = data.readInt()
-                    require(enabledValue == 0 || enabledValue == 1) { "invalid enabled=$enabledValue" }
-                    val ok = nativeStatusBar.setReplaced(enabledValue == 1)
-                    reply?.writeInt(if (ok) 0 else -1); reply?.writeInt(0)
-                    true
-                }.getOrElse {
-                    helperLog("NativeStatusBar", "binder control failed: ${throwableSummary(it)}")
-                    reply?.writeInt(-1); reply?.writeInt(0); true
                 }
 
                 HelperBinderProtocol.TX_SET_LOCK_SOUND_PLAYBACK_STATE -> runCatching {

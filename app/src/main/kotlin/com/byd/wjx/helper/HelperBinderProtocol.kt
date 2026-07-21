@@ -45,7 +45,6 @@ import android.os.IBinder
  *   TX_FORCE_SYSTEM_LANDSCAPE : (no args)                   -> reply: writeInt(status), writeInt(0)
  *   TX_RESTORE_SYSTEM_ROTATION : (no args)                  -> reply: writeInt(status), writeInt(0)
  *   TX_GET_SYSTEM_ROTATION_STATE : (no args)                -> reply: writeInt(status), writeInt(state)
- *   TX_SET_NATIVE_STATUS_BAR_REPLACED : writeInt(enabled)   -> reply: writeInt(status), writeInt(0)
  *   TX_SET_LOCK_SOUND_PLAYBACK_STATE : writeInt(enabled)    -> reply: writeInt(status), writeInt(0)
  *
  * Projection status: 0 = success, <0 = error/unavailable. Surface is written LAST so a
@@ -59,8 +58,8 @@ object HelperBinderProtocol {
     const val DESCRIPTOR = "com.byd.wjx.helper.IHelper"
     // Increment whenever the wire contract or helper-resident behavior changes. The helper process
     // can outlive an APK replacement, so the client verifies this marker before using it. Version
-    // 18 reloads the 34/57 controller exterior route used by lock/unlock/sentry playback.
-    const val CURRENT_VERSION = 18
+    // 19 removes the retired personalized status-bar transaction from the helper daemon.
+    const val CURRENT_VERSION = 19
 
     const val TX_PING = IBinder.FIRST_CALL_TRANSACTION       // 1
     const val TX_READ = IBinder.FIRST_CALL_TRANSACTION + 1   // 2
@@ -89,7 +88,6 @@ object HelperBinderProtocol {
     const val TX_FORCE_SYSTEM_LANDSCAPE = IBinder.FIRST_CALL_TRANSACTION + 24   // 25
     const val TX_RESTORE_SYSTEM_ROTATION = IBinder.FIRST_CALL_TRANSACTION + 25  // 26
     const val TX_GET_SYSTEM_ROTATION_STATE = IBinder.FIRST_CALL_TRANSACTION + 26 // 27
-    const val TX_SET_NATIVE_STATUS_BAR_REPLACED = IBinder.FIRST_CALL_TRANSACTION + 27 // 28
     const val TX_SET_LOCK_SOUND_PLAYBACK_STATE = IBinder.FIRST_CALL_TRANSACTION + 28 // 29
 
     /** Hard upper bound keeps a malformed caller from creating an oversized Binder reply. */
