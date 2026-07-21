@@ -9,6 +9,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.Parcel
 import android.view.Surface
+import com.byd.wjx.audio.BydLockSoundPlaybackState
 import java.io.RandomAccessFile
 import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
@@ -224,6 +225,8 @@ fun main(args: Array<String>) {
     val virtualDisplays = ConcurrentHashMap<Int, VirtualDisplay>()
     val lockSoundRuntime = WjxLockSoundRuntime(svc, autoIface, systemContext)
     val electronicMirrorCamera = ElectronicMirrorCameraRuntime(systemContext)
+    val systemRotation = BydSystemRotationController(systemContext)
+    val nativeStatusBar = BydNativeStatusBarController(systemContext)
 
     // Step 3: build our stub Binder.
     val helperBinder = object : Binder() {
@@ -504,6 +507,58 @@ fun main(args: Array<String>) {
                     true
                 }.getOrElse {
                     helperLog("ElectronicMirrorCamera", "binder stop failed: ${it.javaClass.simpleName}:${it.message.orEmpty()}")
+                    reply?.writeInt(-1); reply?.writeInt(0); true
+                }
+
+                HelperBinderProtocol.TX_FORCE_SYSTEM_LANDSCAPE -> runCatching {
+                    val ok = systemRotation.forceLandscape()
+                    reply?.writeInt(if (ok) 0 else -1); reply?.writeInt(0)
+                    true
+                }.getOrElse {
+                    helperLog("SystemRotation", "force binder failed: ${throwableSummary(it)}")
+                    reply?.writeInt(-1); reply?.writeInt(0); true
+                }
+
+                HelperBinderProtocol.TX_RESTORE_SYSTEM_ROTATION -> runCatching {
+                    val ok = systemRotation.restoreRotation()
+                    reply?.writeInt(if (ok) 0 else -1); reply?.writeInt(0)
+                    true
+                }.getOrElse {
+                    helperLog("SystemRotation", "restore binder failed: ${throwableSummary(it)}")
+                    reply?.writeInt(-1); reply?.writeInt(0); true
+                }
+
+                HelperBinderProtocol.TX_GET_SYSTEM_ROTATION_STATE -> runCatching {
+                    val state = systemRotation.rotationState()
+                    reply?.writeInt(if (state != null) 0 else -1)
+                    reply?.writeInt(state ?: -1)
+                    true
+                }.getOrElse {
+                    helperLog("SystemRotation", "state binder failed: ${throwableSummary(it)}")
+                    reply?.writeInt(-1); reply?.writeInt(-1); true
+                }
+
+                HelperBinderProtocol.TX_SET_NATIVE_STATUS_BAR_REPLACED -> runCatching {
+                    val enabledValue = data.readInt()
+                    require(enabledValue == 0 || enabledValue == 1) { "invalid enabled=$enabledValue" }
+                    val ok = nativeStatusBar.setReplaced(enabledValue == 1)
+                    reply?.writeInt(if (ok) 0 else -1); reply?.writeInt(0)
+                    true
+                }.getOrElse {
+                    helperLog("NativeStatusBar", "binder control failed: ${throwableSummary(it)}")
+                    reply?.writeInt(-1); reply?.writeInt(0); true
+                }
+
+                HelperBinderProtocol.TX_SET_LOCK_SOUND_PLAYBACK_STATE -> runCatching {
+                    val enabledValue = data.readInt()
+                    require(enabledValue == 0 || enabledValue == 1) { "invalid enabled=$enabledValue" }
+                    val enabled = enabledValue == 1
+                    val ok = BydLockSoundPlaybackState.setEnabled(enabled)
+                    helperLog("ExteriorAudio", "lock sound playback state enabled=$enabled ok=$ok")
+                    reply?.writeInt(if (ok) 0 else -1); reply?.writeInt(0)
+                    true
+                }.getOrElse {
+                    helperLog("ExteriorAudio", "lock sound playback state failed: ${throwableSummary(it)}")
                     reply?.writeInt(-1); reply?.writeInt(0); true
                 }
 

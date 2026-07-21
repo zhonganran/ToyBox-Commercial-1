@@ -34,6 +34,8 @@ object BackupPreferencesRegistry {
         PreferenceFilePolicy("wjx_led_link", "LedPreferences", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("wjx_energy_flow_stats", "EnergyFlowStatsStore", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("wjx_desktop_cards", "DesktopQuickCardRepository", PreferenceBackupPolicy.USER_CONFIGURATION),
+        PreferenceFilePolicy("wjx_custom_status_bar", "CustomStatusBarRepository", PreferenceBackupPolicy.USER_CONFIGURATION),
+        PreferenceFilePolicy("wjx_app_rotation", "AppRotationPreferences", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("wjx_activation", "ActivationManager", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy("wjx_xiaozhi", "XiaozhiPreferences", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy("wjx_xiaozhi_wake", "XiaozhiWakePreferences", PreferenceBackupPolicy.DEVICE_LOCAL),
@@ -50,6 +52,9 @@ object BackupPreferencesRegistry {
         PreferenceFilePolicy("osmdroid", "OsmdroidRuntime", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy("adb_config", "AdbOnDeviceClient", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy("wjx_disclaimer", "DisclaimerPreferences", PreferenceBackupPolicy.DEVICE_LOCAL),
+        PreferenceFilePolicy("wjx_app_rotation_runtime", "AppRotationRuntime", PreferenceBackupPolicy.DEVICE_LOCAL),
+        PreferenceFilePolicy("wjx_custom_statusbar_runtime", "NativeStatusBarReplacementCoordinator", PreferenceBackupPolicy.DEVICE_LOCAL),
+        PreferenceFilePolicy("wjx_statusbar_weather_cache", "StatusBarWeatherRepository", PreferenceBackupPolicy.DEVICE_LOCAL),
     )
 
     val USER_CONFIGURATION_FILES: List<String> = FILE_POLICIES

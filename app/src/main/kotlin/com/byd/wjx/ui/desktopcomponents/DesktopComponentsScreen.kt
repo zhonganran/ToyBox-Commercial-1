@@ -21,7 +21,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.BatteryChargingFull
+import androidx.compose.material.icons.outlined.DashboardCustomize
 import androidx.compose.material.icons.outlined.DirectionsCar
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Subtitles
@@ -52,6 +55,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.byd.wjx.desktopcard.DesktopQuickCardSettingsContent
 import com.byd.wjx.desktopcard.DesktopQuickCardSettingsViewModel
 import com.byd.wjx.lyrics.LyricSettings
+import com.byd.wjx.statusbar.CustomStatusBarSettingsContent
+import com.byd.wjx.statusbar.CustomStatusBarSettingsViewModel
 import com.byd.wjx.ui.lyrics.LyricDisplayScreen
 import com.byd.wjx.ui.theme.AccentBlue
 import com.byd.wjx.ui.theme.AccentGreen
@@ -78,14 +83,22 @@ private enum class DesktopComponentPage(
         icon = Icons.Outlined.Apps,
         colors = listOf(Color(0xFF1A5960), Color(0xFF0C3138)),
     ),
+    StatusBar(
+        label = "个性状态栏",
+        description = "自定义车辆、音乐和系统信息的显示位置",
+        icon = Icons.Outlined.DashboardCustomize,
+        colors = listOf(Color(0xFF315C85), Color(0xFF17364F)),
+    ),
 }
 
 @Composable
 fun DesktopComponentsScreen(
     quickCardViewModel: DesktopQuickCardSettingsViewModel = hiltViewModel(),
+    statusBarViewModel: CustomStatusBarSettingsViewModel = hiltViewModel(),
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val quickCardState by quickCardViewModel.uiState.collectAsStateWithLifecycle()
+    val statusBarState by statusBarViewModel.uiState.collectAsStateWithLifecycle()
     val lyricSettings = remember(context.applicationContext) { LyricSettings(context.applicationContext) }
     var selectedPage by rememberSaveable { mutableStateOf(DesktopComponentPage.Lyrics) }
     var lyricsEnabled by remember {
@@ -95,12 +108,14 @@ fun DesktopComponentsScreen(
     LifecycleResumeEffect(Unit) {
         lyricsEnabled = lyricSettings.desktopEnabled || lyricSettings.clusterEnabled
         quickCardViewModel.refresh()
+        statusBarViewModel.refreshOverlayPermission()
         onPauseOrDispose { }
     }
 
     val enabledMap = mapOf(
         DesktopComponentPage.Lyrics to lyricsEnabled,
         DesktopComponentPage.QuickCard to quickCardState.config.enabled,
+        DesktopComponentPage.StatusBar to statusBarState.config.enabled,
     )
 
     Column(
@@ -156,6 +171,15 @@ fun DesktopComponentsScreen(
             ) {
                 DesktopQuickCardSettingsContent(quickCardViewModel)
             }
+
+            DesktopComponentPage.StatusBar -> Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 58.dp, vertical = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                CustomStatusBarSettingsContent(statusBarViewModel)
+            }
         }
     }
 }
@@ -178,7 +202,13 @@ private fun DesktopComponentPreviewStage(
                 onDragCancel = { horizontalDrag = 0f },
                 onDragEnd = {
                     if (abs(horizontalDrag) >= 64f) {
-                        onSelected(pages.first { it != selected })
+                        val currentIndex = pages.indexOf(selected)
+                        val targetIndex = if (horizontalDrag < 0f) {
+                            (currentIndex + 1).coerceAtMost(pages.lastIndex)
+                        } else {
+                            (currentIndex - 1).coerceAtLeast(0)
+                        }
+                        onSelected(pages[targetIndex])
                     }
                     horizontalDrag = 0f
                 },
@@ -283,6 +313,7 @@ private fun DesktopComponentPreviewCard(
                 when (page) {
                     DesktopComponentPage.Lyrics -> CombinedLyricPreview(selected)
                     DesktopComponentPage.QuickCard -> QuickCardPreview(selected)
+                    DesktopComponentPage.StatusBar -> PersonalizedStatusBarPreview(selected)
                 }
             }
             Text(
@@ -319,10 +350,95 @@ private fun CombinedLyricPreview(selected: Boolean) {
 
 @Composable
 private fun QuickCardPreview(selected: Boolean) {
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        PreviewBadge(Icons.Outlined.ToggleOn, "车辆控制", AccentGreen, selected)
-        PreviewBadge(Icons.Outlined.DirectionsCar, "左右滑门", AccentBlue, selected)
-        PreviewBadge(Icons.Outlined.MusicNote, "车外音效", AccentOrange, selected)
+    Row(horizontalArrangement = Arrangement.spacedBy(if (selected) 7.dp else 5.dp)) {
+        QuickCardGlassPreviewTile(Icons.Outlined.ToggleOn, "车辆控制", "已开启", AccentGreen, selected)
+        QuickCardGlassPreviewTile(Icons.Outlined.DirectionsCar, "左右滑门", "点击控制", Color.White, selected)
+        QuickCardGlassPreviewTile(Icons.Outlined.MusicNote, "车外音效", "点击播放", AccentOrange, selected)
+    }
+}
+
+@Composable
+private fun QuickCardGlassPreviewTile(
+    icon: ImageVector,
+    label: String,
+    subtitle: String,
+    accent: Color,
+    selected: Boolean,
+) {
+    val shape = RoundedCornerShape(7.dp)
+    Row(
+        modifier = Modifier
+            .width(if (selected) 94.dp else 72.dp)
+            .height(if (selected) 62.dp else 50.dp)
+            .clip(shape)
+            .background(Color(0x8A071018), shape)
+            .border(0.8.dp, Color.White.copy(alpha = 0.20f), shape)
+            .padding(horizontal = if (selected) 8.dp else 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(if (selected) 6.dp else 4.dp),
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = accent.copy(alpha = 0.92f),
+            modifier = Modifier.size(if (selected) 19.dp else 15.dp),
+        )
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text(
+                label,
+                color = Color.White.copy(alpha = 0.95f),
+                fontSize = if (selected) 10.sp else 8.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+            )
+            Text(
+                subtitle,
+                color = Color.White.copy(alpha = 0.58f),
+                fontSize = if (selected) 8.sp else 7.sp,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PersonalizedStatusBarPreview(selected: Boolean) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(if (selected) 48.dp else 38.dp)
+            .clip(RoundedCornerShape(7.dp))
+            .background(Color.Black.copy(alpha = 0.38f))
+            .border(1.dp, Color.White.copy(alpha = 0.24f), RoundedCornerShape(7.dp))
+            .padding(horizontal = if (selected) 14.dp else 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Outlined.AccessTime,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(if (selected) 18.dp else 14.dp),
+        )
+        Spacer(Modifier.width(5.dp))
+        Text("18:26", color = Color.White, fontSize = if (selected) 13.sp else 10.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.width(if (selected) 16.dp else 8.dp))
+        Icon(
+            Icons.Outlined.MusicNote,
+            contentDescription = null,
+            tint = AccentBlue,
+            modifier = Modifier.size(if (selected) 18.dp else 14.dp),
+        )
+        Spacer(Modifier.width(5.dp))
+        Text("正在播放", color = Color.White, fontSize = if (selected) 12.sp else 9.sp, maxLines = 1)
+        Spacer(Modifier.weight(1f))
+        Icon(
+            Icons.Outlined.BatteryChargingFull,
+            contentDescription = null,
+            tint = AccentGreen,
+            modifier = Modifier.size(if (selected) 18.dp else 14.dp),
+        )
+        Spacer(Modifier.width(5.dp))
+        Text("86%", color = Color.White, fontSize = if (selected) 13.sp else 10.sp, fontWeight = FontWeight.Bold)
     }
 }
 

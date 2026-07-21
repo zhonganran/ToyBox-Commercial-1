@@ -145,9 +145,9 @@ class WjxRealtimeHailingService : Service() {
         delay(AUDIO_RESOURCE_SETTLE_MS)
 
         val tuning = audioSettings.realtimeTuning()
-        val armed = router.arm(channel, BydExteriorAudioRouter.Usage.Talk, tuning.volumePercent)
-        WjxFileLogger.i(TAG, "route arm channel=$channel volume=${tuning.volumePercent} result=$armed")
-        if (!armed) {
+        val routed = router.armVerified(channel, BydExteriorAudioRouter.Usage.Talk, tuning.volumePercent)
+        if (routed == null) {
+            WjxFileLogger.w(TAG, "route unavailable requested=$channel volume=${tuning.volumePercent}")
             broadcastState(STATE_ERROR, "车外喊话通道打开失败")
             updateNotification("车外喊话通道打开失败")
             serviceActive = false
@@ -156,11 +156,16 @@ class WjxRealtimeHailingService : Service() {
             stopSelf()
             return
         }
+        val hailingChannel = routed.channel
+        WjxFileLogger.i(
+            TAG,
+            "route ready requested=$channel active=$hailingChannel volume=${tuning.volumePercent} ${routed.summary()}",
+        )
 
-        activeChannel = channel
+        activeChannel = hailingChannel
         val nextEngine = RealtimeHailingEngine(
             context = applicationContext,
-            channel = channel,
+            channel = hailingChannel,
             initialTuning = tuning,
             onError = { reason ->
                 WjxFileLogger.w(TAG, "engine error: $reason")
@@ -169,7 +174,7 @@ class WjxRealtimeHailingService : Service() {
         )
         if (!nextEngine.start()) {
             WjxFileLogger.w(TAG, "engine failed to start")
-            runCatching { router.disarm(channel) }
+            runCatching { router.disarm(hailingChannel) }
             activeChannel = null
             broadcastState(STATE_ERROR, "麦克风或输出初始化失败")
             updateNotification("麦克风或输出初始化失败")
@@ -184,7 +189,8 @@ class WjxRealtimeHailingService : Service() {
         updateNotification("正在实时喊话")
         WjxFileLogger.i(
             TAG,
-            "started channel=$channel volume=${tuning.volumePercent} mic=${tuning.micGainPercent} noise=${tuning.noiseSuppressionPercent}",
+            "started requested=$channel active=$hailingChannel volume=${tuning.volumePercent} " +
+                "mic=${tuning.micGainPercent} noise=${tuning.noiseSuppressionPercent}",
         )
     }
 

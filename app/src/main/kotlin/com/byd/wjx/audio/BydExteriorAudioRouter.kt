@@ -14,6 +14,7 @@ import com.byd.wjx.log.WjxFileLogger
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -47,39 +48,30 @@ class BydExteriorAudioRouter @Inject constructor(
                 "speaker=$speakerOk lock=$lockStateOk focus=$focusOk"
     }
 
-    suspend fun arm(
+    suspend fun armVerified(
         channel: ExteriorChannel,
         usage: Usage = Usage.Playback,
         volumePercent: Int = 100,
-    ): Boolean =
-        routeMutex.withLock {
-            val helperReady = withTimeoutOrNull(HELPER_READY_TIMEOUT_MS) {
-                helperBootstrap.ensureCurrent()
-            } ?: false
-            if (!helperReady) {
-                WjxFileLogger.w(TAG, "helper not ready, outside route blocked")
-                return@withLock false
-            }
-            if (usage != Usage.AutoSound) {
-                pauseActiveMedia()
-            }
-            val speakerOk = speakerController.acquire(
-                channel,
-                volumePercent = volumePercent,
-                fallbackVolume = fallbackStreamVolume(usage),
-                scaleFromMax = usage != Usage.AutoSound,
+    ): ArmResult? {
+        val armed = armConfirmed(channel, usage, volumePercent)
+        if (!armed.confirmed) {
+            WjxFileLogger.w(
+                TAG,
+                "route rejected channel=$channel usage=$usage ${armed.summary()}",
             )
-            val writeResults = writeAll(ExteriorRoutePlan.armWrites(channel))
-            val lockStateOk = if (channel == ExteriorChannel.Channel1) {
-                BydLockSoundPlaybackState.setEnabled(true)
-            } else {
-                false
-            }
-            val focusOk = requestPlaybackFocus(channel)
-            val accepted = writeResults.values.any { it }
-            WjxFileLogger.i(TAG, "arm channel=$channel usage=$usage volume=$volumePercent accepted=$accepted speaker=$speakerOk lock=$lockStateOk focus=$focusOk")
-            accepted
+            runCatching { disarm(channel) }
+            return null
         }
+        delay(if (channel == ExteriorChannel.Channel0) CHANNEL_0_SETTLE_MS else CHANNEL_1_SETTLE_MS)
+        val verified = reinforceConfirmed(channel, usage, volumePercent)
+        if (verified.confirmed) {
+            WjxFileLogger.i(TAG, "route verified channel=$channel usage=$usage ${verified.summary()}")
+            return verified
+        }
+        WjxFileLogger.w(TAG, "route verify failed channel=$channel usage=$usage ${verified.summary()}")
+        runCatching { disarm(channel) }
+        return null
+    }
 
     suspend fun armConfirmed(
         channel: ExteriorChannel,
@@ -101,10 +93,16 @@ class BydExteriorAudioRouter @Inject constructor(
                 fallbackVolume = fallbackStreamVolume(usage),
                 scaleFromMax = usage != Usage.AutoSound,
             )
+            val lockStateOk = if (channel == ExteriorChannel.Channel1) {
+                setLockSoundPlaybackState(true)
+            } else {
+                false
+            }
             buildConfirmedResult(
                 channel = channel,
                 writeResults = writeAll(ExteriorRoutePlan.armWrites(channel)),
                 speakerOk = speakerOk,
+                lockStateOk = lockStateOk,
                 focusOk = requestPlaybackFocus(channel),
             ).also {
                 WjxFileLogger.i(TAG, "armConfirmed channel=$channel usage=$usage volume=$volumePercent ${it.summary()}")
@@ -123,10 +121,16 @@ class BydExteriorAudioRouter @Inject constructor(
                 fallbackVolume = fallbackStreamVolume(usage),
                 scaleFromMax = usage != Usage.AutoSound,
             )
+            val lockStateOk = if (channel == ExteriorChannel.Channel1) {
+                setLockSoundPlaybackState(true)
+            } else {
+                false
+            }
             buildConfirmedResult(
                 channel = channel,
                 writeResults = writeAll(ExteriorRoutePlan.armWrites(channel)),
                 speakerOk = speakerOk,
+                lockStateOk = lockStateOk,
                 focusOk = requestPlaybackFocus(channel),
             ).also {
                 WjxFileLogger.i(TAG, "reinforceConfirmed channel=$channel usage=$usage volume=$volumePercent ${it.summary()}")
@@ -154,7 +158,7 @@ class BydExteriorAudioRouter @Inject constructor(
             runCatching {
                 writeAll(ExteriorRoutePlan.disarmWrites(channel))
                 if (channel == ExteriorChannel.Channel1) {
-                    BydLockSoundPlaybackState.setEnabled(false)
+                    setLockSoundPlaybackState(false)
                 }
                 abandonPlaybackFocus()
                 speakerController.release(channel)
@@ -179,13 +183,9 @@ class BydExteriorAudioRouter @Inject constructor(
         channel: ExteriorChannel,
         writeResults: Map<ExteriorRouteWrite, Boolean>,
         speakerOk: Boolean,
+        lockStateOk: Boolean,
         focusOk: Boolean,
     ): ArmResult {
-        val lockStateOk = if (channel == ExteriorChannel.Channel1) {
-            BydLockSoundPlaybackState.setEnabled(true)
-        } else {
-            false
-        }
         return ArmResult(
             channel = channel,
             confirmed = ExteriorRoutePlan.isStronglyConfirmed(
@@ -200,6 +200,19 @@ class BydExteriorAudioRouter @Inject constructor(
             lockStateOk = lockStateOk,
             focusOk = focusOk,
         )
+    }
+
+    private suspend fun setLockSoundPlaybackState(enabled: Boolean): Boolean {
+        val helperOk = runCatching {
+            helperClient.setLockSoundPlaybackState(enabled)
+        }.getOrDefault(false)
+        if (helperOk) {
+            WjxFileLogger.i(TAG, "lock sound playback state enabled=$enabled source=helper ok=true")
+            return true
+        }
+        val localOk = BydLockSoundPlaybackState.setEnabled(enabled)
+        WjxFileLogger.i(TAG, "lock sound playback state enabled=$enabled source=local ok=$localOk")
+        return localOk
     }
 
     private fun failedArmResult(channel: ExteriorChannel): ArmResult =
@@ -314,5 +327,7 @@ class BydExteriorAudioRouter @Inject constructor(
         private const val TAG = "BydExteriorAudio"
         private const val HELPER_READY_TIMEOUT_MS = 12_000L
         private const val MEDIA_RESUME_GUARD_MS = 180L
+        private const val CHANNEL_0_SETTLE_MS = 300L
+        private const val CHANNEL_1_SETTLE_MS = 120L
     }
 }

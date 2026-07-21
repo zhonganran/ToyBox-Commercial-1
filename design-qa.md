@@ -71,3 +71,22 @@
 - P3：实车连接后再留一张全数据截图，可进一步微调极长转速、里程和洞察文案在真实数据下的视觉密度。
 
 final result: passed
+
+---
+
+# 桌面悬浮卡片设计 QA
+
+- reference image: `/tmp/codex-remote-attachments/019f7d06-53de-7423-a363-9544e8975175/D027C06B-27AA-4540-8DD8-165ABBD438F8/1-照片-1.jpg`
+- implementation screenshot: `/Users/z/Desktop/签名密钥/SuperToyBox-WJX-SecondDev/app/build/reports/design-qa/desktop-quick-card-final.png`
+- viewport: Android 模拟器 1280 × 720，160 dpi，桌面叠加层展开状态。
+
+## Findings
+
+- 去除包裹所有内容的大块外层背景，车辆控制和车外音效合并为一个连续四列网格。
+- 每个功能使用独立深色半透明玻璃卡片、细浅色描边和 8dp 圆角，桌面背景可透过卡片显示。
+- 图标、主标题、状态/分类副标题和右上状态点层级清楚；长控制名称自动换行，不再被省略。
+- 展开图标位于卡片组顶部中央，点击同一图标即可收起，未恢复右上角关闭按钮。
+- 空配置仍显示独立透明提示卡片；卡片数量不足四个时不补空白占位。
+- 模拟器展开和收起均正常，未出现布局跳动、卡片互相覆盖或应用崩溃。
+
+final result: passed

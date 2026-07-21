@@ -107,6 +107,16 @@ interface HelperClient {
         request: ElectronicMirrorCameraRequest,
     ): Boolean = false
     suspend fun stopElectronicMirror(): Boolean = false
+    /** Locks the head-unit display to landscape, including the current third-party app. */
+    suspend fun forceSystemLandscape(): Boolean = false
+    /** Releases the lock created by [forceSystemLandscape] and restores the vehicle rotation policy. */
+    suspend fun restoreSystemRotation(): Boolean = false
+    /** Raw BYD rotation state, or null when the vendor API is unavailable. */
+    suspend fun systemRotationState(): Int? = null
+    /** Hides/restores native icons and clock while preserving notification-shade gestures. */
+    suspend fun setNativeStatusBarReplaced(enabled: Boolean): Boolean = false
+    /** Applies BYD's privileged lock-sound playback route state in the helper process. */
+    suspend fun setLockSoundPlaybackState(enabled: Boolean): Boolean = false
 }
 
 @Singleton
@@ -327,6 +337,26 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
 
     override suspend fun stopElectronicMirror(): Boolean =
         statusOk(HelperBinderProtocol.TX_CAMERA_STOP) { }
+
+    override suspend fun forceSystemLandscape(): Boolean =
+        statusOk(HelperBinderProtocol.TX_FORCE_SYSTEM_LANDSCAPE) { }
+
+    override suspend fun restoreSystemRotation(): Boolean =
+        statusOk(HelperBinderProtocol.TX_RESTORE_SYSTEM_ROTATION) { }
+
+    override suspend fun systemRotationState(): Int? =
+        transact(HelperBinderProtocol.TX_GET_SYSTEM_ROTATION_STATE) { }
+            ?.let { (status, value) -> value.takeIf { readAccepted(status) && it >= 0 } }
+
+    override suspend fun setNativeStatusBarReplaced(enabled: Boolean): Boolean =
+        statusOk(HelperBinderProtocol.TX_SET_NATIVE_STATUS_BAR_REPLACED) { data ->
+            data.writeInt(if (enabled) 1 else 0)
+        }
+
+    override suspend fun setLockSoundPlaybackState(enabled: Boolean): Boolean =
+        statusOk(HelperBinderProtocol.TX_SET_LOCK_SOUND_PLAYBACK_STATE) { data ->
+            data.writeInt(if (enabled) 1 else 0)
+        }
 
     /** (status,value) reply; true iff status == 0. Shared by the boolean projection ops. */
     private suspend fun statusOk(

@@ -89,10 +89,29 @@ class DesktopQuickCardModelsTest {
     fun `responsive layout follows screen bounds`() {
         val normal = DesktopQuickCardLayout.calculate(1280f, 720f)
 
-        assertEquals(364.8f, normal.widthDp, 0.01f)
-        assertEquals(5f, normal.gridGapDp, 0.01f)
+        assertEquals(537.6f, normal.widthDp, 0.01f)
+        assertEquals(7f, normal.gridGapDp, 0.01f)
         assertTrue(DesktopQuickCardLayout.widthForColumns(normal, 1) < normal.widthDp)
         assertEquals(normal.widthDp, DesktopQuickCardLayout.widthForColumns(normal, 4), 0.01f)
+    }
+
+    @Test
+    fun `expanded and collapsed card preserve floating icon center`() {
+        val expandedX = DesktopQuickCardAnchor.expandedX(
+            collapsedX = 140,
+            collapsedWidth = 82,
+            expandedWidth = 360,
+        )
+
+        assertEquals(1, expandedX)
+        assertEquals(
+            140,
+            DesktopQuickCardAnchor.collapsedX(
+                expandedX = expandedX,
+                expandedWidth = 360,
+                collapsedWidth = 82,
+            ),
+        )
     }
 
     @Test

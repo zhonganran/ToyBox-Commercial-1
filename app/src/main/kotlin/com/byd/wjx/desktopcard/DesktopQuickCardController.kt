@@ -69,8 +69,8 @@ class DesktopQuickCardController @Inject constructor(
     private var dragStartRawY = 0f
     private var dragStartWindowX = 0
     private var dragStartWindowY = 0
-    private var collapsedAnchorX: Int? = null
-    private var collapsedAnchorY: Int? = null
+    private var collapsedAnchorCenterX: Int? = null
+    private var collapsedAnchorTopY: Int? = null
 
     private val playbackReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -225,12 +225,14 @@ class DesktopQuickCardController @Inject constructor(
                 }
         } else {
             val params = layoutParams ?: return
-            val target = initialPosition(config)
-            if (params.x != target.x || params.y != target.y) {
-                params.x = target.x
-                params.y = target.y
-                clampPosition(params)
-                runCatching { windowManager.updateViewLayout(composeView, params) }
+            if (!renderState.value.expanded) {
+                val target = initialPosition(config)
+                if (params.x != target.x || params.y != target.y) {
+                    params.x = target.x
+                    params.y = target.y
+                    clampPosition(params)
+                    runCatching { windowManager.updateViewLayout(composeView, params) }
+                }
             }
             if (!config.positionInitialized) repository.savePosition(params.x, params.y)
             composeView?.post {
@@ -289,9 +291,11 @@ class DesktopQuickCardController @Inject constructor(
 
     private fun expandCard() {
         if (renderState.value.expanded) return
+        val view = composeView
         layoutParams?.let { params ->
-            collapsedAnchorX = params.x
-            collapsedAnchorY = params.y
+            val collapsedWidth = view?.width?.takeIf { it > 0 } ?: collapsedIconSizePx()
+            collapsedAnchorCenterX = params.x + collapsedWidth / 2
+            collapsedAnchorTopY = params.y
         }
         renderState.update { it.copy(expanded = true) }
         updateLayoutAfterContentResize(restoreCollapsedAnchor = false)
@@ -309,16 +313,16 @@ class DesktopQuickCardController @Inject constructor(
         view.post {
             view.post {
                 val params = layoutParams ?: return@post
-                if (restoreCollapsedAnchor) {
-                    collapsedAnchorX?.let { params.x = it }
-                    collapsedAnchorY?.let { params.y = it }
-                }
+                collapsedAnchorCenterX?.let { params.x = it - view.width / 2 }
+                collapsedAnchorTopY?.let { params.y = it }
                 clampPosition(params)
                 runCatching { windowManager.updateViewLayout(view, params) }
+                collapsedAnchorCenterX = params.x + view.width / 2
+                collapsedAnchorTopY = params.y
                 if (restoreCollapsedAnchor) {
                     repository.savePosition(params.x, params.y)
-                    collapsedAnchorX = null
-                    collapsedAnchorY = null
+                    collapsedAnchorCenterX = null
+                    collapsedAnchorTopY = null
                 }
             }
         }
@@ -369,15 +373,36 @@ class DesktopQuickCardController @Inject constructor(
     }
 
     private fun finishDrag(cancelled: Boolean) {
-        layoutParams?.let {
+        layoutParams?.let { params ->
             if (renderState.value.expanded) {
-                collapsedAnchorX = it.x
-                collapsedAnchorY = it.y
+                val expandedWidth = composeView?.width?.takeIf { it > 0 } ?: collapsedIconSizePx()
+                collapsedAnchorCenterX = params.x + expandedWidth / 2
+                collapsedAnchorTopY = params.y
+                val collapsedX = DesktopQuickCardAnchor.collapsedX(
+                    expandedX = params.x,
+                    expandedWidth = expandedWidth,
+                    collapsedWidth = collapsedIconSizePx(),
+                )
+                val position = clampCollapsedPosition(collapsedX, params.y)
+                repository.savePosition(position.x, position.y)
+            } else {
+                repository.savePosition(params.x, params.y)
             }
-            repository.savePosition(it.x, it.y)
-            WjxFileLogger.i(TAG, "drag end x=${it.x} y=${it.y} cancelled=$cancelled")
+            WjxFileLogger.i(TAG, "drag end x=${params.x} y=${params.y} cancelled=$cancelled")
         }
     }
+
+    private fun clampCollapsedPosition(x: Int, y: Int): Point {
+        val screen = screenSize()
+        val iconSize = collapsedIconSizePx()
+        return Point(
+            x.coerceIn(0, (screen.x - iconSize).coerceAtLeast(0)),
+            y.coerceIn(0, (screen.y - iconSize).coerceAtLeast(0)),
+        )
+    }
+
+    private fun collapsedIconSizePx(): Int =
+        (DESKTOP_QUICK_CARD_COLLAPSED_ICON_DP * appContext.resources.displayMetrics.density).roundToInt()
 
     private fun clampPosition(params: WindowManager.LayoutParams) {
         val screen = screenSize()
@@ -402,8 +427,8 @@ class DesktopQuickCardController @Inject constructor(
         layoutParams = null
         lifecycleOwner?.onDestroy()
         lifecycleOwner = null
-        collapsedAnchorX = null
-        collapsedAnchorY = null
+        collapsedAnchorCenterX = null
+        collapsedAnchorTopY = null
         if (view != null) runCatching { windowManager.removeViewImmediate(view) }
     }
 

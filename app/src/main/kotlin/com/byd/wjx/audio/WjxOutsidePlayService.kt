@@ -178,7 +178,6 @@ class WjxOutsidePlayService : Service() {
         }
         stopPlayback(releaseService = false, releaseOwnership = false)
         val token = ++playbackToken
-        activeChannel = channel
         activePath = file.absolutePath
         activeOwner = owner
         if (reverseActive) {
@@ -186,23 +185,21 @@ class WjxOutsidePlayService : Service() {
             delay(REVERSE_ROUTE_SETTLE_MS)
         }
         val volumePercent = audioSettings.playbackVolumePercent
-        val armed = router.armConfirmed(channel, BydExteriorAudioRouter.Usage.Playback, volumePercent)
-        WjxFileLogger.i(TAG, "route arm result=${armed.summary()} volume=$volumePercent elapsed=${System.currentTimeMillis() - startedAt}ms")
-        if (!armed.confirmed) {
-            abortBeforePlayback(file, channel, owner, "车外路由强确认失败，已阻止车内播放")
+        val routed = router.armVerified(channel, BydExteriorAudioRouter.Usage.Playback, volumePercent)
+        if (routed == null) {
+            abortBeforePlayback(file, channel, owner, "车外路由无法确认，已阻止车内播放")
             return
         }
-
-        delay(if (channel == ExteriorChannel.Channel0) 300L else 120L)
-        val verified = router.reinforceConfirmed(channel, BydExteriorAudioRouter.Usage.Playback, volumePercent)
-        WjxFileLogger.i(TAG, "route pre-play verify=${verified.summary()} elapsed=${System.currentTimeMillis() - startedAt}ms")
-        if (!verified.confirmed) {
-            abortBeforePlayback(file, channel, owner, "车外路由播放前复核失败，已阻止车内播放")
-            return
-        }
+        val playbackChannel = routed.channel
+        activeChannel = playbackChannel
+        WjxFileLogger.i(
+            TAG,
+            "route ready requested=$channel active=$playbackChannel result=${routed.summary()} " +
+                "volume=$volumePercent elapsed=${System.currentTimeMillis() - startedAt}ms",
+        )
         val started = runCatching {
             player = MediaPlayer().apply {
-                setAudioAttributes(WjxAudioAttributes.forOutside(channel))
+                setAudioAttributes(WjxAudioAttributes.forOutside(playbackChannel))
                 setDataSource(file.absolutePath)
                 setPlaybackPlayerVolume(this, volumePercent)
                 isLooping = loop
@@ -213,14 +210,14 @@ class WjxOutsidePlayService : Service() {
                     true
                 }
                 prepare()
-                enableEnhancer(this, channel, volumePercent)
+                enableEnhancer(this, playbackChannel, volumePercent)
                 start()
             }
             true
         }.getOrElse {
             WjxFileLogger.w(TAG, "playback start failed: ${it.message}")
             clearAndReleasePlayer()
-            runCatching { router.disarm(channel) }
+            runCatching { router.disarm(playbackChannel) }
             broadcastState(STATE_ERROR, file.absolutePath, owner)
             activeChannel = null
             activePath = null
@@ -233,12 +230,12 @@ class WjxOutsidePlayService : Service() {
         if (started) {
             WjxFileLogger.i(
                 TAG,
-                "playback started session=${player?.audioSessionId} channel=$channel " +
+                "playback started session=${player?.audioSessionId} channel=$playbackChannel " +
                     "loop=$loop elapsed=${System.currentTimeMillis() - startedAt}ms"
             )
             broadcastState(STATE_STARTED, file.absolutePath, owner)
             updateNotification(if (loop) "正在循环车外播放：${file.nameWithoutExtension}" else "正在车外播放：${file.nameWithoutExtension}")
-            startRouteGuard(token, file.absolutePath, channel, volumePercent)
+            startRouteGuard(token, file.absolutePath, playbackChannel, volumePercent)
         }
     }
 

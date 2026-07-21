@@ -20,6 +20,7 @@ import com.byd.wjx.data.local.entity.TripPointEntity
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.data.repository.TripRepository
 import com.byd.wjx.data.settings.ServiceQrCache
+import com.byd.wjx.rotation.AppRotationPreferences
 import com.byd.wjx.service.UpdateChecker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -181,6 +182,7 @@ class SettingsViewModelTest {
             okHttpClient = httpClient,
             serviceQrCache = ServiceQrCache(ctx),
             logRecorder = logRecorder,
+            appRotationPreferences = AppRotationPreferences(ctx),
         )
     }
 

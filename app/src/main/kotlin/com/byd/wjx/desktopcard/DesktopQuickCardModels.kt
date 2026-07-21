@@ -6,6 +6,8 @@ import kotlin.math.ceil
 import kotlin.math.min
 
 const val DESKTOP_QUICK_CARD_COLUMNS = 4
+const val DESKTOP_QUICK_CARD_COLLAPSED_ICON_DP = 82f
+const val DESKTOP_QUICK_CARD_EXPANDED_ICON_DP = 76f
 const val DESKTOP_QUICK_CARD_LEFT_SLIDING_DOOR = "wjx_auto_door_left"
 const val DESKTOP_QUICK_CARD_RIGHT_SLIDING_DOOR = "wjx_auto_door_right"
 const val DESKTOP_QUICK_CARD_ICON_TOOLBOX = "builtin_toolbox"
@@ -136,10 +138,10 @@ data class DesktopQuickCardLayoutMetrics(
 )
 
 object DesktopQuickCardLayout {
-    private const val SCREEN_WIDTH_RATIO = 0.285f
-    private const val SCREEN_HEIGHT_RATIO = 0.58f
-    private const val BASE_GRID_GAP_DP = 5f
-    private const val BASE_CONTENT_PADDING_DP = 6f
+    private const val SCREEN_WIDTH_RATIO = 0.42f
+    private const val SCREEN_HEIGHT_RATIO = 0.75f
+    private const val BASE_GRID_GAP_DP = 7f
+    private const val BASE_CONTENT_PADDING_DP = 3f
 
     fun calculate(
         screenWidthDp: Float,
@@ -164,6 +166,14 @@ object DesktopQuickCardLayout {
             metrics.cellSizeDp * visibleColumns +
             metrics.gridGapDp * (visibleColumns - 1)
     }
+}
+
+object DesktopQuickCardAnchor {
+    fun expandedX(collapsedX: Int, collapsedWidth: Int, expandedWidth: Int): Int =
+        collapsedX + collapsedWidth / 2 - expandedWidth / 2
+
+    fun collapsedX(expandedX: Int, expandedWidth: Int, collapsedWidth: Int): Int =
+        expandedX + expandedWidth / 2 - collapsedWidth / 2
 }
 
 enum class DesktopQuickCardVisibilityReason {

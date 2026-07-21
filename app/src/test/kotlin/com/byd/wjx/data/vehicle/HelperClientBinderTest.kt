@@ -181,6 +181,77 @@ class HelperClientBinderTest {
         assertTrue(clientWith(binder).playSentryEvent("broadcast warn=2"))
     }
 
+    @Test
+    fun `system rotation operations use dedicated binder transactions`() = runBlocking {
+        val calls = mutableListOf<Int>()
+        val binder = object : FakeIBinder() {
+            override fun transact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+                calls += code
+                reply!!.writeInt(0)
+                reply.writeInt(if (code == HelperBinderProtocol.TX_GET_SYSTEM_ROTATION_STATE) 2 else 0)
+                reply.setDataPosition(0)
+                return true
+            }
+        }
+        val client = clientWith(binder)
+
+        assertTrue(client.forceSystemLandscape())
+        assertEquals(2, client.systemRotationState())
+        assertTrue(client.restoreSystemRotation())
+        assertEquals(
+            listOf(
+                HelperBinderProtocol.TX_FORCE_SYSTEM_LANDSCAPE,
+                HelperBinderProtocol.TX_GET_SYSTEM_ROTATION_STATE,
+                HelperBinderProtocol.TX_RESTORE_SYSTEM_ROTATION,
+            ),
+            calls,
+        )
+    }
+
+    @Test
+    fun `native status bar replacement uses dedicated boolean transaction`() = runBlocking {
+        val values = mutableListOf<Int>()
+        val binder = object : FakeIBinder() {
+            override fun transact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+                assertEquals(HelperBinderProtocol.TX_SET_NATIVE_STATUS_BAR_REPLACED, code)
+                data.setDataPosition(0)
+                data.enforceInterface(HelperBinderProtocol.DESCRIPTOR)
+                values += data.readInt()
+                reply!!.writeInt(0)
+                reply.writeInt(0)
+                reply.setDataPosition(0)
+                return true
+            }
+        }
+        val client = clientWith(binder)
+
+        assertTrue(client.setNativeStatusBarReplaced(true))
+        assertTrue(client.setNativeStatusBarReplaced(false))
+        assertEquals(listOf(1, 0), values)
+    }
+
+    @Test
+    fun `lock sound playback state uses privileged helper transaction`() = runBlocking {
+        val values = mutableListOf<Int>()
+        val binder = object : FakeIBinder() {
+            override fun transact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+                assertEquals(HelperBinderProtocol.TX_SET_LOCK_SOUND_PLAYBACK_STATE, code)
+                data.setDataPosition(0)
+                data.enforceInterface(HelperBinderProtocol.DESCRIPTOR)
+                values += data.readInt()
+                reply!!.writeInt(0)
+                reply.writeInt(0)
+                reply.setDataPosition(0)
+                return true
+            }
+        }
+        val client = clientWith(binder)
+
+        assertTrue(client.setLockSoundPlaybackState(true))
+        assertTrue(client.setLockSoundPlaybackState(false))
+        assertEquals(listOf(1, 0), values)
+    }
+
     /** TC-6: transact returning false yields null for read and false for write */
     @Test
     fun `transact returning false yields null for read and false for write`() = runBlocking {

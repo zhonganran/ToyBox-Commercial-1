@@ -25,7 +25,7 @@ internal fun DesktopQuickCardIconImage(
         loadDesktopQuickCardIcon(context, icon)
     }
     DisposableEffect(drawable) {
-        (drawable as? AnimatedImageDrawable)?.start()
+        drawable.startForever()
         onDispose { (drawable as? AnimatedImageDrawable)?.stop() }
     }
     AndroidView(
@@ -40,9 +40,16 @@ internal fun DesktopQuickCardIconImage(
         update = { imageView ->
             imageView.contentDescription = contentDescription
             if (imageView.drawable !== drawable) imageView.setImageDrawable(drawable)
-            (drawable as? AnimatedImageDrawable)?.start()
+            drawable.startForever()
         },
     )
+}
+
+private fun Drawable?.startForever() {
+    (this as? AnimatedImageDrawable)?.apply {
+        repeatCount = AnimatedImageDrawable.REPEAT_INFINITE
+        if (!isRunning) start()
+    }
 }
 
 private fun loadDesktopQuickCardIcon(

@@ -19,6 +19,7 @@ import com.byd.wjx.service.runtime.CameraRuntimeCoordinator
 import com.byd.wjx.service.runtime.SteeringWheelRuntimeCoordinator
 import com.byd.wjx.service.runtime.TrackingLocationCoordinator
 import com.byd.wjx.service.runtime.TrackingNotificationController
+import com.byd.wjx.statusbar.CustomStatusBarRuntime
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -55,6 +56,7 @@ class TrackingService : Service() {
     @Inject lateinit var ledRuntimeCoordinator: com.byd.wjx.led.LedRuntimeCoordinator
     @Inject lateinit var electronicMirrorCoordinator: ElectronicMirrorCoordinator
     @Inject lateinit var desktopQuickCardRuntime: DesktopQuickCardRuntime
+    @Inject lateinit var customStatusBarRuntime: CustomStatusBarRuntime
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val helperReadiness = CompletableDeferred<Boolean>()
@@ -132,6 +134,7 @@ class TrackingService : Service() {
         startPolling()
         cameraRuntimeCoordinator.start(serviceScope)
         desktopQuickCardRuntime.start(serviceScope)
+        customStatusBarRuntime.start(serviceScope)
         electronicMirrorCoordinator.start(cameraRuntimeCoordinator.active)
         lyricRuntime.start(cameraRuntimeCoordinator.active, electronicMirrorCoordinator.active)
         ledRuntimeCoordinator.start(serviceScope)
@@ -182,6 +185,7 @@ class TrackingService : Service() {
 
         lyricRuntime.stop()
         electronicMirrorCoordinator.stop()
+        customStatusBarRuntime.stop()
         desktopQuickCardRuntime.stop()
         ledRuntimeCoordinator.stop()
         cameraRuntimeCoordinator.stop()

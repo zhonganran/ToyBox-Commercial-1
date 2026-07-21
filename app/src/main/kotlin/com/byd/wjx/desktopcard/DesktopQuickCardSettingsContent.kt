@@ -49,6 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -247,22 +248,6 @@ private fun DesktopQuickCardIconSection(
                             contentDescription = icon.label,
                             modifier = Modifier.fillMaxSize(),
                         )
-                        if (icon.custom) {
-                            IconButton(
-                                onClick = { onDelete(icon.id) },
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .size(25.dp)
-                                    .background(CardSurfaceElevated.copy(alpha = 0.9f), RoundedCornerShape(7.dp)),
-                            ) {
-                                Icon(
-                                    Icons.Outlined.Delete,
-                                    contentDescription = "删除${icon.label}",
-                                    tint = AccentOrange,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                            }
-                        }
                     }
                     Text(
                         icon.label,
@@ -272,6 +257,26 @@ private fun DesktopQuickCardIconSection(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    if (icon.custom) {
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(7.dp))
+                                .clickable { onDelete(icon.id) }
+                                .padding(horizontal = 7.dp, vertical = 3.dp),
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                Icons.Outlined.Delete,
+                                contentDescription = "删除${icon.label}",
+                                tint = AccentOrange,
+                                modifier = Modifier.size(13.dp),
+                            )
+                            Text("删除", color = AccentOrange, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        Spacer(Modifier.size(20.dp))
+                    }
                 }
             }
         }
