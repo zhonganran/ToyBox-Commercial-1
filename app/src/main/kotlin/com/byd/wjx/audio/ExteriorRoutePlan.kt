@@ -49,11 +49,13 @@ object ExteriorRoutePlan {
 
             ExteriorChannel.Channel1 -> {
                 val lockRouteOk = writeResults[writes[0]] == true || lockStateOk
+                // BYD trims expose different subsets of the route FIDs. One accepted route write,
+                // together with the speaker, lock-sound state and focus, is sufficient evidence.
+                val supportedRouteOk = writeResults.values.any { it }
                 lockRouteOk &&
+                    speakerOk &&
                     focusOk &&
-                    writeResults[writes[1]] == true &&
-                    writeResults[writes[2]] == true &&
-                    writeResults[writes[3]] == true
+                    supportedRouteOk
             }
         }
     }
