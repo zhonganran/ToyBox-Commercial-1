@@ -15,6 +15,7 @@ class ExteriorRoutePlanTest {
         assertEquals(
             listOf(
                 ExteriorRouteWrite(1000, 13, -1442839775),
+                ExteriorRouteWrite(1002, -1442839775, 1),
                 ExteriorRouteWrite(1000, 891293750, 1339031619),
                 ExteriorRouteWrite(1000, 891293760, 2),
                 ExteriorRouteWrite(1000, 372244513, 2),
@@ -24,6 +25,7 @@ class ExteriorRoutePlanTest {
         assertEquals(
             listOf(
                 ExteriorRouteWrite(1000, 13, 1),
+                ExteriorRouteWrite(1002, -1442839775, 0),
                 ExteriorRouteWrite(1000, 891293750, 3),
                 ExteriorRouteWrite(1000, 891293760, 1),
             ),
@@ -79,10 +81,11 @@ class ExteriorRoutePlanTest {
     }
 
     @Test
-    fun `channel one accepts a supported route subset on trims that reject legacy fids`() {
+    fun `channel one accepts controller exterior route when lock state api is unavailable`() {
         val writes = ExteriorRoutePlan.armWrites(ExteriorChannel.Channel1)
         val results = writes.associateWith { false }.toMutableMap().apply {
-            this[writes[3]] = true
+            this[writes[1]] = true
+            this[writes[4]] = true
         }
 
         assertTrue(
@@ -90,7 +93,25 @@ class ExteriorRoutePlanTest {
                 channel = ExteriorChannel.Channel1,
                 writeResults = results,
                 speakerOk = true,
-                lockStateOk = true,
+                lockStateOk = false,
+                focusOk = true,
+            )
+        )
+    }
+
+    @Test
+    fun `channel one rejects karaoke route without an exterior playback control`() {
+        val writes = ExteriorRoutePlan.armWrites(ExteriorChannel.Channel1)
+        val results = writes.associateWith { false }.toMutableMap().apply {
+            this[writes[4]] = true
+        }
+
+        assertFalse(
+            ExteriorRoutePlan.isStronglyConfirmed(
+                channel = ExteriorChannel.Channel1,
+                writeResults = results,
+                speakerOk = true,
+                lockStateOk = false,
                 focusOk = true,
             )
         )
@@ -112,12 +133,9 @@ class ExteriorRoutePlanTest {
     }
 
     @Test
-    fun `channel one requires speaker lock route and focus confirmation`() {
+    fun `channel one requires speaker supported route and focus confirmation`() {
         val writes = ExteriorRoutePlan.armWrites(ExteriorChannel.Channel1)
         val results = writes.associateWith { true }
-        val withoutLockRoute = writes.associateWith { false }.toMutableMap().apply {
-            this[writes[3]] = true
-        }
 
         assertFalse(
             ExteriorRoutePlan.isStronglyConfirmed(
@@ -131,9 +149,9 @@ class ExteriorRoutePlanTest {
         assertFalse(
             ExteriorRoutePlan.isStronglyConfirmed(
                 channel = ExteriorChannel.Channel1,
-                writeResults = withoutLockRoute,
+                writeResults = writes.associateWith { false },
                 speakerOk = true,
-                lockStateOk = false,
+                lockStateOk = true,
                 focusOk = true,
             )
         )

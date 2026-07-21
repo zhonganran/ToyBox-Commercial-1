@@ -452,6 +452,7 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
         private fun isExteriorAudioWrite(dev: Int, fid: Int): Boolean =
             (dev == 3 && fid == -1442839934) ||
                 (dev == 1000 && fid == 13) ||
+                (dev == 1002 && fid == -1442839775) ||
                 (dev == 1000 && fid == 891293750) ||
                 (dev == 1000 && fid == 891293760) ||
                 (dev == 1000 && fid == 372244513)

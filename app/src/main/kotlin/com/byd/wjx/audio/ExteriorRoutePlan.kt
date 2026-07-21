@@ -12,6 +12,7 @@ object ExteriorRoutePlan {
         when (channel) {
             ExteriorChannel.Channel1 -> listOf(
                 ExteriorRouteWrite(DEV_AUDIO, LOCK_CAR_SOUND_PLAYBACK_STATUS_SET, LOCK_CAR_SOUND_PLAYBACK_ON),
+                ExteriorRouteWrite(DEV_AUDIO_CONTROLLER, CONTROLLER_EXTERIOR_PLAYBACK_SET, CONTROLLER_EXTERIOR_PLAYBACK_ON),
                 ExteriorRouteWrite(DEV_AUDIO, EXTERIOR_SWITCH_SET, SWITCH_ON),
                 ExteriorRouteWrite(DEV_AUDIO, AVAS_ROUTE_SET, AVAS_ROUTE_ON),
                 ExteriorRouteWrite(DEV_AUDIO, AUDIO_KARAOKE_MODE_SET, KARAOKE_MODE_EXTERIOR),
@@ -25,6 +26,7 @@ object ExteriorRoutePlan {
         when (channel) {
             ExteriorChannel.Channel1 -> listOf(
                 ExteriorRouteWrite(DEV_AUDIO, LOCK_CAR_SOUND_PLAYBACK_STATUS_SET, LOCK_CAR_SOUND_PLAYBACK_OFF),
+                ExteriorRouteWrite(DEV_AUDIO_CONTROLLER, CONTROLLER_EXTERIOR_PLAYBACK_SET, CONTROLLER_EXTERIOR_PLAYBACK_OFF),
                 ExteriorRouteWrite(DEV_AUDIO, EXTERIOR_SWITCH_SET, SWITCH_OFF),
                 ExteriorRouteWrite(DEV_AUDIO, AVAS_ROUTE_SET, AVAS_ROUTE_OFF),
             )
@@ -48,11 +50,14 @@ object ExteriorRoutePlan {
                     writeResults[writes[0]] == true
 
             ExteriorChannel.Channel1 -> {
-                val lockRouteOk = writeResults[writes[0]] == true || lockStateOk
-                // BYD trims expose different subsets of the route FIDs. One accepted route write,
-                // together with the speaker, lock-sound state and focus, is sufficient evidence.
+                // 34/57 controllers expose different exterior-playback controls. The karaoke
+                // route alone is not proof of exterior output and can leave audio in the cabin.
+                val exteriorControlOk =
+                    writeResults[writes[0]] == true ||
+                        writeResults[writes[1]] == true ||
+                        lockStateOk
                 val supportedRouteOk = writeResults.values.any { it }
-                lockRouteOk &&
+                exteriorControlOk &&
                     speakerOk &&
                     focusOk &&
                     supportedRouteOk
@@ -61,6 +66,7 @@ object ExteriorRoutePlan {
     }
 
     private const val DEV_AUDIO = 1000
+    private const val DEV_AUDIO_CONTROLLER = 1002
     private const val DEV_ADAS = 3
     private const val EXTERIOR_SWITCH_SET = 891293750
     private const val AVAS_ROUTE_SET = 891293760
@@ -73,6 +79,9 @@ object ExteriorRoutePlan {
     private const val LOCK_CAR_SOUND_PLAYBACK_STATUS_SET = 13
     private const val LOCK_CAR_SOUND_PLAYBACK_ON = -1442839775
     private const val LOCK_CAR_SOUND_PLAYBACK_OFF = 1
+    private const val CONTROLLER_EXTERIOR_PLAYBACK_SET = -1442839775
+    private const val CONTROLLER_EXTERIOR_PLAYBACK_ON = 1
+    private const val CONTROLLER_EXTERIOR_PLAYBACK_OFF = 0
     private const val ADAS_UE_BROADCAST_POSITION_SET = -1442839934
     private const val ADAS_BROADCAST_POSITION_ON = 1
     private const val ADAS_BROADCAST_POSITION_OFF = 0

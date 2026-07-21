@@ -57,9 +57,10 @@ object HelperBinderProtocol {
     const val SERVICE_NAME = "wjx_helper"
     const val PROCESS_NAME = "wjx_helper"   // app_process --nice-name + ps lookup
     const val DESCRIPTOR = "com.byd.wjx.helper.IHelper"
-    // Increment whenever transaction ids or Parcel layouts change. The helper process can outlive
-    // an APK replacement, so the client verifies this marker before using vehicle transactions.
-    const val CURRENT_VERSION = 17
+    // Increment whenever the wire contract or helper-resident behavior changes. The helper process
+    // can outlive an APK replacement, so the client verifies this marker before using it. Version
+    // 18 reloads the 34/57 controller exterior route used by lock/unlock/sentry playback.
+    const val CURRENT_VERSION = 18
 
     const val TX_PING = IBinder.FIRST_CALL_TRANSACTION       // 1
     const val TX_READ = IBinder.FIRST_CALL_TRANSACTION + 1   // 2
