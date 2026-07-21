@@ -136,6 +136,8 @@ internal fun FeaturedAutomationRule(
     val enterAction = remember(rule.actions) { ActionDef.listFromJson(rule.actions).firstOrNull() }
     val exitAction = remember(rule.exitActions) { ActionDef.listFromJson(rule.exitActions).firstOrNull() }
     val action = enterAction ?: exitAction
+    val exitOnly = enterAction == null && exitAction != null
+    val unplugEvent = isChargeGunUnplugEvent(trigger, exitOnly)
     val shape = RoundedCornerShape(46.dp)
     Row(
         modifier = modifier
@@ -153,7 +155,7 @@ internal fun FeaturedAutomationRule(
             label = trigger?.value?.take(2)?.uppercase() ?: "IF",
         )
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(triggerSummary(trigger), color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 2)
+            Text(automationTriggerSummary(trigger, exitOnly), color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 2)
             Text(rule.name, color = TextSecondary, fontSize = 11.sp, maxLines = 1)
         }
         Text("→", color = TextPrimary, fontSize = 26.sp, fontWeight = FontWeight.Light)
@@ -164,7 +166,7 @@ internal fun FeaturedAutomationRule(
         )
         Column(modifier = Modifier.weight(1.15f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(
-                if (enterAction == null && exitAction != null) "退出时：${actionSummary(action)}" else actionSummary(action),
+                if (exitOnly && !unplugEvent) "退出时：${actionSummary(action)}" else actionSummary(action),
                 color = TextPrimary,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.ExtraBold,
@@ -255,6 +257,8 @@ internal fun SceneRuleCard(
     val trigger = triggers.firstOrNull()
     val enterAction = actions.firstOrNull()
     val action = enterAction ?: exitActions.firstOrNull()
+    val exitOnly = enterAction == null && exitActions.isNotEmpty()
+    val unplugEvent = isChargeGunUnplugEvent(trigger, exitOnly)
     val accent = listOf(SceneMint, SceneBlue, SceneAmber, SceneCyan, SceneViolet)[((rule.id % 5) + 5).toInt() % 5]
     var menuExpanded by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(24.dp)
@@ -271,9 +275,9 @@ internal fun SceneRuleCard(
             AutomationNodeIcon(triggerIcon(trigger), listOf(accent, accent.copy(alpha = 0.68f)), trigger?.value?.take(1) ?: "")
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(triggerSummary(trigger), color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 2)
+                Text(automationTriggerSummary(trigger, exitOnly), color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, maxLines = 2)
                 Text(
-                    if (enterAction == null && action != null) "否则  ${actionSummary(action)}" else "→  ${actionSummary(action)}",
+                    if (exitOnly && !unplugEvent && action != null) "否则  ${actionSummary(action)}" else "→  ${actionSummary(action)}",
                     color = TextSecondary,
                     fontSize = 12.sp,
                     maxLines = 2,
@@ -466,8 +470,9 @@ private fun actionIcon(action: ActionDef?): androidx.compose.ui.graphics.vector.
     else -> Icons.Outlined.Bolt
 }
 
-private fun triggerSummary(trigger: TriggerDef?): String = when {
+internal fun automationTriggerSummary(trigger: TriggerDef?, exitOnly: Boolean = false): String = when {
     trigger == null -> "等待设置触发条件"
+    isChargeGunUnplugEvent(trigger, exitOnly) -> "充电枪已拔出"
     trigger.kind == "place_enter" -> "进入 ${trigger.placeName ?: "地点"}"
     trigger.kind == "place_exit" -> "离开 ${trigger.placeName ?: "地点"}"
     trigger.kind == "interval" -> "每 ${trigger.value} 秒"
@@ -475,6 +480,12 @@ private fun triggerSummary(trigger: TriggerDef?): String = when {
     trigger.displayName.isNotBlank() -> trigger.displayName
     else -> "${trigger.chineseName} ${trigger.operator} ${trigger.value}"
 }
+
+internal fun isChargeGunUnplugEvent(trigger: TriggerDef?, exitOnly: Boolean): Boolean =
+    exitOnly &&
+        trigger?.param == "ChargeGunState" &&
+        trigger.operator == ">=" &&
+        trigger.value == "2"
 
 private fun actionSummary(action: ActionDef?): String =
     action?.displayName?.takeIf { it.isNotBlank() } ?: "等待设置执行动作"

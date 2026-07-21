@@ -28,7 +28,7 @@ import kotlinx.coroutines.CompletableDeferred
 /**
  * One panorama producer shared by every visible electronic-mirror window.
  *
- * AutoTark keeps one camera source and fans the same frame out to every registered TextureView.
+ * One camera source fans the same frame out to every registered TextureView.
  * Doing the same here lets the left, right and streaming-rear windows coexist without opening the
  * BYD camera three times or switching its Surface back and forth. Frames never leave the GPU.
  */
@@ -587,7 +587,7 @@ internal class ElectronicMirrorOpaqueTextureView(
     private var released = false
 
     init {
-        // This is the important AutoTark behaviour: TextureView itself is declared opaque. The
+        // TextureView itself must be opaque so the compositor cannot blend the layer below. The
         // compositor must never blend the navigation layer below with a real camera buffer.
         isOpaque = true
         alpha = 1f

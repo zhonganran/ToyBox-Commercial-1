@@ -40,4 +40,25 @@ class LyricSettingsTest {
 
         assertEquals(settings.displayStyle(), settings.clusterDisplayStyle())
     }
+
+    @Test
+    fun desktopAndClusterFontScalesSaveIndependently() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val prefs = context.getSharedPreferences(LyricSettings.PREFS_NAME, android.content.Context.MODE_PRIVATE)
+        prefs.edit()
+            .clear()
+            .commit()
+        val settings = LyricSettings(context)
+
+        assertEquals(1f, settings.desktopFontScale, 0.001f)
+        assertEquals(1f, settings.clusterFontScale, 0.001f)
+
+        settings.desktopFontScale = 1.4f
+        assertEquals(1.4f, settings.desktopFontScale, 0.001f)
+        assertEquals(1f, settings.clusterFontScale, 0.001f)
+
+        settings.clusterFontScale = 0.7f
+        assertEquals(1.4f, settings.desktopFontScale, 0.001f)
+        assertEquals(0.7f, settings.clusterFontScale, 0.001f)
+    }
 }

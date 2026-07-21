@@ -62,12 +62,12 @@ fun LyricDisplayScreen(
     var allowOtherApps by remember { mutableStateOf(lyricSettings.allowOnOtherApps) }
     var desktopTouchThrough by remember { mutableStateOf(lyricSettings.desktopTouchThrough) }
     var sharedLineCount by remember { mutableIntStateOf(lyricSettings.sharedLineCount) }
-    var sharedFontScale by remember { mutableFloatStateOf(lyricSettings.sharedFontScale) }
+    var desktopFontScale by remember { mutableFloatStateOf(lyricSettings.desktopFontScale) }
+    var clusterFontScale by remember { mutableFloatStateOf(lyricSettings.clusterFontScale) }
     var sharedTextColor by remember { mutableIntStateOf(lyricSettings.sharedTextColor) }
     var sharedHighlightColor by remember { mutableIntStateOf(lyricSettings.sharedHighlightColor) }
     var sharedFontStyleId by remember { mutableStateOf(lyricSettings.sharedFontStyleId) }
     var sharedMotionPresetId by remember { mutableStateOf(lyricSettings.sharedMotionPresetId) }
-    var clusterWidthScale by remember { mutableFloatStateOf(lyricSettings.clusterWidthScale) }
     var clusterX by remember { mutableFloatStateOf(lyricSettings.clusterXPct.toFloat()) }
     var clusterY by remember { mutableFloatStateOf(lyricSettings.clusterYPct.toFloat()) }
     var syncOffset by remember { mutableFloatStateOf(lyricSettings.syncOffsetMs.toFloat()) }
@@ -91,12 +91,12 @@ fun LyricDisplayScreen(
         allowOtherApps = lyricSettings.allowOnOtherApps
         desktopTouchThrough = lyricSettings.desktopTouchThrough
         sharedLineCount = lyricSettings.sharedLineCount
-        sharedFontScale = lyricSettings.sharedFontScale
+        desktopFontScale = lyricSettings.desktopFontScale
+        clusterFontScale = lyricSettings.clusterFontScale
         sharedTextColor = lyricSettings.sharedTextColor
         sharedHighlightColor = lyricSettings.sharedHighlightColor
         sharedFontStyleId = lyricSettings.sharedFontStyleId
         sharedMotionPresetId = lyricSettings.sharedMotionPresetId
-        clusterWidthScale = lyricSettings.clusterWidthScale
         clusterX = lyricSettings.clusterXPct.toFloat()
         clusterY = lyricSettings.clusterYPct.toFloat()
         syncOffset = lyricSettings.syncOffsetMs.toFloat()
@@ -169,12 +169,12 @@ fun LyricDisplayScreen(
                 allowOtherApps = allowOtherApps,
                 desktopTouchThrough = desktopTouchThrough,
                 sharedLineCount = sharedLineCount,
-                sharedFontScale = sharedFontScale,
+                desktopFontScale = desktopFontScale,
+                clusterFontScale = clusterFontScale,
                 sharedTextColor = sharedTextColor,
                 sharedHighlightColor = sharedHighlightColor,
                 sharedFontStyleId = sharedFontStyleId,
                 sharedMotionPresetId = sharedMotionPresetId,
-                clusterWidthScale = clusterWidthScale,
                 clusterX = clusterX,
                 clusterY = clusterY,
                 syncOffset = syncOffset,
@@ -197,7 +197,6 @@ fun LyricDisplayScreen(
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                     )
                 },
-                onResetDesktopPosition = { lyricSettings.resetDesktopPosition() },
                 onResetClusterPosition = {
                     lyricSettings.resetClusterPosition()
                     clusterX = lyricSettings.clusterXPct.toFloat()
@@ -207,9 +206,13 @@ fun LyricDisplayScreen(
                     lyricSettings.sharedLineCount = it
                     sharedLineCount = lyricSettings.sharedLineCount
                 },
-                onSharedFontScaleChange = {
-                    lyricSettings.sharedFontScale = it
-                    sharedFontScale = lyricSettings.sharedFontScale
+                onDesktopFontScaleChange = {
+                    lyricSettings.desktopFontScale = it
+                    desktopFontScale = lyricSettings.desktopFontScale
+                },
+                onClusterFontScaleChange = {
+                    lyricSettings.clusterFontScale = it
+                    clusterFontScale = lyricSettings.clusterFontScale
                 },
                 onSharedTextColorChange = {
                     lyricSettings.sharedTextColor = it
@@ -226,10 +229,6 @@ fun LyricDisplayScreen(
                 onSharedMotionPresetChange = {
                     lyricSettings.sharedMotionPresetId = it
                     sharedMotionPresetId = lyricSettings.sharedMotionPresetId
-                },
-                onClusterWidthScaleChange = {
-                    lyricSettings.clusterWidthScale = it
-                    clusterWidthScale = lyricSettings.clusterWidthScale
                 },
                 onClusterXChange = {
                     lyricSettings.clusterXPct = it.roundToInt()

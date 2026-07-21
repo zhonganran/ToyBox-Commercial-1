@@ -3,7 +3,10 @@ package com.byd.wjx.data.system
 import android.os.Build
 import android.os.Environment
 import android.os.StatFs
+import com.byd.wjx.data.vehicle.HelperClient
+import com.byd.wjx.log.WjxFileLogger
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -116,21 +119,38 @@ internal data class DiskCounters(
 )
 
 @Singleton
-class SystemMetricsReader @Inject constructor() {
+class SystemMetricsReader @Inject constructor(
+    private val helperClient: HelperClient,
+) {
     private val sampleMutex = Mutex()
     private val cpuModelName by lazy(LazyThreadSafetyMode.NONE) { readCpuModelName() }
     private val deviceMetrics by lazy(LazyThreadSafetyMode.NONE) { readDeviceMetrics() }
     private var previousCpuTimes: Map<String, CpuTimes>? = null
     private var previousDiskCounters: Map<String, DiskCounters>? = null
     private var previousSampleAtMs: Long? = null
+    private val loggedHelperFallbacks = mutableSetOf<String>()
 
     suspend fun readSnapshot(): SystemMetricsSnapshot = withContext(Dispatchers.IO) {
-        sampleMutex.withLock { readSnapshotLocked() }
+        sampleMutex.withLock {
+            primeCpuSampleIfNeeded()
+            readSnapshotLocked()
+        }
     }
 
-    private fun readSnapshotLocked(): SystemMetricsSnapshot {
+    private suspend fun primeCpuSampleIfNeeded() {
+        if (previousCpuTimes != null) return
         val capturedAtMs = System.currentTimeMillis()
-        val cpuTimes = readSmallText(PROC_STAT)?.let(::parseCpuStat).orEmpty()
+        val cpuTimes = readCpuTimes()
+        if (cpuTimes.isEmpty()) return
+        previousCpuTimes = cpuTimes
+        previousDiskCounters = readSmallText(PROC_DISKSTATS)?.let(::parseDiskStats).orEmpty()
+        previousSampleAtMs = capturedAtMs
+        delay(INITIAL_CPU_SAMPLE_DELAY_MS)
+    }
+
+    private suspend fun readSnapshotLocked(): SystemMetricsSnapshot {
+        val capturedAtMs = System.currentTimeMillis()
+        val cpuTimes = readCpuTimes()
         val cpuUsage = calculateCpuUsage(previousCpuTimes, cpuTimes)
         val diskCounters = readSmallText(PROC_DISKSTATS)?.let(::parseDiskStats).orEmpty()
         val diskIo = calculateDiskIo(
@@ -138,7 +158,7 @@ class SystemMetricsReader @Inject constructor() {
             current = diskCounters,
             elapsedMs = previousSampleAtMs?.let { capturedAtMs - it },
         )
-        previousCpuTimes = cpuTimes
+        previousCpuTimes = cpuTimes.takeIf { it.isNotEmpty() }
         previousDiskCounters = diskCounters
         previousSampleAtMs = capturedAtMs
 
@@ -150,13 +170,15 @@ class SystemMetricsReader @Inject constructor() {
                     ?.div(BYTES_PER_MB)
                 if (zramMb != null) parsed.copy(zramMb = zramMb) else parsed
             }
-        val loadAverage = readSmallText(PROC_LOADAVG)
-            ?.trim()
-            ?.split(WHITESPACE_REGEX)
-            .orEmpty()
-            .take(3)
-            .map { it.toDoubleOrNull() }
-        val uptimeSeconds = readSmallText(PROC_UPTIME)
+        val directLoadAverage = readSmallText(PROC_LOADAVG)?.let(::parseLoadAverage).orEmpty()
+        val loadAverage = if (directLoadAverage.any { it != null }) {
+            directLoadAverage
+        } else {
+            readHelperText(PROC_LOADAVG)?.let(::parseLoadAverage).orEmpty()
+        }
+        val uptimeText = readSmallText(PROC_UPTIME)
+            ?: readHelperText(PROC_UPTIME)
+        val uptimeSeconds = uptimeText
             ?.trim()
             ?.substringBefore(' ')
             ?.toDoubleOrNull()
@@ -180,6 +202,26 @@ class SystemMetricsReader @Inject constructor() {
             device = deviceMetrics,
             appProcess = readAppProcessMetrics(),
         )
+    }
+
+    private suspend fun readCpuTimes(): Map<String, CpuTimes> {
+        val direct = readSmallText(PROC_STAT)?.let(::parseCpuStat).orEmpty()
+        if (direct.isNotEmpty()) return direct
+        return readHelperText(PROC_STAT)?.let(::parseCpuStat).orEmpty()
+    }
+
+    private suspend fun readHelperText(path: String): String? {
+        val command = when (path) {
+            PROC_STAT -> "cat /proc/stat"
+            PROC_LOADAVG -> "cat /proc/loadavg"
+            PROC_UPTIME -> "cat /proc/uptime"
+            else -> return null
+        }
+        val result = helperClient.execShellResult(command)?.takeIf { it.ok } ?: return null
+        if (loggedHelperFallbacks.add(path)) {
+            WjxFileLogger.i(TAG, "Using shell helper fallback for $path")
+        }
+        return result.output.trim().take(MAX_TEXT_CHARS).takeIf { it.isNotBlank() }
     }
 
     private fun readCpuModelName(): String? {
@@ -366,6 +408,8 @@ class SystemMetricsReader @Inject constructor() {
         const val BYTES_PER_GB = 1024.0 * 1024.0 * 1024.0
         const val MAX_TEXT_CHARS = 256 * 1024
         const val MAX_THERMAL_ZONES = 24
+        const val INITIAL_CPU_SAMPLE_DELAY_MS = 350L
+        const val TAG = "SystemMetricsReader"
 
         val WHITESPACE_REGEX = Regex("\\s+")
         val CPU_CORE_REGEX = Regex("cpu\\d+")
@@ -422,9 +466,17 @@ internal fun parseCpuStat(text: String): Map<String, CpuTimes> = buildMap {
         val counters = fields.drop(1).mapNotNull { it.toLongOrNull() }
         if (counters.size < 4) return@forEach
         val idle = counters[3] + counters.getOrElse(4) { 0L }
-        put(name, CpuTimes(total = counters.sum(), idle = idle))
+        // guest and guest_nice are already included in user and nice on Linux.
+        // Excluding fields after steal avoids double-counting them in total time.
+        put(name, CpuTimes(total = counters.take(8).sum(), idle = idle))
     }
 }
+
+internal fun parseLoadAverage(text: String): List<Double?> = text
+    .trim()
+    .split(Regex("\\s+"))
+    .take(3)
+    .map { it.toDoubleOrNull() }
 
 internal fun calculateCpuUsage(
     previous: Map<String, CpuTimes>?,

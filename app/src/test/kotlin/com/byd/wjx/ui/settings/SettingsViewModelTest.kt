@@ -32,6 +32,8 @@ import kotlinx.coroutines.test.setMain
 import okhttp3.OkHttpClient
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import io.mockk.coEvery
@@ -190,6 +192,33 @@ class SettingsViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(SettingsRepository.DEFAULT_BATTERY_CAPACITY, vm.uiState.value.batteryCapacity)
+    }
+
+    @Test
+    fun `electronic mirror stays hidden until version is tapped five times`() = runTest {
+        val settingsDao = FakeSettingsDao()
+        val vm = buildViewModel(settingsDao = settingsDao)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        repeat(4) { vm.onVersionTapped() }
+        assertFalse(vm.uiState.value.electronicMirrorUnlocked)
+
+        vm.onVersionTapped()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.electronicMirrorUnlocked)
+        assertEquals("true", settingsDao.map[SettingsRepository.KEY_ELECTRONIC_MIRROR_UNLOCKED])
+    }
+
+    @Test
+    fun `electronic mirror unlock is restored from settings`() = runTest {
+        val settingsDao = FakeSettingsDao().apply {
+            map[SettingsRepository.KEY_ELECTRONIC_MIRROR_UNLOCKED] = "true"
+        }
+        val vm = buildViewModel(settingsDao = settingsDao)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.electronicMirrorUnlocked)
     }
 
     @Test

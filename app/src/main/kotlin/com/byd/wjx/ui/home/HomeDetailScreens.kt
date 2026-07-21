@@ -208,11 +208,12 @@ private data class HomeDetailMetric(
 )
 
 @Composable
-private fun HomeDetailHeader(
+internal fun HomeDetailHeader(
     eyebrow: String,
     title: String,
     subtitle: String,
     connected: Boolean,
+    statusText: String = "车辆数据",
     onBack: () -> Unit,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -225,7 +226,7 @@ private fun HomeDetailHeader(
             title = title,
             subtitle = subtitle,
             modifier = Modifier.weight(1f),
-            trailing = { ProStatusPill("车辆数据", connected) },
+            trailing = { ProStatusPill(statusText, connected) },
         )
     }
 }

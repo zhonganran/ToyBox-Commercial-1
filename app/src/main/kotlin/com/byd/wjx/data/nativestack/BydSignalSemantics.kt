@@ -22,7 +22,7 @@ internal object BydSignalSemantics {
         value in DRIVE_ECONOMY..DRIVE_MOUNTAIN || value == DRIVE_RACING
 
     /**
-     * AutoTark 3.7.2 combines ENERGY_OPERATION_MODE with the instrument mode indicator. The
+     * ENERGY_OPERATION_MODE is combined with the instrument mode indicator. The
      * indicator is meaningful only after leaving P; in P it can retain the previous terrain mode.
      */
     fun selectDriveMode(baseMode: Int?, indicatorMode: Int?, gear: Int?): Int? {
@@ -46,19 +46,19 @@ internal object BydSignalSemantics {
     fun isValidWorkMode(value: Int?): Boolean = value in ENERGY_STOP..ENERGY_KEEP
 
     /**
-     * Newer platforms expose ENERGY_MODE_INSTRUMENT_50 while older platforms expose the legacy
-     * ENERGY_MODE_INSTRUMENT FID. Unsupported FIDs commonly return a valid-looking zero, so a
-     * non-zero mode wins a disagreement; otherwise the newer FID is authoritative.
+     * The direct instrument signal tracks the selected EV/HEV mode on the current vehicle. The
+     * platform-specific _50 signal can remain on a valid-looking stale value, so it is only a
+     * fallback when the direct signal is unavailable or reports the unsupported-looking zero.
      */
-    fun selectWorkMode(newInstrument50: Int?, legacyInstrument: Int?): Int? {
+    fun selectWorkMode(newInstrument50: Int?, directInstrument: Int?): Int? {
         val newValue = newInstrument50?.takeIf(::isValidWorkMode)
-        val legacyValue = legacyInstrument?.takeIf(::isValidWorkMode)
+        val directValue = directInstrument?.takeIf(::isValidWorkMode)
         return when {
-            newValue == null -> legacyValue
-            legacyValue == null || newValue == legacyValue -> newValue
+            directValue == null -> newValue
+            newValue == null || directValue == newValue -> directValue
+            directValue != ENERGY_STOP -> directValue
             newValue != ENERGY_STOP -> newValue
-            legacyValue != ENERGY_STOP -> legacyValue
-            else -> newValue
+            else -> directValue
         }
     }
 

@@ -1,5 +1,6 @@
 package com.byd.wjx.data.nativestack
 
+import com.byd.wjx.data.remote.DiParsData
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.data.vehicle.FakeVehicleGateway
 import io.mockk.coEvery
@@ -252,8 +253,8 @@ class NativeParsReaderTest {
                 "gear" to 4,
                 "driveMode" to 1,
                 "driveModeIndicator" to 7,
-                "workMode" to 1,
-                "workModeAlt" to 3,
+                "workMode" to 3,
+                "workModeAlt" to 1,
                 "sunroof" to 44,
             ).forEach { (field, value) ->
                 val fid = entry(field)
@@ -326,28 +327,29 @@ class NativeParsReaderTest {
     }
 
     @Test
-    fun `work mode supports new fid legacy fallback and invalid values`() = runTest {
+    fun `work mode prefers the direct fid with platform fallback and rejects invalid values`() = runTest {
         fun entry(field: String) = FidMap.entries.single { it.field == field }
         val mileage = entry("mileage")
-        val legacy = entry("workMode")
+        val direct = entry("workMode")
         val instrument50 = entry("workModeAlt")
         val settings = mockk<SettingsRepository>()
         coEvery { settings.getBatteryCapacity() } returns 72.9
 
-        suspend fun read(newValue: Int?, legacyValue: Int?): Int? {
+        suspend fun read(newValue: Int?, directValue: Int?): Int? {
             val gateway = FakeVehicleGateway().apply {
                 intValues[mileage.device to mileage.fid] = 10_000
                 newValue?.let { intValues[instrument50.device to instrument50.fid] = it }
-                legacyValue?.let { intValues[legacy.device to legacy.fid] = it }
+                directValue?.let { intValues[direct.device to direct.fid] = it }
             }
             return NativeParsReader(gateway, settings, noAdditionalActionFields)
                 .fetchVehicleSnapshot()?.data?.workMode
         }
 
-        assertEquals(3, read(newValue = 3, legacyValue = 1))
-        assertEquals(3, read(newValue = 0, legacyValue = 3))
-        assertEquals(1, read(newValue = null, legacyValue = 1))
-        assertNull(read(newValue = 9, legacyValue = -1))
+        assertEquals(3, read(newValue = 1, directValue = 3))
+        assertEquals(1, read(newValue = 3, directValue = 1))
+        assertEquals(3, read(newValue = 0, directValue = 3))
+        assertEquals(1, read(newValue = null, directValue = 1))
+        assertNull(read(newValue = 9, directValue = -1))
     }
 
     @Test
@@ -467,7 +469,7 @@ class NativeParsReaderTest {
         assertEquals(18, initial?.data?.insideTemp)
         assertEquals(1, gateway.batchHistory.size)
         assertEquals(VehicleReadProfiles.regularFull.size, gateway.batchHistory.single().size)
-        assertEquals(73, gateway.batchHistory.single().size)
+        assertEquals(71, gateway.batchHistory.single().size)
         assertTrue(
             gateway.batchHistory.single().none { spec ->
                 FidMap.entries.any {
@@ -641,6 +643,7 @@ class NativeParsReaderTest {
     @Test
     fun `powertrain telemetry scales signed currents and accepts diagnostic temperatures`() = runTest {
         val fields = VehicleReadProfiles.powertrainTelemetry
+        val gear = FidMap.entries.single { it.field == "gear" }
         val values = mapOf(
             "frontMotorSpeed" to 12_345,
             "rearMotorSpeed" to -8_765,
@@ -652,6 +655,7 @@ class NativeParsReaderTest {
             "waterTemp" to 92,
         )
         val gateway = FakeVehicleGateway().apply {
+            intValues[gear.device to gear.fid] = 4
             fields.forEach { entry ->
                 intValues[entry.device to entry.fid] = checkNotNull(values[entry.field])
             }
@@ -662,14 +666,45 @@ class NativeParsReaderTest {
             .readPowertrainTelemetry()
 
         assertEquals(12_345, data?.frontMotorSpeed)
-        assertEquals(-8_765, data?.rearMotorSpeed)
+        assertEquals(8_765, data?.rearMotorSpeed)
         assertEquals(96, data?.frontMotorTemp)
         assertEquals(104, data?.rearMotorTemp)
         assertEquals(12.3, data?.frontMotorCurrent ?: 0.0, 0.001)
         assertEquals(-45.6, data?.rearMotorCurrent ?: 0.0, 0.001)
         assertEquals(1_850, data?.engineRpm)
         assertEquals(92, data?.waterTemp)
-        assertEquals(8, gateway.lastBatchSpecs.size)
+        assertEquals(9, gateway.lastBatchSpecs.size)
         coVerify(exactly = 0) { settings.getBatteryCapacity() }
+    }
+
+    @Test
+    fun `powertrain telemetry normalizes unavailable and stopped rpm values`() = runTest {
+        fun entry(field: String) = FidMap.entries.single { it.field == field }
+        val gear = entry("gear")
+        val engine = entry("engineRpm")
+        val frontMotor = entry("frontMotorSpeed")
+        val rearMotor = entry("rearMotorSpeed")
+        val settings = mockk<SettingsRepository>(relaxed = true)
+
+        suspend fun read(gearValue: Int, engineValue: Int, frontValue: Int, rearValue: Int): DiParsData? {
+            val gateway = FakeVehicleGateway().apply {
+                intValues[gear.device to gear.fid] = gearValue
+                intValues[engine.device to engine.fid] = engineValue
+                intValues[frontMotor.device to frontMotor.fid] = frontValue
+                intValues[rearMotor.device to rearMotor.fid] = rearValue
+            }
+            return NativeParsReader(gateway, settings, noAdditionalActionFields)
+                .readPowertrainTelemetry()
+        }
+
+        val driving = read(gearValue = 4, engineValue = 8_191, frontValue = -1, rearValue = 1)
+        assertEquals(0, driving?.engineRpm)
+        assertEquals(0, driving?.frontMotorSpeed)
+        assertEquals(0, driving?.rearMotorSpeed)
+
+        val parked = read(gearValue = 1, engineValue = 900, frontValue = 1_200, rearValue = -1_300)
+        assertEquals(900, parked?.engineRpm)
+        assertEquals(0, parked?.frontMotorSpeed)
+        assertEquals(0, parked?.rearMotorSpeed)
     }
 }

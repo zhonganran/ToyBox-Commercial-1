@@ -12,7 +12,7 @@ const val DEFAULT_TRIGGER_KEYCODE = RIGHT_STAR_KEYCODE
 
 /**
  * Some BYD steering-wheel buttons emit a separate keycode for the hold action. During "learn long
- * press" we ignore the short edge and wait for these codes, mirroring AutoTark 3.6.1.
+ * press" we ignore the short edge and wait for these production-validated codes.
  */
 val SHORT_TO_DEDICATED_LONG_KEYCODES: Map<Int, Int> = mapOf(
     351 to 352, // right star
@@ -41,7 +41,7 @@ val NON_ASSIGNABLE_KEYCODES: Set<Int> = setOf(
     5,  // KEYCODE_CALL
     6,  // KEYCODE_ENDCALL
     294, // 360-view button on some 23-controller cars
-    310, // 360-view button (parking cameras) — code from OpenBYD / AutoTark
+    310, // 360-view button (parking cameras) from validated vehicle profiles
     309, // cluster carousel (native widget switch) on Leopard 3
 )
 

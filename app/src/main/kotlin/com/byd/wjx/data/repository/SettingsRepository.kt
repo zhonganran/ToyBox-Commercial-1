@@ -31,10 +31,12 @@ open class SettingsRepository @Inject constructor(
         const val KEY_HOME_TARIFF = "home_tariff"
         const val KEY_DC_TARIFF = "dc_tariff"
         const val KEY_TRIP_COST_TARIFF = "trip_cost_tariff" // "home", "dc", or numeric
+        const val KEY_FUEL_PRICE_PER_LITER = "fuel_price_per_liter"
         const val KEY_CONSUMPTION_GOOD = "consumption_good_threshold"
         const val KEY_CONSUMPTION_BAD = "consumption_bad_threshold"
         const val KEY_LAST_ENERGYDATA_IMPORT_TS = "last_energydata_import_ts"
         const val KEY_RECORD_TRIP_GPS = "record_trip_gps"
+        const val KEY_ELECTRONIC_MIRROR_UNLOCKED = "electronic_mirror_unlocked"
         const val KEY_LAST_MILEAGE_KM = "last_mileage_km"
         const val KEY_LAST_CAPACITY_KWH = "last_capacity_kwh"
         const val KEY_LAST_STATE_TS = "last_state_ts"
@@ -56,6 +58,7 @@ open class SettingsRepository @Inject constructor(
         const val DEFAULT_APP_WALLPAPER = "sakura_lake"
         const val DEFAULT_HOME_TARIFF = "0.60"
         const val DEFAULT_DC_TARIFF = "1.20"
+        const val DEFAULT_FUEL_PRICE_PER_LITER = "8.00"
         const val DEFAULT_CONSUMPTION_GOOD = "20"
         const val DEFAULT_CONSUMPTION_BAD = "30"
         const val DEFAULT_RECORD_TRIP_GPS = "true"
@@ -141,6 +144,34 @@ open class SettingsRepository @Inject constructor(
 
     suspend fun getTripCostTariffKey(): String =
         getString(KEY_TRIP_COST_TARIFF, "home")
+
+    fun observeTripCostTariff(): Flow<Double> = combine(
+        observeString(KEY_TRIP_COST_TARIFF),
+        observeString(KEY_HOME_TARIFF),
+        observeString(KEY_DC_TARIFF),
+    ) { selected, home, dc ->
+        val homeTariff = home?.parseNumericSetting() ?: DEFAULT_HOME_TARIFF.toDouble()
+        val dcTariff = dc?.parseNumericSetting() ?: DEFAULT_DC_TARIFF.toDouble()
+        when (selected ?: "home") {
+            "home" -> homeTariff
+            "dc" -> dcTariff
+            else -> selected?.parseNumericSetting() ?: homeTariff
+        }.takeIf { it.isFinite() && it >= 0.0 } ?: homeTariff
+    }
+
+    suspend fun getFuelPricePerLiter(): Double =
+        getString(KEY_FUEL_PRICE_PER_LITER, DEFAULT_FUEL_PRICE_PER_LITER)
+            .parseNumericSetting()
+            ?.takeIf { it.isFinite() && it >= 0.0 }
+            ?: DEFAULT_FUEL_PRICE_PER_LITER.toDouble()
+
+    fun observeFuelPricePerLiter(): Flow<Double> =
+        observeString(KEY_FUEL_PRICE_PER_LITER).map { raw ->
+            (raw ?: DEFAULT_FUEL_PRICE_PER_LITER)
+                .parseNumericSetting()
+                ?.takeIf { it.isFinite() && it >= 0.0 }
+                ?: DEFAULT_FUEL_PRICE_PER_LITER.toDouble()
+        }
 
     /** Live (good, bad) pair for UI coloring. Emits on every Settings edit. */
     fun observeConsumptionThresholds(): Flow<Pair<Double, Double>> = combine(

@@ -32,7 +32,11 @@ object DatabaseModule {
         Room.databaseBuilder(context, AppDatabase::class.java, "wjx.db")
             // Schema 17 is the fresh-install commercial baseline. Every future schema change
             // must provide an explicit migration so upgrades preserve user data.
-            .addMigrations(AppDatabase.MIGRATION_17_18, AppDatabase.MIGRATION_18_19)
+            .addMigrations(
+                AppDatabase.MIGRATION_17_18,
+                AppDatabase.MIGRATION_18_19,
+                AppDatabase.MIGRATION_19_20,
+            )
             .build()
 
     @Provides fun provideTripDao(db: AppDatabase): TripDao = db.tripDao()

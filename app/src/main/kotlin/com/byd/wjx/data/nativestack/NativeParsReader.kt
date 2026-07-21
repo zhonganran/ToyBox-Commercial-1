@@ -12,6 +12,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -204,12 +205,18 @@ class NativeParsReader @Inject constructor(
         fun <T> field(name: String): T? = decoded[name] as? T
         fun intField(name: String): Int? = field<Int>(name)
         fun doubleField(name: String): Double? = field<Double>(name)
-        fun rangeKmField(name: String): Int? = intField(name)?.takeIf { it in 0..2000 }
         fun percentField(name: String): Int? = intField(name)?.takeIf { it in 0..100 }
         fun consumptionField(name: String): Double? = doubleField(name)?.takeIf { it in 0.0..100.0 }
         fun tripEnergyField(name: String): Double? = doubleField(name)?.takeIf { it in 0.0..500.0 }
         fun speedField(name: String): Int? = intField(name)?.takeIf { it in 0..260 }
-        fun rpmField(name: String): Int? = intField(name)?.takeIf { it in -50_000..50_000 }
+        fun engineRpmField(): Int? = intField("engineRpm")?.let { raw ->
+            raw.takeIf { it in 1..MAX_ENGINE_RPM } ?: 0
+        }
+        fun motorRpmField(name: String, gear: Int?): Int? = intField(name)?.let { raw ->
+            if (gear == GEAR_PARK || gear == GEAR_NEUTRAL) return@let 0
+            raw.takeIf { it in -MAX_MOTOR_RPM..MAX_MOTOR_RPM }
+                ?.let { if (it in -1..1) 0 else abs(it) }
+        }
         fun motorCurrentField(name: String): Double? =
             doubleField(name)?.takeIf { it in -2_000.0..2_000.0 }
 
@@ -222,22 +229,23 @@ class NativeParsReader @Inject constructor(
 
         val soc = doubleField("soc")?.toInt()
         val mileage = doubleField("mileage")
+        val gear = intField("gear")
         val driveMode = BydSignalSemantics.selectDriveMode(
             baseMode = intField("driveMode"),
             indicatorMode = intField("driveModeIndicator"),
-            gear = intField("gear"),
+            gear = gear,
         )
         val workMode50 = intField("workModeAlt")?.takeIf(BydSignalSemantics::isValidWorkMode)
-        val workModeLegacy = intField("workMode")?.takeIf(BydSignalSemantics::isValidWorkMode)
-        val workMode = BydSignalSemantics.selectWorkMode(workMode50, workModeLegacy)
+        val workModeDirect = intField("workMode")?.takeIf(BydSignalSemantics::isValidWorkMode)
+        val workMode = BydSignalSemantics.selectWorkMode(workMode50, workModeDirect)
         if (
-            workMode50 != null && workModeLegacy != null && workMode50 != workModeLegacy &&
+            workMode50 != null && workModeDirect != null && workMode50 != workModeDirect &&
             !workModeConflictLogged
         ) {
             workModeConflictLogged = true
             WjxFileLogger.w(
                 TAG,
-                "work mode FID conflict instrument50=$workMode50 legacy=$workModeLegacy selected=$workMode",
+                "work mode FID conflict instrument50=$workMode50 direct=$workModeDirect selected=$workMode",
             )
         }
 
@@ -278,7 +286,7 @@ class NativeParsReader @Inject constructor(
             maxCellVoltage      = maxCellVoltage,
             minCellVoltage      = minCellVoltage,
             exteriorTemp        = intField("exteriorTemp"),
-            gear                = intField("gear"),
+            gear                = gear,
             powerState          = intField("powerState")?.takeIf { it in 0..4 },
             insideTemp          = intField("insideTemp"),
             acStatus            = intField("acStatus"),
@@ -310,8 +318,6 @@ class NativeParsReader @Inject constructor(
             drl                 = intField("drl"),
             adasApaParkingStatus = intField("adasApaParkingStatus"),
             fuelLevel           = percentField("fuelLevel"),
-            elecDrivingRangeKm  = rangeKmField("elecDrivingRangeKm"),
-            fuelDrivingRangeKm  = rangeKmField("fuelDrivingRangeKm"),
             elecConPer100km     = consumptionField("elecConPer100km"),
             fuelConPer100km     = consumptionField("fuelConPer100km"),
             currentTripElecKwh  = tripEnergyField("currentTripElecKwh"),
@@ -368,13 +374,13 @@ class NativeParsReader @Inject constructor(
             adasNoaGrayState    = intField("adasNoaGrayState"),
             adasMnoaStatus      = intField("adasMnoaStatus"),
             adasExecSpeed       = speedField("adasExecSpeed"),
-            frontMotorSpeed     = rpmField("frontMotorSpeed"),
-            rearMotorSpeed      = rpmField("rearMotorSpeed"),
+            frontMotorSpeed     = motorRpmField("frontMotorSpeed", gear),
+            rearMotorSpeed      = motorRpmField("rearMotorSpeed", gear),
             frontMotorTemp      = intField("frontMotorTemp"),
             rearMotorTemp       = intField("rearMotorTemp"),
             frontMotorCurrent   = motorCurrentField("frontMotorCurrent"),
             rearMotorCurrent    = motorCurrentField("rearMotorCurrent"),
-            engineRpm           = rpmField("engineRpm"),
+            engineRpm           = engineRpmField(),
             waterTemp           = intField("waterTemp"),
             tireStateFL         = intField("tireStateFL"),
             tireStateFR         = intField("tireStateFR"),
@@ -397,6 +403,10 @@ class NativeParsReader @Inject constructor(
     private companion object {
         private const val TAG = "NativeParsReader"
         private const val DETAIL_REFRESH_INTERVAL_NANOS = 3_000_000_000L
+        private const val MAX_ENGINE_RPM = 8_000
+        private const val MAX_MOTOR_RPM = 50_000
+        private const val GEAR_PARK = 1
+        private const val GEAR_NEUTRAL = 3
         private val UNAVAILABLE_RAW_READ = com.byd.wjx.data.vehicle.VehicleRawRead(
             status = -1,
             value = 0,
@@ -409,7 +419,9 @@ class NativeParsReader @Inject constructor(
         private val LedBodyReadPlan = ReadPlan(VehicleReadProfiles.ledBody)
         private val LedAdasReadPlan = ReadPlan(VehicleReadProfiles.ledAdas)
         private val TireTelemetryReadPlan = ReadPlan(VehicleReadProfiles.tireTelemetry)
-        private val PowertrainTelemetryReadPlan = ReadPlan(VehicleReadProfiles.powertrainTelemetry)
+        private val PowertrainTelemetryReadPlan = ReadPlan(
+            VehicleReadProfiles.powertrainTelemetry + FidMap.entries.single { it.field == "gear" },
+        )
     }
 
     private data class ActionSelection(

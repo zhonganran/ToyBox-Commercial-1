@@ -19,7 +19,14 @@ class FidMapTest {
         val mapped = FidMap.entries.map { it.field }.toSet()
         val missing = dataFields - mapped
         assertEquals(
-            setOf("avgBatTemp", "batteryCapacityKwh", "autoPark", "rain"),
+            setOf(
+                "avgBatTemp",
+                "batteryCapacityKwh",
+                "autoPark",
+                "rain",
+                "elecDrivingRangeKm",
+                "fuelDrivingRangeKm",
+            ),
             missing,
         )
     }
@@ -29,10 +36,10 @@ class FidMapTest {
             .memberProperties.map { it.name }.toSet()
         val mappedFields = FidMap.entries.map { it.field }.toSet()
         val covered = mappedFields.intersect(dataFields)
-        assertEquals(115, covered.size)
+        assertEquals(113, covered.size)
     }
 
-    @Test fun `official Settings corrections replace misleading AutoTark mappings`() {
+    @Test fun `official Settings corrections replace misleading legacy mappings`() {
         fun entry(field: String) = FidMap.entries.single { it.field == field }
 
         assertEquals(1001, entry("powerState").device)
@@ -67,7 +74,7 @@ class FidMapTest {
     }
 
     @Test fun `on demand reads are selectable but do not expand regular full polling`() {
-        assertEquals(73, VehicleReadProfiles.regularFull.size)
+        assertEquals(71, VehicleReadProfiles.regularFull.size)
         assertEquals(44, VehicleReadProfiles.onDemandFields.size)
         assertEquals(8, VehicleReadProfiles.tireTelemetry.size)
         assertEquals(8, VehicleReadProfiles.adasTelemetryFields.size)

@@ -1,20 +1,40 @@
 package com.byd.wjx.desktopcard
 
-import com.byd.wjx.data.foreground.ForegroundApp
+import com.byd.wjx.R
 import com.byd.wjx.ui.automation.ACTION_COMMANDS
-import com.byd.wjx.util.HomePackageResolver
 import kotlin.math.ceil
 import kotlin.math.min
 
-const val DESKTOP_QUICK_CARD_MAX_ITEMS = 8
 const val DESKTOP_QUICK_CARD_COLUMNS = 4
-const val DESKTOP_QUICK_CARD_MIN_SCALE = 0.70f
-const val DESKTOP_QUICK_CARD_MAX_SCALE = 1.50f
-const val DESKTOP_QUICK_CARD_MIN_SECTION_GAP_DP = 0f
-const val DESKTOP_QUICK_CARD_MAX_SECTION_GAP_DP = 72f
-const val DESKTOP_QUICK_CARD_DEFAULT_SECTION_GAP_DP = 28f
 const val DESKTOP_QUICK_CARD_LEFT_SLIDING_DOOR = "wjx_auto_door_left"
 const val DESKTOP_QUICK_CARD_RIGHT_SLIDING_DOOR = "wjx_auto_door_right"
+const val DESKTOP_QUICK_CARD_ICON_TOOLBOX = "builtin_toolbox"
+const val DESKTOP_QUICK_CARD_ICON_SMILE = "builtin_smile"
+
+data class DesktopQuickCardIcon(
+    val id: String,
+    val label: String,
+    val drawableRes: Int? = null,
+    val filePath: String? = null,
+    val custom: Boolean = false,
+)
+
+object DesktopQuickCardIconCatalog {
+    val builtIns = listOf(
+        DesktopQuickCardIcon(
+            id = DESKTOP_QUICK_CARD_ICON_TOOLBOX,
+            label = "玩具箱",
+            drawableRes = R.drawable.desktop_quick_card_icon_toolbox,
+        ),
+        DesktopQuickCardIcon(
+            id = DESKTOP_QUICK_CARD_ICON_SMILE,
+            label = "笑脸",
+            drawableRes = R.drawable.desktop_quick_card_icon_smile,
+        ),
+    )
+    val default: DesktopQuickCardIcon = builtIns.first()
+    val builtInIds: Set<String> = builtIns.mapTo(linkedSetOf(), DesktopQuickCardIcon::id)
+}
 
 enum class DesktopQuickCardCommandKind {
     AUTOMATION,
@@ -68,12 +88,9 @@ object DesktopQuickCardCommandCatalog {
 
 data class DesktopQuickCardConfig(
     val enabled: Boolean = false,
-    val allowOverOtherApps: Boolean = false,
     val functionCommands: List<String> = emptyList(),
     val soundPaths: List<String> = emptyList(),
-    val scale: Float = 1f,
-    val sectionGapDp: Float = DESKTOP_QUICK_CARD_DEFAULT_SECTION_GAP_DP,
-    val dividerEnabled: Boolean = true,
+    val floatingIconId: String = DESKTOP_QUICK_CARD_ICON_TOOLBOX,
     val x: Int = 0,
     val y: Int = 0,
     val positionInitialized: Boolean = false,
@@ -83,26 +100,22 @@ internal fun sanitizeDesktopQuickCardConfig(
     raw: DesktopQuickCardConfig,
     validCommands: Set<String> = DesktopQuickCardCommandCatalog.byCommand.keys,
     validSoundPaths: Set<String>? = null,
+    validIconIds: Set<String> = DesktopQuickCardIconCatalog.builtInIds,
 ): DesktopQuickCardConfig = raw.copy(
     functionCommands = raw.functionCommands
         .map(String::trim)
         .filter(String::isNotBlank)
         .distinct()
-        .filter(validCommands::contains)
-        .take(DESKTOP_QUICK_CARD_MAX_ITEMS),
+        .filter(validCommands::contains),
     soundPaths = raw.soundPaths
         .map(String::trim)
         .filter(String::isNotBlank)
         .distinct()
         .let { paths ->
             if (validSoundPaths == null) paths else paths.filter { it in validSoundPaths }
-        }
-        .take(DESKTOP_QUICK_CARD_MAX_ITEMS),
-    scale = raw.scale.coerceIn(DESKTOP_QUICK_CARD_MIN_SCALE, DESKTOP_QUICK_CARD_MAX_SCALE),
-    sectionGapDp = raw.sectionGapDp.coerceIn(
-        DESKTOP_QUICK_CARD_MIN_SECTION_GAP_DP,
-        DESKTOP_QUICK_CARD_MAX_SECTION_GAP_DP,
-    ),
+        },
+    floatingIconId = raw.floatingIconId.takeIf(validIconIds::contains)
+        ?: DESKTOP_QUICK_CARD_ICON_TOOLBOX,
     x = raw.x.coerceAtLeast(0),
     y = raw.y.coerceAtLeast(0),
 )
@@ -111,8 +124,7 @@ object DesktopQuickCardGrid {
     fun rowsFor(itemCount: Int): Int = if (itemCount <= 0) {
         0
     } else {
-        ceil(itemCount.coerceAtMost(DESKTOP_QUICK_CARD_MAX_ITEMS) / DESKTOP_QUICK_CARD_COLUMNS.toFloat())
-            .toInt()
+        ceil(itemCount / DESKTOP_QUICK_CARD_COLUMNS.toFloat()).toInt()
     }
 }
 
@@ -121,7 +133,6 @@ data class DesktopQuickCardLayoutMetrics(
     val cellSizeDp: Float,
     val gridGapDp: Float,
     val contentPaddingDp: Float,
-    val sectionGapDp: Float,
 )
 
 object DesktopQuickCardLayout {
@@ -133,13 +144,10 @@ object DesktopQuickCardLayout {
     fun calculate(
         screenWidthDp: Float,
         screenHeightDp: Float,
-        scale: Float,
-        sectionGapDp: Float,
     ): DesktopQuickCardLayoutMetrics {
-        val safeScale = scale.coerceIn(DESKTOP_QUICK_CARD_MIN_SCALE, DESKTOP_QUICK_CARD_MAX_SCALE)
-        val width = min(screenWidthDp * SCREEN_WIDTH_RATIO, screenHeightDp * SCREEN_HEIGHT_RATIO) * safeScale
-        val gap = BASE_GRID_GAP_DP * safeScale
-        val padding = BASE_CONTENT_PADDING_DP * safeScale
+        val width = min(screenWidthDp * SCREEN_WIDTH_RATIO, screenHeightDp * SCREEN_HEIGHT_RATIO)
+        val gap = BASE_GRID_GAP_DP
+        val padding = BASE_CONTENT_PADDING_DP
         val availableForCells = (width - padding * 2f - gap * (DESKTOP_QUICK_CARD_COLUMNS - 1))
             .coerceAtLeast(DESKTOP_QUICK_CARD_COLUMNS.toFloat())
         return DesktopQuickCardLayoutMetrics(
@@ -147,21 +155,20 @@ object DesktopQuickCardLayout {
             cellSizeDp = availableForCells / DESKTOP_QUICK_CARD_COLUMNS,
             gridGapDp = gap,
             contentPaddingDp = padding,
-            sectionGapDp = sectionGapDp
-                .coerceIn(DESKTOP_QUICK_CARD_MIN_SECTION_GAP_DP, DESKTOP_QUICK_CARD_MAX_SECTION_GAP_DP) * safeScale,
         )
+    }
+
+    fun widthForColumns(metrics: DesktopQuickCardLayoutMetrics, columns: Int): Float {
+        val visibleColumns = columns.coerceIn(1, DESKTOP_QUICK_CARD_COLUMNS)
+        return metrics.contentPaddingDp * 2f +
+            metrics.cellSizeDp * visibleColumns +
+            metrics.gridGapDp * (visibleColumns - 1)
     }
 }
 
 enum class DesktopQuickCardVisibilityReason {
-    VISIBLE_HOME,
-    VISIBLE_OTHER_APP,
+    VISIBLE,
     DISABLED,
-    CAMERA,
-    OWN_APP,
-    UNKNOWN_FOREGROUND,
-    LAUNCHER_SUBPAGE,
-    NOT_HOME,
 }
 
 data class DesktopQuickCardVisibilityDecision(
@@ -170,41 +177,14 @@ data class DesktopQuickCardVisibilityDecision(
 )
 
 object DesktopQuickCardVisibility {
-    fun evaluate(
-        config: DesktopQuickCardConfig,
-        foreground: ForegroundApp,
-        homePackages: Set<String>,
-        ownPackage: String,
-        cameraActive: Boolean,
-    ): DesktopQuickCardVisibilityDecision {
-        if (!config.enabled) return hidden(DesktopQuickCardVisibilityReason.DISABLED)
-        if (cameraActive) return hidden(DesktopQuickCardVisibilityReason.CAMERA)
-        val foregroundPackage = foreground.packageName?.takeIf(String::isNotBlank)
-            ?: return hidden(DesktopQuickCardVisibilityReason.UNKNOWN_FOREGROUND)
-        if (foregroundPackage == ownPackage) return hidden(DesktopQuickCardVisibilityReason.OWN_APP)
-
-        if (config.allowOverOtherApps) {
-            return DesktopQuickCardVisibilityDecision(true, DesktopQuickCardVisibilityReason.VISIBLE_OTHER_APP)
+    fun evaluate(config: DesktopQuickCardConfig): DesktopQuickCardVisibilityDecision =
+        if (config.enabled) {
+            DesktopQuickCardVisibilityDecision(true, DesktopQuickCardVisibilityReason.VISIBLE)
+        } else {
+            DesktopQuickCardVisibilityDecision(false, DesktopQuickCardVisibilityReason.DISABLED)
         }
-        if (!HomePackageResolver.isHomePackage(foregroundPackage, homePackages)) {
-            return hidden(DesktopQuickCardVisibilityReason.NOT_HOME)
-        }
-        if (HomePackageResolver.isLauncherSubpage(foreground.className)) {
-            return hidden(DesktopQuickCardVisibilityReason.LAUNCHER_SUBPAGE)
-        }
-        return DesktopQuickCardVisibilityDecision(true, DesktopQuickCardVisibilityReason.VISIBLE_HOME)
-    }
 
-    fun shouldShow(
-        config: DesktopQuickCardConfig,
-        foreground: ForegroundApp,
-        homePackages: Set<String>,
-        ownPackage: String,
-        cameraActive: Boolean,
-    ): Boolean = evaluate(config, foreground, homePackages, ownPackage, cameraActive).show
-
-    private fun hidden(reason: DesktopQuickCardVisibilityReason) =
-        DesktopQuickCardVisibilityDecision(false, reason)
+    fun shouldShow(config: DesktopQuickCardConfig): Boolean = config.enabled
 }
 
 internal fun shouldStopDesktopQuickCardSound(

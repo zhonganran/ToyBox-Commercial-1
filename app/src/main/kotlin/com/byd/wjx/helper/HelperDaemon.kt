@@ -526,6 +526,7 @@ fun main(args: Array<String>) {
 
     System.out.println("READY pid=${android.os.Process.myPid()}")
     System.out.flush()
+    WjxRuntimeWatchdog.enable()
     lockSoundRuntime.start()
 
     // Keepalive: Looper.loop() blocks this thread indefinitely so main() never returns

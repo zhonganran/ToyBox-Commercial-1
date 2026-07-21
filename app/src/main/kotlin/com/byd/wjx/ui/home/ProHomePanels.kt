@@ -1,5 +1,6 @@
 package com.byd.wjx.ui.home
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -31,9 +32,12 @@ import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.LocalGasStation
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Route
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.WaterDrop
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -50,6 +54,8 @@ import com.byd.wjx.data.local.entity.ChargeEntity
 import com.byd.wjx.data.nativestack.BydSignalSemantics
 import com.byd.wjx.domain.insight.LocalInsightMetric
 import com.byd.wjx.ui.dashboard.DashboardUiState
+import com.byd.wjx.ui.dashboard.energyFlowCategoryLabel
+import com.byd.wjx.ui.dashboard.formatEnergyFlowKwh
 import com.byd.wjx.ui.theme.AccentBlue
 import com.byd.wjx.ui.theme.AccentGreen
 import com.byd.wjx.ui.theme.AccentOrange
@@ -60,6 +66,7 @@ import com.byd.wjx.ui.theme.SceneBlue
 import com.byd.wjx.ui.theme.SceneMint
 import com.byd.wjx.ui.theme.ScenePink
 import com.byd.wjx.ui.theme.SceneViolet
+import com.byd.wjx.ui.theme.TextMuted
 import com.byd.wjx.ui.theme.TextPrimary
 import com.byd.wjx.ui.theme.TextSecondary
 import kotlin.math.max
@@ -68,14 +75,13 @@ import kotlin.math.roundToInt
 @Composable
 internal fun HomeMetricRibbon(
     state: DashboardUiState,
-    onOpenDashboard: () -> Unit,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
 ) {
     val metrics = listOf(
-        RibbonMetric("电续航", state.elecDrivingRangeKm?.toString() ?: "--", "km", Icons.Outlined.EvStation, SceneMint, rangeProgress(state.elecDrivingRangeKm, 320)),
-        RibbonMetric("油续航", state.fuelDrivingRangeKm?.toString() ?: "--", "km", Icons.Outlined.LocalGasStation, SceneBlue, rangeProgress(state.fuelDrivingRangeKm, 800)),
-        RibbonMetric("总续航", state.combinedRangeKm?.toString() ?: "--", "km", Icons.Outlined.Route, SceneViolet, rangeProgress(state.combinedRangeKm, 1200)),
+        RibbonMetric("预估电续航", state.estimatedElectricRangeKm?.toString() ?: "--", "km", Icons.Outlined.EvStation, SceneMint, rangeProgress(state.estimatedElectricRangeKm, 320)),
+        RibbonMetric("预估油续航", state.estimatedFuelRangeKm?.toString() ?: "--", "km", Icons.Outlined.LocalGasStation, SceneBlue, rangeProgress(state.estimatedFuelRangeKm, 800)),
+        RibbonMetric("预估总续航", state.estimatedCombinedRangeKm?.toString() ?: "--", "km", Icons.Outlined.Route, SceneViolet, rangeProgress(state.estimatedCombinedRangeKm, 1200)),
         RibbonMetric(
             label = "油量",
             value = state.fuelLevel?.toString() ?: "--",
@@ -94,7 +100,6 @@ internal fun HomeMetricRibbon(
             .clip(shape)
             .background(CardSurface.copy(alpha = 0.86f))
             .border(1.dp, GlassStroke, shape)
-            .clickable(onClick = onOpenDashboard)
             .padding(horizontal = 22.dp, vertical = 10.dp),
     ) {
         if (compact || maxWidth < 900.dp) {
@@ -114,6 +119,95 @@ internal fun HomeMetricRibbon(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+internal fun HomeOperationsPanel(
+    state: DashboardUiState,
+    onOpenEnergyRecovery: () -> Unit,
+    onOpenVehicleSystem: () -> Unit,
+    modifier: Modifier = Modifier,
+    stacked: Boolean = false,
+) {
+    val energyCard: @Composable (Modifier) -> Unit = { cardModifier ->
+        HomeOperationCard(
+            title = "本次能量回收",
+            value = "${formatEnergyFlowKwh(state.sessionEnergyFlow.totalRegenKwh)} kWh",
+            supporting = energyFlowCategoryLabel(state.energyFlowCategory),
+            icon = Icons.Outlined.ElectricBolt,
+            color = AccentGreen,
+            onClick = onOpenEnergyRecovery,
+            modifier = cardModifier,
+        )
+    }
+    val systemCard: @Composable (Modifier) -> Unit = { cardModifier ->
+        val metrics = state.systemMetrics
+        HomeOperationCard(
+            title = "车机系统",
+            value = metrics?.cpuTotalUsagePercent?.let { "CPU $it%" }
+                ?: if (state.systemMetricsLoading || state.systemMetricsSampleCount < 2) "CPU 采样中" else "CPU --",
+            supporting = metrics?.memory?.let { "内存 ${it.usedPercent}% · ${metrics.cpuCoreCount} 核心" }
+                ?: if (state.systemMetricsLoading) "正在读取系统信息" else "系统节点暂不可读",
+            icon = Icons.Outlined.Memory,
+            color = AccentBlue,
+            onClick = onOpenVehicleSystem,
+            modifier = cardModifier,
+        )
+    }
+
+    if (stacked) {
+        Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            energyCard(Modifier.weight(1f).fillMaxWidth())
+            systemCard(Modifier.weight(1f).fillMaxWidth())
+        }
+    } else {
+        Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            energyCard(Modifier.weight(1f).fillMaxHeight())
+            systemCard(Modifier.weight(1f).fillMaxHeight())
+        }
+    }
+}
+
+@Composable
+private fun HomeOperationCard(
+    title: String,
+    value: String,
+    supporting: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    color: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = CardSurface.copy(alpha = 0.92f)),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.48f)),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier.size(42.dp).background(color.copy(alpha = 0.13f), RoundedCornerShape(8.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(23.dp))
+            }
+            Spacer(Modifier.width(13.dp))
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title, color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text(value, color = color, fontSize = 20.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                Text(supporting, color = TextMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Icon(
+                Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                contentDescription = null,
+                tint = TextSecondary,
+                modifier = Modifier.size(22.dp),
+            )
         }
     }
 }
@@ -255,7 +349,11 @@ internal fun TripRoutePanel(
             }
             Row(modifier = Modifier.fillMaxWidth()) {
                 TripValue("用电", state.currentTripElecKwh?.let { "%.1f kWh".format(it) } ?: "--", Modifier.weight(1f))
-                TripValue("电耗", state.elecConPer100km?.let { "%.1f kWh/100km".format(it) } ?: "--", Modifier.weight(1f))
+                TripValue("用油", state.currentTripFuelL?.let { "%.1f L".format(it) } ?: "--", Modifier.weight(1f))
+            }
+            Row(modifier = Modifier.fillMaxWidth()) {
+                TripValue("电费", state.currentTripElecCost?.let { "%.2f %s".format(it, state.currencySymbol) } ?: "--", Modifier.weight(1f))
+                TripValue("油费", state.currentTripFuelCost?.let { "%.2f %s".format(it, state.currencySymbol) } ?: "--", Modifier.weight(1f))
             }
             TripHistoryBars(
                 distances = state.recentTrips.mapNotNull { it.distanceKm?.takeIf { distance -> distance > 0.0 } },

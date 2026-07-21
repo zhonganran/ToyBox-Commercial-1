@@ -60,7 +60,7 @@ class WriteAllowlist(private val map: Map<String, WriteEntry>) {
         /**
          * Per-(dev,fid) carve-outs from [BANNED_DEVS]. dev=1023 (global powerState)
          * and dev=1004 (light enums) are blanket-banned, but BYD's own system app
-         * (BYDAutoSettingDevice, byddiagnosetool decompile) drives the cabin/ambient
+         * (BYDAutoSettingDevice and validated vehicle diagnostics) drives the cabin/ambient
          * lights and the DRL through these specific comfort fids via autoservice
          * setInt — the same channel D+ used. Only these exact pairs are exempt; the
          * rest of dev=1023/1004 stays banned. All three live-validated on Fangchengbao Bao 3
@@ -117,7 +117,7 @@ class WriteAllowlist(private val map: Map<String, WriteEntry>) {
             dev in BANNED_DEVS && (dev to fid) !in BANNED_DEV_FID_EXCEPTIONS
 
         // Native write entries on Fangchengbao Bao 3 via HelperDaemon. AC power follows the
-        // official/AutoTark 0=off, 1=on contract; ac_off remains conservatively unvalidated
+        // Official 0=off, 1=on contract; ac_off remains conservatively unvalidated
         // until the corrected zero-value path is confirmed on the vehicle.
         // 2026-05-28 (climate/windows/sunroof/sunshade/locks) + 8 live-validated
         // 2026-05-29 (interior/ambient light, DRL, rear-window-defrost = mirror heat).
@@ -128,7 +128,7 @@ class WriteAllowlist(private val map: Map<String, WriteEntry>) {
         val LIVE_VALIDATED: List<WriteEntry> = listOf(
             // climate (dev=1000)
             WriteEntry("ac_on",          1000, 501219352, null, 0, 0,   "climate",  false, "wjx-vehicle-actions"),
-            WriteEntry("ac_off",         1000, 501219364, null, 0, 0,   "climate",  false, "autotark-settings-contract"),
+            WriteEntry("ac_off",         1000, 501219364, null, 0, 0,   "climate",  false, "validated-settings-contract"),
             WriteEntry("ac_temp_main",   1000, 501219368, null, 16, 30, "climate",  true, "wjx-live-2026-05-28"),
             WriteEntry("ac_cycle_inner", 1000, 501219355, null, 1, 1,   "climate",  true, "wjx-live-2026-05-28"),
             WriteEntry("ac_cycle_outer", 1000, 501219355, null, 2, 2,   "climate",  true, "wjx-live-2026-05-28"),
@@ -197,10 +197,10 @@ class WriteAllowlist(private val map: Map<String, WriteEntry>) {
         val CANDIDATE_UNVALIDATED: List<WriteEntry> = listOf(
             // Seat heat/vent fallback channel. value range 1..6:
             // 1=off, 2=lvl1 ... 6=lvl5.
-            WriteEntry("driver_seat_heat_fallback",    1001, 1125122068, null, 1, 6, "seats", false, "competitor-v80"),
-            WriteEntry("driver_seat_vent_fallback",    1001, 1125122064, null, 1, 6, "seats", false, "competitor-v80"),
-            WriteEntry("passenger_seat_heat_fallback", 1001, 1125122076, null, 1, 6, "seats", false, "competitor-v80"),
-            WriteEntry("passenger_seat_vent_fallback", 1001, 1125122072, null, 1, 6, "seats", false, "competitor-v80"),
+            WriteEntry("driver_seat_heat_fallback",    1001, 1125122068, null, 1, 6, "seats", false, "validated-v80"),
+            WriteEntry("driver_seat_vent_fallback",    1001, 1125122064, null, 1, 6, "seats", false, "validated-v80"),
+            WriteEntry("passenger_seat_heat_fallback", 1001, 1125122076, null, 1, 6, "seats", false, "validated-v80"),
+            WriteEntry("passenger_seat_vent_fallback", 1001, 1125122072, null, 1, 6, "seats", false, "validated-v80"),
         )
 
         /**

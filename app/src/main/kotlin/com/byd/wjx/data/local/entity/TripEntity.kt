@@ -16,6 +16,8 @@ data class TripEntity(
     @ColumnInfo(name = "distance_km") val distanceKm: Double? = null,
     @ColumnInfo(name = "kwh_consumed") val kwhConsumed: Double? = null,
     @ColumnInfo(name = "kwh_per_100km") val kwhPer100km: Double? = null,
+    @ColumnInfo(name = "fuel_consumed_l") val fuelConsumedL: Double? = null,
+    @ColumnInfo(name = "fuel_cost") val fuelCost: Double? = null,
     @ColumnInfo(name = "soc_start") val socStart: Int? = null,
     @ColumnInfo(name = "soc_end") val socEnd: Int? = null,
     @ColumnInfo(name = "temp_avg_c") val tempAvgC: Double? = null,

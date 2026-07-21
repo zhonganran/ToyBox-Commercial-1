@@ -19,6 +19,7 @@ import com.byd.wjx.data.system.SystemMetricsReader
 import com.byd.wjx.data.system.SystemMetricsSnapshot
 import com.byd.wjx.domain.calculator.ConsumptionAggregator
 import com.byd.wjx.domain.calculator.ConsumptionState
+import com.byd.wjx.domain.calculator.HomeRangeEstimator
 import com.byd.wjx.domain.calculator.Trend
 import com.byd.wjx.domain.insight.LocalInsightEngine
 import com.byd.wjx.domain.insight.LocalInsightResult
@@ -82,17 +83,15 @@ data class DashboardUiState(
     val batteryHealthExpanded: Boolean = false,
     val idleDrainExpanded: Boolean = false,
     val powertrainDiagnosticsExpanded: Boolean = false,
-    val energyFlowExpanded: Boolean = false,
-    val systemMetricsExpanded: Boolean = false,
     val systemMetrics: SystemMetricsSnapshot? = null,
     val systemMetricsLoading: Boolean = true,
     val systemMetricsSampleCount: Int = 0,
     val idleDrainKwhWeek: Double = 0.0,
     val idleDrainHoursWeek: Double = 0.0,
     val estimatedRangeKm: Double? = null,
-    val elecDrivingRangeKm: Int? = null,
-    val fuelDrivingRangeKm: Int? = null,
-    val combinedRangeKm: Int? = null,
+    val estimatedElectricRangeKm: Int? = null,
+    val estimatedFuelRangeKm: Int? = null,
+    val estimatedCombinedRangeKm: Int? = null,
     val fuelLevel: Int? = null,
     val batteryRemainingKwh: Double? = null,
     val fuelRemainingLiters: Double? = null,
@@ -100,6 +99,8 @@ data class DashboardUiState(
     val fuelConPer100km: Double? = null,
     val currentTripElecKwh: Double? = null,
     val currentTripFuelL: Double? = null,
+    val currentTripElecCost: Double? = null,
+    val currentTripFuelCost: Double? = null,
     val vehicleDataConnected: Boolean = true,
     val lastVehicleDataAt: Long? = null,
     val idleDrainAvailable: Boolean = true,
@@ -335,11 +336,20 @@ class DashboardViewModel @Inject constructor(
         val energyFlow: EnergyFlowStats,
         val batteryCapacityKwh: Double?,
         val fuelTankCapacityLiters: Double?,
+        val tripElectricTariff: Double,
+        val fuelPricePerLiter: Double,
     )
 
     private data class LiveMetrics(
         val consumption: ConsumptionState,
         val energyFlow: EnergyFlowStats,
+    )
+
+    private data class LiveSettings(
+        val batteryCapacityKwh: Double?,
+        val fuelTankCapacityLiters: Double?,
+        val tripElectricTariff: Double,
+        val fuelPricePerLiter: Double,
     )
 
     private fun observeLiveData() {
@@ -350,13 +360,25 @@ class DashboardViewModel @Inject constructor(
             ) { consumption, energyFlow ->
                 LiveMetrics(consumption = consumption, energyFlow = energyFlow)
             }
+            val liveSettings = combine(
+                settingsRepository.observeBatteryCapacity(),
+                settingsRepository.observeFuelTankCapacity(),
+                settingsRepository.observeTripCostTariff(),
+                settingsRepository.observeFuelPricePerLiter(),
+            ) { batteryCapacity, fuelTankCapacity, tripElectricTariff, fuelPricePerLiter ->
+                LiveSettings(
+                    batteryCapacityKwh = batteryCapacity,
+                    fuelTankCapacityLiters = fuelTankCapacity,
+                    tripElectricTariff = tripElectricTariff,
+                    fuelPricePerLiter = fuelPricePerLiter,
+                )
+            }
             combine(
                 vehicleStateRepository.state,
                 trackingStateRepository.state,
                 liveMetrics,
-                settingsRepository.observeBatteryCapacity(),
-                settingsRepository.observeFuelTankCapacity(),
-            ) { vehicleState, trackingState, metrics, batteryCapacity, fuelTankCapacity ->
+                liveSettings,
+            ) { vehicleState, trackingState, metrics, settings ->
                 LiveSnapshot(
                     data = vehicleState.data,
                     dataUpdatedAt = vehicleState.lastUpdatedAtMs,
@@ -368,8 +390,10 @@ class DashboardViewModel @Inject constructor(
                     tripDistanceKm = trackingState.tripDistanceKm,
                     consumption = metrics.consumption,
                     energyFlow = metrics.energyFlow,
-                    batteryCapacityKwh = batteryCapacity,
-                    fuelTankCapacityLiters = fuelTankCapacity,
+                    batteryCapacityKwh = settings.batteryCapacityKwh,
+                    fuelTankCapacityLiters = settings.fuelTankCapacityLiters,
+                    tripElectricTariff = settings.tripElectricTariff,
+                    fuelPricePerLiter = settings.fuelPricePerLiter,
                 )
             }.collect { snapshot ->
                 val data = snapshot.data
@@ -380,9 +404,22 @@ class DashboardViewModel @Inject constructor(
                 _uiState.update { current ->
                     val newSoc = data?.soc ?: current.soc
                     val newFuelLevel = data?.fuelLevel ?: current.fuelLevel
-                    val elecRange = data?.elecDrivingRangeKm ?: current.elecDrivingRangeKm
-                    val fuelRange = data?.fuelDrivingRangeKm ?: current.fuelDrivingRangeKm
-                    val combinedRange = if (elecRange != null && fuelRange != null) elecRange + fuelRange else null
+                    val batteryRemaining = remainingAmount(newSoc, snapshot.batteryCapacityKwh)
+                    val fuelRemaining = remainingAmount(newFuelLevel, snapshot.fuelTankCapacityLiters)
+                    val electricConsumption = snapshot.consumption.displayValue
+                        ?: data?.elecConPer100km.validElectricConsumption()
+                        ?: current.elecConPer100km
+                    val fuelConsumption = data?.fuelConPer100km.validFuelConsumption()
+                        ?: current.fuelConPer100km
+                    val ranges = HomeRangeEstimator.estimate(
+                        dynamicElectricKm = rangeKm,
+                        remainingBatteryKwh = batteryRemaining,
+                        electricConsumptionPer100Km = electricConsumption,
+                        remainingFuelLiters = fuelRemaining,
+                        fuelConsumptionPer100Km = fuelConsumption,
+                    )
+                    val tripElecKwh = data?.currentTripElecKwh ?: current.currentTripElecKwh
+                    val tripFuelL = data?.currentTripFuelL ?: current.currentTripFuelL
                     current.copy(
                         soc = newSoc,
                         speed = data?.speed ?: current.speed,
@@ -404,16 +441,19 @@ class DashboardViewModel @Inject constructor(
                         batteryHealthStatus = calculateBatteryStatus(data, current),
                         voltage12vStatus = calculate12vStatus(data?.voltage12v ?: current.voltage12v),
                         estimatedRangeKm = rangeKm ?: current.estimatedRangeKm,
-                        elecDrivingRangeKm = elecRange,
-                        fuelDrivingRangeKm = fuelRange,
-                        combinedRangeKm = combinedRange,
+                        estimatedElectricRangeKm = ranges.electricKm,
+                        estimatedFuelRangeKm = ranges.fuelKm,
+                        estimatedCombinedRangeKm = ranges.combinedKm,
                         fuelLevel = newFuelLevel,
-                        batteryRemainingKwh = remainingAmount(newSoc, snapshot.batteryCapacityKwh),
-                        fuelRemainingLiters = remainingAmount(newFuelLevel, snapshot.fuelTankCapacityLiters),
-                        elecConPer100km = data?.elecConPer100km ?: current.elecConPer100km,
-                        fuelConPer100km = data?.fuelConPer100km ?: current.fuelConPer100km,
-                        currentTripElecKwh = data?.currentTripElecKwh ?: current.currentTripElecKwh,
-                        currentTripFuelL = data?.currentTripFuelL ?: current.currentTripFuelL,
+                        batteryRemainingKwh = batteryRemaining,
+                        fuelRemainingLiters = fuelRemaining,
+                        elecConPer100km = data?.elecConPer100km.validElectricConsumption()
+                            ?: current.elecConPer100km,
+                        fuelConPer100km = fuelConsumption,
+                        currentTripElecKwh = tripElecKwh,
+                        currentTripFuelL = tripFuelL,
+                        currentTripElecCost = tripElecKwh.validUsage()?.times(snapshot.tripElectricTariff),
+                        currentTripFuelCost = tripFuelL.validUsage()?.times(snapshot.fuelPricePerLiter),
                         vehicleDataConnected = connected,
                         lastVehicleDataAt = snapshot.dataUpdatedAt ?: current.lastVehicleDataAt,
                         insideTemp = data?.insideTemp ?: current.insideTemp,
@@ -627,8 +667,6 @@ class DashboardViewModel @Inject constructor(
             batteryHealthExpanded = !it.batteryHealthExpanded,
             idleDrainExpanded = false,
             powertrainDiagnosticsExpanded = false,
-            energyFlowExpanded = false,
-            systemMetricsExpanded = false,
         ) }
     }
 
@@ -637,8 +675,6 @@ class DashboardViewModel @Inject constructor(
             idleDrainExpanded = !it.idleDrainExpanded,
             batteryHealthExpanded = false,
             powertrainDiagnosticsExpanded = false,
-            energyFlowExpanded = false,
-            systemMetricsExpanded = false,
         ) }
     }
 
@@ -647,28 +683,6 @@ class DashboardViewModel @Inject constructor(
             powertrainDiagnosticsExpanded = !it.powertrainDiagnosticsExpanded,
             batteryHealthExpanded = false,
             idleDrainExpanded = false,
-            energyFlowExpanded = false,
-            systemMetricsExpanded = false,
-        ) }
-    }
-
-    fun toggleEnergyFlowExpanded() {
-        _uiState.update { it.copy(
-            energyFlowExpanded = !it.energyFlowExpanded,
-            batteryHealthExpanded = false,
-            idleDrainExpanded = false,
-            powertrainDiagnosticsExpanded = false,
-            systemMetricsExpanded = false,
-        ) }
-    }
-
-    fun toggleSystemMetricsExpanded() {
-        _uiState.update { it.copy(
-            systemMetricsExpanded = !it.systemMetricsExpanded,
-            batteryHealthExpanded = false,
-            idleDrainExpanded = false,
-            powertrainDiagnosticsExpanded = false,
-            energyFlowExpanded = false,
         ) }
     }
 
@@ -715,3 +729,12 @@ internal fun remainingAmount(percent: Int?, capacity: Double?): Double? {
     if (capacity == null || !capacity.isFinite() || capacity <= 0.0) return null
     return (capacity * percent / 100.0).coerceIn(0.0, capacity)
 }
+
+private fun Double?.validUsage(): Double? =
+    this?.takeIf { it.isFinite() && it in 0.0..500.0 }
+
+private fun Double?.validElectricConsumption(): Double? =
+    this?.takeIf { it.isFinite() && it in 1.0..100.0 }
+
+private fun Double?.validFuelConsumption(): Double? =
+    this?.takeIf { it.isFinite() && it in 0.5..50.0 }

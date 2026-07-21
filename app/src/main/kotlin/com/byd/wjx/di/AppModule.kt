@@ -135,6 +135,8 @@ object AppModule {
         lastStateDao = lastStateDao,
         energyDataReader = energyDataReader,
         batteryCapacityKwh = { settingsRepository.getBatteryCapacity() },
+        tripElectricTariff = { settingsRepository.getTripCostTariff() },
+        fuelPricePerLiter = { settingsRepository.getFuelPricePerLiter() },
     )
 
     @Provides

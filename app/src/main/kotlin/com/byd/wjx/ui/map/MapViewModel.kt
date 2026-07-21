@@ -29,8 +29,12 @@ data class MapUiState(
     val period: MapPeriod = MapPeriod.WEEK,
     val totalKm: Double = 0.0,
     val totalKwh: Double = 0.0,
+    val totalFuelL: Double = 0.0,
+    val totalElectricCost: Double = 0.0,
+    val totalFuelCost: Double = 0.0,
     val totalDurationMs: Long = 0L,
     val avgConsumption: Double = 0.0,
+    val avgFuelConsumption: Double = 0.0,
     val trips: List<TripEntity> = emptyList(),
     val selectedTripId: Long? = null
 )
@@ -80,17 +84,25 @@ class MapViewModel @Inject constructor(
                 }
                 val totalKm = trips.mapNotNull { it.distanceKm }.sum()
                 val totalKwh = trips.mapNotNull { it.kwhConsumed }.sum()
+                val totalFuelL = trips.mapNotNull { it.fuelConsumedL }.sum()
+                val totalElectricCost = trips.mapNotNull { it.cost }.sum()
+                val totalFuelCost = trips.mapNotNull { it.fuelCost }.sum()
                 val totalDurationMs = trips.sumOf { trip ->
                     ((trip.endTs ?: System.currentTimeMillis()) - trip.startTs).coerceAtLeast(0L)
                 }
                 val avg = if (totalKm > 0) totalKwh / totalKm * 100.0 else 0.0
+                val avgFuel = if (totalKm > 0) totalFuelL / totalKm * 100.0 else 0.0
                 val data = MapData(
                     routes = allRoutes,
                     trips = trips,
                     totalKm = totalKm,
                     totalKwh = totalKwh,
+                    totalFuelL = totalFuelL,
+                    totalElectricCost = totalElectricCost,
+                    totalFuelCost = totalFuelCost,
                     totalDurationMs = totalDurationMs,
                     avgConsumption = avg,
+                    avgFuelConsumption = avgFuel,
                 )
                 _uiState.update { state ->
                     val selectedTripId = state.selectedTripId?.takeIf { selectedId ->
@@ -101,8 +113,12 @@ class MapViewModel @Inject constructor(
                         trips = data.trips,
                         totalKm = data.totalKm,
                         totalKwh = data.totalKwh,
+                        totalFuelL = data.totalFuelL,
+                        totalElectricCost = data.totalElectricCost,
+                        totalFuelCost = data.totalFuelCost,
                         totalDurationMs = data.totalDurationMs,
                         avgConsumption = data.avgConsumption,
+                        avgFuelConsumption = data.avgFuelConsumption,
                         selectedTripId = selectedTripId,
                         isLoading = false
                     )
@@ -139,6 +155,10 @@ private data class MapData(
     val trips: List<TripEntity>,
     val totalKm: Double,
     val totalKwh: Double,
+    val totalFuelL: Double,
+    val totalElectricCost: Double,
+    val totalFuelCost: Double,
     val totalDurationMs: Long,
-    val avgConsumption: Double
+    val avgConsumption: Double,
+    val avgFuelConsumption: Double,
 )

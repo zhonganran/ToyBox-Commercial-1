@@ -37,6 +37,11 @@ class AutomationPresetsTest {
         assertTrue(unplug.actions.isEmpty())
         assertEquals(listOf(outsideSoundAction), unplug.exitActions)
         assertFalse(unplug.exitActions.single().outsideSoundLoop())
+        assertEquals("充电枪已插入", automationTriggerSummary(plugIn.triggers.single()))
+        assertEquals(
+            "充电枪已拔出",
+            automationTriggerSummary(unplug.triggers.single(), exitOnly = true),
+        )
 
         assertEquals("Gear", reverse.triggers.single().param)
         assertEquals("2", reverse.triggers.single().value)

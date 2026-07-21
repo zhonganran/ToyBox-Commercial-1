@@ -96,7 +96,11 @@ class DriveSessionCoordinator @Inject constructor(
                 sessionStartedAt = nowMs
                 startMileageKm = data.mileage
                 startTotalEnergyKwh = data.totalElecConsumption
-                lastSessionRepository.onSessionStart(data.soc, nowMs)
+                lastSessionRepository.onSessionStart(
+                    soc = data.soc,
+                    ts = nowMs,
+                    fuelL = data.currentTripFuelL,
+                )
                 transition = DriveSessionTransition.STARTED
                 WjxFileLogger.i(
                     TAG,
@@ -104,6 +108,7 @@ class DriveSessionCoordinator @Inject constructor(
                         "mileageStart=${data.mileage} energyStart=${data.totalElecConsumption}",
                 )
             } else {
+                lastSessionRepository.onSessionSample(data.currentTripFuelL)
                 if (startMileageKm == null && data.mileage != null) {
                     startMileageKm = data.mileage
                 }
@@ -113,7 +118,11 @@ class DriveSessionCoordinator @Inject constructor(
             }
         } else if (sessionStartedAt != null && nowMs - sessionLastActiveAt >= SESSION_IDLE_CLOSE_MS) {
             val idleSeconds = (nowMs - sessionLastActiveAt) / 1_000L
-            lastSessionRepository.onSessionEnd(data.soc, nowMs)
+            lastSessionRepository.onSessionEnd(
+                soc = data.soc,
+                ts = nowMs,
+                fuelL = data.currentTripFuelL,
+            )
             sessionStartedAt = null
             startMileageKm = null
             startTotalEnergyKwh = null

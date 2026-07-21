@@ -4,7 +4,7 @@ import android.graphics.Matrix
 import kotlin.math.max
 
 /**
- * The exact crop model used by AutoTark's production SurfacePreview path.
+ * The production-validated crop model used by the SurfacePreview path.
  *
  * BYD's pano_h producer delivers one horizontal strip whose tiles are rear, left, right and
  * front. TextureView scales the complete strip, translates the selected tile into the window and

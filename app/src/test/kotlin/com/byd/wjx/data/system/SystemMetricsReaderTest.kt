@@ -67,6 +67,23 @@ class SystemMetricsReaderTest {
     }
 
     @Test
+    fun `cpu parser does not double count guest counters`() {
+        val parsed = parseCpuStat("cpu 100 10 20 800 30 5 5 10 40 2")
+
+        assertEquals(980L, parsed.getValue("cpu").total)
+        assertEquals(830L, parsed.getValue("cpu").idle)
+    }
+
+    @Test
+    fun `load average parser reads the three kernel windows`() {
+        val load = parseLoadAverage("0.42 1.25 2.50 3/456 789")
+
+        assertEquals(0.42, load[0] ?: -1.0, 0.0001)
+        assertEquals(1.25, load[1] ?: -1.0, 0.0001)
+        assertEquals(2.50, load[2] ?: -1.0, 0.0001)
+    }
+
+    @Test
     fun `diskstats keeps whole devices and calculates throughput`() {
         val previous = parseDiskStats(
             """

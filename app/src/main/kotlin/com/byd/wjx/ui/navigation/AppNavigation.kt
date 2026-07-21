@@ -38,11 +38,12 @@ import com.byd.wjx.data.system.AutostartSettingsLauncher
 import com.byd.wjx.service.UpdateChecker
 import com.byd.wjx.ui.automation.AutomationScreen
 import com.byd.wjx.ui.charges.ChargesScreen
-import com.byd.wjx.ui.dashboard.DashboardScreen
 import com.byd.wjx.ui.places.PlacesScreen
 import com.byd.wjx.ui.desktopcomponents.DesktopComponentsScreen
 import com.byd.wjx.ui.home.BatteryHealthScreen
+import com.byd.wjx.ui.home.EnergyRecoveryScreen
 import com.byd.wjx.ui.home.ProHomeScreen
+import com.byd.wjx.ui.home.VehicleSystemScreen
 import com.byd.wjx.ui.home.VehicleEnvironmentScreen
 import com.byd.wjx.ui.legal.DisclaimerScreen
 import com.byd.wjx.ui.map.MapScreen
@@ -83,7 +84,8 @@ fun AppNavigation(
     var showPlaces by rememberSaveable { mutableStateOf(false) }
     var showTripMap by rememberSaveable { mutableStateOf(false) }
     var showCharges by rememberSaveable { mutableStateOf(false) }
-    var showDashboard by rememberSaveable { mutableStateOf(false) }
+    var showEnergyRecovery by rememberSaveable { mutableStateOf(false) }
+    var showVehicleSystem by rememberSaveable { mutableStateOf(false) }
     var showBatteryHealth by rememberSaveable { mutableStateOf(false) }
     var showVehicleEnvironment by rememberSaveable { mutableStateOf(false) }
     var settingsInitialCategory by rememberSaveable { mutableStateOf<String?>(null) }
@@ -167,7 +169,8 @@ fun AppNavigation(
     }
     val scaffoldRoute = when {
         showPlaces -> Screen.Settings.route
-        showTripMap || showCharges || showDashboard || showBatteryHealth || showVehicleEnvironment -> Screen.Home.route
+        showTripMap || showCharges || showEnergyRecovery || showVehicleSystem ||
+            showBatteryHealth || showVehicleEnvironment -> Screen.Home.route
         else -> selectedRoute
     }
 
@@ -183,8 +186,11 @@ fun AppNavigation(
     BackHandler(enabled = disclaimerAccepted && showCharges) {
         showCharges = false
     }
-    BackHandler(enabled = disclaimerAccepted && showDashboard) {
-        showDashboard = false
+    BackHandler(enabled = disclaimerAccepted && showEnergyRecovery) {
+        showEnergyRecovery = false
+    }
+    BackHandler(enabled = disclaimerAccepted && showVehicleSystem) {
+        showVehicleSystem = false
     }
     BackHandler(enabled = disclaimerAccepted && showBatteryHealth) {
         showBatteryHealth = false
@@ -196,18 +202,20 @@ fun AppNavigation(
             navItems = navItems,
             selectedRoute = scaffoldRoute,
             animateBackground = selectedRoute == Screen.Home.route &&
-                !showPlaces && !showTripMap && !showCharges && !showDashboard &&
+                !showPlaces && !showTripMap && !showCharges && !showEnergyRecovery &&
+                !showVehicleSystem &&
                 !showBatteryHealth && !showVehicleEnvironment,
             onNavigate = { route ->
-                if (selectedRoute != route || showPlaces || showTripMap || showCharges || showDashboard ||
-                    showBatteryHealth || showVehicleEnvironment
+                if (selectedRoute != route || showPlaces || showTripMap || showCharges ||
+                    showEnergyRecovery || showVehicleSystem || showBatteryHealth || showVehicleEnvironment
                 ) {
                     selectedRoute = route
                     if (route == Screen.Settings.route) settingsInitialCategory = null
                     showPlaces = false
                     showTripMap = false
                     showCharges = false
-                    showDashboard = false
+                    showEnergyRecovery = false
+                    showVehicleSystem = false
                     showBatteryHealth = false
                     showVehicleEnvironment = false
                 }
@@ -230,7 +238,8 @@ fun AppNavigation(
                                 showPlaces = false
                                 showTripMap = false
                                 showCharges = false
-                                showDashboard = false
+                                showEnergyRecovery = false
+                                showVehicleSystem = false
                                 showBatteryHealth = false
                                 showVehicleEnvironment = false
                             },
@@ -244,19 +253,13 @@ fun AppNavigation(
                     screenStateHolder.SaveableStateProvider("vehicle_environment") {
                         VehicleEnvironmentScreen(onBack = { showVehicleEnvironment = false })
                     }
-                } else if (showDashboard) {
-                    screenStateHolder.SaveableStateProvider("dashboard") {
-                        DashboardScreen(
-                            onOpenTripMap = {
-                                selectedRoute = Screen.Home.route
-                                showPlaces = false
-                                showTripMap = true
-                                showCharges = false
-                                showDashboard = false
-                                showBatteryHealth = false
-                                showVehicleEnvironment = false
-                            },
-                        )
+                } else if (showEnergyRecovery) {
+                    screenStateHolder.SaveableStateProvider("energy_recovery") {
+                        EnergyRecoveryScreen(onBack = { showEnergyRecovery = false })
+                    }
+                } else if (showVehicleSystem) {
+                    screenStateHolder.SaveableStateProvider("vehicle_system") {
+                        VehicleSystemScreen(onBack = { showVehicleSystem = false })
                     }
                 } else {
                     screenStateHolder.SaveableStateProvider(selectedScreen.route) {
@@ -267,16 +270,28 @@ fun AppNavigation(
                                     showPlaces = false
                                     showTripMap = false
                                     showCharges = true
-                                    showDashboard = false
+                                    showEnergyRecovery = false
+                                    showVehicleSystem = false
                                     showBatteryHealth = false
                                     showVehicleEnvironment = false
                                 },
-                                onOpenDashboard = {
+                                onOpenEnergyRecovery = {
                                     selectedRoute = Screen.Home.route
                                     showPlaces = false
                                     showTripMap = false
                                     showCharges = false
-                                    showDashboard = true
+                                    showEnergyRecovery = true
+                                    showVehicleSystem = false
+                                    showBatteryHealth = false
+                                    showVehicleEnvironment = false
+                                },
+                                onOpenVehicleSystem = {
+                                    selectedRoute = Screen.Home.route
+                                    showPlaces = false
+                                    showTripMap = false
+                                    showCharges = false
+                                    showEnergyRecovery = false
+                                    showVehicleSystem = true
                                     showBatteryHealth = false
                                     showVehicleEnvironment = false
                                 },
@@ -285,7 +300,8 @@ fun AppNavigation(
                                     showPlaces = false
                                     showTripMap = false
                                     showCharges = false
-                                    showDashboard = false
+                                    showEnergyRecovery = false
+                                    showVehicleSystem = false
                                     showBatteryHealth = true
                                     showVehicleEnvironment = false
                                 },
@@ -294,7 +310,8 @@ fun AppNavigation(
                                     showPlaces = false
                                     showTripMap = false
                                     showCharges = false
-                                    showDashboard = false
+                                    showEnergyRecovery = false
+                                    showVehicleSystem = false
                                     showBatteryHealth = false
                                     showVehicleEnvironment = true
                                 },
@@ -303,7 +320,8 @@ fun AppNavigation(
                                     showPlaces = false
                                     showTripMap = true
                                     showCharges = false
-                                    showDashboard = false
+                                    showEnergyRecovery = false
+                                    showVehicleSystem = false
                                     showBatteryHealth = false
                                     showVehicleEnvironment = false
                                 },

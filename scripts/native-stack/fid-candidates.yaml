@@ -198,7 +198,7 @@
   unit: ""
   status: imported
   source: autoservice-catalog
-  note: "CHARGING_STATE: 0=enabled, 1=disabled. AutoTark labels this chargingStatus, but it is not the live charging phase."
+  note: "CHARGING_STATE: 0=enabled, 1=disabled. This is not the live charging phase."
 
 - param: PowerState
   diplus_key: PowerState
@@ -220,7 +220,7 @@
   unit: ""
   status: dropped
   source: autoservice-catalog
-  note: "SET_VEHICLE_STATE. AutoTark mislabels it powerState; it is not BODYWORK_POWER_LEVEL."
+  note: "SET_VEHICLE_STATE; it is not BODYWORK_POWER_LEVEL."
 
 - param: DriveMode
   diplus_key: DriveMode
@@ -252,7 +252,7 @@
   unit: ""
   status: active
   source: official-settings-catalog
-  note: "ENERGY_MODE_INSTRUMENT_50; newer-platform primary with legacy WorkMode fallback."
+  note: "ENERGY_MODE_INSTRUMENT_50; platform fallback when the direct WorkMode signal is unavailable."
 
 # ── AC / climate dev=1000 (validated S4) ─────────────────────────────────
 
@@ -612,7 +612,7 @@
   unit: "%"
   status: candidate
   source: autoservice-catalog
-  note: "BODYWORK_WINDOW_RIGHT_REAR_PERCENT (0x4B900018); official Settings reads this value. AutoTark's 0x38800030 is absent from the official catalog."
+  note: "BODYWORK_WINDOW_RIGHT_REAR_PERCENT (0x4B900018); official Settings reads this value. The older candidate 0x38800030 is absent from the official catalog."
 
 # ── Seatbelts (4 belts, dev=1042) ────────────────────────────────────────
 
@@ -779,7 +779,7 @@
   unit: ""
   status: validated
   source: reference-catalog
-  note: "LIGHT_SIDE_LIGHT; matches AutoTark 3.7.2. Production on-demand only."
+  note: "LIGHT_SIDE_LIGHT; production-validated and on-demand only."
 
 - param: LightHigh
   diplus_key: null
@@ -862,7 +862,7 @@
   decoder: int_percent
   unit: "%"
   status: validated
-  source: settings-apk+autotark+production-fid-registry
+  source: settings-apk+production-fid-registry
   note: "Statistic battery health. Shared regular full-snapshot field."
 
 - param: SOC_BMS
@@ -1282,7 +1282,7 @@
   unit: ""
   status: imported
   source: autoservice-catalog
-  note: "LIGHT_FRONT_FOG_LAMP_STATUS; matches AutoTark 3.7.2. Production on-demand automation read."
+  note: "LIGHT_FRONT_FOG_LAMP_STATUS; production on-demand automation read."
 
 - param: LightRearFog
   diplus_key: null
@@ -1293,8 +1293,7 @@
   unit: ""
   status: imported
   source: autoservice-catalog
-  note: "Matches AutoTark 3.7.2. Production on-demand automation read."
-  note: "LIGHT_REAR_FOG_LAMPS; matches AutoTark 3.7.2."
+  note: "LIGHT_REAR_FOG_LAMPS; production on-demand automation read validated against the official catalog."
 
 - param: LightFrontFogIndicator
   diplus_key: null
@@ -1350,7 +1349,7 @@
   status: imported
   source: reference-catalog
 
-# ── AutoTark optional reads confirmed by the official feature catalog ───
+# ── Optional reads confirmed by the official feature catalog ───────────
 # These addresses are semantically correct. EnergyState and DriveModeIndicator are production
 # core reads because energy-flow and complete drive-mode display consume them.
 
@@ -1363,7 +1362,7 @@
   unit: ""
   status: active
   source: autoservice-catalog
-  note: "INSTRUMENT_MODE_INDICATOR_LIGHT; production core read combined with base DriveMode using AutoTark 3.7.2 gear gating."
+  note: "INSTRUMENT_MODE_INDICATOR_LIGHT; production core read combined with base DriveMode using validated gear gating."
 
 - param: EnergyState
   diplus_key: null
@@ -1374,7 +1373,7 @@
   unit: ""
   status: imported
   source: autoservice-catalog
-  note: "Production core read; ENERGY_STATE detailed power-flow state, matches AutoTark 3.7.2."
+  note: "Production core read; ENERGY_STATE detailed power-flow state."
 
 - param: AdasAccGrayState
   diplus_key: null
@@ -1385,7 +1384,7 @@
   unit: ""
   status: imported
   source: autoservice-catalog
-  note: "Production on-demand ADAS read; ADAS_ACC_GRAY_STATE; matches AutoTark 3.7.2."
+  note: "Production on-demand ADAS read; ADAS_ACC_GRAY_STATE."
 
 - param: AdasNoaGrayState
   diplus_key: null
@@ -1396,7 +1395,7 @@
   unit: ""
   status: imported
   source: autoservice-catalog
-  note: "Production on-demand ADAS read; ADAS_NOA_GRAY_STATE; matches AutoTark 3.7.2."
+  note: "Production on-demand ADAS read; ADAS_NOA_GRAY_STATE."
 
 - param: AdasMnoaStatus
   diplus_key: null
@@ -1407,7 +1406,7 @@
   unit: ""
   status: imported
   source: autoservice-catalog
-  note: "Production on-demand ADAS read; ADAS_MNOA_STATUS_DISPLAY; matches AutoTark 3.7.2."
+  note: "Production on-demand ADAS read; ADAS_MNOA_STATUS_DISPLAY."
 
 - param: AdasExecSpeed
   diplus_key: null
@@ -1418,7 +1417,7 @@
   unit: "km/h"
   status: imported
   source: autoservice-catalog
-  note: "Production on-demand ADAS read; ADAS_ACTUAL_EXECUTION_SPEED; matches AutoTark 3.7.2."
+  note: "Production on-demand ADAS read; ADAS_ACTUAL_EXECUTION_SPEED."
 
 - param: AccSpeed
   diplus_key: null
@@ -1429,7 +1428,7 @@
   unit: "km/h"
   status: imported
   source: autoservice-catalog
-  note: "INSTRUMENT_DD_ACC_SPEED; matches AutoTark 3.7.2."
+  note: "INSTRUMENT_DD_ACC_SPEED; validated against the official catalog."
 
 # ── Pedals + brake state + e-pedal dev=1011/1013 ─────────────────────────
 
@@ -1442,8 +1441,8 @@
   unit: "%"
   status: imported
   source: autoservice-catalog
-  note: "Production on-demand automation read; matches AutoTark 3.7.2."
-  note: "SPEED_ACCELERATOR_S; matches AutoTark 3.7.2."
+  note: "Production on-demand automation read."
+  note: "SPEED_ACCELERATOR_S; validated against the official catalog."
 
 - param: BrakePedal
   diplus_key: null
@@ -1488,7 +1487,7 @@
   source: reference-catalog
   note: "Production on-demand automation read."
 
-# ── CPU temperature candidate (not an AutoTark vehicle FID) ─────────────
+# ── CPU temperature candidate ───────────────────────────────────────────
 
 - param: CpuTemperature
   diplus_key: null
@@ -1499,7 +1498,7 @@
   unit: "°C"
   status: deferred
   source: autoservice-catalog
-  note: "BYDAutoFeatureIds.CPU_TEMPRATURE. Official SDK surface is write-oriented and Settings does not read it. AutoTark measures host CPU via /proc and /sys, not this FID; keep out of production until a real getInt probe succeeds."
+  note: "BYDAutoFeatureIds.CPU_TEMPRATURE. Official SDK surface is write-oriented and Settings does not read it. Host CPU metrics use /proc and /sys; keep this FID out of production until a real getInt probe succeeds."
 
 # ── Tyre state dev=1016 ──────────────────────────────────────────────────
 

@@ -213,7 +213,7 @@ internal class ElectronicMirrorOverlayController(
             layout.height,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WINDOW_FLAGS,
-            // Match AutoTark's overlay window. The child TextureView is explicitly opaque and the
+            // Use the validated overlay window. The child TextureView is explicitly opaque and the
             // GPU pass writes alpha=1 for every camera pixel, so the navigation layer cannot blend.
             PixelFormat.TRANSLUCENT,
         ).apply {
@@ -343,7 +343,7 @@ internal fun electronicMirrorWindowLayout(
         .roundToInt()
         .coerceIn(MIN_WINDOW_HEIGHT, displayHeight)
 
-    // AutoTark constrains electronic left/right/reverse windows to 16:9. Streaming rear keeps its
+    // Electronic left/right/reverse windows use 16:9. Streaming rear keeps its
     // independently configured wide window dimensions.
     if (scene.reason != ElectronicMirrorReason.STREAMING_REAR) {
         val heightForWidth = (width * 9f / 16f).roundToInt().coerceAtLeast(1)

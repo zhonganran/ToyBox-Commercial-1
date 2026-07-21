@@ -31,9 +31,6 @@ internal class WjxLockSoundRuntime(
     )
     fun start() {
         if (!started.compareAndSet(false, true)) return
-        if (config.anyEnabled()) {
-            WjxLockSoundWatchdog.enable()
-        }
         Thread({ lockLoop() }, "WJX-LockSoundPoll").apply { isDaemon = true; start() }
         Thread({ sentryLoop() }, "WJX-SentrySoundPoll").apply { isDaemon = true; start() }
         helperLog(TAG, "runtime started config=${config.summary()}")
@@ -51,11 +48,6 @@ internal class WjxLockSoundRuntime(
         )
         writeRuntimeConfig(next)
         config = next
-        if (next.anyEnabled()) {
-            WjxLockSoundWatchdog.enable()
-        } else {
-            WjxLockSoundWatchdog.disable()
-        }
         helperLog(TAG, "config synced ${next.summary()}")
         return true
     }

@@ -87,7 +87,7 @@ class HistoryImporter @Inject constructor(
 
     /**
      * DiPlus stores the vehicle's existing trip history in TripInfo. This is the
-     * fallback source used by AutoTark when energydata is not present.
+     * fallback source used when energydata is not present.
      */
     suspend fun syncFromDiPlus(): ImportResult {
         if (!syncMutex.tryLock()) {
@@ -127,6 +127,7 @@ class HistoryImporter @Inject constructor(
         // trips in this batch share the same snapshot. Null when service is not running
         // (cold import after app update) — socStart/socEnd stay null in that case.
         val sessionSnap = lastSessionRepository.snapshot()
+        val fuelPricePerLiter = settingsRepository.getFuelPricePerLiter()
 
         if (bydRecords.isEmpty()) {
             return ImportResult(trips = 0, details = "没有新的记录")
@@ -140,6 +141,11 @@ class HistoryImporter @Inject constructor(
         for (byd in bydRecords) {
             val startTsMs = byd.startTimestamp * 1000L
             val endTsMs = byd.endTimestamp * 1000L
+            val sessionStartTs = sessionSnap?.startTs
+            val sessionEndTs = sessionSnap?.endTs
+            val withinSession = sessionStartTs != null && sessionEndTs != null &&
+                endTsMs in sessionStartTs..(sessionEndTs + 30_000L)
+            val sessionFuelL = if (withinSession) sessionSnap?.fuelConsumedL else null
 
             // Track max timestamp for next sync
             if (byd.startTimestamp > maxTs) maxTs = byd.startTimestamp
@@ -167,7 +173,9 @@ class HistoryImporter @Inject constructor(
                     bydId = byd.id,
                     distanceKm = byd.tripKm,
                     kwhConsumed = byd.electricityKwh,
-                    kwhPer100km = per100
+                    kwhPer100km = per100,
+                    fuelConsumedL = sessionFuelL ?: existingByTime.fuelConsumedL,
+                    fuelCost = sessionFuelL?.times(fuelPricePerLiter) ?: existingByTime.fuelCost,
                 ))
                 skippedDuplicate++
                 continue
@@ -202,10 +210,6 @@ class HistoryImporter @Inject constructor(
             // overlap the session boundary but ended before the session started.
             // Tolerance: +30 sec on sessionEnd covers the post-idle-close window.
             // sessionSnap is Snapshot? — null when no session was recorded this process lifetime.
-            val sessionStartTs = sessionSnap?.startTs
-            val sessionEndTs = sessionSnap?.endTs
-            val withinSession = sessionStartTs != null && sessionEndTs != null &&
-                endTsMs in sessionStartTs..(sessionEndTs + 30_000L)
             val socStart = if (withinSession) sessionSnap?.startSoc else null
             val socEnd   = if (withinSession) sessionSnap?.endSoc   else null
 
@@ -216,6 +220,8 @@ class HistoryImporter @Inject constructor(
                     distanceKm = byd.tripKm,
                     kwhConsumed = byd.electricityKwh,
                     kwhPer100km = kwhPer100km,
+                    fuelConsumedL = sessionFuelL,
+                    fuelCost = sessionFuelL?.times(fuelPricePerLiter),
                     avgSpeedKmh = avgSpeed,
                     socStart = socStart,
                     socEnd = socEnd,
@@ -287,13 +293,18 @@ class HistoryImporter @Inject constructor(
     /**
      * Calculate cost for trips that have kWh but no cost yet.
      */
-    suspend fun calculateMissingCosts(tariff: Double) {
+    suspend fun calculateMissingCosts(
+        tariff: Double,
+        fuelPricePerLiter: Double = SettingsRepository.DEFAULT_FUEL_PRICE_PER_LITER.toDouble(),
+    ) {
         try {
             val trips = tripDao.getTripsWithoutCost()
             var calculated = 0
             for (trip in trips) {
-                val kwh = trip.kwhConsumed ?: continue
-                tripRepository.updateTrip(trip.copy(cost = kwh * tariff))
+                val electricCost = trip.cost ?: trip.kwhConsumed?.times(tariff)
+                val fuelCost = trip.fuelCost ?: trip.fuelConsumedL?.times(fuelPricePerLiter)
+                if (electricCost == trip.cost && fuelCost == trip.fuelCost) continue
+                tripRepository.updateTrip(trip.copy(cost = electricCost, fuelCost = fuelCost))
                 calculated++
             }
             Log.d(TAG, "calculateMissingCosts: $calculated trips, tariff=$tariff")
@@ -353,7 +364,10 @@ class HistoryImporter @Inject constructor(
     suspend fun runSync(): ImportResult {
         val r = syncFromVehicleHistory()
         if (!r.isError && r.count > 0) {
-            calculateMissingCosts(settingsRepository.getTripCostTariff())
+            calculateMissingCosts(
+                tariff = settingsRepository.getTripCostTariff(),
+                fuelPricePerLiter = settingsRepository.getFuelPricePerLiter(),
+            )
             attachGpsPoints()
         }
         return r

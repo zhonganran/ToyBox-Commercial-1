@@ -8,7 +8,7 @@ import java.lang.ref.WeakReference
 
 /**
  * Lightweight process bridge for the accessibility foreground signals already available on the
- * car. AutoTark uses the active accessibility root/windows as its fastest foreground source; the
+ * car. Active accessibility root/windows are the fastest foreground source; the
  * task stack and UsageEvents remain fallbacks in [ForegroundAppMonitor].
  */
 object AccessibilityForegroundBridge {

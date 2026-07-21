@@ -44,7 +44,7 @@ import com.byd.wjx.data.local.entity.VehicleWriteLogEntity
         LastStateEntity::class,
         VehicleWriteLogEntity::class
     ],
-    version = 19,
+    version = 20,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -54,7 +54,7 @@ abstract class AppDatabase : RoomDatabase() {
         const val COMMERCIAL_BASELINE_SCHEMA_VERSION = 17
 
         /** Current Room schema version. Must match the @Database(version = ...) annotation above. */
-        const val SCHEMA_VERSION = 19
+        const val SCHEMA_VERSION = 20
 
         val MIGRATION_17_18 = object : Migration(17, 18) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -70,6 +70,13 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_18_19 = object : Migration(18, 19) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("DROP TABLE IF EXISTS charge_points")
+            }
+        }
+
+        val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE trips ADD COLUMN fuel_consumed_l REAL")
+                db.execSQL("ALTER TABLE trips ADD COLUMN fuel_cost REAL")
             }
         }
     }

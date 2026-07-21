@@ -131,7 +131,7 @@ class TrackingService : Service() {
         networkAvailableMonitor.start()
         startPolling()
         cameraRuntimeCoordinator.start(serviceScope)
-        desktopQuickCardRuntime.start(serviceScope, cameraRuntimeCoordinator.active)
+        desktopQuickCardRuntime.start(serviceScope)
         electronicMirrorCoordinator.start(cameraRuntimeCoordinator.active)
         lyricRuntime.start(cameraRuntimeCoordinator.active, electronicMirrorCoordinator.active)
         ledRuntimeCoordinator.start(serviceScope)

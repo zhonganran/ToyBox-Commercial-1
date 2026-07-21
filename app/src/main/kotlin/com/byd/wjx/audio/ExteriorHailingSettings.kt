@@ -52,7 +52,7 @@ class ExteriorHailingSettings(context: Context) {
         }
 
     val realtimeAutoMicSensitivityPercent: Int
-        get() = autoTarkMicSensitivityPercent(
+        get() = calibratedMicSensitivityPercent(
             volumePercent = realtimeVolumePercent,
             noiseSuppressionPercent = realtimeNoiseSuppressionPercent,
         )
@@ -125,7 +125,7 @@ class ExteriorHailingSettings(context: Context) {
         prefs.edit().putInt(key, clamped).apply()
     }
 
-    private fun autoTarkMicSensitivityPercent(
+    private fun calibratedMicSensitivityPercent(
         volumePercent: Int,
         noiseSuppressionPercent: Int,
     ): Int {

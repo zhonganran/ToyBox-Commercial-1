@@ -238,6 +238,14 @@
             android:enabled="true"
             android:exported="false" />
 
+        <!-- Explicit shell/system-only bridge used by the detached runtime watchdog. -->
+        <receiver
+            android:name=".service.ShellKeepAliveReceiver"
+            android:directBootAware="true"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
+
         <receiver
             android:name=".audio.SentryInformReceiver"
             android:enabled="true"

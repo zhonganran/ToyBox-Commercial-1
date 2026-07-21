@@ -13,6 +13,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,6 +25,9 @@ data class DesktopQuickCardSettingsUiState(
     val sounds: List<SoundLibrary.SoundItem> = emptyList(),
     val overlayPermissionGranted: Boolean = false,
     val permissionBusy: Boolean = false,
+    val icons: List<DesktopQuickCardIcon> = DesktopQuickCardIconCatalog.builtIns,
+    val iconImportBusy: Boolean = false,
+    val iconMessage: String? = null,
 )
 
 @HiltViewModel
@@ -40,6 +44,7 @@ class DesktopQuickCardSettingsViewModel @Inject constructor(
             config = repository.config.value,
             sounds = soundLibrary.listSounds(),
             overlayPermissionGranted = Settings.canDrawOverlays(appContext),
+            icons = repository.icons.value,
         )
     )
     val uiState: StateFlow<DesktopQuickCardSettingsUiState> = _uiState.asStateFlow()
@@ -47,6 +52,9 @@ class DesktopQuickCardSettingsViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             repository.config.collect { config -> _uiState.update { it.copy(config = config) } }
+        }
+        viewModelScope.launch {
+            repository.icons.collect { icons -> _uiState.update { it.copy(icons = icons) } }
         }
     }
 
@@ -62,18 +70,34 @@ class DesktopQuickCardSettingsViewModel @Inject constructor(
 
     fun refreshOverlayPermission() {
         _uiState.update { it.copy(overlayPermissionGranted = Settings.canDrawOverlays(appContext)) }
+        repository.notifyOverlayPermissionChanged()
     }
 
     fun setEnabled(value: Boolean) = repository.setEnabled(value)
-    fun setAllowOverOtherApps(value: Boolean) = repository.setAllowOverOtherApps(value)
-    fun setScale(value: Float) = repository.setScale(value)
-    fun setSectionGapDp(value: Float) = repository.setSectionGapDp(value)
-    fun setDividerEnabled(value: Boolean) = repository.setDividerEnabled(value)
-    fun resetPosition() = repository.resetPosition()
+    fun setFloatingIconId(value: String) = repository.setFloatingIconId(value)
+
+    fun importIcon(uri: Uri) {
+        if (_uiState.value.iconImportBusy) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.update { it.copy(iconImportBusy = true, iconMessage = null) }
+            val result = repository.importCustomIcon(uri)
+            _uiState.update {
+                it.copy(
+                    iconImportBusy = false,
+                    iconMessage = result.fold(
+                        onSuccess = { imported -> "已添加并使用“${imported.label}”" },
+                        onFailure = { error -> "导入失败：${error.message ?: "无法读取图片"}" },
+                    ),
+                )
+            }
+        }
+    }
+
+    fun deleteIcon(id: String) = repository.deleteCustomIcon(id)
 
     fun addCommand(command: String) {
         val current = repository.config.value.functionCommands
-        if (current.size >= DESKTOP_QUICK_CARD_MAX_ITEMS || command in current) return
+        if (command in current) return
         repository.setFunctionCommands(current + command)
     }
 
@@ -87,7 +111,7 @@ class DesktopQuickCardSettingsViewModel @Inject constructor(
 
     fun addSound(path: String) {
         val current = repository.config.value.soundPaths
-        if (current.size >= DESKTOP_QUICK_CARD_MAX_ITEMS || path in current) return
+        if (path in current) return
         repository.setSoundPaths(current + path)
     }
 
@@ -115,6 +139,7 @@ class DesktopQuickCardSettingsViewModel @Inject constructor(
                     permissionBusy = false,
                 )
             }
+            repository.notifyOverlayPermissionChanged()
         }
     }
 

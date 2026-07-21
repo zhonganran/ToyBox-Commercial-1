@@ -72,7 +72,7 @@ object ElectronicMirrorSceneArbiter {
         }
         val source = config.sourceFor(viewpoint)
         // Surface 2/3/4 are independent fisheye side/rear feeds on the tested vehicle. They show
-        // the door or a round fisheye image and cannot become an AutoTark-style mirror by tuning
+        // the door or a round fisheye image and cannot become a rectified mirror by tuning
         // crop values. Every view therefore stays on the same rectified four-tile pano_h strip.
         val surfaceProfile = ElectronicMirrorSurfaceProfile.panorama(config.panoramaSurfaceIndex)
         val geometry = if (isStreamingRear) {

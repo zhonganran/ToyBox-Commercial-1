@@ -26,8 +26,6 @@ object FidMap {
         FidEntry("fuelLevel",            1014, 1246785600,   5, Decoder.INT_PERCENT),
         FidEntry("speed",                1013, -1807745016,  7, Decoder.FLOAT_KW),
         FidEntry("mileage",              1014, 1246765072,   5, Decoder.INT_SCALED,  scale = 0.1),
-        FidEntry("elecDrivingRangeKm",   1014, 1246765118,   5, Decoder.INT_RAW),
-        FidEntry("fuelDrivingRangeKm",   1014, 1246773304,   5, Decoder.INT_RAW),
         FidEntry("power",                1012, 339738656,    5, Decoder.INT_RAW),
         FidEntry("totalElecConsumption", 1014, 1032871984,   7, Decoder.FLOAT_KWH),
         FidEntry("elecConPer100km",      1014, 1032863794,   7, Decoder.FLOAT_KWH),
@@ -85,7 +83,7 @@ object FidMap {
         // D+ 10/11/11 and the vehicle reference offsets {-40} on Fangchengbao Bao 3 2026-05-29.
         FidEntry("maxBatTemp",           1014, 1148190752,   5, Decoder.INT_TEMP_C_OFS40),
         FidEntry("minBatTemp",           1014, 1148190736,   5, Decoder.INT_TEMP_C_OFS40),
-        // BODYWORK_POWER_LEVEL. AutoTark's 0x12D00020 belongs to the Setting device
+        // BODYWORK_POWER_LEVEL. The older 0x12D00020 candidate belongs to the Setting device
         // and describes the source of a vehicle-state change, not ignition level.
         FidEntry("powerState",           1001, 315621418,    5, Decoder.INT_ENUM),
         FidEntry("doorFL",               1001, 692060168,    5, Decoder.INT_ENUM),
@@ -104,11 +102,11 @@ object FidMap {
         FidEntry("lockRL",               1001, 1081081868,   5, Decoder.INT_ENUM),
         FidEntry("lockRR",               1001, 1081081870,   5, Decoder.INT_ENUM),
         FidEntry("driveMode",            1006, 555745294,    5, Decoder.INT_ENUM),
-        // INSTRUMENT_MODE_INDICATOR_LIGHT. AutoTark combines this with driveMode after leaving P
+        // INSTRUMENT_MODE_INDICATOR_LIGHT. Combine this with driveMode after leaving P
         // to expose terrain modes 4/5/6/7 and racing mode 11 without showing a stale parked value.
         FidEntry("driveModeIndicator",   1007, 710934584,    5, Decoder.INT_ENUM),
-        // ENERGY_MODE_INSTRUMENT_50 is used by newer 5.0/CAN-FD platforms. Keep the legacy
-        // address below as a fallback because both generations use the same official enum.
+        // Both addresses use the same official enum. ENERGY_MODE_INSTRUMENT is the live primary
+        // on the current vehicle; _50 remains a platform fallback when that signal is unavailable.
         FidEntry("workModeAlt",           1006, 874512424,    5, Decoder.INT_ENUM),
         FidEntry("workMode",             1006, 874512420,    5, Decoder.INT_ENUM),
         // ENERGY_STATE. Sampled with live power so regeneration can be split into
@@ -120,7 +118,7 @@ object FidMap {
         FidEntry("laneKeepState",        1038, 828375054,    5, Decoder.INT_ENUM),
         FidEntry("accCruiseState",       1007, 694157362,    5, Decoder.INT_ENUM),
         FidEntry("accCruisingSpeed",     1007, 710934536,    5, Decoder.INT_RAW),
-        // AutoTark v3.6.0 FidMap: AdasApaParkingStatus / 自动泊车.
+        // Production-validated AdasApaParkingStatus / 自动泊车 mapping.
         FidEntry("adasApaParkingStatus", 1038, 749732128,    5, Decoder.INT_ENUM),
         // Validated comfort/light reads. These are production-addressable but on-demand only;
         // see VehicleReadProfiles.onDemandFields.
@@ -133,7 +131,7 @@ object FidMap {
         FidEntry("seatVentP",             1000, 711983128,    5, Decoder.INT_ENUM),
         FidEntry("lightSide",             1004, 950009864,    5, Decoder.INT_ENUM),
         // Extended on-demand telemetry. Candidate/imported addresses remain isolated from the
-        // regular 73-FID snapshot so unsupported trims fail soft without permanent read cost.
+        // regular 71-FID snapshot so unsupported trims fail soft without permanent read cost.
         FidEntry("tireTempFL",             1007, 1246797848,   5, Decoder.INT_TEMP_C_WIDE),
         FidEntry("tireTempFR",             1007, 1246797860,   5, Decoder.INT_TEMP_C_WIDE),
         FidEntry("tireTempRL",             1007, 1246797872,   5, Decoder.INT_TEMP_C_WIDE),

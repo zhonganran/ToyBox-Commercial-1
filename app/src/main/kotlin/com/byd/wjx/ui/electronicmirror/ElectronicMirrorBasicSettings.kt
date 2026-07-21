@@ -101,7 +101,7 @@ internal fun StreamingRearMirrorCard(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Surface 通道（高级）", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                 Text(
-                    "AutoTark 默认使用通道 0 输出四格母流；只有实车无画面时才切换测试",
+                    "默认使用通道 0 输出四格母流；只有实车无画面时才切换测试",
                     color = TextMuted,
                     fontSize = 12.sp,
                 )
@@ -129,12 +129,6 @@ internal fun StreamingRearMirrorCard(
                     }
                 }
             }
-            Text(
-                "母流 7680×1300 按后方、左后、右后、前方排列，Surface 缩放为 3000×508；后方按真实后视镜方向水平镜像。",
-                color = AccentGreen,
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
-            )
         }
     }
 }

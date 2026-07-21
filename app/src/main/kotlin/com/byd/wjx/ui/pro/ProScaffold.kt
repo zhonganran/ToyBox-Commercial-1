@@ -118,7 +118,7 @@ fun ProAppScaffold(
                     .fillMaxWidth(),
             ) {
                 val baseDensity = LocalDensity.current
-                // Keep the information density close to AutoTark on 720p car displays.
+                // Keep the information density suitable for 720p car displays.
                 val contentScale = (maxHeight.value / 860f).coerceIn(0.74f, 1f)
                 val compactDensity = remember(baseDensity.density, baseDensity.fontScale, contentScale) {
                     Density(

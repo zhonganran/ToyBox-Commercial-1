@@ -2,7 +2,7 @@ package com.byd.wjx.lyrics
 
 import android.content.Context
 
-/** One canonical lyric configuration shared by the desktop and instrument cluster. */
+/** Shared lyric style plus independent desktop/cluster layout configuration. */
 class LyricSettings(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
@@ -29,10 +29,16 @@ class LyricSettings(context: Context) {
             .putInt(KEY_SHARED_LINE_COUNT, value.coerceIn(SHARED_LINE_COUNT_MIN, SHARED_LINE_COUNT_MAX))
             .apply()
 
-    var sharedFontScale: Float
-        get() = prefs.getFloat(KEY_SHARED_FONT_SCALE, 1f).coerceIn(SHARED_FONT_MIN, SHARED_FONT_MAX)
+    var desktopFontScale: Float
+        get() = prefs.getFloat(KEY_DESKTOP_FONT_SCALE, 1f).coerceIn(FONT_SCALE_MIN, FONT_SCALE_MAX)
         set(value) = prefs.edit()
-            .putFloat(KEY_SHARED_FONT_SCALE, value.coerceIn(SHARED_FONT_MIN, SHARED_FONT_MAX))
+            .putFloat(KEY_DESKTOP_FONT_SCALE, value.coerceIn(FONT_SCALE_MIN, FONT_SCALE_MAX))
+            .apply()
+
+    var clusterFontScale: Float
+        get() = prefs.getFloat(KEY_CLUSTER_FONT_SCALE, 1f).coerceIn(FONT_SCALE_MIN, FONT_SCALE_MAX)
+        set(value) = prefs.edit()
+            .putFloat(KEY_CLUSTER_FONT_SCALE, value.coerceIn(FONT_SCALE_MIN, FONT_SCALE_MAX))
             .apply()
 
     var sharedTextColor: Int
@@ -70,12 +76,6 @@ class LyricSettings(context: Context) {
             ?: DEFAULT_SHARED_MOTION_PRESET_ID
         set(value) = prefs.edit()
             .putString(KEY_SHARED_MOTION_PRESET_ID, LyricStylePresets.motion(value).id)
-            .apply()
-
-    var clusterWidthScale: Float
-        get() = prefs.getFloat(KEY_CLUSTER_WIDTH_SCALE, 1f).coerceIn(CLUSTER_WIDTH_MIN, CLUSTER_WIDTH_MAX)
-        set(value) = prefs.edit()
-            .putFloat(KEY_CLUSTER_WIDTH_SCALE, value.coerceIn(CLUSTER_WIDTH_MIN, CLUSTER_WIDTH_MAX))
             .apply()
 
     var clusterAlpha: Float
@@ -135,13 +135,11 @@ class LyricSettings(context: Context) {
     companion object {
         const val PREFS_NAME = "wjx_lyrics"
 
-        const val SHARED_FONT_MIN = 0.6f
-        const val SHARED_FONT_MAX = 1.6f
+        const val FONT_SCALE_MIN = 0.6f
+        const val FONT_SCALE_MAX = 1.6f
         const val SHARED_LINE_COUNT_MIN = 1
         const val SHARED_LINE_COUNT_MAX = 5
         const val SHARED_LINE_COUNT_DEFAULT = 5
-        const val CLUSTER_WIDTH_MIN = 0.6f
-        const val CLUSTER_WIDTH_MAX = 1.5f
         const val ALPHA_MIN = 0.3f
         const val ALPHA_MAX = 1f
         const val SYNC_MIN_MS = -800
@@ -152,12 +150,12 @@ class LyricSettings(context: Context) {
         private const val KEY_DESKTOP_TOUCH_THROUGH = "lyric_desktop_touch_through"
         private const val KEY_CLUSTER_ENABLED = "lyric_cluster_enabled"
         private const val KEY_SHARED_LINE_COUNT = "lyric_shared_line_count"
-        private const val KEY_SHARED_FONT_SCALE = "lyric_shared_font_scale"
+        private const val KEY_DESKTOP_FONT_SCALE = "lyric_desktop_font_scale"
+        private const val KEY_CLUSTER_FONT_SCALE = "lyric_cluster_font_scale"
         private const val KEY_SHARED_TEXT_COLOR = "lyric_shared_text_color"
         private const val KEY_SHARED_HIGHLIGHT_COLOR = "lyric_shared_highlight_color"
         private const val KEY_SHARED_FONT_STYLE_ID = "lyric_shared_font_style_id"
         private const val KEY_SHARED_MOTION_PRESET_ID = "lyric_shared_motion_preset_id"
-        private const val KEY_CLUSTER_WIDTH_SCALE = "lyric_cluster_width_scale"
         private const val KEY_CLUSTER_ALPHA = "lyric_cluster_alpha"
         private const val KEY_CLUSTER_X_PCT = "lyric_cluster_x_pct"
         private const val KEY_CLUSTER_Y_PCT = "lyric_cluster_y_pct"

@@ -35,7 +35,7 @@ class DesktopLyricOverlayController(
         if (container == null) show()
         showSoft()
         lyricView?.apply {
-            setTextSizeSp(DESKTOP_TEXT_SIZE_SP * settings.sharedFontScale)
+            setTextSizeSp(DESKTOP_TEXT_SIZE_SP * settings.desktopFontScale)
             setVisibleLineCount(settings.sharedLineCount)
             setDisplayStyle(settings.displayStyle())
             setFrame(frame, animate)
@@ -239,13 +239,13 @@ class DesktopLyricOverlayController(
     }
 
     private fun windowWidth(): Int =
-        (appContext.resources.displayMetrics.density * WINDOW_WIDTH_DP * settings.sharedFontScale)
+        (appContext.resources.displayMetrics.density * WINDOW_WIDTH_DP * settings.desktopFontScale)
             .roundToInt()
             .coerceAtLeast(dp(MIN_WINDOW_WIDTH_DP))
 
     @Suppress("DEPRECATION")
     private fun windowHeight(): Int = LyricOverlayView.desiredHeightPx(
-        textSizeSp = DESKTOP_TEXT_SIZE_SP * settings.sharedFontScale,
+        textSizeSp = DESKTOP_TEXT_SIZE_SP * settings.desktopFontScale,
         style = settings.displayStyle(),
         density = appContext.resources.displayMetrics.density,
         scaledDensity = appContext.resources.displayMetrics.scaledDensity,

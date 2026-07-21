@@ -62,6 +62,7 @@ class KeepAliveService : Service() {
         ChainLog.append(this, "KeepAliveService onCreate")
         createNotificationChannel()
         startForegroundCompat("后台保活运行中")
+        ProcessRevivalReceiver.cancelImmediate(applicationContext)
         acquireWakeLock()
         registerScreenOffReceiver()
         ProcessRevivalReceiver.schedule(applicationContext)
@@ -110,6 +111,7 @@ class KeepAliveService : Service() {
         releaseWakeLock()
         serviceScope.cancel()
         ProcessRevivalReceiver.schedule(applicationContext)
+        ProcessRevivalReceiver.scheduleImmediate(applicationContext, "keepalive_destroyed")
         super.onDestroy()
     }
 
@@ -118,6 +120,7 @@ class KeepAliveService : Service() {
         WjxFileLogger.w(TAG, "onTaskRemoved")
         ChainLog.append(this, "KeepAliveService onTaskRemoved")
         ProcessRevivalReceiver.schedule(applicationContext)
+        ProcessRevivalReceiver.scheduleImmediate(applicationContext, "keepalive_task_removed")
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

@@ -16,7 +16,7 @@ enum class ElectronicMirrorCameraSource(
     val stripTileIndex: Int,
     val displayName: String,
 ) {
-    // AutoTark's validated strip order is rear, left, right, front. Keep A/B/C labels so the
+    // The validated strip order is rear, left, right, front. Keep A/B/C labels so the
     // image-order editor can correct a vehicle whose configured order differs.
     SOURCE_A(1, "来源 A"),
     SOURCE_B(2, "来源 B"),
@@ -98,7 +98,7 @@ data class ElectronicMirrorGeometry(
     }
 }
 
-/** AutoTark-compatible crop controls for one rectified panorama tile. */
+/** Crop controls for one rectified panorama tile. */
 data class ElectronicMirrorProjectionSpec(
     val horizontalPermille: Int = 0,
     val heightOffsetPermille: Int = 0,

@@ -97,7 +97,7 @@ interface HelperClient {
     suspend fun playSentryEvent(source: String): Boolean = false
     /** Restricted sentry settings helper; writes only accept the daemon allowlist. */
     suspend fun sentryShell(op: String, arg: String): String? = null
-    /** Generic helper-side shell execution with AutoTark-compatible status/exit/output fields. */
+    /** Generic helper-side shell execution with structured status, exit and output fields. */
     suspend fun execShellResult(command: String): HelperShellResult? = null
     /** Generic helper-side shell execution. Keep call sites narrow and logged. */
     suspend fun execShell(command: String): String? = null

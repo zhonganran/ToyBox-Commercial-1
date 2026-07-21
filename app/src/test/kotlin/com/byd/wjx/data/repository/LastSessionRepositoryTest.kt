@@ -74,4 +74,16 @@ class LastSessionRepositoryTest {
         assertEquals(70, snap.endSoc)
         assertEquals(5_000L, snap.endTs)
     }
+
+    @Test
+    fun `fuel samples retain the session maximum and calculate consumed liters`() {
+        val repo = LastSessionRepository()
+        repo.onSessionStart(soc = 80, ts = 1_000L, fuelL = 0.4)
+        repo.onSessionSample(0.9)
+        repo.onSessionSample(1.3)
+        repo.onSessionEnd(soc = 70, ts = 5_000L, fuelL = 0.0)
+
+        val snap = requireNotNull(repo.snapshot())
+        assertEquals(0.9, snap.fuelConsumedL ?: 0.0, 0.001)
+    }
 }

@@ -98,10 +98,8 @@ fun DashboardScreen(
     val context = LocalContext.current
     DisposableEffect(viewModel) {
         viewModel.setPowertrainTelemetryActive(true)
-        viewModel.setSystemMetricsActive(true)
         onDispose {
             viewModel.setPowertrainTelemetryActive(false)
-            viewModel.setSystemMetricsActive(false)
         }
     }
 
@@ -320,28 +318,6 @@ fun DashboardScreen(
                             )
                         }
                         CompactCard(
-                            leftValue = formatEnergyFlowKwh(state.sessionEnergyFlow.totalRegenKwh),
-                            leftLabel = "本次回收 kWh",
-                            rightValue = energyFlowCategoryLabel(state.energyFlowCategory),
-                            rightLabel = state.energyState?.let { "能量状态 $it" } ?: "能量状态",
-                            borderColor = AccentGreen,
-                            hasData = state.energyState != null ||
-                                state.sessionEnergyFlow.totalRecoveredKwh > 0.0,
-                            onClick = { viewModel.toggleEnergyFlowExpanded() },
-                        )
-                        val systemMetrics = state.systemMetrics
-                        CompactCard(
-                            leftValue = systemMetrics?.cpuTotalUsagePercent?.let { "$it%" }
-                                ?: if (state.systemMetricsLoading || state.systemMetricsSampleCount < 2) "采样中" else "--",
-                            leftLabel = "CPU 总占用",
-                            rightValue = systemMetrics?.memory?.let { "${it.usedPercent}%" }
-                                ?: if (state.systemMetricsLoading) "读取中" else "--",
-                            rightLabel = "内存占用",
-                            borderColor = AccentBlue,
-                            hasData = systemMetrics != null,
-                            onClick = { viewModel.toggleSystemMetricsExpanded() },
-                        )
-                        CompactCard(
                             leftValue = state.frontMotorSpeed?.let(::formatRpm) ?: "—",
                             leftLabel = "前电机转速",
                             rightValue = state.rearMotorSpeed?.let(::formatRpm) ?: "—",
@@ -412,31 +388,6 @@ fun DashboardScreen(
                             DetailRow("后电机电流", state.rearMotorCurrent?.let { "%.1f A".format(it) } ?: "--", TextPrimary)
                             DetailRow("发动机转速", state.engineRpm?.let(::formatRpm) ?: "--", TextPrimary)
                             DetailRow("冷却液温度", state.waterTemp?.let { "$it °C" } ?: "--", TextPrimary)
-                        }
-                    }
-                    if (state.energyFlowExpanded) {
-                        CardDetailDialog(
-                            title = "能量回收与发动机发电",
-                            borderColor = AccentGreen,
-                            onDismiss = { viewModel.toggleEnergyFlowExpanded() },
-                        ) {
-                            DetailRow("当前分类", energyFlowCategoryLabel(state.energyFlowCategory), AccentGreen)
-                            DetailRow("原始能量状态", state.energyState?.toString() ?: "--", TextPrimary)
-                            EnergyFlowDetailRows("本次行程", state.sessionEnergyFlow)
-                            EnergyFlowDetailRows("累计统计", state.lifetimeEnergyFlow)
-                        }
-                    }
-                    if (state.systemMetricsExpanded) {
-                        CardDetailDialog(
-                            title = "车机系统监控",
-                            borderColor = AccentBlue,
-                            onDismiss = { viewModel.toggleSystemMetricsExpanded() },
-                        ) {
-                            SystemMetricsDetailRows(
-                                snapshot = state.systemMetrics,
-                                loading = state.systemMetricsLoading,
-                                sampleReady = state.systemMetricsSampleCount >= 2,
-                            )
                         }
                     }
                 }
@@ -589,13 +540,13 @@ private fun dashboardTripDuration(durationMs: Long): String {
 
 private fun formatRpm(value: Int): String = "$value rpm"
 
-private fun formatEnergyFlowKwh(value: Double): String = when {
+internal fun formatEnergyFlowKwh(value: Double): String = when {
     value >= 10.0 -> "%.1f".format(value)
     value >= 0.1 -> "%.2f".format(value)
     else -> "%.3f".format(value)
 }
 
-private fun energyFlowCategoryLabel(category: EnergyFlowCategory): String = when (category) {
+internal fun energyFlowCategoryLabel(category: EnergyFlowCategory): String = when (category) {
     EnergyFlowCategory.EV_4WD_REGEN -> "纯电四驱回收"
     EnergyFlowCategory.EV_FWD_REGEN -> "纯电前驱回收"
     EnergyFlowCategory.EV_RWD_REGEN -> "纯电后驱回收"
@@ -607,7 +558,7 @@ private fun energyFlowCategoryLabel(category: EnergyFlowCategory): String = when
 }
 
 @Composable
-private fun ColumnScope.SystemMetricsDetailRows(
+internal fun ColumnScope.SystemMetricsDetailRows(
     snapshot: SystemMetricsSnapshot?,
     loading: Boolean,
     sampleReady: Boolean,
@@ -754,7 +705,7 @@ private fun formatUptime(seconds: Long): String {
 }
 
 @Composable
-private fun ColumnScope.EnergyFlowDetailRows(title: String, totals: EnergyFlowTotals) {
+internal fun ColumnScope.EnergyFlowDetailRows(title: String, totals: EnergyFlowTotals) {
     Text(
         text = title,
         color = AccentGreen,

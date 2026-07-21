@@ -42,7 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -290,10 +290,21 @@ private fun TripRecordsPanel(
                 TripSummaryMetric("行驶时长", formatTripDuration(state.totalDurationMs), AccentBlue, Modifier.weight(1f))
                 TripSummaryMetric("总里程", "%.1f km".format(Locale.CHINA, state.totalKm), AccentGreen, Modifier.weight(1f))
                 TripSummaryMetric("总用电", "%.1f kWh".format(Locale.CHINA, state.totalKwh), SceneAmber, Modifier.weight(1f))
+                TripSummaryMetric("总用油", "%.1f L".format(Locale.CHINA, state.totalFuelL), AccentBlue, Modifier.weight(1f))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TripSummaryMetric("总电费", "%.2f 元".format(Locale.CHINA, state.totalElectricCost), AccentGreen, Modifier.weight(1f))
+                TripSummaryMetric("总油费", "%.2f 元".format(Locale.CHINA, state.totalFuelCost), SceneAmber, Modifier.weight(1f))
                 TripSummaryMetric(
                     "平均电耗",
                     if (state.avgConsumption > 0) "%.1f/100km".format(Locale.CHINA, state.avgConsumption) else "--",
                     if (state.avgConsumption > 0) consumptionColor(state.avgConsumption) else TextMuted,
+                    Modifier.weight(1f),
+                )
+                TripSummaryMetric(
+                    "平均油耗",
+                    if (state.avgFuelConsumption > 0) "%.1f L/100km".format(Locale.CHINA, state.avgFuelConsumption) else "--",
+                    AccentBlue,
                     Modifier.weight(1f),
                 )
             }
@@ -354,10 +365,11 @@ private fun TripSummaryMetric(
 @Composable
 private fun TripListHeader() {
     Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 9.dp)) {
-        Text("时间 / 时长", color = TextMuted, fontSize = 10.sp, modifier = Modifier.weight(1.45f))
-        Text("里程", color = TextMuted, fontSize = 10.sp, modifier = Modifier.weight(0.82f))
-        Text("用电", color = TextMuted, fontSize = 10.sp, modifier = Modifier.weight(0.82f))
-        Text("电耗 / 轨迹", color = TextMuted, fontSize = 10.sp, modifier = Modifier.weight(1f))
+        Text("时间 / 时长", color = TextMuted, fontSize = 10.sp, modifier = Modifier.weight(1.35f))
+        Text("里程", color = TextMuted, fontSize = 10.sp, modifier = Modifier.weight(0.72f))
+        Text("用电", color = TextMuted, fontSize = 10.sp, modifier = Modifier.weight(0.72f))
+        Text("用油", color = TextMuted, fontSize = 10.sp, modifier = Modifier.weight(0.68f))
+        Text("电费 / 油费", color = TextMuted, fontSize = 10.sp, modifier = Modifier.weight(1.05f))
     }
 }
 
@@ -368,7 +380,6 @@ private fun TripRecordRow(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    val consumption = trip.kwhPer100km
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -378,11 +389,12 @@ private fun TripRecordRow(
             .padding(horizontal = 9.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1.45f)) {
+        Column(modifier = Modifier.weight(1.35f)) {
             Text(formatTime(trip.startTs), color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             Text(
-                trip.endTs?.let { formatTripDuration(it - trip.startTs) } ?: "进行中",
-                color = TextMuted,
+                (trip.endTs?.let { formatTripDuration(it - trip.startTs) } ?: "进行中") +
+                    if (hasRoute) " · 有轨迹" else " · 无轨迹",
+                color = if (hasRoute) AccentGreen else TextMuted,
                 fontSize = 10.sp,
             )
         }
@@ -390,20 +402,32 @@ private fun TripRecordRow(
             trip.distanceKm?.let { "%.1f km".format(Locale.CHINA, it) } ?: "--",
             color = TextPrimary,
             fontSize = 11.sp,
-            modifier = Modifier.weight(0.82f),
+            modifier = Modifier.weight(0.72f),
         )
         Text(
             trip.kwhConsumed?.let { "%.1f kWh".format(Locale.CHINA, it) } ?: "--",
             color = TextPrimary,
             fontSize = 11.sp,
-            modifier = Modifier.weight(0.82f),
+            modifier = Modifier.weight(0.72f),
         )
         Text(
-            if (hasRoute) consumption?.let { "%.1f/100".format(Locale.CHINA, it) } ?: "有轨迹" else "无轨迹",
-            color = if (hasRoute) consumption?.let { consumptionColor(it) } ?: AccentGreen else TextMuted,
+            trip.fuelConsumedL?.let { "%.1f L".format(Locale.CHINA, it) } ?: "--",
+            color = TextPrimary,
             fontSize = 11.sp,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(0.68f),
         )
+        Column(modifier = Modifier.weight(1.05f)) {
+            Text(
+                trip.cost?.let { "电 %.2f 元".format(Locale.CHINA, it) } ?: "电 --",
+                color = AccentGreen,
+                fontSize = 10.sp,
+            )
+            Text(
+                trip.fuelCost?.let { "油 %.2f 元".format(Locale.CHINA, it) } ?: "油 --",
+                color = SceneAmber,
+                fontSize = 10.sp,
+            )
+        }
     }
 }
 
@@ -650,11 +674,13 @@ private fun rememberCurrentLocation(): Location? {
     val context = LocalContext.current
     val hasPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
         PackageManager.PERMISSION_GRANTED
-    return produceState<Location?>(initialValue = null, context, hasPermission) {
-        if (!hasPermission) return@produceState
+    var currentLocation by remember(context, hasPermission) { mutableStateOf<Location?>(null) }
+    DisposableEffect(context, hasPermission) {
+        currentLocation = null
+        if (!hasPermission) return@DisposableEffect onDispose {}
         val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
-            ?: return@produceState
-        value = bestLastKnownLocation(manager)
+            ?: return@DisposableEffect onDispose {}
+        currentLocation = bestLastKnownLocation(manager)
         val provider = when {
             runCatching { manager.isProviderEnabled(LocationManager.GPS_PROVIDER) }.getOrDefault(false) ->
                 LocationManager.GPS_PROVIDER
@@ -662,7 +688,7 @@ private fun rememberCurrentLocation(): Location? {
                 LocationManager.NETWORK_PROVIDER
             else -> null
         }
-        if (provider == null) return@produceState
+        if (provider == null) return@DisposableEffect onDispose {}
         val cancellationSignal = CancellationSignal()
         runCatching {
             LocationManagerCompat.getCurrentLocation(
@@ -671,11 +697,12 @@ private fun rememberCurrentLocation(): Location? {
                 cancellationSignal,
                 ContextCompat.getMainExecutor(context),
             ) { location ->
-                if (location != null) value = location
+                if (location != null) currentLocation = location
             }
         }
-        awaitDispose { cancellationSignal.cancel() }
-    }.value
+        onDispose { cancellationSignal.cancel() }
+    }
+    return currentLocation
 }
 
 @Suppress("MissingPermission")

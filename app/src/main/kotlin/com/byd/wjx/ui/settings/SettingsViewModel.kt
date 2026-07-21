@@ -76,10 +76,22 @@ class SettingsViewModel @Inject constructor(
     // Tracks the in-flight update download so "Close" can cancel it (issue #23).
     private var downloadJob: Job? = null
     private var availableUpdate: UpdateChecker.UpdateInfo? = null
+    private var versionTapCount = 0
 
     private fun getVersion(): String = try {
         appContext.packageManager.getPackageInfo(appContext.packageName, 0).versionName ?: "?"
     } catch (_: Exception) { "?" }
+
+    fun onVersionTapped() {
+        if (_uiState.value.electronicMirrorUnlocked) return
+        versionTapCount += 1
+        if (versionTapCount < ELECTRONIC_MIRROR_UNLOCK_TAPS) return
+        versionTapCount = 0
+        _uiState.update { it.copy(electronicMirrorUnlocked = true) }
+        viewModelScope.launch {
+            settingsRepository.setString(SettingsRepository.KEY_ELECTRONIC_MIRROR_UNLOCKED, "true")
+        }
+    }
 
     init {
         loadSettings()
@@ -380,6 +392,10 @@ class SettingsViewModel @Inject constructor(
                 SettingsRepository.KEY_DC_TARIFF,
                 SettingsRepository.DEFAULT_DC_TARIFF
             )
+            val fuelPricePerLiter = settingsRepository.getString(
+                SettingsRepository.KEY_FUEL_PRICE_PER_LITER,
+                SettingsRepository.DEFAULT_FUEL_PRICE_PER_LITER,
+            )
             val tripCostTariff = settingsRepository.getTripCostTariffKey()
             val consumptionGood = settingsRepository.getString(
                 SettingsRepository.KEY_CONSUMPTION_GOOD,
@@ -389,6 +405,11 @@ class SettingsViewModel @Inject constructor(
                 SettingsRepository.KEY_CONSUMPTION_BAD,
                 SettingsRepository.DEFAULT_CONSUMPTION_BAD
             )
+            val electronicMirrorUnlocked = settingsRepository.getString(
+                SettingsRepository.KEY_ELECTRONIC_MIRROR_UNLOCKED,
+                "false",
+            ).toBooleanStrictOrNull() ?: false
+            _uiState.update { it.copy(electronicMirrorUnlocked = electronicMirrorUnlocked) }
 
             // Read boot log from SharedPreferences
             val bootInfo = readBootInfo()
@@ -404,9 +425,11 @@ class SettingsViewModel @Inject constructor(
                     appWallpaper = appWallpaper,
                     homeTariff = homeTariff,
                     dcTariff = dcTariff,
+                    fuelPricePerLiter = fuelPricePerLiter,
                     tripCostTariff = tripCostTariff,
                     consumptionGood = consumptionGood,
                     consumptionBad = consumptionBad,
+                    electronicMirrorUnlocked = electronicMirrorUnlocked,
                     lastBootInfo = bootInfo,
                     chainLog = chainLog,
                     tripGpsRecordingEnabled = tripGpsRecordingEnabled,
@@ -414,6 +437,10 @@ class SettingsViewModel @Inject constructor(
                 )
             }
         }
+    }
+
+    private companion object {
+        const val ELECTRONIC_MIRROR_UNLOCK_TAPS = 5
     }
 
     fun updateBatteryCapacity(value: String) {
@@ -473,6 +500,10 @@ class SettingsViewModel @Inject constructor(
         _uiState.update { it.copy(dcTariff = value) }
     }
 
+    fun updateFuelPricePerLiter(value: String) {
+        _uiState.update { it.copy(fuelPricePerLiter = value) }
+    }
+
     /** Save tariffs to DB and calculate costs for new trips. */
     fun saveTariffs() {
         val state = _uiState.value
@@ -481,10 +512,11 @@ class SettingsViewModel @Inject constructor(
                 mapOf(
                     SettingsRepository.KEY_HOME_TARIFF to state.homeTariff,
                     SettingsRepository.KEY_DC_TARIFF to state.dcTariff,
+                    SettingsRepository.KEY_FUEL_PRICE_PER_LITER to state.fuelPricePerLiter,
                 ),
             )
             val tariff = settingsRepository.getTripCostTariff()
-            historyImporter.calculateMissingCosts(tariff)
+            historyImporter.calculateMissingCosts(tariff, settingsRepository.getFuelPricePerLiter())
             _uiState.update { it.copy(tariffSaveStatus = appContext.getString(R.string.settings_saved)) }
             delay(2000)
             _uiState.update { it.copy(tariffSaveStatus = null) }
@@ -500,11 +532,14 @@ class SettingsViewModel @Inject constructor(
     fun recalculateAllCosts() {
         viewModelScope.launch {
             val tariff = settingsRepository.getTripCostTariff()
+            val fuelPrice = settingsRepository.getFuelPricePerLiter()
             val allTrips = tripRepository.getAllTrips().firstOrNull() ?: emptyList()
             var count = 0
             for (trip in allTrips) {
-                val kwh = trip.kwhConsumed ?: continue
-                tripRepository.updateTrip(trip.copy(cost = kwh * tariff))
+                val electricCost = trip.kwhConsumed?.let { it * tariff }
+                val fuelCost = trip.fuelConsumedL?.let { it * fuelPrice }
+                if (electricCost == null && fuelCost == null) continue
+                tripRepository.updateTrip(trip.copy(cost = electricCost, fuelCost = fuelCost))
                 count++
             }
             _uiState.update { it.copy(recalcStatus = appContext.getString(R.string.settings_recalc_done, count)) }

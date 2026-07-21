@@ -123,4 +123,52 @@ class TripRecorderActiveTest {
         coVerify(exactly = 1) { tripDao.insert(any()) }
         coVerify(exactly = 1) { lastState.clearOpenTrip() }
     }
+
+    @Test fun `trip stores electric and fuel usage with separate costs`() = runTest {
+        val tripDao = mockk<TripDao>(relaxed = true)
+        val lastState = mockk<LastStateDao>(relaxed = true)
+        val energy = mockk<EnergyDataReader> { every { isAvailable() } returns false }
+        val clock = mutableListOf(1_000L, 2_000L)
+        val recorder = TripRecorder(
+            tripDao = tripDao,
+            lastStateDao = lastState,
+            energyDataReader = energy,
+            batteryCapacityKwh = { 72.9 },
+            tripElectricTariff = { 0.6 },
+            fuelPricePerLiter = { 8.0 },
+            now = { clock.removeAt(0) },
+        )
+
+        recorder.consume(
+            diParsData(
+                powerState = 3,
+                soc = 80,
+                mileage = 100.0,
+                totalElecConsumption = 1_000.0,
+            ).copy(currentTripFuelL = 0.4),
+        )
+        recorder.consume(
+            diParsData(
+                powerState = 3,
+                soc = 80,
+                mileage = 103.0,
+                totalElecConsumption = 1_000.3,
+            ).copy(currentTripFuelL = 1.1),
+        )
+        recorder.consume(
+            diParsData(
+                powerState = 1,
+                soc = 80,
+                mileage = 105.0,
+                totalElecConsumption = 1_000.5,
+            ).copy(currentTripFuelL = 0.0),
+        )
+
+        val captured = slot<TripEntity>()
+        coVerify(exactly = 1) { tripDao.insert(capture(captured)) }
+        assertEquals(0.5, captured.captured.kwhConsumed ?: 0.0, 0.001)
+        assertEquals(0.3, captured.captured.cost ?: 0.0, 0.001)
+        assertEquals(0.7, captured.captured.fuelConsumedL ?: 0.0, 0.001)
+        assertEquals(5.6, captured.captured.fuelCost ?: 0.0, 0.001)
+    }
 }

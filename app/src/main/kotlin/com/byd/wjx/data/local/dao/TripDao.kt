@@ -30,7 +30,11 @@ interface TripDao {
     @Query("SELECT * FROM trips WHERE byd_id = :bydId LIMIT 1")
     suspend fun getByBydId(bydId: Long): TripEntity?
 
-    @Query("SELECT * FROM trips WHERE cost IS NULL AND kwh_consumed IS NOT NULL")
+    @Query(
+        "SELECT * FROM trips WHERE " +
+            "(cost IS NULL AND kwh_consumed IS NOT NULL) OR " +
+            "(fuel_cost IS NULL AND fuel_consumed_l IS NOT NULL)"
+    )
     suspend fun getTripsWithoutCost(): List<TripEntity>
 
     @Query("""

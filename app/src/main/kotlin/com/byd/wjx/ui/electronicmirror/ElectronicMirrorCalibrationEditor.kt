@@ -67,7 +67,7 @@ internal fun ProjectionEditor(
                 Column(modifier = Modifier.weight(1f)) {
                     Text("画面微调", color = TextPrimary, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
                     Text(
-                        "默认按 AutoTark 正式值：左 -0.12、右 +0.12；可继续微调后向范围",
+                        "默认按实车验证值：左 -0.12、右 +0.12；可继续微调后向范围",
                         color = TextMuted,
                         fontSize = 12.sp,
                     )

@@ -31,8 +31,9 @@ class BydSignalSemanticsTest {
         assertEquals(1, BydSignalSemantics.selectDriveMode(1, 99, 4))
     }
 
-    @Test fun `new work mode fid falls back without treating unsupported zero as authoritative`() {
-        assertEquals(3, BydSignalSemantics.selectWorkMode(3, 1))
+    @Test fun `direct work mode fid wins stale platform value and zero falls back`() {
+        assertEquals(3, BydSignalSemantics.selectWorkMode(1, 3))
+        assertEquals(1, BydSignalSemantics.selectWorkMode(3, 1))
         assertEquals(3, BydSignalSemantics.selectWorkMode(0, 3))
         assertEquals(1, BydSignalSemantics.selectWorkMode(null, 1))
         assertEquals(2, BydSignalSemantics.selectWorkMode(2, null))

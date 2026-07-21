@@ -47,6 +47,7 @@
     <string name="settings_theme_system">自适应</string>
     <string name="settings_tariff_home_label">家充（%1$s/kWh）</string>
     <string name="settings_tariff_dc_label">快充（%1$s/kWh）</string>
+    <string name="settings_fuel_price_label">油价（%1$s/L）</string>
     <string name="settings_tariff_trip_label">行程电价</string>
     <string name="settings_tariff_custom_label">自定义电价（%1$s/千瓦时）</string>
     <string name="settings_tariff_future_note">新电价将应用于未来行程。\n已计算的行程不会改变。</string>

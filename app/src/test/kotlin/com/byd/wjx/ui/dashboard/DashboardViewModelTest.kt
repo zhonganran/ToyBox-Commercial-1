@@ -28,6 +28,7 @@ import com.byd.wjx.data.nativestack.OnDemandVehicleTelemetryReader
 import com.byd.wjx.data.remote.diParsData
 import com.byd.wjx.data.vehicle.VehicleSnapshot
 import com.byd.wjx.data.vehicle.VehicleSnapshotKind
+import com.byd.wjx.data.vehicle.HelperClientImpl
 import com.byd.wjx.domain.calculator.ConsumptionAggregator
 import com.byd.wjx.domain.insight.LocalInsightEngine
 import com.byd.wjx.domain.insight.LocalInsightStatsAggregator
@@ -254,7 +255,7 @@ class DashboardViewModelTest {
             localInsightEngine = LocalInsightEngine(),
             onDemandTelemetryReader = onDemandTelemetryReader,
             energyFlowStatsRepository = FakeEnergyFlowStatsRepository(),
-            systemMetricsReader = SystemMetricsReader(),
+            systemMetricsReader = SystemMetricsReader(HelperClientImpl()),
         )
     }
 
@@ -278,6 +279,71 @@ class DashboardViewModelTest {
 
         assertEquals(36.45, vm.uiState.value.batteryRemainingKwh ?: 0.0, 0.001)
         assertEquals(24.0, vm.uiState.value.fuelRemainingLiters ?: 0.0, 0.001)
+    }
+
+    @Test
+    fun `home ranges ignore reported values and change with energy and consumption`() = runTest {
+        val vehicleStateRepository = FakeVehicleStateRepository()
+        val vm = buildViewModel(
+            fakeAutoservice = FakeAutoservice(sampleReading),
+            initialSettings = mapOf(
+                SettingsRepository.KEY_BATTERY_CAPACITY to "72.9",
+                SettingsRepository.KEY_FUEL_TANK_CAPACITY to "60",
+            ),
+            vehicleStateRepository = vehicleStateRepository,
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        vehicleStateRepository.update(
+            diParsData(soc = 50).copy(
+                fuelLevel = 50,
+                elecConPer100km = 18.0,
+                fuelConPer100km = 6.0,
+                elecDrivingRangeKm = 999,
+                fuelDrivingRangeKm = 999,
+            ),
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(203, vm.uiState.value.estimatedElectricRangeKm)
+        assertEquals(500, vm.uiState.value.estimatedFuelRangeKm)
+        assertEquals(703, vm.uiState.value.estimatedCombinedRangeKm)
+
+        vehicleStateRepository.update(
+            diParsData(soc = 50).copy(
+                fuelLevel = 40,
+                elecConPer100km = 24.0,
+                fuelConPer100km = 10.0,
+                elecDrivingRangeKm = 999,
+                fuelDrivingRangeKm = 999,
+            ),
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(152, vm.uiState.value.estimatedElectricRangeKm)
+        assertEquals(240, vm.uiState.value.estimatedFuelRangeKm)
+        assertEquals(392, vm.uiState.value.estimatedCombinedRangeKm)
+    }
+
+    @Test
+    fun `current trip costs use separate electric tariff and fuel price`() = runTest {
+        val vehicleStateRepository = FakeVehicleStateRepository()
+        val vm = buildViewModel(
+            fakeAutoservice = FakeAutoservice(sampleReading),
+            initialSettings = mapOf(
+                SettingsRepository.KEY_TRIP_COST_TARIFF to "home",
+                SettingsRepository.KEY_HOME_TARIFF to "0.60",
+                SettingsRepository.KEY_FUEL_PRICE_PER_LITER to "8.20",
+            ),
+            vehicleStateRepository = vehicleStateRepository,
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        vehicleStateRepository.update(
+            diParsData().copy(currentTripElecKwh = 5.0, currentTripFuelL = 1.5),
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(3.0, vm.uiState.value.currentTripElecCost ?: 0.0, 0.001)
+        assertEquals(12.3, vm.uiState.value.currentTripFuelCost ?: 0.0, 0.001)
     }
 
     @Test

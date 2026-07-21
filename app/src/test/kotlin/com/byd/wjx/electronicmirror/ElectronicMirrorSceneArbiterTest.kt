@@ -62,7 +62,7 @@ class ElectronicMirrorSceneArbiterTest {
     }
 
     @Test
-    fun `side windows are clamped to AutoTark size limits`() {
+    fun `side windows are clamped to validated size limits`() {
         val scene = ElectronicMirrorSceneArbiter.resolve(
             enabled.copy(
                 displayTarget = ElectronicMirrorDisplayTarget.CENTER,

@@ -14,6 +14,10 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -24,7 +28,6 @@ import com.byd.wjx.lyrics.LyricStylePresets
 import com.byd.wjx.ui.components.bydSwitchColors
 import com.byd.wjx.ui.pro.ProGlassPanel
 import com.byd.wjx.ui.pro.ProSectionTitle
-import com.byd.wjx.ui.theme.AccentBlue
 import com.byd.wjx.ui.theme.AccentGreen
 import com.byd.wjx.ui.theme.CardBorder
 import com.byd.wjx.ui.theme.CardSurfaceElevated
@@ -40,12 +43,12 @@ internal data class LyricPanelState(
     val allowOtherApps: Boolean,
     val desktopTouchThrough: Boolean,
     val sharedLineCount: Int,
-    val sharedFontScale: Float,
+    val desktopFontScale: Float,
+    val clusterFontScale: Float,
     val sharedTextColor: Int,
     val sharedHighlightColor: Int,
     val sharedFontStyleId: String,
     val sharedMotionPresetId: String,
-    val clusterWidthScale: Float,
     val clusterX: Float,
     val clusterY: Float,
     val syncOffset: Float,
@@ -60,15 +63,14 @@ internal data class LyricPanelActions(
     val onAllowOtherAppsChange: (Boolean) -> Unit,
     val onDesktopTouchThroughChange: (Boolean) -> Unit,
     val onOpenPlaybackPermission: () -> Unit,
-    val onResetDesktopPosition: () -> Unit,
     val onResetClusterPosition: () -> Unit,
     val onSharedLineCountChange: (Int) -> Unit,
-    val onSharedFontScaleChange: (Float) -> Unit,
+    val onDesktopFontScaleChange: (Float) -> Unit,
+    val onClusterFontScaleChange: (Float) -> Unit,
     val onSharedTextColorChange: (Int) -> Unit,
     val onSharedHighlightColorChange: (Int) -> Unit,
     val onSharedFontStyleChange: (String) -> Unit,
     val onSharedMotionPresetChange: (String) -> Unit,
-    val onClusterWidthScaleChange: (Float) -> Unit,
     val onClusterXChange: (Float) -> Unit,
     val onClusterYChange: (Float) -> Unit,
     val onSyncOffsetChange: (Float) -> Unit,
@@ -79,9 +81,13 @@ internal fun LyricSettingsPanel(
     state: LyricPanelState,
     actions: LyricPanelActions,
 ) {
+    var adjustmentTarget by remember(state.desktopActive, state.clusterActive) {
+        mutableStateOf(if (state.desktopActive) AdjustmentTarget.DESKTOP else AdjustmentTarget.CLUSTER)
+    }
+
     ProSectionTitle(
         title = "歌词显示设置",
-        subtitle = "桌面歌词和仪表盘歌词共用行数、大小、颜色、字体与动效",
+        subtitle = "中控和仪表盘共用调节面板，大小与位置分别保存",
     )
     ProGlassPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -102,7 +108,7 @@ internal fun LyricSettingsPanel(
                 )
                 LyricModeToggle(
                     title = "仪表盘歌词",
-                    subtitle = if (state.clusterActive) "已开启，与桌面共用样式" else "同步显示到仪表",
+                    subtitle = if (state.clusterActive) "已开启，大小与位置独立保存" else "显示到仪表盘",
                     checked = state.clusterActive,
                     enabled = state.featureAllowed,
                     onCheckedChange = actions.onClusterEnabledChange,
@@ -116,8 +122,8 @@ internal fun LyricSettingsPanel(
 
             if (state.anyActive) {
                 DetailToggleRow(
-                    title = "歌词统一调节",
-                    subtitle = "一套样式同时作用于桌面和仪表，选择后立即保存生效",
+                    title = "歌词显示调节",
+                    subtitle = "颜色、字体和动效共用，中控与仪表盘的尺寸和位置互不影响",
                     expanded = state.expanded,
                     onToggle = { actions.onExpandedChange(!state.expanded) },
                 )
@@ -157,14 +163,7 @@ internal fun LyricSettingsPanel(
                             onClick = actions.onOpenPlaybackPermission,
                             modifier = Modifier.weight(1f),
                         )
-                        if (state.desktopActive) {
-                            SecondaryLyricButton(
-                                text = "重置桌面位置",
-                                onClick = actions.onResetDesktopPosition,
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                        if (state.clusterActive) {
+                        if (adjustmentTarget == AdjustmentTarget.CLUSTER && state.clusterActive) {
                             SecondaryLyricButton(
                                 text = "重置仪表位置",
                                 onClick = actions.onResetClusterPosition,
@@ -174,7 +173,70 @@ internal fun LyricSettingsPanel(
                     }
 
                     PresetChipRow(
-                        title = "歌词行数（桌面与仪表共用）",
+                        title = "调节对象",
+                        options = buildList {
+                            if (state.desktopActive) add(AdjustmentTarget.DESKTOP.id to "中控")
+                            if (state.clusterActive) add(AdjustmentTarget.CLUSTER.id to "仪表盘")
+                        },
+                        selectedId = adjustmentTarget.id,
+                        enabled = state.anyActive,
+                        onSelect = { adjustmentTarget = AdjustmentTarget.fromId(it) },
+                    )
+
+                    when (adjustmentTarget) {
+                        AdjustmentTarget.DESKTOP -> {
+                            LyricSlider(
+                                label = "中控歌词大小",
+                                value = state.desktopFontScale,
+                                valueText = "${(state.desktopFontScale * 100).roundToInt()}%",
+                                range = LyricSettings.FONT_SCALE_MIN..LyricSettings.FONT_SCALE_MAX,
+                                enabled = state.desktopActive,
+                                onValueChange = actions.onDesktopFontScaleChange,
+                            )
+                            Text(
+                                text = "中控歌词位置直接在悬浮歌词上拖动调节",
+                                color = TextSecondary,
+                                fontSize = 12.sp,
+                            )
+                        }
+
+                        AdjustmentTarget.CLUSTER -> {
+                            LyricSlider(
+                                label = "仪表盘歌词大小",
+                                value = state.clusterFontScale,
+                                valueText = "${(state.clusterFontScale * 100).roundToInt()}%",
+                                range = LyricSettings.FONT_SCALE_MIN..LyricSettings.FONT_SCALE_MAX,
+                                enabled = state.clusterActive,
+                                onValueChange = actions.onClusterFontScaleChange,
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                LyricSlider(
+                                    label = "仪表水平位置",
+                                    value = state.clusterX,
+                                    valueText = "${state.clusterX.roundToInt()}%",
+                                    range = 0f..100f,
+                                    enabled = state.clusterActive,
+                                    onValueChange = actions.onClusterXChange,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                LyricSlider(
+                                    label = "仪表垂直位置",
+                                    value = state.clusterY,
+                                    valueText = "${state.clusterY.roundToInt()}%",
+                                    range = 0f..100f,
+                                    enabled = state.clusterActive,
+                                    onValueChange = actions.onClusterYChange,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                    }
+
+                    PresetChipRow(
+                        title = "歌词行数（中控与仪表盘共用）",
                         options = (LyricSettings.SHARED_LINE_COUNT_MIN..LyricSettings.SHARED_LINE_COUNT_MAX)
                             .map { it.toString() to "${it}行" },
                         selectedId = state.sharedLineCount.toString(),
@@ -185,58 +247,6 @@ internal fun LyricSettingsPanel(
                             )
                         },
                     )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        LyricSlider(
-                            label = "歌词大小",
-                            value = state.sharedFontScale,
-                            valueText = "${(state.sharedFontScale * 100).roundToInt()}%",
-                            range = LyricSettings.SHARED_FONT_MIN..LyricSettings.SHARED_FONT_MAX,
-                            enabled = state.anyActive,
-                            onValueChange = actions.onSharedFontScaleChange,
-                            modifier = Modifier.weight(1f),
-                        )
-                        if (state.clusterActive) {
-                            LyricSlider(
-                                label = "仪表歌词宽度",
-                                value = state.clusterWidthScale,
-                                valueText = "${(state.clusterWidthScale * 100).roundToInt()}%",
-                                range = LyricSettings.CLUSTER_WIDTH_MIN..LyricSettings.CLUSTER_WIDTH_MAX,
-                                enabled = true,
-                                onValueChange = actions.onClusterWidthScaleChange,
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                    }
-
-                    if (state.clusterActive) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            LyricSlider(
-                                label = "仪表水平位置",
-                                value = state.clusterX,
-                                valueText = "${state.clusterX.roundToInt()}%",
-                                range = 0f..100f,
-                                enabled = true,
-                                onValueChange = actions.onClusterXChange,
-                                modifier = Modifier.weight(1f),
-                            )
-                            LyricSlider(
-                                label = "仪表垂直位置",
-                                value = state.clusterY,
-                                valueText = "${state.clusterY.roundToInt()}%",
-                                range = 0f..100f,
-                                enabled = true,
-                                onValueChange = actions.onClusterYChange,
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                    }
 
                     LyricColorControls(
                         textColor = state.sharedTextColor,
@@ -279,6 +289,15 @@ internal fun LyricSettingsPanel(
                 }
             }
         }
+    }
+}
+
+private enum class AdjustmentTarget(val id: String) {
+    DESKTOP("desktop"),
+    CLUSTER("cluster");
+
+    companion object {
+        fun fromId(id: String): AdjustmentTarget = values().firstOrNull { it.id == id } ?: DESKTOP
     }
 }
 

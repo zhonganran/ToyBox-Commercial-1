@@ -32,7 +32,8 @@ import com.byd.wjx.ui.dashboard.DashboardViewModel
 fun ProHomeScreen(
     viewModel: DashboardViewModel = hiltViewModel(),
     onOpenCharges: () -> Unit,
-    onOpenDashboard: () -> Unit,
+    onOpenEnergyRecovery: () -> Unit,
+    onOpenVehicleSystem: () -> Unit,
     onOpenBatteryHealth: () -> Unit,
     onOpenVehicleEnvironment: () -> Unit,
     onOpenTripMap: () -> Unit,
@@ -41,9 +42,11 @@ fun ProHomeScreen(
     DisposableEffect(viewModel) {
         viewModel.setHomeTelemetryActive(true)
         viewModel.setPowertrainTelemetryActive(true)
+        viewModel.setSystemMetricsActive(true)
         onDispose {
             viewModel.setHomeTelemetryActive(false)
             viewModel.setPowertrainTelemetryActive(false)
+            viewModel.setSystemMetricsActive(false)
         }
     }
     val context = LocalContext.current
@@ -91,10 +94,15 @@ fun ProHomeScreen(
                 )
                 HomeMetricRibbon(
                     state = state,
-                    onOpenDashboard = onOpenDashboard,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(78.dp),
+                )
+                HomeOperationsPanel(
+                    state = state,
+                    onOpenEnergyRecovery = onOpenEnergyRecovery,
+                    onOpenVehicleSystem = onOpenVehicleSystem,
+                    modifier = Modifier.fillMaxWidth().height(112.dp),
                 )
                 Row(
                     modifier = Modifier
@@ -151,11 +159,19 @@ fun ProHomeScreen(
                 )
                 HomeMetricRibbon(
                     state = state,
-                    onOpenDashboard = onOpenDashboard,
                     compact = true,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(if (compact) 220.dp else 150.dp),
+                )
+                HomeOperationsPanel(
+                    state = state,
+                    onOpenEnergyRecovery = onOpenEnergyRecovery,
+                    onOpenVehicleSystem = onOpenVehicleSystem,
+                    stacked = compact,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(if (compact) 218.dp else 112.dp),
                 )
                 BatteryHealthPanel(
                     state = state,

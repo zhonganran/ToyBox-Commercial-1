@@ -5,7 +5,7 @@ import org.junit.Test
 
 class ElectronicMirrorProjectionSpecTest {
     @Test
-    fun `default projections match AutoTark production values`() {
+    fun `default projections match production values`() {
         val left = ElectronicMirrorProjectionSpec.DEFAULT_LEFT
         val right = ElectronicMirrorProjectionSpec.DEFAULT_RIGHT
         val rear = ElectronicMirrorProjectionSpec.DEFAULT_REAR
@@ -19,7 +19,7 @@ class ElectronicMirrorProjectionSpecTest {
     }
 
     @Test
-    fun `projection values are clamped to AutoTark transform limits`() {
+    fun `projection values are clamped to validated transform limits`() {
         val safe = ElectronicMirrorProjectionSpec(
             horizontalPermille = 900,
             heightOffsetPermille = -900,

@@ -69,6 +69,8 @@ class DesktopQuickCardController @Inject constructor(
     private var dragStartRawY = 0f
     private var dragStartWindowX = 0
     private var dragStartWindowY = 0
+    private var collapsedAnchorX: Int? = null
+    private var collapsedAnchorY: Int? = null
 
     private val playbackReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -101,20 +103,23 @@ class DesktopQuickCardController @Inject constructor(
         receiverRegistered = true
     }
 
-    fun render(config: DesktopQuickCardConfig, visible: Boolean, theme: ThemeMode) {
+    fun render(config: DesktopQuickCardConfig, theme: ThemeMode) {
         mainHandler.post {
             val previous = renderState.value
             if (shouldStopDesktopQuickCardSound(previous.activeSoundPath, config.soundPaths, config.enabled)) {
                 WjxFileLogger.i(TAG, "stopping removed/disabled sound path=${previous.activeSoundPath}")
                 WjxOutsidePlayService.stop(appContext, owner = OWNER)
             }
-            renderState.update { it.copy(config = config, themeMode = theme) }
-            if (!config.enabled) {
-                removeView()
-                return@post
+            renderState.update {
+                it.copy(
+                    config = config,
+                    themeMode = theme,
+                    floatingIcon = repository.iconForId(config.floatingIconId),
+                )
             }
-            if (!visible) {
-                composeView?.visibility = View.GONE
+            if (!config.enabled) {
+                renderState.update { it.copy(expanded = false) }
+                removeView()
                 return@post
             }
             if (!Settings.canDrawOverlays(appContext)) {
@@ -132,7 +137,7 @@ class DesktopQuickCardController @Inject constructor(
         if (renderState.value.activeSoundPath != null) {
             WjxOutsidePlayService.stop(appContext, owner = OWNER)
         }
-        renderState.update { it.copy(activeCommand = null, activeSoundPath = null) }
+        renderState.update { it.copy(expanded = false, activeCommand = null, activeSoundPath = null) }
         if (receiverRegistered) {
             runCatching { appContext.unregisterReceiver(playbackReceiver) }
             receiverRegistered = false
@@ -176,6 +181,8 @@ class DesktopQuickCardController @Inject constructor(
                 SuperToyBoxTheme(themeMode = state.themeMode) {
                     DesktopQuickCardContent(
                         state = state,
+                        onExpand = ::expandCard,
+                        onCollapse = ::collapseCard,
                         onCommandClick = ::executeCommand,
                         onSoundClick = ::toggleSound,
                     )
@@ -280,6 +287,43 @@ class DesktopQuickCardController @Inject constructor(
         }
     }
 
+    private fun expandCard() {
+        if (renderState.value.expanded) return
+        layoutParams?.let { params ->
+            collapsedAnchorX = params.x
+            collapsedAnchorY = params.y
+        }
+        renderState.update { it.copy(expanded = true) }
+        updateLayoutAfterContentResize(restoreCollapsedAnchor = false)
+    }
+
+    private fun collapseCard() {
+        if (!renderState.value.expanded) return
+        renderState.update { it.copy(expanded = false) }
+        updateLayoutAfterContentResize(restoreCollapsedAnchor = true)
+    }
+
+    private fun updateLayoutAfterContentResize(restoreCollapsedAnchor: Boolean) {
+        val view = composeView ?: return
+        view.requestLayout()
+        view.post {
+            view.post {
+                val params = layoutParams ?: return@post
+                if (restoreCollapsedAnchor) {
+                    collapsedAnchorX?.let { params.x = it }
+                    collapsedAnchorY?.let { params.y = it }
+                }
+                clampPosition(params)
+                runCatching { windowManager.updateViewLayout(view, params) }
+                if (restoreCollapsedAnchor) {
+                    repository.savePosition(params.x, params.y)
+                    collapsedAnchorX = null
+                    collapsedAnchorY = null
+                }
+            }
+        }
+    }
+
     private data class CommandExecutionResult(
         val success: Boolean,
         val message: String?,
@@ -326,6 +370,10 @@ class DesktopQuickCardController @Inject constructor(
 
     private fun finishDrag(cancelled: Boolean) {
         layoutParams?.let {
+            if (renderState.value.expanded) {
+                collapsedAnchorX = it.x
+                collapsedAnchorY = it.y
+            }
             repository.savePosition(it.x, it.y)
             WjxFileLogger.i(TAG, "drag end x=${it.x} y=${it.y} cancelled=$cancelled")
         }
@@ -354,6 +402,8 @@ class DesktopQuickCardController @Inject constructor(
         layoutParams = null
         lifecycleOwner?.onDestroy()
         lifecycleOwner = null
+        collapsedAnchorX = null
+        collapsedAnchorY = null
         if (view != null) runCatching { windowManager.removeViewImmediate(view) }
     }
 

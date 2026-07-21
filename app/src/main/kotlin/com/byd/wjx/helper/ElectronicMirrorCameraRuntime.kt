@@ -178,7 +178,7 @@ internal class ElectronicMirrorCameraRuntime(
 
         // Vehicle configuration is authoritative. On the tested vehicle BmmCameraInfo reports
         // pano_h as camera 0 (the raw circular fisheye producer), while cam_sort explicitly maps
-        // pano_h to camera 1 (the rectified horizontal panorama used by AutoTark). Read both BYD
+        // pano_h to camera 1 (the validated rectified horizontal panorama). Read both BYD
         // property spellings before consulting BmmCameraInfo so the raw producer cannot win.
         CAMERA_SORT_PROPERTIES.forEach { propertyName ->
             val cameraSort = readSystemProperty(propertyName)

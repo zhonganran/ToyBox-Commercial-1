@@ -80,6 +80,9 @@ fun SettingsScreen(
     onNavigateToPlaces: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val visibleCategories = SettingsCategory.entries.filter { category ->
+        category != SettingsCategory.ElectronicMirror || state.electronicMirrorUnlocked
+    }
     // Recalculate confirmation dialog
     if (state.showRecalcConfirm) {
         val tariffLabel = when (state.tripCostTariff) {
@@ -143,6 +146,7 @@ fun SettingsScreen(
                 modifier = Modifier
                     .background(CardSurface.copy(alpha = 0.78f), RoundedCornerShape(999.dp))
                     .border(1.dp, CardBorder, RoundedCornerShape(999.dp))
+                    .clickable(onClick = viewModel::onVersionTapped)
                     .padding(horizontal = 18.dp, vertical = 9.dp),
             )
         }
@@ -157,13 +161,19 @@ fun SettingsScreen(
             val compact = maxWidth < 900.dp
             var selectedCategory by rememberSaveable(initialCategory) {
                 mutableStateOf(
-                    SettingsCategory.entries.firstOrNull { it.name == initialCategory }
+                    visibleCategories.firstOrNull { it.name == initialCategory }
                         ?: SettingsCategory.Auth,
                 )
             }
-            LaunchedEffect(initialCategory) {
-                SettingsCategory.entries.firstOrNull { it.name == initialCategory }
-                    ?.let { selectedCategory = it }
+            val activeCategory = selectedCategory.takeIf { it in visibleCategories }
+                ?: SettingsCategory.Auth
+            LaunchedEffect(initialCategory, state.electronicMirrorUnlocked) {
+                val requested = visibleCategories.firstOrNull { it.name == initialCategory }
+                if (requested != null) {
+                    selectedCategory = requested
+                } else if (selectedCategory !in visibleCategories) {
+                    selectedCategory = SettingsCategory.Auth
+                }
             }
             if (compact) {
                 Column(
@@ -173,11 +183,11 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        items(SettingsCategory.values().toList(), key = { it.name }) { category ->
+                        items(visibleCategories, key = { it.name }) { category ->
                             SettingsCategoryHeader(
                                 category = category,
                                 state = state,
-                                selected = selectedCategory == category,
+                                selected = activeCategory == category,
                                 onClick = { selectedCategory = category },
                                 modifier = Modifier.width(268.dp),
                             )
@@ -191,7 +201,7 @@ fun SettingsScreen(
                             .verticalScroll(rememberScrollState()),
                     ) {
                         SettingsCategoryContent(
-                            category = selectedCategory,
+                            category = activeCategory,
                             state = state,
                             viewModel = viewModel,
                             onNavigateToPlaces = onNavigateToPlaces,
@@ -210,11 +220,11 @@ fun SettingsScreen(
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        SettingsCategory.values().forEach { category ->
+                        visibleCategories.forEach { category ->
                             SettingsCategoryHeader(
                                 category = category,
                                 state = state,
-                                selected = selectedCategory == category,
+                                selected = activeCategory == category,
                                 onClick = { selectedCategory = category },
                                 modifier = Modifier.fillMaxWidth(),
                             )
@@ -229,7 +239,7 @@ fun SettingsScreen(
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
                         SettingsCategoryContent(
-                            category = selectedCategory,
+                            category = activeCategory,
                             state = state,
                             viewModel = viewModel,
                             onNavigateToPlaces = onNavigateToPlaces,
@@ -580,6 +590,20 @@ private fun BatterySection(state: SettingsUiState, viewModel: SettingsViewModel)
                     keyboardType = KeyboardType.Decimal,
                     modifier = Modifier.weight(1f),
                 )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SettingsTextField(
+                    label = stringResource(R.string.settings_fuel_price_label, state.currencySymbol),
+                    value = state.fuelPricePerLiter,
+                    onValueChange = viewModel::updateFuelPricePerLiter,
+                    keyboardType = KeyboardType.Decimal,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.weight(1f))
                 SettingsSaveButton(onClick = viewModel::saveTariffs)
             }
             state.tariffSaveStatus?.let {

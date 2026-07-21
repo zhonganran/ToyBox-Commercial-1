@@ -24,7 +24,7 @@ class ElectronicMirrorWindowLayoutTest {
     )
 
     @Test
-    fun `side window uses AutoTark 30 percent width and 16 by 9`() {
+    fun `side window uses validated 30 percent width and 16 by 9`() {
         val layout = electronicMirrorWindowLayout(
             scene(
                 ElectronicMirrorViewpoint.LEFT,

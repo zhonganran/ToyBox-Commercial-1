@@ -16,6 +16,8 @@ class TripRecorder @Inject constructor(
     private val lastStateDao: LastStateDao,
     private val energyDataReader: EnergyDataReader,
     private val batteryCapacityKwh: suspend () -> Double,
+    private val tripElectricTariff: suspend () -> Double = { 0.0 },
+    private val fuelPricePerLiter: suspend () -> Double = { 0.0 },
     private val now: () -> Long = { System.currentTimeMillis() },
 ) {
     // In-memory mirror of last_state.open_trip_*; rebuilt at cold-start from DAO.
@@ -24,6 +26,8 @@ class TripRecorder @Inject constructor(
         val startSoc: Int?,
         val startMileage: Double?,
         val startTotalElec: Double? = null,
+        val startTripFuelL: Double? = null,
+        val maxTripFuelL: Double? = null,
     )
     internal var open: Open? = null
 
@@ -47,13 +51,21 @@ class TripRecorder @Inject constructor(
         val cur = open
         when {
             cur == null && ignitionOn -> openTrip(data)
-            cur != null && !ignitionOn -> close(cur, data)
+            cur != null && ignitionOn -> open = cur.withFuelSample(data.currentTripFuelL)
+            cur != null && !ignitionOn -> close(cur.withFuelSample(data.currentTripFuelL), data)
         }
     }
 
     private suspend fun openTrip(data: DiParsData) {
         val startTs = now()
-        open = Open(startTs, data.soc, data.mileage, data.totalElecConsumption)
+        open = Open(
+            startTs = startTs,
+            startSoc = data.soc,
+            startMileage = data.mileage,
+            startTotalElec = data.totalElecConsumption,
+            startTripFuelL = data.currentTripFuelL,
+            maxTripFuelL = data.currentTripFuelL,
+        )
         // Spec §96-100: persist open trip to last_state so cold-start can resume.
         val updated = lastStateDao.openTrip(
             startTs = startTs,
@@ -100,9 +112,12 @@ class TripRecorder @Inject constructor(
     private suspend fun close(open: Open, end: DiParsData) {
         val cap = batteryCapacityKwh()
         val kwh = computeKwh(open.startTotalElec, end.totalElecConsumption, open.startSoc, end.soc, cap)
+        val fuelL = computeFuelLiters(open.startTripFuelL, open.maxTripFuelL)
         val distance = if (open.startMileage != null && end.mileage != null)
             (end.mileage - open.startMileage).coerceAtLeast(0.0) else null
         val per100 = if (kwh != null && distance != null && distance > 0) kwh / distance * 100.0 else null
+        val electricCost = kwh?.times(tripElectricTariff())
+        val fuelCost = fuelL?.times(fuelPricePerLiter())
         tripDao.insert(
             TripEntity(
                 startTs = open.startTs,
@@ -110,13 +125,29 @@ class TripRecorder @Inject constructor(
                 distanceKm = distance,
                 kwhConsumed = kwh,
                 kwhPer100km = per100,
+                fuelConsumedL = fuelL,
+                fuelCost = fuelCost,
                 socStart = open.startSoc,
                 socEnd = end.soc,
                 source = TripSource.NATIVE_POLLING,
+                cost = electricCost,
             )
         )
         this.open = null
         lastStateDao.clearOpenTrip()
+    }
+
+    private fun Open.withFuelSample(sample: Double?): Open {
+        val valid = sample?.takeIf { it.isFinite() && it in 0.0..500.0 } ?: return this
+        val currentMax = maxTripFuelL
+        return copy(maxTripFuelL = if (currentMax == null) valid else maxOf(currentMax, valid))
+    }
+
+    private fun computeFuelLiters(start: Double?, maximum: Double?): Double? {
+        val max = maximum?.takeIf { it.isFinite() && it in 0.0..500.0 } ?: return null
+        val baseline = start?.takeIf { it.isFinite() && it in 0.0..500.0 }
+        if (baseline == null || baseline <= 0.05) return max.takeIf { it > 0.0 }
+        return (max - baseline).takeIf { it > 0.0 }
     }
 
     /** Call once before subscribing to the loop. */
@@ -144,6 +175,7 @@ class TripRecorder @Inject constructor(
                     distanceKm = distance,
                     kwhConsumed = kwh,
                     kwhPer100km = per100,
+                    cost = kwh?.times(tripElectricTariff()),
                     socStart = state.tripStartSoc,
                     socEnd = state.soc,
                     source = TripSource.NATIVE_POLLING,

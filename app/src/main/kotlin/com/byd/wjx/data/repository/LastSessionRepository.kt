@@ -6,7 +6,7 @@ import javax.inject.Singleton
 
 /**
  * Lightweight in-memory holder for the most recently completed driving session's
- * SOC bookmarks. Written by TrackingService on session start/end; read by
+ * SOC and fuel bookmarks. Written by TrackingService on session start/end; read by
  * HistoryImporter when enriching freshly-imported TripEntity rows.
  *
  * In-memory only — intentionally not persisted. Process restart mid-session
@@ -25,15 +25,45 @@ class LastSessionRepository @Inject constructor() {
         val endSoc: Int?,
         val startTs: Long?,
         val endTs: Long?,
-    )
+        val startFuelL: Double?,
+        val maxFuelL: Double?,
+    ) {
+        val fuelConsumedL: Double?
+            get() {
+                val max = maxFuelL?.takeIf { it.isFinite() && it in 0.0..500.0 } ?: return null
+                val start = startFuelL?.takeIf { it.isFinite() && it in 0.0..500.0 }
+                if (start == null || start <= 0.05) return max.takeIf { it > 0.0 }
+                return (max - start).takeIf { it > 0.0 }
+            }
+    }
 
     private val state = AtomicReference<Snapshot?>(null)
 
-    fun onSessionStart(soc: Int?, ts: Long) {
-        state.set(Snapshot(startSoc = soc, endSoc = null, startTs = ts, endTs = null))
+    fun onSessionStart(soc: Int?, ts: Long, fuelL: Double? = null) {
+        val validFuel = fuelL.validFuel()
+        state.set(
+            Snapshot(
+                startSoc = soc,
+                endSoc = null,
+                startTs = ts,
+                endTs = null,
+                startFuelL = validFuel,
+                maxFuelL = validFuel,
+            ),
+        )
     }
 
-    fun onSessionEnd(soc: Int?, ts: Long) {
+    fun onSessionSample(fuelL: Double?) {
+        val validFuel = fuelL.validFuel() ?: return
+        while (true) {
+            val cur = state.get() ?: return
+            val next = cur.copy(maxFuelL = cur.maxFuelL?.let { maxOf(it, validFuel) } ?: validFuel)
+            if (state.compareAndSet(cur, next)) return
+        }
+    }
+
+    fun onSessionEnd(soc: Int?, ts: Long, fuelL: Double? = null) {
+        onSessionSample(fuelL)
         // CAS loop: preserve start fields written by onSessionStart.
         while (true) {
             val cur = state.get()
@@ -42,6 +72,8 @@ class LastSessionRepository @Inject constructor() {
                 endSoc   = soc,
                 startTs  = cur?.startTs,
                 endTs    = ts,
+                startFuelL = cur?.startFuelL,
+                maxFuelL = cur?.maxFuelL ?: fuelL.validFuel(),
             )
             if (state.compareAndSet(cur, next)) return
         }
@@ -49,3 +81,6 @@ class LastSessionRepository @Inject constructor() {
 
     fun snapshot(): Snapshot? = state.get()
 }
+
+private fun Double?.validFuel(): Double? =
+    this?.takeIf { it.isFinite() && it in 0.0..500.0 }

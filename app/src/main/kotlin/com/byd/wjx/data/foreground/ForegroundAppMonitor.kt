@@ -40,7 +40,7 @@ enum class ForegroundAppSource {
 /**
  * Process-wide foreground-app source. Camera suppression, desktop cards and desktop lyrics all
  * subscribe to this detector so they cannot disagree or create duplicate polling. The source
- * order mirrors AutoTark: own-app lifecycle, live accessibility window, task stack, UsageEvents,
+ * order is own-app lifecycle, live accessibility window, task stack, UsageEvents,
  * recent accessibility event, then a short cache.
  */
 @Singleton
@@ -143,7 +143,7 @@ class ForegroundAppMonitor @Inject constructor(
         val usage = readLatestUsageEvent(now)
 
         // Live accessibility is the fastest source for Launcher pages and full-screen vehicle UI.
-        // A task result is preferred over a stale accessibility event, matching AutoTark's layered
+        // A task result is preferred over a stale accessibility event, preserving the layered
         // detector instead of the old 4.1 UsageStats-only route.
         if (accessibility?.source == ForegroundAppSource.ACCESSIBILITY_LIVE) return accessibility
         if (task != null) return task
