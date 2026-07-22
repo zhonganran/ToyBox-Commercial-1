@@ -52,6 +52,17 @@ internal fun shouldAcceptNotificationIdentity(
     return MusicIdentity.isSameSong(previous.title, previous.artist, title, artist)
 }
 
+internal fun selectPreferredMusicSnapshot(snapshots: List<MusicPlaybackSnapshot>): MusicPlaybackSnapshot? =
+    snapshots
+        .asSequence()
+        .filter(MusicPlaybackSnapshot::hasSong)
+        .sortedWith(
+            compareByDescending<MusicPlaybackSnapshot> { it.playing }
+                .thenByDescending { it.sessionUpdatedElapsedMs }
+                .thenByDescending { SupportedMusicPackages.isSupported(it.packageName) },
+        )
+        .firstOrNull()
+
 class MusicNotificationListenerService : NotificationListenerService() {
     private val handler = Handler(Looper.getMainLooper())
     private val controllers = linkedMapOf<String, MediaController>()
@@ -97,7 +108,7 @@ class MusicNotificationListenerService : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        if (!SupportedMusicPackages.names.contains(sbn.packageName)) return
+        if (!SupportedMusicPackages.isSupported(sbn.packageName)) return
         val extras = sbn.notification?.extras ?: return
         val title = extras.getString("android.title").orEmpty().trim()
         if (!MusicIdentity.hasUsableTitle(title)) return
@@ -129,11 +140,14 @@ class MusicNotificationListenerService : NotificationListenerService() {
                 playing = state?.state == PlaybackState.STATE_PLAYING ||
                     (state == null && sameSong && previous.playing),
                 packageName = sbn.packageName,
+                mediaId = if (sameSong) previous.mediaId else null,
                 mediaUri = if (sameSong) previous.mediaUri else null,
                 metadataLyrics = if (sameSong) previous.metadataLyrics else null,
                 timedLyrics = if (sameSong) previous.timedLyrics else null,
                 realtimeLyrics = if (sameSong) previous.realtimeLyrics else emptyList(),
                 anchorElapsedMs = playbackAnchor.anchorElapsedMs,
+                sessionUpdatedElapsedMs = state?.lastPositionUpdateTime?.takeIf { it > 0L }
+                    ?: nowElapsedMs,
                 playbackSpeed = state?.playbackSpeed?.takeIf { it > 0f }
                     ?: previous.playbackSpeed.takeIf { sameSong && it > 0f }
                     ?: 1f,
@@ -143,7 +157,7 @@ class MusicNotificationListenerService : NotificationListenerService() {
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
-        if (SupportedMusicPackages.names.contains(sbn.packageName)) {
+        if (SupportedMusicPackages.isSupported(sbn.packageName)) {
             handler.postDelayed({ confirmStoppedIfNoActiveSession(sbn.packageName) }, 500L)
         }
     }
@@ -158,7 +172,7 @@ class MusicNotificationListenerService : NotificationListenerService() {
     }
 
     private fun syncSessions(activeSessions: List<MediaController>) {
-        val active = activeSessions.filter { SupportedMusicPackages.names.contains(it.packageName) }
+        val active = activeSessions.filter { SupportedMusicPackages.isSupported(it.packageName) }
 
         val activePackages = active.map { it.packageName }.toSet()
         controllers.keys.toList()
@@ -166,9 +180,7 @@ class MusicNotificationListenerService : NotificationListenerService() {
             .forEach(::unregister)
 
         active.forEach(::register)
-        active.mapNotNull(::snapshotFromController)
-            .sortedWith(compareByDescending<MusicPlaybackSnapshot> { it.playing }.thenBy { it.title.isBlank() })
-            .firstOrNull { it.hasSong }
+        selectPreferredMusicSnapshot(active.mapNotNull(::snapshotFromController))
             ?.let(MusicPlaybackStore::publish)
     }
 
@@ -260,6 +272,10 @@ class MusicNotificationListenerService : NotificationListenerService() {
         )
         val playing = playbackState?.state == PlaybackState.STATE_PLAYING ||
             (playbackState == null && sameSong && previous.playing)
+        val mediaId = metadata?.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: previous.takeIf { sameSong }?.mediaId
         val mediaUri = metadata?.firstString(MEDIA_URI_KEYS)
             ?: previous.takeIf { sameSong }?.mediaUri
         val metadataLyrics = metadata?.getString(BYD_LYRICS)
@@ -272,11 +288,14 @@ class MusicNotificationListenerService : NotificationListenerService() {
             positionMs = playbackAnchor.positionMs,
             playing = playing,
             packageName = controller.packageName,
+            mediaId = mediaId,
             mediaUri = mediaUri,
             metadataLyrics = metadataLyrics,
             timedLyrics = timedLyrics,
             realtimeLyrics = realtimeLines,
             anchorElapsedMs = playbackAnchor.anchorElapsedMs,
+            sessionUpdatedElapsedMs = playbackState?.lastPositionUpdateTime?.takeIf { it > 0L }
+                ?: nowElapsedMs,
             playbackSpeed = playbackState?.playbackSpeed?.takeIf { it > 0f }
                 ?: previous.playbackSpeed.takeIf { sameSong && it > 0f }
                 ?: 1f,

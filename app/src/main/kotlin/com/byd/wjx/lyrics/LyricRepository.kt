@@ -137,14 +137,70 @@ class LyricRepository(
     }
 
     private suspend fun loadOnlineLyrics(snapshot: MusicPlaybackSnapshot, key: String): LyricsResult? {
+        if (QishuiMusic.isPackage(snapshot.packageName)) {
+            val qishui = runCatching { loadQishuiLyrics(snapshot, key) }
+                .onFailure { WjxFileLogger.w(TAG, "qishui lyrics failed: ${it.message}") }
+                .getOrNull()
+            if (qishui != null) return qishui
+        }
         val netease = runCatching { loadNeteaseLyrics(snapshot, key) }
             .onFailure { WjxFileLogger.w(TAG, "netease lyrics failed: ${it.message}") }
             .getOrNull()
         if (netease != null) return netease
-        return runCatching { loadKugouLyrics(snapshot, key) }
+        val kugou = runCatching { loadKugouLyrics(snapshot, key) }
             .onFailure { WjxFileLogger.w(TAG, "kugou lyrics failed: ${it.message}") }
             .getOrNull()
+        if (kugou != null) return kugou
+        if (!QishuiMusic.isPackage(snapshot.packageName)) {
+            return runCatching { searchQishuiLyrics(snapshot, key) }
+                .onFailure { WjxFileLogger.w(TAG, "qishui fallback lyrics failed: ${it.message}") }
+                .getOrNull()
+        }
+        return null
     }
+
+    private fun loadQishuiLyrics(snapshot: MusicPlaybackSnapshot, key: String): LyricsResult? {
+        val mediaTrackId = QishuiMusic.extractTrackId(snapshot.mediaId, snapshot.mediaUri)
+        if (mediaTrackId != null) {
+            loadQishuiLyricsById(mediaTrackId, key)?.let { return it }
+        }
+
+        return searchQishuiLyrics(snapshot, key)
+    }
+
+    private fun searchQishuiLyrics(snapshot: MusicPlaybackSnapshot, key: String): LyricsResult? {
+        val keyword = listOf(snapshot.title, snapshot.artist).filter { it.isNotBlank() }.joinToString(" ")
+        if (keyword.isBlank()) return null
+        val encoded = URLEncoder.encode(keyword, "UTF-8")
+        val searchJson = httpClient.newCall(
+            qishuiRequest(
+                "$QISHUI_API_BASE/search/track?q=$encoded&cursor=0&search_method=input" +
+                    "&aid=$QISHUI_AID&device_platform=web&channel=pc_web",
+            ),
+        ).execute().use { it.body?.string().orEmpty() }
+        val selected = OnlineLyricMatcher.selectBest(snapshot, parseQishuiSearchCandidates(searchJson))
+            ?: return null
+        return loadQishuiLyricsById(selected.id, key)
+    }
+
+    private fun loadQishuiLyricsById(trackId: String, key: String): LyricsResult? {
+        val responseJson = httpClient.newCall(
+            qishuiRequest(
+                "$QISHUI_API_BASE/track_v2?track_id=$trackId&media_type=track" +
+                    "&aid=$QISHUI_AID&device_platform=web&channel=pc_web",
+            ),
+        ).execute().use { it.body?.string().orEmpty() }
+        return parseQishuiLyricResponse(responseJson, key)?.also {
+            WjxFileLogger.i(TAG, "qishui lyrics loaded ${it.lines.size} lines trackId=$trackId")
+        }
+    }
+
+    private fun qishuiRequest(url: String): Request = Request.Builder()
+        .url(url)
+        .header("User-Agent", QISHUI_USER_AGENT)
+        .header("Accept", "application/json,text/plain,*/*")
+        .header("Referer", "https://www.qishui.com/")
+        .build()
 
     private fun loadNeteaseLyrics(snapshot: MusicPlaybackSnapshot, key: String): LyricsResult? {
         val keyword = listOf(snapshot.title, snapshot.artist).filter { it.isNotBlank() }.joinToString(" ")
@@ -265,7 +321,82 @@ class LyricRepository(
         private const val TAG = "LyricRepository"
         private const val MAX_CACHE_SIZE = 24
         private const val USER_AGENT = "Mozilla/5.0 SuperToyBoxLyrics/1.0"
+        private const val QISHUI_API_BASE = "https://api.qishui.com/luna/pc"
+        private const val QISHUI_AID = "386088"
+        private const val QISHUI_USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         private val TIME_TAG = Regex("""\[(\d+):(\d+)(?:\.(\d+))?]""")
+        private val QISHUI_TIME_TAG = Regex("""^\[(\d+),(\d+)](.*)$""")
+        private val QISHUI_INLINE_TAG = Regex("""<[^>]*>""")
+
+        internal fun parseQishuiLyricResponse(raw: String, key: String): LyricsResult? {
+            val root = runCatching { JSONObject(raw) }.getOrNull() ?: return null
+            val content = root.optJSONObject("data")
+                ?.optJSONObject("lyric")
+                ?.optString("content")
+                .orEmpty()
+                .ifBlank { root.optJSONObject("lyric")?.optString("content").orEmpty() }
+                .ifBlank { root.optString("lrc_content") }
+            val lines = parseQishuiLyricContent(content)
+            return lines.takeIf { it.isNotEmpty() }?.let { LyricsResult(key, it) }
+        }
+
+        internal fun parseQishuiLyricContent(raw: String): List<LyricLine> {
+            val lines = raw.lineSequence().mapNotNull { sourceLine ->
+                val match = QISHUI_TIME_TAG.matchEntire(sourceLine.trim()) ?: return@mapNotNull null
+                val timeMs = match.groupValues[1].toLongOrNull() ?: return@mapNotNull null
+                val text = QISHUI_INLINE_TAG.replace(match.groupValues[3], "").trim()
+                if (LyricTextFilter.isUsable(text)) LyricLine(timeMs, text) else null
+            }.distinctBy { it.timeMs to it.text.lowercase(Locale.ROOT) }.sortedBy(LyricLine::timeMs).toList()
+            if (lines.isNotEmpty()) return lines
+            return parseLrcText(QISHUI_INLINE_TAG.replace(raw, ""))
+        }
+
+        internal fun parseQishuiSearchCandidates(raw: String): List<OnlineSongCandidate> {
+            val root = runCatching { JSONObject(raw) }.getOrNull() ?: return emptyList()
+            val tracks = mutableListOf<JSONObject>()
+            root.optJSONArray("result_groups")?.let { groups ->
+                for (groupIndex in 0 until groups.length()) {
+                    val group = groups.optJSONObject(groupIndex) ?: continue
+                    if (group.optString("id") != "tracks") continue
+                    group.optJSONArray("data")?.let { data ->
+                        for (itemIndex in 0 until data.length()) {
+                            val item = data.optJSONObject(itemIndex) ?: continue
+                            val track = item.optJSONObject("entity")?.optJSONObject("track")
+                                ?: item.optJSONObject("track")
+                                ?: item
+                            tracks += track
+                        }
+                    }
+                }
+            }
+            if (tracks.isEmpty()) {
+                val fallback = root.optJSONObject("data")?.optJSONArray("tracks")
+                    ?: root.optJSONArray("tracks")
+                if (fallback != null) {
+                    for (index in 0 until fallback.length()) {
+                        fallback.optJSONObject(index)?.let(tracks::add)
+                    }
+                }
+            }
+            return tracks.mapNotNull { track ->
+                val id = track.optString("id").ifBlank { track.optString("track_id") }
+                    .takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                val title = track.optString("name").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                val artists = track.optJSONArray("artists")?.let { array ->
+                    (0 until array.length()).mapNotNull { index ->
+                        array.optJSONObject(index)?.optString("name")?.takeIf { it.isNotBlank() }
+                    }
+                }.orEmpty()
+                OnlineSongCandidate(
+                    id = id,
+                    title = title,
+                    artists = artists,
+                    durationMs = track.optLong("duration").coerceAtLeast(0L),
+                )
+            }.distinctBy(OnlineSongCandidate::id)
+        }
 
         fun parseBydMetadataLyrics(raw: String?, key: String): LyricsResult? {
             val text = raw?.trim().orEmpty()

@@ -1,6 +1,7 @@
 package com.byd.wjx.lyrics
 
 import android.os.SystemClock
+import com.byd.wjx.log.WjxFileLogger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,11 +16,13 @@ data class MusicPlaybackSnapshot(
     val positionMs: Long = 0L,
     val playing: Boolean = false,
     val packageName: String = "",
+    val mediaId: String? = null,
     val mediaUri: String? = null,
     val metadataLyrics: String? = null,
     val timedLyrics: List<LyricLine>? = null,
     val realtimeLyrics: List<String> = emptyList(),
     val anchorElapsedMs: Long = SystemClock.elapsedRealtime(),
+    val sessionUpdatedElapsedMs: Long = anchorElapsedMs,
     val playbackSpeed: Float = 1f,
     val source: MusicPlaybackSource = MusicPlaybackSource.Unknown,
 ) {
@@ -38,7 +41,12 @@ data class MusicPlaybackSnapshot(
             ?.takeIf { it.isNotBlank() }
             ?.hashCode()
             ?: timedLyrics?.takeIf { it.isNotEmpty() }?.hashCode()
-        return "$identity\u0000${lyricRevision?.toString().orEmpty()}"
+        val providerTrackId = if (QishuiMusic.isPackage(packageName)) {
+            QishuiMusic.extractTrackId(mediaId, mediaUri).orEmpty()
+        } else {
+            ""
+        }
+        return "$identity\u0000${lyricRevision?.toString().orEmpty()}\u0000$providerTrackId"
     }
 
     fun isSameSongAs(other: MusicPlaybackSnapshot): Boolean =
@@ -187,6 +195,34 @@ object MusicPlaybackStore {
         if (snapshot.source == MusicPlaybackSource.AdbFallback && hasFreshPrimaryLocked(nowElapsedMs)) {
             return
         }
+        if (snapshot.source == MusicPlaybackSource.AdbFallback && previous.hasSong && previous.playing) {
+            val sameSongIgnoringPackage = MusicIdentity.isSameSong(
+                previousTitle = previous.title,
+                previousArtist = previous.artist,
+                nextTitle = snapshot.title,
+                nextArtist = snapshot.artist,
+            )
+            if (sameSongIgnoringPackage) {
+                val shouldLogMerge = previous.source != MusicPlaybackSource.AdbFallback
+                _state.value = previous.withPlaybackPositionFrom(snapshot)
+                if (shouldLogMerge) {
+                    WjxFileLogger.d(
+                        TAG,
+                        "ADB position merged currentPkg=${previous.packageName} fallbackPkg=${snapshot.packageName} " +
+                            "position=${snapshot.positionMs} title=${snapshot.title.take(48)}",
+                    )
+                }
+                return
+            }
+            if (previous.packageName.isNotBlank() && snapshot.packageName != previous.packageName) {
+                WjxFileLogger.d(
+                    TAG,
+                    "ADB snapshot rejected currentPkg=${previous.packageName} fallbackPkg=${snapshot.packageName} " +
+                        "currentTitle=${previous.title.take(48)} fallbackTitle=${snapshot.title.take(48)}",
+                )
+                return
+            }
+        }
         if (snapshot.hasSong) {
             _state.value = if (previous.hasSong && snapshot.isSameSongAs(previous)) {
                 snapshot.mergeMissingFrom(previous)
@@ -229,7 +265,10 @@ object MusicPlaybackStore {
             artist = artist.ifBlank { previous.artist },
             durationMs = durationMs.takeIf { it > 0L } ?: previous.durationMs,
             packageName = packageName.ifBlank { previous.packageName },
+            mediaId = mediaId ?: previous.mediaId,
             mediaUri = mediaUri ?: previous.mediaUri,
+            sessionUpdatedElapsedMs = sessionUpdatedElapsedMs.takeIf { it > 0L }
+                ?: previous.sessionUpdatedElapsedMs,
             metadataLyrics = metadataLyrics ?: previous.metadataLyrics,
             timedLyrics = timedLyrics?.takeIf { it.isNotEmpty() } ?: previous.timedLyrics,
             realtimeLyrics = realtimeLyrics.ifEmpty {
@@ -237,6 +276,17 @@ object MusicPlaybackStore {
             },
         )
 
+    private fun MusicPlaybackSnapshot.withPlaybackPositionFrom(fallback: MusicPlaybackSnapshot): MusicPlaybackSnapshot =
+        copy(
+            positionMs = fallback.positionMs,
+            playing = fallback.playing,
+            anchorElapsedMs = fallback.anchorElapsedMs,
+            sessionUpdatedElapsedMs = fallback.sessionUpdatedElapsedMs,
+            playbackSpeed = fallback.playbackSpeed,
+            source = MusicPlaybackSource.AdbFallback,
+        )
+
+    private const val TAG = "MusicPlaybackStore"
     private const val PRIMARY_SOURCE_FRESH_MS = 5_000L
 }
 
@@ -245,12 +295,59 @@ object SupportedMusicPackages {
         "com.byd.mediacenter",
         "com.byd.synclink",
         "com.netease.cloudmusic",
+        "com.netease.cloudmusic.car",
         "com.kugou.android",
+        "com.kugou.android.auto",
         "com.qq.music",
         "com.tencent.qqmusic",
+        "com.tencent.qqmusiccar",
+        "com.tencent.qqmusicpad",
         "cmccwm.mobilemusic",
         "cn.kuwo.player",
+        "cn.kuwo.kwmusiccar",
+        "cn.kuwo.kwmusiccar.main",
         "remix.music.player",
         "cmgyunting.vehicleplayer.cnr",
+    ) + QishuiMusic.packageNames
+
+    fun isSupported(packageName: String): Boolean {
+        val normalized = packageName.trim().lowercase(Locale.ROOT)
+        return normalized in names || MUSIC_PACKAGE_PREFIXES.any(normalized::startsWith)
+    }
+
+    private val MUSIC_PACKAGE_PREFIXES = setOf(
+        "com.netease.cloudmusic",
+        "com.kugou.android",
+        "com.tencent.qqmusic",
+        "cmccwm.mobilemusic",
+        "cn.kuwo.",
     )
+}
+
+internal object QishuiMusic {
+    val packageNames: Set<String> = setOf(
+        "com.luna.music",
+        "com.luna.music.car",
+        "com.qishui.app",
+    )
+
+    fun isPackage(packageName: String): Boolean = packageName in packageNames
+
+    fun extractTrackId(vararg candidates: String?): String? {
+        candidates.forEach { candidate ->
+            val value = candidate?.trim()?.takeIf { it.isNotBlank() } ?: return@forEach
+            TRACK_ID_PATTERNS.firstNotNullOfOrNull { pattern ->
+                pattern.find(value)?.groupValues?.getOrNull(1)
+            }?.let { return it }
+            if (PLAIN_TRACK_ID.matches(value)) return value
+        }
+        return null
+    }
+
+    private val TRACK_ID_PATTERNS = listOf(
+        Regex("""/(?:track|trace)/(\d+)"""),
+        Regex("""(?:^|[?&#])(?:track_id|trace_id|traceId)=(\d+)"""),
+        Regex("""[\"']?(?:track_id|trace_id|traceId)[\"']?\s*[:=]\s*[\"']?(\d+)"""),
+    )
+    private val PLAIN_TRACK_ID = Regex("""\d{6,}""")
 }

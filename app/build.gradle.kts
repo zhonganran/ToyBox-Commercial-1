@@ -52,8 +52,8 @@ android {
         // on DiLink Android 12 (requestLegacyExternalStorage works).
         // targetSdk 30+ would break listFiles() on /storage/emulated/0/energydata/
         targetSdk = 29
-        versionCode = 13
-        versionName = "1.3"
+        versionCode = 15
+        versionName = "1.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "UPDATE_API_URL", "\"$updateApiUrl\"")

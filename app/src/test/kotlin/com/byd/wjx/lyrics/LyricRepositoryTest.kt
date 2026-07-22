@@ -38,6 +38,62 @@ class LyricRepositoryTest {
     }
 
     @Test
+    fun parseQishuiLyricContent_readsMillisecondTimelineAndRemovesInlineTags() {
+        val lines = LyricRepository.parseQishuiLyricContent(
+            """
+            [24470,5010]<0,330,0>窗<400,330,0>外<1080,330,0>的麻雀
+            [30030,4650]<0,330,0>你<330,320,0>说这一句
+            """.trimIndent(),
+        )
+
+        assertEquals(
+            listOf(
+                LyricLine(24_470L, "窗外的麻雀"),
+                LyricLine(30_030L, "你说这一句"),
+            ),
+            lines,
+        )
+    }
+
+    @Test
+    fun parseQishuiLyricResponse_supportsRootLyricPayload() {
+        val result = LyricRepository.parseQishuiLyricResponse(
+            raw = """{"lyric":{"content":"[1000,500]第一句\n[2000,500]第二句"}}""",
+            key = "qishui-song",
+        )
+
+        requireNotNull(result)
+        assertEquals("qishui-song", result.key)
+        assertEquals(listOf(LyricLine(1_000L, "第一句"), LyricLine(2_000L, "第二句")), result.lines)
+    }
+
+    @Test
+    fun parseQishuiSearchCandidates_readsResultGroupsShape() {
+        val candidates = LyricRepository.parseQishuiSearchCandidates(
+            """
+            {
+              "result_groups": [{
+                "id": "tracks",
+                "data": [{
+                  "entity": {"track": {
+                    "id": "7123456789012345678",
+                    "name": "晚风",
+                    "duration": 240000,
+                    "artists": [{"name": "歌手A"}]
+                  }}
+                }]
+              }]
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals(
+            listOf(OnlineSongCandidate("7123456789012345678", "晚风", listOf("歌手A"), 240_000L)),
+            candidates,
+        )
+    }
+
+    @Test
     fun onlineMatcher_prefersMatchingArtistInsteadOfFirstSameTitle() {
         val selected = OnlineLyricMatcher.selectBest(
             MusicPlaybackSnapshot(title = "晚风", artist = "歌手B", durationMs = 240_000L),

@@ -17,6 +17,7 @@ class MediaSessionDumpParserTest {
                 metadata: size=3, description=晚风, 歌手A, null
                 duration=245000
                 state=PlaybackState {state=3, position=12345, buffered position=0, speed=1.0, updated=456}
+                android.media.metadata.MEDIA_ID=https://www.qishui.com/track/7123456789012345678
                 android.media.metadata.MEDIA_URI=file:///sdcard/Music/song.mp3
             """.trimIndent(),
         )
@@ -28,6 +29,7 @@ class MediaSessionDumpParserTest {
         assertEquals(12_345L, snapshot.positionMs)
         assertTrue(snapshot.playing)
         assertEquals("com.netease.cloudmusic", snapshot.packageName)
+        assertEquals("https://www.qishui.com/track/7123456789012345678", snapshot.mediaId)
         assertEquals(MusicPlaybackSource.AdbFallback, snapshot.source)
     }
 
@@ -53,5 +55,26 @@ class MediaSessionDumpParserTest {
         assertEquals("com.byd.mediacenter", snapshot.packageName)
         assertEquals(260_000L, snapshot.durationMs)
         assertTrue(snapshot.playing)
+    }
+
+    @Test
+    fun parse_prefersMostRecentlyUpdatedPlayingThirdPartySession() {
+        val snapshot = MediaSessionDumpParser.parse(
+            """
+            Sessions Stack - have 2 sessions:
+              SessionRecord{old packageName=com.byd.mediacenter}
+                metadata: size=3, description=旧歌, 媒体中心, null
+                state=PlaybackState {state=3, position=8888, buffered position=0, speed=1.0, updated=10000}
+              SessionRecord{new packageName=com.kugou.android.auto}
+                metadata: size=3, description=新歌, 歌手A, null
+                duration=260000
+                state=PlaybackState {state=3, position=12000, buffered position=0, speed=1.0, updated=65000}
+            """.trimIndent(),
+        )
+
+        requireNotNull(snapshot)
+        assertEquals("com.kugou.android.auto", snapshot.packageName)
+        assertEquals("新歌", snapshot.title)
+        assertEquals(12_000L, snapshot.positionMs)
     }
 }

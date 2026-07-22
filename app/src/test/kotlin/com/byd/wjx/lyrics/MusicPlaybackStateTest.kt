@@ -55,6 +55,34 @@ class MusicPlaybackStateTest {
     }
 
     @Test
+    fun qishuiPackages_areSupportedAndTrackIdsAreExtracted() {
+        assertTrue(SupportedMusicPackages.names.containsAll(QishuiMusic.packageNames))
+        assertTrue(SupportedMusicPackages.isSupported("com.netease.cloudmusic.car.player"))
+        assertTrue(SupportedMusicPackages.isSupported("com.kugou.android.auto"))
+        assertTrue(SupportedMusicPackages.isSupported("com.tencent.qqmusiccar"))
+        assertTrue(SupportedMusicPackages.isSupported("cn.kuwo.kwmusiccar"))
+        assertFalse(SupportedMusicPackages.isSupported("com.example.video"))
+        assertEquals("7123456789012345678", QishuiMusic.extractTrackId("https://www.qishui.com/track/7123456789012345678"))
+        assertEquals("7234567890123456789", QishuiMusic.extractTrackId("luna://play?track_id=7234567890123456789"))
+        assertEquals("7345678901234567890", QishuiMusic.extractTrackId("7345678901234567890"))
+    }
+
+    @Test
+    fun qishuiSongKeyReloadsWhenMediaIdArrivesWithoutChangingOtherPlayers() {
+        val qishuiWithoutId = MusicPlaybackSnapshot(
+            title = "晚风",
+            artist = "歌手A",
+            packageName = "com.luna.music",
+        )
+        val qishuiWithId = qishuiWithoutId.copy(mediaId = "7123456789012345678")
+        val neteaseWithoutId = qishuiWithoutId.copy(packageName = "com.netease.cloudmusic")
+        val neteaseWithId = neteaseWithoutId.copy(mediaId = "7123456789012345678")
+
+        assertFalse(qishuiWithoutId.songKey() == qishuiWithId.songKey())
+        assertEquals(neteaseWithoutId.songKey(), neteaseWithId.songKey())
+    }
+
+    @Test
     fun sameTrack_rejectsSameTitleWhenMediaUriChanges() {
         val previous = MusicPlaybackSnapshot(
             title = "同名歌曲",
@@ -232,5 +260,82 @@ class MusicPlaybackStateTest {
 
         assertEquals(56_000L, MusicPlaybackStore.state.value.positionMs)
         assertEquals(MusicPlaybackSource.AdbFallback, MusicPlaybackStore.state.value.source)
+    }
+
+    @Test
+    fun musicPlaybackStore_usesCrossPackageAdbSnapshotOnlyForSameSongPosition() {
+        MusicPlaybackStore.resetForTest()
+        val timed = listOf(LyricLine(1_000L, "第一句"))
+        val qishui = MusicPlaybackSnapshot(
+            title = "最浪漫的事",
+            artist = "ALAN",
+            durationMs = 238_000L,
+            positionMs = 30_000L,
+            playing = true,
+            packageName = "com.luna.music",
+            mediaId = "7632385172940703778",
+            mediaUri = "luna://play?track_id=7632385172940703778",
+            timedLyrics = timed,
+            anchorElapsedMs = 1_000L,
+            sessionUpdatedElapsedMs = 1_000L,
+            source = MusicPlaybackSource.MediaController,
+        )
+        val originalSongKey = qishui.songKey()
+        MusicPlaybackStore.publishAt(qishui, nowElapsedMs = 1_000L)
+
+        MusicPlaybackStore.publishAt(
+            MusicPlaybackSnapshot(
+                title = "最浪漫的事",
+                artist = "ALAN",
+                positionMs = 36_000L,
+                playing = true,
+                packageName = "com.byd.mediacenter",
+                anchorElapsedMs = 7_000L,
+                sessionUpdatedElapsedMs = 7_000L,
+                source = MusicPlaybackSource.AdbFallback,
+            ),
+            nowElapsedMs = 7_000L,
+        )
+
+        val snapshot = MusicPlaybackStore.state.value
+        assertEquals("com.luna.music", snapshot.packageName)
+        assertEquals("7632385172940703778", snapshot.mediaId)
+        assertEquals("luna://play?track_id=7632385172940703778", snapshot.mediaUri)
+        assertEquals(238_000L, snapshot.durationMs)
+        assertEquals(timed, snapshot.timedLyrics)
+        assertEquals(originalSongKey, snapshot.songKey())
+        assertEquals(36_000L, snapshot.positionMs)
+        assertEquals(7_000L, snapshot.anchorElapsedMs)
+        assertEquals(MusicPlaybackSource.AdbFallback, snapshot.source)
+    }
+
+    @Test
+    fun musicPlaybackStore_rejectsCrossPackageAdbLyricLineAsTrackTitle() {
+        MusicPlaybackStore.resetForTest()
+        val qishui = MusicPlaybackSnapshot(
+            title = "最浪漫的事",
+            artist = "ALAN",
+            durationMs = 238_000L,
+            positionMs = 30_000L,
+            playing = true,
+            packageName = "com.luna.music",
+            mediaId = "7632385172940703778",
+            source = MusicPlaybackSource.MediaController,
+        )
+        MusicPlaybackStore.publishAt(qishui, nowElapsedMs = 1_000L)
+
+        MusicPlaybackStore.publishAt(
+            MusicPlaybackSnapshot(
+                title = "我能想到最浪漫的事",
+                artist = "",
+                positionMs = 36_000L,
+                playing = true,
+                packageName = "com.byd.mediacenter",
+                source = MusicPlaybackSource.AdbFallback,
+            ),
+            nowElapsedMs = 7_000L,
+        )
+
+        assertEquals(qishui, MusicPlaybackStore.state.value)
     }
 }

@@ -112,4 +112,29 @@ class MusicNotificationPlaybackTest {
             ),
         )
     }
+
+    @Test
+    fun preferredSession_usesRecentThirdPartyPlaybackInsteadOfStaleMediaCenter() {
+        val selected = selectPreferredMusicSnapshot(
+            listOf(
+                MusicPlaybackSnapshot(
+                    title = "旧歌",
+                    artist = "比亚迪媒体中心",
+                    playing = true,
+                    packageName = "com.byd.mediacenter",
+                    anchorElapsedMs = 10_000L,
+                ),
+                MusicPlaybackSnapshot(
+                    title = "新歌",
+                    artist = "歌手A",
+                    playing = true,
+                    packageName = "com.kugou.android",
+                    anchorElapsedMs = 65_000L,
+                ),
+            ),
+        )
+
+        assertEquals("com.kugou.android", selected?.packageName)
+        assertEquals("新歌", selected?.title)
+    }
 }

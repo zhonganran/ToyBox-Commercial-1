@@ -18,12 +18,13 @@ object MediaSessionDumpParser {
             .mapNotNull(::parseBlock)
             .filter { it.hasSong }
         val preferred = snapshots.filter {
-            it.packageName.isBlank() || SupportedMusicPackages.names.contains(it.packageName)
+            it.packageName.isBlank() || SupportedMusicPackages.isSupported(it.packageName)
         }.ifEmpty { snapshots }
         return preferred
             .sortedWith(
                 compareByDescending<MusicPlaybackSnapshot> { it.playing }
-                    .thenByDescending { SupportedMusicPackages.names.contains(it.packageName) }
+                    .thenByDescending { it.sessionUpdatedElapsedMs }
+                    .thenByDescending { SupportedMusicPackages.isSupported(it.packageName) }
                     .thenBy { it.title.isBlank() },
             )
             .firstOrNull()
@@ -53,6 +54,7 @@ object MediaSessionDumpParser {
         val updated = updatedRegex.find(block)?.groupValues?.getOrNull(1)?.toLongOrNull()?.takeIf { it > 0L }
         val duration = durationRegex.find(block)?.groupValues?.getOrNull(1)?.toLongOrNull() ?: 0L
         val pkg = packageRegex.find(block)?.groupValues?.getOrNull(1).orEmpty()
+        val mediaId = firstValue(block, MEDIA_ID_KEYS)
         val uri = firstValue(block, MEDIA_URI_KEYS)
         val metadataLyrics = lineValue(block, BYD_LYRICS)
         val timedLyrics = LyricRepository.parseBydMetadataLyrics(metadataLyrics, "media_session_dump")?.lines
@@ -64,11 +66,13 @@ object MediaSessionDumpParser {
             positionMs = position,
             playing = stateCode == 3,
             packageName = pkg,
+            mediaId = mediaId,
             mediaUri = uri,
             metadataLyrics = metadataLyrics,
             timedLyrics = timedLyrics,
             realtimeLyrics = realtimeLyrics,
             anchorElapsedMs = updated ?: SystemClock.elapsedRealtime(),
+            sessionUpdatedElapsedMs = updated ?: SystemClock.elapsedRealtime(),
             playbackSpeed = speed,
             source = MusicPlaybackSource.AdbFallback,
         )
@@ -103,6 +107,11 @@ object MediaSessionDumpParser {
     )
     private const val BYD_LYRICS = "com.byd.mediacenter.metadata.LYRICS"
     private val REALTIME_LYRIC_KEYS = listOf("lrc_line_1", "lrc_line_2", "lrc_line_3")
+    private val MEDIA_ID_KEYS = listOf(
+        "android.media.metadata.MEDIA_ID",
+        "mediaId",
+        "media_id",
+    )
     private val MEDIA_URI_KEYS = listOf(
         "android.media.metadata.MEDIA_URI",
         "com.byd.mediacenter.metadata.MEDIA_URI",
