@@ -18,13 +18,11 @@ enum class KeyShortcutPressType(val storageValue: String, val label: String) {
 
 enum class KeyShortcutActionType(val storageValue: String, val label: String) {
     PlaySound("play_sound", "播放音效"),
-    RealtimeHailing("realtime_hailing", "实时喊话"),
-    Xiaozhi("xiaozhi", "小智对话"),
-    StreamingRearMirror("streaming_rear_mirror", "流媒体后视镜");
+    RealtimeHailing("realtime_hailing", "实时喊话");
 
     companion object {
-        fun fromStorage(value: String?): KeyShortcutActionType =
-            entries.firstOrNull { it.storageValue == value } ?: PlaySound
+        fun fromStorage(value: String?): KeyShortcutActionType? =
+            entries.firstOrNull { it.storageValue == value }
     }
 }
 
@@ -41,8 +39,6 @@ data class KeyShortcutBinding(
         get() = keyCode > 0 && when (actionType) {
             KeyShortcutActionType.PlaySound -> soundPath.isNotBlank()
             KeyShortcutActionType.RealtimeHailing -> true
-            KeyShortcutActionType.Xiaozhi -> true
-            KeyShortcutActionType.StreamingRearMirror -> true
         }
 }
 
@@ -56,12 +52,14 @@ class KeyShortcutSettings(context: Context) {
             buildList {
                 for (index in 0 until array.length()) {
                     val item = array.optJSONObject(index) ?: continue
+                    val actionType = KeyShortcutActionType.fromStorage(item.optString("actionType"))
+                        ?: continue
                     add(
                         KeyShortcutBinding(
                             id = item.optString("id").ifBlank { UUID.randomUUID().toString() },
                             keyCode = item.optInt("keyCode", 0),
                             pressType = KeyShortcutPressType.fromStorage(item.optString("pressType")),
-                            actionType = KeyShortcutActionType.fromStorage(item.optString("actionType")),
+                            actionType = actionType,
                             soundPath = item.optString("soundPath"),
                             soundName = item.optString("soundName"),
                             enabled = item.optBoolean("enabled", true),

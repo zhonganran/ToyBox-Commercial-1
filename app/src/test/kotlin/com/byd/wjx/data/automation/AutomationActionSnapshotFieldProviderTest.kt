@@ -10,35 +10,6 @@ import org.junit.Test
 
 class AutomationActionSnapshotFieldProviderTest {
     @Test
-    fun `runtime features do not request auto parking status when disabled`() {
-        assertTrue(requiredRuntimeFeatureFields().isEmpty())
-        assertEquals(
-            setOf("adasApaParkingStatus"),
-            requiredRuntimeFeatureFields(streamingRearEnabled = true),
-        )
-    }
-
-    @Test
-    fun `electronic mirror fast path reads stable turn and auto parking ownership`() {
-        assertEquals(
-            setOf("turnSignalFlash", "adasApaParkingStatus"),
-            requiredRuntimeFeatureFields(
-                electronicMirrorLinkageEnabled = true,
-            ),
-        )
-    }
-
-    @Test
-    fun `streaming rear reads camera ownership without turn signal`() {
-        assertEquals(
-            setOf("adasApaParkingStatus"),
-            requiredRuntimeFeatureFields(
-                streamingRearEnabled = true,
-            ),
-        )
-    }
-
-    @Test
     fun `enabled param triggers select only their required vehicle fields`() {
         val fields = requiredAutomationVehicleFields(
             listOf(

@@ -13,7 +13,6 @@ import com.byd.wjx.domain.calculator.DrivingMetricsCoordinator
 import com.byd.wjx.domain.tracker.DriveSessionCoordinator
 import com.byd.wjx.domain.tracker.TripTracker
 import com.byd.wjx.desktopcard.DesktopQuickCardRuntime
-import com.byd.wjx.electronicmirror.ElectronicMirrorCoordinator
 import com.byd.wjx.log.WjxFileLogger
 import com.byd.wjx.service.runtime.CameraRuntimeCoordinator
 import com.byd.wjx.service.runtime.SteeringWheelRuntimeCoordinator
@@ -53,7 +52,6 @@ class TrackingService : Service() {
     @Inject lateinit var steeringWheelRuntimeCoordinator: SteeringWheelRuntimeCoordinator
     @Inject lateinit var notificationController: TrackingNotificationController
     @Inject lateinit var ledRuntimeCoordinator: com.byd.wjx.led.LedRuntimeCoordinator
-    @Inject lateinit var electronicMirrorCoordinator: ElectronicMirrorCoordinator
     @Inject lateinit var desktopQuickCardRuntime: DesktopQuickCardRuntime
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -132,8 +130,7 @@ class TrackingService : Service() {
         startPolling()
         cameraRuntimeCoordinator.start(serviceScope)
         desktopQuickCardRuntime.start(serviceScope)
-        electronicMirrorCoordinator.start(cameraRuntimeCoordinator.active)
-        lyricRuntime.start(cameraRuntimeCoordinator.active, electronicMirrorCoordinator.active)
+        lyricRuntime.start(cameraRuntimeCoordinator.active)
         ledRuntimeCoordinator.start(serviceScope)
         publishRunning(true)
         ChainLog.append(this, "TrackingService fully started")
@@ -181,7 +178,6 @@ class TrackingService : Service() {
         }
 
         lyricRuntime.stop()
-        electronicMirrorCoordinator.stop()
         desktopQuickCardRuntime.stop()
         ledRuntimeCoordinator.stop()
         cameraRuntimeCoordinator.stop()
@@ -267,17 +263,6 @@ class TrackingService : Service() {
                 sharedAdaptiveLoop.actionFlow.collect { data ->
                     runCatching { ledRuntimeCoordinator.onVehicleData(data) }
                         .onFailure { WjxFileLogger.e(TAG, "LED linkage tick failed: ${it.message}", it) }
-                }
-            }
-
-            // Camera ownership is serialized inside ElectronicMirrorCoordinator. A dedicated
-            // collector prevents a slow first camera open from overlapping later turn-signal ticks.
-            launch {
-                sharedAdaptiveLoop.actionFlow.collect { data ->
-                    runCatching { electronicMirrorCoordinator.onVehicleData(data) }
-                        .onFailure {
-                            WjxFileLogger.e(TAG, "Electronic mirror tick failed: ${it.message}", it)
-                        }
                 }
             }
 

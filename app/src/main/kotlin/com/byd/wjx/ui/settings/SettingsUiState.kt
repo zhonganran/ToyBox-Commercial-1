@@ -19,7 +19,6 @@ data class SettingsUiState(
     val fuelPricePerLiter: String = SettingsRepository.DEFAULT_FUEL_PRICE_PER_LITER,
     val currencySymbol: String = "元",
     val appVersion: String = "0.0.0",
-    val electronicMirrorUnlocked: Boolean = false,
     val updateStatus: String? = null,
     val updateDialogState: UpdateState = UpdateState.Idle,
     val showUpdateDialog: Boolean = false,

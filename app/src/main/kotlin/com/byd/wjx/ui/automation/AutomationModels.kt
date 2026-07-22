@@ -49,6 +49,11 @@ data class EditingRule(
     val isNew: Boolean = true,
 )
 
+internal fun EditingRule.hasMinimumSaveFields(): Boolean =
+    name.isNotBlank() &&
+        triggers.isNotEmpty() &&
+        (actions.isNotEmpty() || exitActions.isNotEmpty())
+
 data class AutomationUiState(
     val rules: List<RuleEntity> = emptyList(),
     val filter: RuleFilter = RuleFilter.ALL,

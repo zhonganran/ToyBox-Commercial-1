@@ -68,7 +68,7 @@ private enum class DesktopComponentPage(
 ) {
     Lyrics(
         label = "歌词组件",
-        description = "桌面歌词与仪表盘歌词共用一套样式",
+        description = "桌面歌词与仪表盘歌词分别调节",
         icon = Icons.Outlined.Subtitles,
         colors = listOf(Color(0xFF2375B7), Color(0xFF123F83)),
     ),

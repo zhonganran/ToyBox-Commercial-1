@@ -401,7 +401,6 @@ private fun navAccent(route: String): Color = when (route) {
     "sound" -> SceneViolet
     "lyrics" -> SceneAmber
     "automation" -> SceneBlue
-    "xiaozhi" -> SceneMint
     "settings" -> SceneCoral
     else -> SceneAmber
 }

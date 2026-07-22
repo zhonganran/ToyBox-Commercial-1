@@ -30,9 +30,7 @@ import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Place
-import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.VerifiedUser
-import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -66,9 +64,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.byd.wjx.R
 import com.byd.wjx.audio.LockSoundEvent
-import com.byd.wjx.ui.electronicmirror.ElectronicMirrorSettingsContent
 import com.byd.wjx.ui.theme.*
-import com.byd.wjx.xiaozhi.ui.XiaozhiSettingsContent
 
 
 private val PrimaryColor = AccentGreen
@@ -80,9 +76,7 @@ fun SettingsScreen(
     onNavigateToPlaces: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val visibleCategories = SettingsCategory.entries.filter { category ->
-        category != SettingsCategory.ElectronicMirror || state.electronicMirrorUnlocked
-    }
+    val categories = SettingsCategory.entries
     // Recalculate confirmation dialog
     if (state.showRecalcConfirm) {
         val tariffLabel = when (state.tripCostTariff) {
@@ -146,7 +140,6 @@ fun SettingsScreen(
                 modifier = Modifier
                     .background(CardSurface.copy(alpha = 0.78f), RoundedCornerShape(999.dp))
                     .border(1.dp, CardBorder, RoundedCornerShape(999.dp))
-                    .clickable(onClick = viewModel::onVersionTapped)
                     .padding(horizontal = 18.dp, vertical = 9.dp),
             )
         }
@@ -161,17 +154,17 @@ fun SettingsScreen(
             val compact = maxWidth < 900.dp
             var selectedCategory by rememberSaveable(initialCategory) {
                 mutableStateOf(
-                    visibleCategories.firstOrNull { it.name == initialCategory }
+                    categories.firstOrNull { it.name == initialCategory }
                         ?: SettingsCategory.Auth,
                 )
             }
-            val activeCategory = selectedCategory.takeIf { it in visibleCategories }
+            val activeCategory = selectedCategory.takeIf { it in categories }
                 ?: SettingsCategory.Auth
-            LaunchedEffect(initialCategory, state.electronicMirrorUnlocked) {
-                val requested = visibleCategories.firstOrNull { it.name == initialCategory }
+            LaunchedEffect(initialCategory) {
+                val requested = categories.firstOrNull { it.name == initialCategory }
                 if (requested != null) {
                     selectedCategory = requested
-                } else if (selectedCategory !in visibleCategories) {
+                } else if (selectedCategory !in categories) {
                     selectedCategory = SettingsCategory.Auth
                 }
             }
@@ -183,7 +176,7 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        items(visibleCategories, key = { it.name }) { category ->
+                        items(categories, key = { it.name }) { category ->
                             SettingsCategoryHeader(
                                 category = category,
                                 state = state,
@@ -220,7 +213,7 @@ fun SettingsScreen(
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        visibleCategories.forEach { category ->
+                        categories.forEach { category ->
                             SettingsCategoryHeader(
                                 category = category,
                                 state = state,
@@ -256,8 +249,6 @@ private enum class SettingsCategory {
     Service,
     Vehicle,
     Control,
-    Xiaozhi,
-    ElectronicMirror,
     Led,
     EventSound,
     Data,
@@ -276,8 +267,6 @@ private fun SettingsCategoryHeader(
         SettingsCategory.Service -> category.title
         SettingsCategory.Vehicle -> category.title
         SettingsCategory.Control -> category.title
-        SettingsCategory.Xiaozhi -> category.title
-        SettingsCategory.ElectronicMirror -> category.title
         SettingsCategory.Led -> category.title
         SettingsCategory.EventSound -> category.title
         SettingsCategory.Data -> category.title
@@ -287,8 +276,6 @@ private fun SettingsCategoryHeader(
         SettingsCategory.Service -> category.subtitle
         SettingsCategory.Vehicle -> category.subtitle
         SettingsCategory.Control -> category.subtitle
-        SettingsCategory.Xiaozhi -> category.subtitle
-        SettingsCategory.ElectronicMirror -> category.subtitle
         SettingsCategory.Led -> category.subtitle
         SettingsCategory.EventSound -> category.subtitle
         SettingsCategory.Data -> category.subtitle
@@ -383,12 +370,6 @@ private fun SettingsCategoryContent(
             SettingsCategory.Control -> {
                 DisplaySection(state, viewModel)
             }
-            SettingsCategory.Xiaozhi -> {
-                XiaozhiSettingsContent()
-            }
-            SettingsCategory.ElectronicMirror -> {
-                ElectronicMirrorSettingsContent()
-            }
             SettingsCategory.Led -> {
                 LedLinkSettingsSection()
             }
@@ -408,11 +389,9 @@ private val SettingsCategory.indexLabel: String
         SettingsCategory.Service -> "02"
         SettingsCategory.Vehicle -> "03"
         SettingsCategory.Control -> "04"
-        SettingsCategory.Xiaozhi -> "05"
-        SettingsCategory.ElectronicMirror -> "06"
-        SettingsCategory.Led -> "07"
-        SettingsCategory.EventSound -> "08"
-        SettingsCategory.Data -> "09"
+        SettingsCategory.Led -> "05"
+        SettingsCategory.EventSound -> "06"
+        SettingsCategory.Data -> "07"
     }
 
 private val SettingsCategory.icon: ImageVector
@@ -421,8 +400,6 @@ private val SettingsCategory.icon: ImageVector
         SettingsCategory.Service -> Icons.Outlined.VerifiedUser
         SettingsCategory.Vehicle -> Icons.Outlined.Place
         SettingsCategory.Control -> Icons.Outlined.Key
-        SettingsCategory.Xiaozhi -> Icons.Outlined.RecordVoiceOver
-        SettingsCategory.ElectronicMirror -> Icons.Outlined.Visibility
         SettingsCategory.Led -> Icons.Outlined.BluetoothConnected
         SettingsCategory.EventSound -> Icons.Outlined.MusicNote
         SettingsCategory.Data -> Icons.Outlined.CloudUpload
@@ -434,8 +411,6 @@ private val SettingsCategory.title: String
         SettingsCategory.Service -> "服务与授权"
         SettingsCategory.Vehicle -> "车辆费用与地点"
         SettingsCategory.Control -> "按键 / 显示 / 车外通道"
-        SettingsCategory.Xiaozhi -> "小智对话"
-        SettingsCategory.ElectronicMirror -> "电子后视镜"
         SettingsCategory.Led -> "LED联动"
         SettingsCategory.EventSound -> "车辆事件音效"
         SettingsCategory.Data -> "数据与更新"
@@ -446,9 +421,7 @@ private val SettingsCategory.subtitle: String
         SettingsCategory.Auth -> "激活码、车架号、试用状态和授权能力"
         SettingsCategory.Service -> "永久授权 $PERMANENT_AUTH_PRICE、联系客服、售后支持"
         SettingsCategory.Vehicle -> "电池容量、充电价格、能耗区间和常用地点"
-        SettingsCategory.Control -> "应用横屏、车外音效通道、方向盘快捷键、仪表盘投射"
-        SettingsCategory.Xiaozhi -> "官网登录与激活、服务器配置和车内语音对话"
-        SettingsCategory.ElectronicMirror -> "转向显示侧后方画面，支持仪表盘和中控屏"
+        SettingsCategory.Control -> "车外音效通道、方向盘快捷键、仪表盘投射"
         SettingsCategory.Led -> "蓝牙屏幕、车辆事件联动和内置画面测试"
         SettingsCategory.EventSound -> "锁车、解锁和哨兵的后台车外音效"
         SettingsCategory.Data -> "界面主题、行程轨迹、备份恢复、更新和关于"
@@ -460,8 +433,6 @@ private fun SettingsCategory.status(state: SettingsUiState): String =
         SettingsCategory.Service -> if (state.activation.activated) "已授权" else PERMANENT_AUTH_PRICE
         SettingsCategory.Vehicle -> "费用 / 能耗"
         SettingsCategory.Control -> if (state.activation.activated || state.activation.trialActive) "高级可用" else "部分需激活"
-        SettingsCategory.Xiaozhi -> "语音服务"
-        SettingsCategory.ElectronicMirror -> "仪表 / 中控"
         SettingsCategory.Led -> "设备联动"
         SettingsCategory.EventSound -> {
             val count = LockSoundEvent.entries.count { state.lockSound.enabled(it) }
@@ -480,8 +451,6 @@ private fun SettingsCategory.accent(state: SettingsUiState): Color =
         SettingsCategory.Service -> AccentOrange
         SettingsCategory.Vehicle -> AccentBlue
         SettingsCategory.Control -> AccentGreen
-        SettingsCategory.Xiaozhi -> SceneMint
-        SettingsCategory.ElectronicMirror -> AccentGreen
         SettingsCategory.Led -> AccentBlue
         SettingsCategory.EventSound -> AccentOrange
         SettingsCategory.Data -> AccentPurple

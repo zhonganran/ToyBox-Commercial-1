@@ -24,7 +24,6 @@ import android.os.Process
 import androidx.core.content.ContextCompat
 import com.byd.wjx.R
 import com.byd.wjx.log.WjxFileLogger
-import com.byd.wjx.xiaozhi.domain.XiaozhiSessionManager
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.CountDownLatch
@@ -49,7 +48,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 class WjxRealtimeHailingService : Service() {
     @Inject lateinit var router: BydExteriorAudioRouter
     @Inject lateinit var audioUsage: AudioUsageCoordinator
-    @Inject lateinit var xiaozhiSessionManager: XiaozhiSessionManager
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val actionMutex = Mutex()
@@ -127,7 +125,6 @@ class WjxRealtimeHailingService : Service() {
 
         WjxFileLogger.i(TAG, "start requested channel=$channel")
         updateNotification("正在准备实时喊话")
-        xiaozhiSessionManager.preemptForRealtimeHailing()
         WjxOutsidePlayService.stop(this)
         val released = audioUsage.awaitInactive(
             owners = HAILING_BLOCKING_OWNERS,
@@ -135,7 +132,7 @@ class WjxRealtimeHailingService : Service() {
         )
         if (!released) {
             WjxFileLogger.w(TAG, "start blocked: competing audio resource release timeout")
-            broadcastState(STATE_ERROR, "小智对话或车外音频未能及时释放")
+            broadcastState(STATE_ERROR, "麦克风或车外音频未能及时释放")
             updateNotification("麦克风资源释放超时")
             serviceActive = false
             audioUsage.setActive(AudioOwner.RealtimeHailing, false)
@@ -320,8 +317,6 @@ class WjxRealtimeHailingService : Service() {
         private const val AUDIO_RESOURCE_SETTLE_MS = 320L
         private const val SERVICE_DESTROY_RELEASE_TIMEOUT_MS = 2_400L
         private val HAILING_BLOCKING_OWNERS = setOf(
-            AudioOwner.WakeWordListener,
-            AudioOwner.XiaozhiConversation,
             AudioOwner.ExteriorPlayback,
         )
         @Volatile private var serviceActive = false

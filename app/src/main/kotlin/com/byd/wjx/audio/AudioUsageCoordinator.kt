@@ -10,8 +10,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withTimeoutOrNull
 
 enum class AudioOwner {
-    WakeWordListener,
-    XiaozhiConversation,
     RealtimeHailing,
     ExteriorPlayback,
 }

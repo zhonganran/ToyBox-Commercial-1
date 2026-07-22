@@ -14,7 +14,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -31,7 +30,7 @@ import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
-/** Shared settings for the desktop and instrument-cluster lyric overlays. */
+/** Independent settings for the desktop and instrument-cluster lyric overlays. */
 @Composable
 fun LyricDisplayScreen(
     modifier: Modifier = Modifier,
@@ -49,6 +48,26 @@ fun LyricDisplayScreen(
     val lyricSettings = remember(context.applicationContext) { LyricSettings(context.applicationContext) }
     val panelPreferences = remember(context.applicationContext) { LyricDisplayPanelPreferences(context) }
 
+    fun readDesktopAdjustment() = LyricAdjustmentState(
+        lineCount = lyricSettings.desktopLineCount,
+        fontScale = lyricSettings.desktopFontScale,
+        textColor = lyricSettings.desktopTextColor,
+        highlightColor = lyricSettings.desktopHighlightColor,
+        fontStyleId = lyricSettings.desktopFontStyleId,
+        motionPresetId = lyricSettings.desktopMotionPresetId,
+        syncOffset = lyricSettings.desktopSyncOffsetMs.toFloat(),
+    )
+
+    fun readClusterAdjustment() = LyricAdjustmentState(
+        lineCount = lyricSettings.clusterLineCount,
+        fontScale = lyricSettings.clusterFontScale,
+        textColor = lyricSettings.clusterTextColor,
+        highlightColor = lyricSettings.clusterHighlightColor,
+        fontStyleId = lyricSettings.clusterFontStyleId,
+        motionPresetId = lyricSettings.clusterMotionPresetId,
+        syncOffset = lyricSettings.clusterSyncOffsetMs.toFloat(),
+    )
+
     var desktopEnabled by remember { mutableStateOf(lyricSettings.desktopEnabled) }
     var clusterEnabled by remember { mutableStateOf(lyricSettings.clusterEnabled) }
     var expanded by remember {
@@ -61,16 +80,10 @@ fun LyricDisplayScreen(
     }
     var allowOtherApps by remember { mutableStateOf(lyricSettings.allowOnOtherApps) }
     var desktopTouchThrough by remember { mutableStateOf(lyricSettings.desktopTouchThrough) }
-    var sharedLineCount by remember { mutableIntStateOf(lyricSettings.sharedLineCount) }
-    var desktopFontScale by remember { mutableFloatStateOf(lyricSettings.desktopFontScale) }
-    var clusterFontScale by remember { mutableFloatStateOf(lyricSettings.clusterFontScale) }
-    var sharedTextColor by remember { mutableIntStateOf(lyricSettings.sharedTextColor) }
-    var sharedHighlightColor by remember { mutableIntStateOf(lyricSettings.sharedHighlightColor) }
-    var sharedFontStyleId by remember { mutableStateOf(lyricSettings.sharedFontStyleId) }
-    var sharedMotionPresetId by remember { mutableStateOf(lyricSettings.sharedMotionPresetId) }
+    var desktopAdjustment by remember { mutableStateOf(readDesktopAdjustment()) }
+    var clusterAdjustment by remember { mutableStateOf(readClusterAdjustment()) }
     var clusterX by remember { mutableFloatStateOf(lyricSettings.clusterXPct.toFloat()) }
     var clusterY by remember { mutableFloatStateOf(lyricSettings.clusterYPct.toFloat()) }
-    var syncOffset by remember { mutableFloatStateOf(lyricSettings.syncOffsetMs.toFloat()) }
     var featureAllowed by remember {
         mutableStateOf(activationManager.canUse(PremiumFeature.DESKTOP_LYRICS))
     }
@@ -90,16 +103,10 @@ fun LyricDisplayScreen(
         clusterEnabled = lyricSettings.clusterEnabled
         allowOtherApps = lyricSettings.allowOnOtherApps
         desktopTouchThrough = lyricSettings.desktopTouchThrough
-        sharedLineCount = lyricSettings.sharedLineCount
-        desktopFontScale = lyricSettings.desktopFontScale
-        clusterFontScale = lyricSettings.clusterFontScale
-        sharedTextColor = lyricSettings.sharedTextColor
-        sharedHighlightColor = lyricSettings.sharedHighlightColor
-        sharedFontStyleId = lyricSettings.sharedFontStyleId
-        sharedMotionPresetId = lyricSettings.sharedMotionPresetId
+        desktopAdjustment = readDesktopAdjustment()
+        clusterAdjustment = readClusterAdjustment()
         clusterX = lyricSettings.clusterXPct.toFloat()
         clusterY = lyricSettings.clusterYPct.toFloat()
-        syncOffset = lyricSettings.syncOffsetMs.toFloat()
         notifyEnabledState()
         if (!featureAllowed || (!desktopEnabled && !clusterEnabled)) setExpanded(false)
     }
@@ -168,16 +175,10 @@ fun LyricDisplayScreen(
                 expanded = expanded,
                 allowOtherApps = allowOtherApps,
                 desktopTouchThrough = desktopTouchThrough,
-                sharedLineCount = sharedLineCount,
-                desktopFontScale = desktopFontScale,
-                clusterFontScale = clusterFontScale,
-                sharedTextColor = sharedTextColor,
-                sharedHighlightColor = sharedHighlightColor,
-                sharedFontStyleId = sharedFontStyleId,
-                sharedMotionPresetId = sharedMotionPresetId,
+                desktopAdjustment = desktopAdjustment,
+                clusterAdjustment = clusterAdjustment,
                 clusterX = clusterX,
                 clusterY = clusterY,
-                syncOffset = syncOffset,
             ),
             actions = LyricPanelActions(
                 onDesktopEnabledChange = { setModeEnabled(desktop = true, enabled = it) },
@@ -202,33 +203,61 @@ fun LyricDisplayScreen(
                     clusterX = lyricSettings.clusterXPct.toFloat()
                     clusterY = lyricSettings.clusterYPct.toFloat()
                 },
-                onSharedLineCountChange = {
-                    lyricSettings.sharedLineCount = it
-                    sharedLineCount = lyricSettings.sharedLineCount
+                onLineCountChange = { target, value ->
+                    when (target) {
+                        LyricAdjustmentTarget.DESKTOP -> {
+                            lyricSettings.desktopLineCount = value
+                            desktopAdjustment = readDesktopAdjustment()
+                        }
+                        LyricAdjustmentTarget.CLUSTER -> {
+                            lyricSettings.clusterLineCount = value
+                            clusterAdjustment = readClusterAdjustment()
+                        }
+                    }
                 },
-                onDesktopFontScaleChange = {
-                    lyricSettings.desktopFontScale = it
-                    desktopFontScale = lyricSettings.desktopFontScale
+                onFontScaleChange = { target, value ->
+                    when (target) {
+                        LyricAdjustmentTarget.DESKTOP -> {
+                            lyricSettings.desktopFontScale = value
+                            desktopAdjustment = readDesktopAdjustment()
+                        }
+                        LyricAdjustmentTarget.CLUSTER -> {
+                            lyricSettings.clusterFontScale = value
+                            clusterAdjustment = readClusterAdjustment()
+                        }
+                    }
                 },
-                onClusterFontScaleChange = {
-                    lyricSettings.clusterFontScale = it
-                    clusterFontScale = lyricSettings.clusterFontScale
+                onTextColorChange = { target, value ->
+                    when (target) {
+                        LyricAdjustmentTarget.DESKTOP -> lyricSettings.desktopTextColor = value
+                        LyricAdjustmentTarget.CLUSTER -> lyricSettings.clusterTextColor = value
+                    }
+                    desktopAdjustment = readDesktopAdjustment()
+                    clusterAdjustment = readClusterAdjustment()
                 },
-                onSharedTextColorChange = {
-                    lyricSettings.sharedTextColor = it
-                    sharedTextColor = lyricSettings.sharedTextColor
+                onHighlightColorChange = { target, value ->
+                    when (target) {
+                        LyricAdjustmentTarget.DESKTOP -> lyricSettings.desktopHighlightColor = value
+                        LyricAdjustmentTarget.CLUSTER -> lyricSettings.clusterHighlightColor = value
+                    }
+                    desktopAdjustment = readDesktopAdjustment()
+                    clusterAdjustment = readClusterAdjustment()
                 },
-                onSharedHighlightColorChange = {
-                    lyricSettings.sharedHighlightColor = it
-                    sharedHighlightColor = lyricSettings.sharedHighlightColor
+                onFontStyleChange = { target, value ->
+                    when (target) {
+                        LyricAdjustmentTarget.DESKTOP -> lyricSettings.desktopFontStyleId = value
+                        LyricAdjustmentTarget.CLUSTER -> lyricSettings.clusterFontStyleId = value
+                    }
+                    desktopAdjustment = readDesktopAdjustment()
+                    clusterAdjustment = readClusterAdjustment()
                 },
-                onSharedFontStyleChange = {
-                    lyricSettings.sharedFontStyleId = it
-                    sharedFontStyleId = lyricSettings.sharedFontStyleId
-                },
-                onSharedMotionPresetChange = {
-                    lyricSettings.sharedMotionPresetId = it
-                    sharedMotionPresetId = lyricSettings.sharedMotionPresetId
+                onMotionPresetChange = { target, value ->
+                    when (target) {
+                        LyricAdjustmentTarget.DESKTOP -> lyricSettings.desktopMotionPresetId = value
+                        LyricAdjustmentTarget.CLUSTER -> lyricSettings.clusterMotionPresetId = value
+                    }
+                    desktopAdjustment = readDesktopAdjustment()
+                    clusterAdjustment = readClusterAdjustment()
                 },
                 onClusterXChange = {
                     lyricSettings.clusterXPct = it.roundToInt()
@@ -238,10 +267,14 @@ fun LyricDisplayScreen(
                     lyricSettings.clusterYPct = it.roundToInt()
                     clusterY = lyricSettings.clusterYPct.toFloat()
                 },
-                onSyncOffsetChange = {
-                    val snapped = (it / 50f).roundToInt() * 50
-                    lyricSettings.syncOffsetMs = snapped
-                    syncOffset = lyricSettings.syncOffsetMs.toFloat()
+                onSyncOffsetChange = { target, value ->
+                    val snapped = (value / 50f).roundToInt() * 50
+                    when (target) {
+                        LyricAdjustmentTarget.DESKTOP -> lyricSettings.desktopSyncOffsetMs = snapped
+                        LyricAdjustmentTarget.CLUSTER -> lyricSettings.clusterSyncOffsetMs = snapped
+                    }
+                    desktopAdjustment = readDesktopAdjustment()
+                    clusterAdjustment = readClusterAdjustment()
                 },
             ),
         )

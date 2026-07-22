@@ -24,15 +24,6 @@ data class HelperShellResult(
     val ok: Boolean get() = status == 0 && exitCode == 0
 }
 
-data class ElectronicMirrorCameraRequest(
-    val cameraTag: String,
-    val surfaceIndex: Int,
-    val tileCount: Int,
-    val bufferWidth: Int,
-    val bufferHeight: Int,
-    val fps: Int,
-)
-
 /**
  * Client for the in-vehicle helper daemon registered as the `wjx_helper`
  * binder service (ServiceManager.getService + IBinder.transact).
@@ -101,18 +92,6 @@ interface HelperClient {
     suspend fun execShellResult(command: String): HelperShellResult? = null
     /** Generic helper-side shell execution. Keep call sites narrow and logged. */
     suspend fun execShell(command: String): String? = null
-    /** Starts one AVMCamera producer Surface with camera identity and output index kept separate. */
-    suspend fun startElectronicMirror(
-        surface: Surface,
-        request: ElectronicMirrorCameraRequest,
-    ): Boolean = false
-    suspend fun stopElectronicMirror(): Boolean = false
-    /** Locks the head-unit display to landscape, including the current third-party app. */
-    suspend fun forceSystemLandscape(): Boolean = false
-    /** Releases the lock created by [forceSystemLandscape] and restores the vehicle rotation policy. */
-    suspend fun restoreSystemRotation(): Boolean = false
-    /** Raw BYD rotation state, or null when the vendor API is unavailable. */
-    suspend fun systemRotationState(): Int? = null
     /** Applies BYD's privileged lock-sound playback route state in the helper process. */
     suspend fun setLockSoundPlaybackState(enabled: Boolean): Boolean = false
 }
@@ -318,33 +297,6 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
 
     override suspend fun execShell(command: String): String? =
         execShellResult(command)?.takeIf { it.status == 0 }?.output
-
-    override suspend fun startElectronicMirror(
-        surface: Surface,
-        request: ElectronicMirrorCameraRequest,
-    ): Boolean =
-        statusOk(HelperBinderProtocol.TX_CAMERA_START, timeoutMs = FORCE_TIMEOUT_MS) { data ->
-            data.writeString(request.cameraTag)
-            data.writeInt(request.surfaceIndex)
-            data.writeInt(request.tileCount)
-            data.writeInt(request.bufferWidth)
-            data.writeInt(request.bufferHeight)
-            data.writeInt(request.fps)
-            surface.writeToParcel(data, 0)
-        }
-
-    override suspend fun stopElectronicMirror(): Boolean =
-        statusOk(HelperBinderProtocol.TX_CAMERA_STOP) { }
-
-    override suspend fun forceSystemLandscape(): Boolean =
-        statusOk(HelperBinderProtocol.TX_FORCE_SYSTEM_LANDSCAPE) { }
-
-    override suspend fun restoreSystemRotation(): Boolean =
-        statusOk(HelperBinderProtocol.TX_RESTORE_SYSTEM_ROTATION) { }
-
-    override suspend fun systemRotationState(): Int? =
-        transact(HelperBinderProtocol.TX_GET_SYSTEM_ROTATION_STATE) { }
-            ?.let { (status, value) -> value.takeIf { readAccepted(status) && it >= 0 } }
 
     override suspend fun setLockSoundPlaybackState(enabled: Boolean): Boolean =
         statusOk(HelperBinderProtocol.TX_SET_LOCK_SOUND_PLAYBACK_STATE) { data ->

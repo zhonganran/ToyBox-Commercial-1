@@ -33,7 +33,7 @@ class ClusterLyricOverlayController(
         if (container == null) show()
         lyricView?.apply {
             setTextSizeSp(18f * settings.clusterFontScale)
-            setVisibleLineCount(settings.sharedLineCount)
+            setVisibleLineCount(settings.clusterLineCount)
             setDisplayStyle(settings.clusterDisplayStyle())
             setFrame(frame, animate)
         }
@@ -152,7 +152,7 @@ class ClusterLyricOverlayController(
             style = settings.clusterDisplayStyle(),
             density = density(),
             scaledDensity = scaledDensity(),
-            lineCount = settings.sharedLineCount,
+            lineCount = settings.clusterLineCount,
         ).coerceIn(64, clusterHeight)
 
     private fun density(): Float =

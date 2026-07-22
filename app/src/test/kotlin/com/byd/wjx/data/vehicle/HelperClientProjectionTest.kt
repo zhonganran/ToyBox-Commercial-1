@@ -122,33 +122,4 @@ class HelperClientProjectionTest {
             .launchAndForce("com.autonavi.amapauto", 2, 1280, 480))
     }
 
-    @Test
-    fun `electronic mirror start sends independent surface profile before Surface`() = runBlocking {
-        var cameraTag: String? = null
-        val values = IntArray(5)
-        val fake = capturingFake(status = 0, value = 0) {
-            cameraTag = it.readString()
-            values.indices.forEach { index -> values[index] = it.readInt() }
-        }
-        val surface = makeSurface()
-        val request = ElectronicMirrorCameraRequest(
-            cameraTag = "pano_h",
-            surfaceIndex = 0,
-            tileCount = 4,
-            bufferWidth = 3000,
-            bufferHeight = 508,
-            fps = 30,
-        )
-
-        assertTrue(clientWith(fake).startElectronicMirror(surface, request))
-        assertEquals("pano_h", cameraTag)
-        assertArrayEquals(intArrayOf(0, 4, 3000, 508, 30), values)
-        surface.release()
-    }
-
-    @Test
-    fun `electronic mirror stop maps replies`() = runBlocking {
-        assertTrue(clientWith(capturingFake(status = 0, value = 0)).stopElectronicMirror())
-        assertFalse(clientWith(capturingFake(status = -7, value = -1)).stopElectronicMirror())
-    }
 }

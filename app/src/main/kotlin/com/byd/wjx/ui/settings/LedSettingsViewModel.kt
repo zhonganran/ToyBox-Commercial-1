@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.byd.wjx.led.LedBleClient
 import com.byd.wjx.led.LedConnectionState
 import com.byd.wjx.led.LedDevice
+import com.byd.wjx.led.LedLinkageRule
 import com.byd.wjx.led.LedPreferenceSnapshot
 import com.byd.wjx.led.LedPreferences
 import com.byd.wjx.led.LedRuntimeCoordinator
@@ -110,6 +111,26 @@ class LedSettingsViewModel @Inject constructor(
             val ok = runtimeCoordinator.testScene(scene)
             showMessage(if (ok) "正在测试：${scene.title}" else "请先连接LED设备")
         }
+    }
+
+    fun saveRule(rule: LedLinkageRule): Boolean {
+        val saved = preferences.saveRule(rule)
+        showMessage(if (saved) "联动规则已保存" else "同一条件只能创建一条规则")
+        return saved
+    }
+
+    fun deleteRule(id: String) {
+        preferences.deleteRule(id)
+        showMessage("联动规则已删除")
+    }
+
+    fun setRuleEnabled(id: String, enabled: Boolean) {
+        preferences.setRuleEnabled(id, enabled)
+        showMessage(if (enabled) "规则已启用" else "规则已停用")
+    }
+
+    fun moveRule(id: String, offset: Int) {
+        preferences.moveRule(id, offset)
     }
 
     private fun showMessage(message: String?) {

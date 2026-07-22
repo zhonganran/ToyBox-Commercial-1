@@ -36,7 +36,7 @@ class DesktopLyricOverlayController(
         showSoft()
         lyricView?.apply {
             setTextSizeSp(DESKTOP_TEXT_SIZE_SP * settings.desktopFontScale)
-            setVisibleLineCount(settings.sharedLineCount)
+            setVisibleLineCount(settings.desktopLineCount)
             setDisplayStyle(settings.displayStyle())
             setFrame(frame, animate)
         }
@@ -249,7 +249,7 @@ class DesktopLyricOverlayController(
         style = settings.displayStyle(),
         density = appContext.resources.displayMetrics.density,
         scaledDensity = appContext.resources.displayMetrics.scaledDensity,
-        lineCount = settings.sharedLineCount,
+        lineCount = settings.desktopLineCount,
     )
 
     private fun screenSize(): Pair<Int, Int> = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {

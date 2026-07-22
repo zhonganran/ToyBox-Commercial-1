@@ -35,6 +35,25 @@ import com.byd.wjx.ui.theme.TextPrimary
 import com.byd.wjx.ui.theme.TextSecondary
 import kotlin.math.roundToInt
 
+internal enum class LyricAdjustmentTarget(val id: String) {
+    DESKTOP("desktop"),
+    CLUSTER("cluster");
+
+    companion object {
+        fun fromId(id: String): LyricAdjustmentTarget = entries.firstOrNull { it.id == id } ?: DESKTOP
+    }
+}
+
+internal data class LyricAdjustmentState(
+    val lineCount: Int,
+    val fontScale: Float,
+    val textColor: Int,
+    val highlightColor: Int,
+    val fontStyleId: String,
+    val motionPresetId: String,
+    val syncOffset: Float,
+)
+
 internal data class LyricPanelState(
     val featureAllowed: Boolean,
     val desktopActive: Boolean,
@@ -42,18 +61,22 @@ internal data class LyricPanelState(
     val expanded: Boolean,
     val allowOtherApps: Boolean,
     val desktopTouchThrough: Boolean,
-    val sharedLineCount: Int,
-    val desktopFontScale: Float,
-    val clusterFontScale: Float,
-    val sharedTextColor: Int,
-    val sharedHighlightColor: Int,
-    val sharedFontStyleId: String,
-    val sharedMotionPresetId: String,
+    val desktopAdjustment: LyricAdjustmentState,
+    val clusterAdjustment: LyricAdjustmentState,
     val clusterX: Float,
     val clusterY: Float,
-    val syncOffset: Float,
 ) {
     val anyActive: Boolean get() = desktopActive || clusterActive
+
+    fun adjustment(target: LyricAdjustmentTarget): LyricAdjustmentState = when (target) {
+        LyricAdjustmentTarget.DESKTOP -> desktopAdjustment
+        LyricAdjustmentTarget.CLUSTER -> clusterAdjustment
+    }
+
+    fun active(target: LyricAdjustmentTarget): Boolean = when (target) {
+        LyricAdjustmentTarget.DESKTOP -> desktopActive
+        LyricAdjustmentTarget.CLUSTER -> clusterActive
+    }
 }
 
 internal data class LyricPanelActions(
@@ -64,16 +87,15 @@ internal data class LyricPanelActions(
     val onDesktopTouchThroughChange: (Boolean) -> Unit,
     val onOpenPlaybackPermission: () -> Unit,
     val onResetClusterPosition: () -> Unit,
-    val onSharedLineCountChange: (Int) -> Unit,
-    val onDesktopFontScaleChange: (Float) -> Unit,
-    val onClusterFontScaleChange: (Float) -> Unit,
-    val onSharedTextColorChange: (Int) -> Unit,
-    val onSharedHighlightColorChange: (Int) -> Unit,
-    val onSharedFontStyleChange: (String) -> Unit,
-    val onSharedMotionPresetChange: (String) -> Unit,
+    val onLineCountChange: (LyricAdjustmentTarget, Int) -> Unit,
+    val onFontScaleChange: (LyricAdjustmentTarget, Float) -> Unit,
+    val onTextColorChange: (LyricAdjustmentTarget, Int) -> Unit,
+    val onHighlightColorChange: (LyricAdjustmentTarget, Int) -> Unit,
+    val onFontStyleChange: (LyricAdjustmentTarget, String) -> Unit,
+    val onMotionPresetChange: (LyricAdjustmentTarget, String) -> Unit,
     val onClusterXChange: (Float) -> Unit,
     val onClusterYChange: (Float) -> Unit,
-    val onSyncOffsetChange: (Float) -> Unit,
+    val onSyncOffsetChange: (LyricAdjustmentTarget, Float) -> Unit,
 )
 
 @Composable
@@ -82,12 +104,14 @@ internal fun LyricSettingsPanel(
     actions: LyricPanelActions,
 ) {
     var adjustmentTarget by remember(state.desktopActive, state.clusterActive) {
-        mutableStateOf(if (state.desktopActive) AdjustmentTarget.DESKTOP else AdjustmentTarget.CLUSTER)
+        mutableStateOf(if (state.desktopActive) LyricAdjustmentTarget.DESKTOP else LyricAdjustmentTarget.CLUSTER)
     }
+    val adjustment = state.adjustment(adjustmentTarget)
+    val adjustmentActive = state.active(adjustmentTarget)
 
     ProSectionTitle(
         title = "歌词显示设置",
-        subtitle = "中控和仪表盘共用调节面板，大小与位置分别保存",
+        subtitle = "桌面歌词与仪表盘歌词分别保存全部显示参数",
     )
     ProGlassPanel(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -123,7 +147,7 @@ internal fun LyricSettingsPanel(
             if (state.anyActive) {
                 DetailToggleRow(
                     title = "歌词显示调节",
-                    subtitle = "颜色、字体和动效共用，中控与仪表盘的尺寸和位置互不影响",
+                    subtitle = "切换调节对象后，行数、大小、颜色、字体、动效和同步互不影响",
                     expanded = state.expanded,
                     onToggle = { actions.onExpandedChange(!state.expanded) },
                 )
@@ -163,7 +187,7 @@ internal fun LyricSettingsPanel(
                             onClick = actions.onOpenPlaybackPermission,
                             modifier = Modifier.weight(1f),
                         )
-                        if (adjustmentTarget == AdjustmentTarget.CLUSTER && state.clusterActive) {
+                        if (adjustmentTarget == LyricAdjustmentTarget.CLUSTER && state.clusterActive) {
                             SecondaryLyricButton(
                                 text = "重置仪表位置",
                                 onClick = actions.onResetClusterPosition,
@@ -175,23 +199,23 @@ internal fun LyricSettingsPanel(
                     PresetChipRow(
                         title = "调节对象",
                         options = buildList {
-                            if (state.desktopActive) add(AdjustmentTarget.DESKTOP.id to "中控")
-                            if (state.clusterActive) add(AdjustmentTarget.CLUSTER.id to "仪表盘")
+                            if (state.desktopActive) add(LyricAdjustmentTarget.DESKTOP.id to "中控")
+                            if (state.clusterActive) add(LyricAdjustmentTarget.CLUSTER.id to "仪表盘")
                         },
                         selectedId = adjustmentTarget.id,
                         enabled = state.anyActive,
-                        onSelect = { adjustmentTarget = AdjustmentTarget.fromId(it) },
+                        onSelect = { adjustmentTarget = LyricAdjustmentTarget.fromId(it) },
                     )
 
                     when (adjustmentTarget) {
-                        AdjustmentTarget.DESKTOP -> {
+                        LyricAdjustmentTarget.DESKTOP -> {
                             LyricSlider(
                                 label = "中控歌词大小",
-                                value = state.desktopFontScale,
-                                valueText = "${(state.desktopFontScale * 100).roundToInt()}%",
+                                value = adjustment.fontScale,
+                                valueText = "${(adjustment.fontScale * 100).roundToInt()}%",
                                 range = LyricSettings.FONT_SCALE_MIN..LyricSettings.FONT_SCALE_MAX,
                                 enabled = state.desktopActive,
-                                onValueChange = actions.onDesktopFontScaleChange,
+                                onValueChange = { actions.onFontScaleChange(adjustmentTarget, it) },
                             )
                             Text(
                                 text = "中控歌词位置直接在悬浮歌词上拖动调节",
@@ -200,14 +224,14 @@ internal fun LyricSettingsPanel(
                             )
                         }
 
-                        AdjustmentTarget.CLUSTER -> {
+                        LyricAdjustmentTarget.CLUSTER -> {
                             LyricSlider(
                                 label = "仪表盘歌词大小",
-                                value = state.clusterFontScale,
-                                valueText = "${(state.clusterFontScale * 100).roundToInt()}%",
+                                value = adjustment.fontScale,
+                                valueText = "${(adjustment.fontScale * 100).roundToInt()}%",
                                 range = LyricSettings.FONT_SCALE_MIN..LyricSettings.FONT_SCALE_MAX,
                                 enabled = state.clusterActive,
-                                onValueChange = actions.onClusterFontScaleChange,
+                                onValueChange = { actions.onFontScaleChange(adjustmentTarget, it) },
                             )
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -236,24 +260,25 @@ internal fun LyricSettingsPanel(
                     }
 
                     PresetChipRow(
-                        title = "歌词行数（中控与仪表盘共用）",
-                        options = (LyricSettings.SHARED_LINE_COUNT_MIN..LyricSettings.SHARED_LINE_COUNT_MAX)
+                        title = if (adjustmentTarget == LyricAdjustmentTarget.DESKTOP) "中控歌词行数" else "仪表盘歌词行数",
+                        options = (LyricSettings.LINE_COUNT_MIN..LyricSettings.LINE_COUNT_MAX)
                             .map { it.toString() to "${it}行" },
-                        selectedId = state.sharedLineCount.toString(),
-                        enabled = state.anyActive,
+                        selectedId = adjustment.lineCount.toString(),
+                        enabled = adjustmentActive,
                         onSelect = { value ->
-                            actions.onSharedLineCountChange(
-                                value.toIntOrNull() ?: LyricSettings.SHARED_LINE_COUNT_DEFAULT,
+                            actions.onLineCountChange(
+                                adjustmentTarget,
+                                value.toIntOrNull() ?: LyricSettings.LINE_COUNT_DEFAULT,
                             )
                         },
                     )
 
                     LyricColorControls(
-                        textColor = state.sharedTextColor,
-                        highlightColor = state.sharedHighlightColor,
-                        enabled = state.anyActive,
-                        onTextColorChange = actions.onSharedTextColorChange,
-                        onHighlightColorChange = actions.onSharedHighlightColorChange,
+                        textColor = adjustment.textColor,
+                        highlightColor = adjustment.highlightColor,
+                        enabled = adjustmentActive,
+                        onTextColorChange = { actions.onTextColorChange(adjustmentTarget, it) },
+                        onHighlightColorChange = { actions.onHighlightColorChange(adjustmentTarget, it) },
                     )
 
                     Row(
@@ -263,41 +288,32 @@ internal fun LyricSettingsPanel(
                         PresetChipRow(
                             title = "字体风格",
                             options = LyricStylePresets.fonts.map { it.id to it.label },
-                            selectedId = state.sharedFontStyleId,
-                            enabled = state.anyActive,
-                            onSelect = actions.onSharedFontStyleChange,
+                            selectedId = adjustment.fontStyleId,
+                            enabled = adjustmentActive,
+                            onSelect = { actions.onFontStyleChange(adjustmentTarget, it) },
                             modifier = Modifier.weight(1f),
                         )
                         PresetChipRow(
                             title = "滚动动效",
                             options = LyricStylePresets.motions.map { it.id to it.label },
-                            selectedId = state.sharedMotionPresetId,
-                            enabled = state.anyActive,
-                            onSelect = actions.onSharedMotionPresetChange,
+                            selectedId = adjustment.motionPresetId,
+                            enabled = adjustmentActive,
+                            onSelect = { actions.onMotionPresetChange(adjustmentTarget, it) },
                             modifier = Modifier.weight(1f),
                         )
                     }
 
                     LyricSlider(
                         label = "歌词同步微调",
-                        value = state.syncOffset,
-                        valueText = LyricSettings.formatOffset(state.syncOffset.roundToInt()),
+                        value = adjustment.syncOffset,
+                        valueText = LyricSettings.formatOffset(adjustment.syncOffset.roundToInt()),
                         range = LyricSettings.SYNC_MIN_MS.toFloat()..LyricSettings.SYNC_MAX_MS.toFloat(),
-                        enabled = state.anyActive,
-                        onValueChange = actions.onSyncOffsetChange,
+                        enabled = adjustmentActive,
+                        onValueChange = { actions.onSyncOffsetChange(adjustmentTarget, it) },
                     )
                 }
             }
         }
-    }
-}
-
-private enum class AdjustmentTarget(val id: String) {
-    DESKTOP("desktop"),
-    CLUSTER("cluster");
-
-    companion object {
-        fun fromId(id: String): AdjustmentTarget = values().firstOrNull { it.id == id } ?: DESKTOP
     }
 }
 

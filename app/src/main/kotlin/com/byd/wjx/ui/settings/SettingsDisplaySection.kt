@@ -34,19 +34,16 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Apps
-import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.BluetoothConnected
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.ContactSupport
 import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DirectionsCar
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.ScreenRotation
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material3.Icon
@@ -73,7 +70,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.FilterChip
@@ -94,7 +90,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.text.font.FontFamily
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -142,7 +137,6 @@ import java.net.URL
 @Composable
 internal fun DisplaySection(state: SettingsUiState, viewModel: SettingsViewModel) {
     val context = LocalContext.current
-    val appRotationConfig by viewModel.appRotationConfig.collectAsStateWithLifecycle()
     val keyShortcutAllowed = state.activation.activated || state.activation.trialActive
     val projectionPreferences = remember(context) { ClusterProjectionPreferences(context) }
     val projectionSnapshot = remember(projectionPreferences) { projectionPreferences.snapshot() }
@@ -196,89 +190,6 @@ internal fun DisplaySection(state: SettingsUiState, viewModel: SettingsViewModel
     var projectionLayout by remember {
         mutableStateOf(projectionSnapshot.layout)
     }
-    var pickingRotationApp by remember { mutableStateOf(false) }
-
-    SectionHeader(text = "应用显示")
-    Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = CardSurfaceElevated),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.ScreenRotation,
-                    contentDescription = null,
-                    tint = AccentGreen,
-                )
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("应用横屏", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    Text(
-                        if (appRotationConfig.targets.isEmpty()) "未选择应用" else "已选择 ${appRotationConfig.targets.size} 个应用",
-                        color = TextSecondary,
-                        fontSize = 12.sp,
-                    )
-                }
-                Switch(
-                    checked = appRotationConfig.enabled,
-                    onCheckedChange = viewModel::setAppRotationEnabled,
-                    colors = bydSwitchColors(),
-                )
-            }
-
-            appRotationConfig.targets.forEach { target ->
-                HorizontalDivider(color = CardBorder.copy(alpha = 0.7f))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 48.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(target.label, color = TextPrimary, fontSize = 13.sp, maxLines = 1)
-                        Text(target.packageName, color = TextMuted, fontSize = 11.sp, maxLines = 1)
-                    }
-                    IconButton(onClick = { viewModel.removeAppRotationTarget(target.packageName) }) {
-                        Icon(
-                            imageVector = Icons.Outlined.Delete,
-                            contentDescription = "删除 ${target.label}",
-                            tint = TextSecondary,
-                        )
-                    }
-                }
-            }
-
-            HorizontalDivider(color = CardBorder.copy(alpha = 0.7f))
-            TextButton(
-                onClick = { pickingRotationApp = true },
-                modifier = Modifier.align(Alignment.End).padding(horizontal = 6.dp),
-            ) {
-                Icon(Icons.Outlined.Add, contentDescription = null, tint = AccentGreen)
-                Spacer(Modifier.width(6.dp))
-                Text("添加应用", color = AccentGreen)
-            }
-        }
-    }
-
-    if (pickingRotationApp) {
-        AppLaunchPickerDialog(
-            currentPackage = "",
-            onDismiss = { pickingRotationApp = false },
-            onSelect = { packageName, label ->
-                viewModel.addAppRotationTarget(packageName, label)
-                viewModel.setAppRotationEnabled(true)
-                pickingRotationApp = false
-            },
-        )
-    }
-
     SectionHeader(text = "车外音效")
     Card(
         shape = RoundedCornerShape(12.dp),
@@ -377,7 +288,7 @@ internal fun DisplaySection(state: SettingsUiState, viewModel: SettingsViewModel
                 SteeringWheelKeyService.resetShortcutRuntimeState()
                 keyShortcutEditor = null
                 if (
-                    binding.actionType in setOf(KeyShortcutActionType.RealtimeHailing, KeyShortcutActionType.Xiaozhi) &&
+                    binding.actionType == KeyShortcutActionType.RealtimeHailing &&
                     ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
                 ) {
                     micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)

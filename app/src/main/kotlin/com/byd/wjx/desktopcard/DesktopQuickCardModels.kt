@@ -169,11 +169,41 @@ object DesktopQuickCardLayout {
 }
 
 object DesktopQuickCardAnchor {
-    fun expandedX(collapsedX: Int, collapsedWidth: Int, expandedWidth: Int): Int =
-        collapsedX + collapsedWidth / 2 - expandedWidth / 2
+    fun edgeFor(
+        collapsedX: Int,
+        collapsedWidth: Int,
+        screenWidth: Int,
+    ): DesktopQuickCardHorizontalAnchor =
+        if (collapsedX + collapsedWidth / 2 <= screenWidth / 2) {
+            DesktopQuickCardHorizontalAnchor.START
+        } else {
+            DesktopQuickCardHorizontalAnchor.END
+        }
 
-    fun collapsedX(expandedX: Int, expandedWidth: Int, collapsedWidth: Int): Int =
-        expandedX + expandedWidth / 2 - collapsedWidth / 2
+    fun expandedX(
+        collapsedX: Int,
+        collapsedWidth: Int,
+        expandedWidth: Int,
+        anchor: DesktopQuickCardHorizontalAnchor,
+    ): Int = when (anchor) {
+        DesktopQuickCardHorizontalAnchor.START -> collapsedX
+        DesktopQuickCardHorizontalAnchor.END -> collapsedX + collapsedWidth - expandedWidth
+    }
+
+    fun collapsedX(
+        expandedX: Int,
+        expandedWidth: Int,
+        collapsedWidth: Int,
+        anchor: DesktopQuickCardHorizontalAnchor,
+    ): Int = when (anchor) {
+        DesktopQuickCardHorizontalAnchor.START -> expandedX
+        DesktopQuickCardHorizontalAnchor.END -> expandedX + expandedWidth - collapsedWidth
+    }
+}
+
+enum class DesktopQuickCardHorizontalAnchor {
+    START,
+    END,
 }
 
 enum class DesktopQuickCardVisibilityReason {

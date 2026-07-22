@@ -95,7 +95,10 @@ internal suspend fun seedDefaultAutomationPresets(
         ruleDao.insert(
             preset.toEditingRule(outsideSoundAction)
                 .toRuleEntity()
-                .copy(createdAt = now - preset.ordinal),
+                .copy(
+                    enabled = false,
+                    createdAt = now - preset.ordinal,
+                ),
         )
         ruleCount += 1
         insertedCount += 1

@@ -23,22 +23,16 @@ class KeyShortcutSettingsTest {
     }
 
     @Test
-    fun `streaming rear mirror binding survives persistence`() {
-        val settings = KeyShortcutSettings(context)
-        settings.save(
-            listOf(
-                KeyShortcutBinding(
-                    id = "streaming-rear-1",
-                    keyCode = 24,
-                    pressType = KeyShortcutPressType.Double,
-                    actionType = KeyShortcutActionType.StreamingRearMirror,
-                )
+    fun `unknown action binding is discarded`() {
+        context.getSharedPreferences(KeyShortcutSettings.PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(
+                "bindings_json",
+                """[{"id":"retired-1","keyCode":24,"pressType":"double","actionType":"retired_action","enabled":true}]""",
             )
-        )
+            .commit()
 
-        val restored = KeyShortcutSettings(context).load().single()
-        assertEquals(KeyShortcutActionType.StreamingRearMirror, restored.actionType)
-        assertTrue(restored.isConfigured)
+        assertTrue(KeyShortcutSettings(context).load().isEmpty())
     }
 
     @Test
@@ -55,22 +49,4 @@ class KeyShortcutSettingsTest {
         assertEquals(KeyShortcutActionType.PlaySound, restored.actionType)
     }
 
-    @Test
-    fun `xiaozhi binding survives persistence without extra payload`() {
-        val settings = KeyShortcutSettings(context)
-        settings.save(
-            listOf(
-                KeyShortcutBinding(
-                    id = "xiaozhi-1",
-                    keyCode = 85,
-                    pressType = KeyShortcutPressType.Long,
-                    actionType = KeyShortcutActionType.Xiaozhi,
-                ),
-            ),
-        )
-
-        val restored = KeyShortcutSettings(context).load().single()
-        assertEquals(KeyShortcutActionType.Xiaozhi, restored.actionType)
-        assertTrue(restored.isConfigured)
-    }
 }

@@ -1,0 +1,71 @@
+package com.byd.wjx.led
+
+import org.json.JSONArray
+import org.json.JSONObject
+
+internal object LedLinkageRuleCodec {
+    fun encode(rules: List<LedLinkageRule>): String = JSONArray().apply {
+        rules.forEach { rule ->
+            put(JSONObject().apply {
+                put("id", rule.id)
+                put("enabled", rule.enabled)
+                put("triggerType", rule.triggerType.name)
+                put("conditionValue", rule.conditionValue)
+                put("steps", JSONArray().apply {
+                    rule.steps.forEach { step ->
+                        put(JSONObject().apply {
+                            put("scene", step.scene.name)
+                            put("durationSeconds", step.durationSeconds)
+                        })
+                    }
+                })
+            })
+        }
+    }.toString()
+
+    fun decode(raw: String): List<LedLinkageRule>? = runCatching {
+        val array = JSONArray(raw)
+        val seenConditions = linkedSetOf<Pair<LedLinkageTriggerType, String>>()
+        val seenIds = linkedSetOf<String>()
+        buildList {
+            for (index in 0 until array.length()) {
+                val json = array.optJSONObject(index) ?: continue
+                val type = enumValueOrNull<LedLinkageTriggerType>(json.optString("triggerType"))
+                    ?: continue
+                val condition = json.optString("conditionValue")
+                if (LedLinkageCatalog.options(type).none { it.value == condition }) continue
+                if (!seenConditions.add(type to condition)) continue
+
+                val stepsJson = json.optJSONArray("steps") ?: JSONArray()
+                val steps = buildList {
+                    for (stepIndex in 0 until stepsJson.length()) {
+                        val stepJson = stepsJson.optJSONObject(stepIndex) ?: continue
+                        val scene = enumValueOrNull<LedScene>(stepJson.optString("scene")) ?: continue
+                        add(
+                            LedLinkageStep(
+                                scene = scene,
+                                durationSeconds = stepJson.optInt("durationSeconds", 5),
+                            ).normalized()
+                        )
+                    }
+                }
+                if (steps.isEmpty()) continue
+
+                val id = json.optString("id").ifBlank { "restored_${index}_${type.name}_$condition" }
+                if (!seenIds.add(id)) continue
+                add(
+                    LedLinkageRule(
+                        id = id,
+                        enabled = json.optBoolean("enabled", true),
+                        triggerType = type,
+                        conditionValue = condition,
+                        steps = steps,
+                    ).normalized()
+                )
+            }
+        }
+    }.getOrNull()
+
+    private inline fun <reified T : Enum<T>> enumValueOrNull(value: String): T? =
+        enumValues<T>().firstOrNull { it.name == value }
+}

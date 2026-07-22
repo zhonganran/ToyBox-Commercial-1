@@ -51,6 +51,7 @@ data class DesktopQuickCardRenderState(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val floatingIcon: DesktopQuickCardIcon = DesktopQuickCardIconCatalog.default,
     val expanded: Boolean = false,
+    val horizontalAnchor: DesktopQuickCardHorizontalAnchor = DesktopQuickCardHorizontalAnchor.START,
     val activeCommand: String? = null,
     val activeSoundPath: String? = null,
 )
@@ -126,7 +127,10 @@ fun DesktopQuickCardContent(
 
     Box(
         modifier = Modifier.width(cardWidth),
-        contentAlignment = Alignment.TopCenter,
+        contentAlignment = when (state.horizontalAnchor) {
+            DesktopQuickCardHorizontalAnchor.START -> Alignment.TopStart
+            DesktopQuickCardHorizontalAnchor.END -> Alignment.TopEnd
+        },
     ) {
         Column(
             modifier = Modifier

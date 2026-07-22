@@ -39,7 +39,6 @@ class LedRuntimeCoordinatorTest {
         coEvery { parsReader.fetchLedMotionVehicleSnapshot() } returns null
         coEvery { parsReader.fetchLedBrakeVehicleSnapshot() } returns null
         coEvery { parsReader.fetchLedBodyVehicleSnapshot() } returns null
-        coEvery { parsReader.fetchLedAdasVehicleSnapshot() } returns null
 
         val coordinator = LedRuntimeCoordinator(preferences, bleClient, parsReader)
         coordinator.start(backgroundScope)
@@ -51,9 +50,9 @@ class LedRuntimeCoordinatorTest {
         assertEquals(LedScene.DEFAULT, coordinator.runtime.value.currentScene)
 
         coordinator.onVehicleData(diParsData(gear = 4, powerState = 3))
-        coordinator.onVehicleData(diParsData(gear = 1, powerState = 3))
-        assertEquals(LedScene.TEMPORARY_STOP, coordinator.runtime.value.currentScene)
-        coVerify(exactly = 1) { bleClient.play(LedScene.TEMPORARY_STOP) }
+        coordinator.onVehicleData(diParsData(gear = 2, powerState = 3))
+        assertEquals(LedScene.REVERSE_PARKING, coordinator.runtime.value.currentScene)
+        coVerify(exactly = 1) { bleClient.play(LedScene.REVERSE_PARKING) }
 
         connectionState.value = LedConnectionState(phase = LedConnectionPhase.IDLE)
         runCurrent()

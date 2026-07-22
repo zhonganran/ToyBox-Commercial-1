@@ -14,6 +14,4 @@ interface ParsReader {
     suspend fun fetchLedBrakeVehicleSnapshot(): VehicleSnapshot? = fetchActionVehicleSnapshot()
 
     suspend fun fetchLedBodyVehicleSnapshot(): VehicleSnapshot? = fetchActionVehicleSnapshot()
-
-    suspend fun fetchLedAdasVehicleSnapshot(): VehicleSnapshot? = fetchActionVehicleSnapshot()
 }

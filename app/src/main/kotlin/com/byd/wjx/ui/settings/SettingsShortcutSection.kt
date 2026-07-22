@@ -251,8 +251,6 @@ private fun KeyShortcutRow(
                 text = when (binding.actionType) {
                     KeyShortcutActionType.PlaySound -> "按键播放音效"
                     KeyShortcutActionType.RealtimeHailing -> "按键实时喊话"
-                    KeyShortcutActionType.Xiaozhi -> "按键小智对话"
-                    KeyShortcutActionType.StreamingRearMirror -> "按键流媒体后视镜"
                 },
                 color = TextPrimary,
                 fontSize = 13.sp,
@@ -320,20 +318,6 @@ internal fun KeyShortcutEditorDialog(
                         label = "实时喊话",
                         selected = editor.actionType == KeyShortcutActionType.RealtimeHailing,
                         onClick = { onEditorChanged(editor.copy(actionType = KeyShortcutActionType.RealtimeHailing)) },
-                    )
-                    KeyShortcutChoiceChip(
-                        label = "小智对话",
-                        selected = editor.actionType == KeyShortcutActionType.Xiaozhi,
-                        onClick = { onEditorChanged(editor.copy(actionType = KeyShortcutActionType.Xiaozhi)) },
-                    )
-                    KeyShortcutChoiceChip(
-                        label = "流媒体后视镜",
-                        selected = editor.actionType == KeyShortcutActionType.StreamingRearMirror,
-                        onClick = {
-                            onEditorChanged(
-                                editor.copy(actionType = KeyShortcutActionType.StreamingRearMirror),
-                            )
-                        },
                     )
                 }
 

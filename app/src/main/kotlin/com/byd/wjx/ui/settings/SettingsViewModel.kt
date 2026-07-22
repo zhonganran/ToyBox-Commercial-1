@@ -22,7 +22,6 @@ import com.byd.wjx.audio.LockSoundConfigSync
 import com.byd.wjx.audio.LockSoundEvent
 import com.byd.wjx.audio.LockSoundSettings
 import com.byd.wjx.log.WjxFileLogger
-import com.byd.wjx.rotation.AppRotationPreferences
 import com.byd.wjx.storage.SoundLibrary
 import com.byd.wjx.vehicle.CarProfile
 import com.byd.wjx.vehicle.CarProfileDetector
@@ -64,7 +63,6 @@ class SettingsViewModel @Inject constructor(
     private val okHttpClient: OkHttpClient,
     private val serviceQrCache: ServiceQrCache,
     private val logRecorder: SettingsLogRecorder,
-    private val appRotationPreferences: AppRotationPreferences,
     private val carProfileDetector: CarProfileDetector = CarProfileDetector(),
 ) : ViewModel() {
     private val lockSoundSettings = LockSoundSettings(appContext)
@@ -74,27 +72,14 @@ class SettingsViewModel @Inject constructor(
         autoCheckUpdates = UpdateChecker.isAutoCheckEnabled(appContext)
     ))
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
-    val appRotationConfig = appRotationPreferences.config
 
     // Tracks the in-flight update download so "Close" can cancel it (issue #23).
     private var downloadJob: Job? = null
     private var availableUpdate: UpdateChecker.UpdateInfo? = null
-    private var versionTapCount = 0
 
     private fun getVersion(): String = try {
         appContext.packageManager.getPackageInfo(appContext.packageName, 0).versionName ?: "?"
     } catch (_: Exception) { "?" }
-
-    fun onVersionTapped() {
-        if (_uiState.value.electronicMirrorUnlocked) return
-        versionTapCount += 1
-        if (versionTapCount < ELECTRONIC_MIRROR_UNLOCK_TAPS) return
-        versionTapCount = 0
-        _uiState.update { it.copy(electronicMirrorUnlocked = true) }
-        viewModelScope.launch {
-            settingsRepository.setString(SettingsRepository.KEY_ELECTRONIC_MIRROR_UNLOCKED, "true")
-        }
-    }
 
     init {
         loadSettings()
@@ -115,18 +100,6 @@ class SettingsViewModel @Inject constructor(
 
     fun reloadLockSoundChoices() {
         loadLockSoundSettings()
-    }
-
-    fun setAppRotationEnabled(enabled: Boolean) {
-        appRotationPreferences.setEnabled(enabled)
-    }
-
-    fun addAppRotationTarget(packageName: String, label: String) {
-        appRotationPreferences.addTarget(packageName, label)
-    }
-
-    fun removeAppRotationTarget(packageName: String) {
-        appRotationPreferences.removeTarget(packageName)
     }
 
     fun setLockSoundEnabled(event: LockSoundEvent, enabled: Boolean) {
@@ -420,14 +393,6 @@ class SettingsViewModel @Inject constructor(
                 SettingsRepository.KEY_CONSUMPTION_BAD,
                 SettingsRepository.DEFAULT_CONSUMPTION_BAD
             )
-            val electronicMirrorUnlocked = settingsRepository.getString(
-                SettingsRepository.KEY_ELECTRONIC_MIRROR_UNLOCKED,
-                "false",
-            ).toBooleanStrictOrNull() ?: false
-            _uiState.update {
-                it.copy(electronicMirrorUnlocked = it.electronicMirrorUnlocked || electronicMirrorUnlocked)
-            }
-
             // Read boot log from SharedPreferences
             val bootInfo = readBootInfo()
             val chainLog = readChainLog()
@@ -446,7 +411,6 @@ class SettingsViewModel @Inject constructor(
                     tripCostTariff = tripCostTariff,
                     consumptionGood = consumptionGood,
                     consumptionBad = consumptionBad,
-                    electronicMirrorUnlocked = it.electronicMirrorUnlocked || electronicMirrorUnlocked,
                     lastBootInfo = bootInfo,
                     chainLog = chainLog,
                     tripGpsRecordingEnabled = tripGpsRecordingEnabled,
@@ -454,10 +418,6 @@ class SettingsViewModel @Inject constructor(
                 )
             }
         }
-    }
-
-    private companion object {
-        const val ELECTRONIC_MIRROR_UNLOCK_TAPS = 5
     }
 
     fun updateBatteryCapacity(value: String) {

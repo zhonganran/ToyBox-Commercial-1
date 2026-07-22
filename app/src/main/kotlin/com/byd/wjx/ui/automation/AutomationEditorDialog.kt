@@ -429,7 +429,7 @@ internal fun EditorDialog(
                         colors = ButtonDefaults.buttonColors(containerColor = AccentGreen, contentColor = AccentContent),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.height(48.dp),
-                        enabled = editing.name.isNotBlank() && editing.triggers.isNotEmpty() && editing.actions.isNotEmpty()
+                        enabled = editing.hasMinimumSaveFields()
                     ) { Text(stringResource(R.string.automation_save_button), fontWeight = FontWeight.SemiBold) }
                 }
             }

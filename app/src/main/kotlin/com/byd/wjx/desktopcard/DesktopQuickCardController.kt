@@ -69,8 +69,9 @@ class DesktopQuickCardController @Inject constructor(
     private var dragStartRawY = 0f
     private var dragStartWindowX = 0
     private var dragStartWindowY = 0
-    private var collapsedAnchorCenterX: Int? = null
+    private var collapsedAnchorX: Int? = null
     private var collapsedAnchorTopY: Int? = null
+    private var horizontalAnchor = DesktopQuickCardHorizontalAnchor.START
 
     private val playbackReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -294,10 +295,15 @@ class DesktopQuickCardController @Inject constructor(
         val view = composeView
         layoutParams?.let { params ->
             val collapsedWidth = view?.width?.takeIf { it > 0 } ?: collapsedIconSizePx()
-            collapsedAnchorCenterX = params.x + collapsedWidth / 2
+            horizontalAnchor = DesktopQuickCardAnchor.edgeFor(
+                collapsedX = params.x,
+                collapsedWidth = collapsedWidth,
+                screenWidth = screenSize().x,
+            )
+            collapsedAnchorX = params.x
             collapsedAnchorTopY = params.y
         }
-        renderState.update { it.copy(expanded = true) }
+        renderState.update { it.copy(expanded = true, horizontalAnchor = horizontalAnchor) }
         updateLayoutAfterContentResize(restoreCollapsedAnchor = false)
     }
 
@@ -313,15 +319,27 @@ class DesktopQuickCardController @Inject constructor(
         view.post {
             view.post {
                 val params = layoutParams ?: return@post
-                collapsedAnchorCenterX?.let { params.x = it - view.width / 2 }
+                collapsedAnchorX?.let { collapsedX ->
+                    params.x = DesktopQuickCardAnchor.expandedX(
+                        collapsedX = collapsedX,
+                        collapsedWidth = collapsedIconSizePx(),
+                        expandedWidth = view.width,
+                        anchor = horizontalAnchor,
+                    )
+                }
                 collapsedAnchorTopY?.let { params.y = it }
                 clampPosition(params)
                 runCatching { windowManager.updateViewLayout(view, params) }
-                collapsedAnchorCenterX = params.x + view.width / 2
+                collapsedAnchorX = DesktopQuickCardAnchor.collapsedX(
+                    expandedX = params.x,
+                    expandedWidth = view.width,
+                    collapsedWidth = collapsedIconSizePx(),
+                    anchor = horizontalAnchor,
+                )
                 collapsedAnchorTopY = params.y
                 if (restoreCollapsedAnchor) {
                     repository.savePosition(params.x, params.y)
-                    collapsedAnchorCenterX = null
+                    collapsedAnchorX = null
                     collapsedAnchorTopY = null
                 }
             }
@@ -376,12 +394,18 @@ class DesktopQuickCardController @Inject constructor(
         layoutParams?.let { params ->
             if (renderState.value.expanded) {
                 val expandedWidth = composeView?.width?.takeIf { it > 0 } ?: collapsedIconSizePx()
-                collapsedAnchorCenterX = params.x + expandedWidth / 2
+                collapsedAnchorX = DesktopQuickCardAnchor.collapsedX(
+                    expandedX = params.x,
+                    expandedWidth = expandedWidth,
+                    collapsedWidth = collapsedIconSizePx(),
+                    anchor = horizontalAnchor,
+                )
                 collapsedAnchorTopY = params.y
                 val collapsedX = DesktopQuickCardAnchor.collapsedX(
                     expandedX = params.x,
                     expandedWidth = expandedWidth,
                     collapsedWidth = collapsedIconSizePx(),
+                    anchor = horizontalAnchor,
                 )
                 val position = clampCollapsedPosition(collapsedX, params.y)
                 repository.savePosition(position.x, position.y)
@@ -427,7 +451,7 @@ class DesktopQuickCardController @Inject constructor(
         layoutParams = null
         lifecycleOwner?.onDestroy()
         lifecycleOwner = null
-        collapsedAnchorCenterX = null
+        collapsedAnchorX = null
         collapsedAnchorTopY = null
         if (view != null) runCatching { windowManager.removeViewImmediate(view) }
     }

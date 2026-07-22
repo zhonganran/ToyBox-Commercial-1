@@ -36,7 +36,6 @@ open class SettingsRepository @Inject constructor(
         const val KEY_CONSUMPTION_BAD = "consumption_bad_threshold"
         const val KEY_LAST_ENERGYDATA_IMPORT_TS = "last_energydata_import_ts"
         const val KEY_RECORD_TRIP_GPS = "record_trip_gps"
-        const val KEY_ELECTRONIC_MIRROR_UNLOCKED = "electronic_mirror_unlocked"
         const val KEY_LAST_MILEAGE_KM = "last_mileage_km"
         const val KEY_LAST_CAPACITY_KWH = "last_capacity_kwh"
         const val KEY_LAST_STATE_TS = "last_state_ts"

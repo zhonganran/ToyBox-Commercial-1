@@ -50,6 +50,11 @@ class AutomationPresetsTest {
         assertEquals("AdasApaParkingStatus", autoParking.triggers.single().param)
         assertEquals("4", autoParking.triggers.single().value)
         assertTrue(autoParking.actions.single().outsideSoundLoop())
+
+        assertTrue(plugIn.hasMinimumSaveFields())
+        assertTrue(unplug.hasMinimumSaveFields())
+        assertTrue(reverse.hasMinimumSaveFields())
+        assertTrue(autoParking.hasMinimumSaveFields())
     }
 
     @Test
@@ -77,6 +82,7 @@ class AutomationPresetsTest {
         assertEquals(4, inserted)
         assertEquals(AutomationPreset.entries.map { it.label }, insertedRules.map { it.name })
         assertEquals(listOf(1_000L, 999L, 998L, 997L), insertedRules.map { it.createdAt })
+        assertTrue(insertedRules.all { !it.enabled })
         coVerify(exactly = 1) {
             settingsRepository.setString(DEFAULT_AUTOMATION_PRESETS_INITIALIZED_KEY, "true")
         }

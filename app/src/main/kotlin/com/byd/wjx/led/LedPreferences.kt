@@ -34,6 +34,47 @@ class LedPreferences @Inject constructor(
         putInt(KEY_BRIGHTNESS, percent.coerceIn(0, 100))
     }
 
+    fun saveRule(rule: LedLinkageRule): Boolean {
+        val normalized = rule.normalized()
+        val current = _state.value.rules
+        val duplicate = current.any {
+            it.id != normalized.id &&
+                it.triggerType == normalized.triggerType &&
+                it.conditionValue == normalized.conditionValue
+        }
+        if (duplicate) return false
+
+        val index = current.indexOfFirst { it.id == normalized.id }
+        val updated = if (index >= 0) {
+            current.toMutableList().apply { this[index] = normalized }
+        } else {
+            current + normalized
+        }
+        setRules(updated)
+        return true
+    }
+
+    fun deleteRule(id: String) = setRules(_state.value.rules.filterNot { it.id == id })
+
+    fun setRuleEnabled(id: String, enabled: Boolean) = setRules(
+        _state.value.rules.map { if (it.id == id) it.copy(enabled = enabled) else it }
+    )
+
+    fun moveRule(id: String, offset: Int) {
+        val rules = _state.value.rules.toMutableList()
+        val from = rules.indexOfFirst { it.id == id }
+        if (from < 0) return
+        val to = (from + offset).coerceIn(rules.indices)
+        if (from == to) return
+        val item = rules.removeAt(from)
+        rules.add(to, item)
+        setRules(rules)
+    }
+
+    private fun setRules(rules: List<LedLinkageRule>) = update {
+        putString(KEY_RULES_V2, LedLinkageRuleCodec.encode(rules))
+    }
+
     private fun update(block: android.content.SharedPreferences.Editor.() -> Unit) {
         prefs.edit().apply(block).apply()
         _state.value = readSnapshot()
@@ -44,6 +85,9 @@ class LedPreferences @Inject constructor(
         deviceAddress = prefs.getString(KEY_DEVICE_ADDRESS, "").orEmpty(),
         deviceName = prefs.getString(KEY_DEVICE_NAME, "").orEmpty(),
         brightness = prefs.getInt(KEY_BRIGHTNESS, 70).coerceIn(0, 100),
+        rules = prefs.getString(KEY_RULES_V2, null)
+            ?.let(LedLinkageRuleCodec::decode)
+            ?: LedLinkageDefaults.rules,
     )
 
     companion object {
@@ -52,6 +96,6 @@ class LedPreferences @Inject constructor(
         private const val KEY_DEVICE_ADDRESS = "device_address"
         private const val KEY_DEVICE_NAME = "device_name"
         private const val KEY_BRIGHTNESS = "brightness"
+        internal const val KEY_RULES_V2 = "rules_v2"
     }
 }
-

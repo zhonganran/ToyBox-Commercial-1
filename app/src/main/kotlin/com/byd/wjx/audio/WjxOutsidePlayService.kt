@@ -145,14 +145,6 @@ class WjxOutsidePlayService : Service() {
             return
         }
 
-        if (audioUsage.isActive(AudioOwner.XiaozhiConversation)) {
-            WjxFileLogger.i(TAG, "play skipped while Xiaozhi owns cabin audio path=${file.absolutePath}")
-            broadcastState(STATE_STOPPED, file.absolutePath, owner)
-            audioUsage.setActive(AudioOwner.ExteriorPlayback, false)
-            stopSelf()
-            return
-        }
-
         val startedAt = System.currentTimeMillis()
         WjxFileLogger.i(TAG, "play start file=${file.absolutePath} size=${file.length()} channel=$channel loop=$loop owner=${owner.orEmpty()}")
         updateNotification("正在准备车外音频通道")
@@ -168,13 +160,6 @@ class WjxOutsidePlayService : Service() {
                 stopSelf()
                 return
             }
-        }
-        if (audioUsage.isActive(AudioOwner.XiaozhiConversation)) {
-            WjxFileLogger.i(TAG, "play cancelled because Xiaozhi claimed audio during preparation")
-            broadcastState(STATE_STOPPED, file.absolutePath, owner)
-            audioUsage.setActive(AudioOwner.ExteriorPlayback, false)
-            stopSelf()
-            return
         }
         stopPlayback(releaseService = false, releaseOwnership = false)
         val token = ++playbackToken

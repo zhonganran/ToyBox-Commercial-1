@@ -119,6 +119,7 @@ import com.byd.wjx.ui.theme.SceneViolet
 import com.byd.wjx.ui.theme.CardBorder
 import com.byd.wjx.ui.theme.CardSurface
 import com.byd.wjx.ui.theme.CardSurfaceElevated
+import com.byd.wjx.ui.theme.LocalSuperToyBoxDarkTheme
 import com.byd.wjx.ui.theme.TextMuted
 import com.byd.wjx.ui.theme.TextPrimary
 import com.byd.wjx.ui.theme.TextSecondary
@@ -495,7 +496,30 @@ private fun LocalSoundCard(
     featured: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val palette = remember(sound.file.absolutePath) { sceneCardPalette(sound.file.absolutePath) }
+    val darkTheme = LocalSuperToyBoxDarkTheme.current
+    val palette = remember(sound.file.absolutePath, darkTheme) {
+        if (darkTheme) darkLocalSoundCardPalette(sound.file.absolutePath) else sceneCardPalette(sound.file.absolutePath)
+    }
+    val titleColor = if (darkTheme) Color(0xFFD7DEE4) else TextPrimary
+    val secondaryColor = if (darkTheme) Color(0xFFA5B1BA) else TextSecondary
+    val iconColor = if (darkTheme) Color(0xFFC2CBD2) else TextPrimary
+    val accentColor = if (darkTheme) palette.accent.copy(alpha = 0.78f) else palette.accent
+    val idleBorderColor = if (darkTheme) Color.White.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.70f)
+    val cardOverlay = if (darkTheme) {
+        listOf(
+            Color(0xFF11161A).copy(alpha = 0.78f),
+            Color(0xFF11161A).copy(alpha = 0.64f),
+            palette.top.copy(alpha = 0.42f),
+            palette.bottom.copy(alpha = 0.52f),
+        )
+    } else {
+        listOf(
+            Color.White.copy(alpha = 0.84f),
+            Color.White.copy(alpha = 0.68f),
+            palette.top.copy(alpha = 0.40f),
+            palette.bottom.copy(alpha = 0.20f),
+        )
+    }
     val artwork = remember(sound.name, sound.file.absolutePath) {
         soundArtworkRes(sound.name, sound.file.absolutePath)
     }
@@ -511,14 +535,14 @@ private fun LocalSoundCard(
         modifier = modifier
             .clip(shape)
             .background(Brush.linearGradient(listOf(palette.top, palette.mid, palette.bottom)), shape)
-            .border(if (isPlaying) 2.dp else 1.dp, if (isPlaying) palette.accent else Color.White.copy(alpha = 0.70f), shape)
+            .border(if (isPlaying) 2.dp else 1.dp, if (isPlaying) accentColor else idleBorderColor, shape)
             .clickable(onClick = onClick),
     ) {
         Image(
             painter = painterResource(backgroundArtwork),
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            alpha = 0.74f,
+            alpha = if (darkTheme) 0.38f else 0.74f,
             modifier = Modifier
                 .fillMaxSize(),
         )
@@ -527,12 +551,7 @@ private fun LocalSoundCard(
                 .fillMaxSize()
                 .background(
                     Brush.horizontalGradient(
-                        listOf(
-                            Color.White.copy(alpha = 0.84f),
-                            Color.White.copy(alpha = 0.68f),
-                            palette.top.copy(alpha = 0.40f),
-                            palette.bottom.copy(alpha = 0.20f),
-                        ),
+                        cardOverlay,
                     ),
                 ),
         )
@@ -550,7 +569,14 @@ private fun LocalSoundCard(
                 modifier = Modifier
                     .size(if (featured) 78.dp else 54.dp)
                     .clip(RoundedCornerShape(if (featured) 24.dp else 20.dp))
-                    .background(Brush.linearGradient(listOf(palette.accent.copy(alpha = 0.34f), palette.accent.copy(alpha = 0.92f)))),
+                    .background(
+                        Brush.linearGradient(
+                            listOf(
+                                accentColor.copy(alpha = if (darkTheme) 0.20f else 0.34f),
+                                accentColor.copy(alpha = if (darkTheme) 0.68f else 0.92f),
+                            ),
+                        ),
+                    ),
                 contentAlignment = Alignment.Center,
             ) {
                 Image(
@@ -569,7 +595,7 @@ private fun LocalSoundCard(
                         Icon(
                             imageVector = Icons.Outlined.GraphicEq,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = if (darkTheme) Color(0xFFE2E7EA) else Color.White,
                             modifier = Modifier.size(if (featured) 34.dp else 25.dp),
                         )
                     }
@@ -581,7 +607,7 @@ private fun LocalSoundCard(
             ) {
                 Text(
                     text = sound.name,
-                    color = TextPrimary,
+                    color = titleColor,
                     fontSize = if (featured) 19.sp else 14.sp,
                     fontWeight = FontWeight.ExtraBold,
                     maxLines = if (featured) 2 else 1,
@@ -590,7 +616,7 @@ private fun LocalSoundCard(
                 )
                 Spacer(Modifier.height(if (featured) 4.dp else 3.dp))
                 SoundWaveform(
-                    color = palette.accent,
+                    color = accentColor,
                     modifier = Modifier.fillMaxWidth().height(if (featured) 24.dp else 14.dp),
                 )
                 Spacer(Modifier.height(if (featured) 3.dp else 2.dp))
@@ -599,27 +625,27 @@ private fun LocalSoundCard(
                         modifier = Modifier
                             .size(if (featured) 32.dp else 26.dp)
                             .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.48f)),
+                            .background(Color.White.copy(alpha = if (darkTheme) 0.09f else 0.48f)),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             imageVector = if (isPlaying) Icons.Outlined.Stop else Icons.Outlined.PlayArrow,
                             contentDescription = if (isPlaying) "停止" else "播放",
-                            tint = TextPrimary,
+                            tint = iconColor,
                             modifier = Modifier.size(if (featured) 20.dp else 16.dp),
                         )
                     }
                     Text(
                         text = if (isPlaying) "播放中" else "${sound.ext.uppercase()} · ${sound.sizeLabel}",
-                        color = if (isPlaying) palette.accent else TextSecondary,
+                        color = if (isPlaying) accentColor else secondaryColor,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
                     )
-                    Icon(Icons.Outlined.MoreHoriz, contentDescription = null, tint = TextPrimary.copy(alpha = 0.74f), modifier = Modifier.size(if (featured) 19.dp else 17.dp))
-                    Icon(Icons.Outlined.DragIndicator, contentDescription = "长按排序", tint = TextPrimary.copy(alpha = 0.68f), modifier = Modifier.size(if (featured) 19.dp else 17.dp))
+                    Icon(Icons.Outlined.MoreHoriz, contentDescription = null, tint = iconColor.copy(alpha = 0.74f), modifier = Modifier.size(if (featured) 19.dp else 17.dp))
+                    Icon(Icons.Outlined.DragIndicator, contentDescription = "长按排序", tint = iconColor.copy(alpha = 0.68f), modifier = Modifier.size(if (featured) 19.dp else 17.dp))
                 }
             }
         }
@@ -715,6 +741,20 @@ private fun localSoundShape(featured: Boolean): RoundedCornerShape = RoundedCorn
     bottomEnd = if (featured) 72.dp else 44.dp,
     bottomStart = if (featured) 56.dp else 58.dp,
 )
+
+private fun darkLocalSoundCardPalette(seed: String): SoundCardPalette {
+    val palettes = listOf(
+        SoundCardPalette(Color(0xFF26313A), Color(0xFF1E272E), Color(0xFF171D22), Color(0xFF7F9CAD)),
+        SoundCardPalette(Color(0xFF332B32), Color(0xFF282329), Color(0xFF1D191E), Color(0xFFAD879D)),
+        SoundCardPalette(Color(0xFF25332F), Color(0xFF1E2926), Color(0xFF171F1D), Color(0xFF7FA697)),
+        SoundCardPalette(Color(0xFF343029), Color(0xFF28251F), Color(0xFF1D1B17), Color(0xFFAE9A77)),
+        SoundCardPalette(Color(0xFF2B2D39), Color(0xFF22242E), Color(0xFF191A22), Color(0xFF9199B5)),
+        SoundCardPalette(Color(0xFF352B29), Color(0xFF292220), Color(0xFF1E1918), Color(0xFFB18E85)),
+        SoundCardPalette(Color(0xFF29333A), Color(0xFF20282E), Color(0xFF181E22), Color(0xFF829EAD)),
+        SoundCardPalette(Color(0xFF302C37), Color(0xFF26232D), Color(0xFF1B1920), Color(0xFF9E91AF)),
+    )
+    return palettes[(seed.hashCode() and Int.MAX_VALUE) % palettes.size]
+}
 
 @DrawableRes
 private fun soundArtworkRes(name: String, seed: String): Int {

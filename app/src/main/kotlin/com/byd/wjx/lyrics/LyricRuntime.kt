@@ -24,7 +24,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -56,14 +55,15 @@ class LyricRuntime @Inject constructor(
     private var latestCameraActive = false
     private var lastSongKey = ""
     private var trackChangeHoldUntilMs = 0L
-    private var lastRenderedFrame: LyricFrame? = null
+    private var lastDesktopFrame: LyricFrame? = null
+    private var lastClusterFrame: LyricFrame? = null
     private var suppressNextFrameAnimation = false
     private var lyricLoadJob: Job? = null
     private var grantAttempted = false
     private var cachedLyricsAllowed = false
     private var lastLyricsAllowedCheckAt = Long.MIN_VALUE
 
-    fun start(cameraActive: StateFlow<Boolean>, electronicMirrorActive: StateFlow<Boolean>) {
+    fun start(cameraActive: StateFlow<Boolean>) {
         if (scope?.isActive == true) return
         val newScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         scope = newScope
@@ -71,11 +71,10 @@ class LyricRuntime @Inject constructor(
 
         newScope.launch(Dispatchers.IO) { ensurePermissionsBestEffort() }
         newScope.launch {
-            combine(cameraActive, electronicMirrorActive) { camera, mirror -> camera || mirror }
-                .collectLatest { active ->
-                    latestCameraActive = active
-                    if (active) hideOverlays(hard = true)
-                }
+            cameraActive.collectLatest { active ->
+                latestCameraActive = active
+                if (active) hideOverlays(hard = true)
+            }
         }
         newScope.launch {
             MusicPlaybackStore.state.collectLatest { snapshot ->
@@ -206,20 +205,22 @@ class LyricRuntime @Inject constructor(
             return
         }
 
-        val frame = buildFrame(playback)
         val animate = !suppressNextFrameAnimation
         suppressNextFrameAnimation = false
         if (desktopVisible) {
+            val frame = buildFrame(playback, settings.desktopSyncOffsetMs, lastDesktopFrame)
             desktopOverlay.update(frame, animate)
+            lastDesktopFrame = frame
         } else {
             desktopOverlay.hideSoft()
         }
         if (clusterVisible) {
+            val frame = buildFrame(playback, settings.clusterSyncOffsetMs, lastClusterFrame)
             clusterOverlay.update(frame, animate)
+            lastClusterFrame = frame
         } else {
             clusterOverlay.hide()
         }
-        lastRenderedFrame = frame
     }
 
     private fun canUseLyrics(): Boolean {
@@ -231,12 +232,16 @@ class LyricRuntime @Inject constructor(
         return cachedLyricsAllowed
     }
 
-    private fun buildFrame(playback: MusicPlaybackSnapshot): LyricFrame {
+    private fun buildFrame(
+        playback: MusicPlaybackSnapshot,
+        syncOffsetMs: Int,
+        fallbackFrame: LyricFrame?,
+    ): LyricFrame {
         val immediate = playback.realtimeLyrics.filter { LyricTextFilter.isUsable(it) }
         val lines = latestLyrics.lines
         if (lines.isEmpty()) {
             if (immediate.isEmpty() && SystemClock.elapsedRealtime() < trackChangeHoldUntilMs) {
-                lastRenderedFrame?.let { return it }
+                fallbackFrame?.let { return it }
             }
             return when {
                 immediate.size >= 3 -> LyricFrame(
@@ -267,7 +272,7 @@ class LyricRuntime @Inject constructor(
                 )
             }
         }
-        val position = (playback.projectedPositionMs() + settings.syncOffsetMs).coerceAtLeast(0L)
+        val position = (playback.projectedPositionMs() + syncOffsetMs).coerceAtLeast(0L)
         val index = lines.indexOfLast { it.timeMs <= position }.coerceAtLeast(0)
         return LyricFrame(
             previous2 = lines.getOrNull(index - 2)?.text.orEmpty(),

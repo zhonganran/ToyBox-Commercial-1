@@ -211,7 +211,7 @@ class AutomationViewModel @Inject constructor(
 
     fun saveRule() {
         val e = _uiState.value.editing
-        if (e.name.isBlank() || e.triggers.isEmpty() || (e.actions.isEmpty() && e.exitActions.isEmpty())) {
+        if (!e.hasMinimumSaveFields()) {
             _uiState.value = _uiState.value.copy(editorError =
                 "名称和条件不能为空，并至少添加一个进入或退出动作"
             )

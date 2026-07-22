@@ -11,7 +11,6 @@ import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,14 +53,12 @@ import com.byd.wjx.ui.settings.UpdateDialog
 import com.byd.wjx.ui.settings.UpdateState
 import com.byd.wjx.ui.sound.SoundScreen
 import com.byd.wjx.ui.theme.*
-import com.byd.wjx.xiaozhi.ui.XiaozhiScreen
 
 enum class Screen(val route: String, val label: String, val icon: ImageVector) {
     Home("home", "首页", Icons.Outlined.Home),
     Sound("sound", "个性音效", Icons.AutoMirrored.Outlined.VolumeUp),
     DesktopComponents("desktop_components", "桌面组件", Icons.Outlined.Apps),
     Automation("automation", "智能联动", Icons.Outlined.Bolt),
-    Xiaozhi("xiaozhi", "小智", Icons.Outlined.RecordVoiceOver),
     Settings("settings", "设置", Icons.Outlined.Settings)
 }
 
@@ -329,12 +326,6 @@ fun AppNavigation(
                             Screen.Sound -> SoundScreen()
                             Screen.DesktopComponents -> DesktopComponentsScreen()
                             Screen.Automation -> AutomationScreen()
-                            Screen.Xiaozhi -> XiaozhiScreen(
-                                onOpenSettings = {
-                                    settingsInitialCategory = "Xiaozhi"
-                                    selectedRoute = Screen.Settings.route
-                                },
-                            )
                             Screen.Settings -> SettingsScreen(
                                 initialCategory = settingsInitialCategory,
                                 onNavigateToPlaces = {

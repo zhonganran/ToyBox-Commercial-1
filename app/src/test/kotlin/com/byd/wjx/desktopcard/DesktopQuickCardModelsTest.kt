@@ -96,20 +96,50 @@ class DesktopQuickCardModelsTest {
     }
 
     @Test
-    fun `expanded and collapsed card preserve floating icon center`() {
-        val expandedX = DesktopQuickCardAnchor.expandedX(
+    fun `card anchors icon to the nearest horizontal edge`() {
+        assertEquals(
+            DesktopQuickCardHorizontalAnchor.START,
+            DesktopQuickCardAnchor.edgeFor(collapsedX = 140, collapsedWidth = 82, screenWidth = 1280),
+        )
+        assertEquals(
+            DesktopQuickCardHorizontalAnchor.END,
+            DesktopQuickCardAnchor.edgeFor(collapsedX = 1100, collapsedWidth = 82, screenWidth = 1280),
+        )
+    }
+
+    @Test
+    fun `expanded and collapsed card preserve the selected icon edge`() {
+        val startExpandedX = DesktopQuickCardAnchor.expandedX(
             collapsedX = 140,
             collapsedWidth = 82,
             expandedWidth = 360,
+            anchor = DesktopQuickCardHorizontalAnchor.START,
+        )
+        val endExpandedX = DesktopQuickCardAnchor.expandedX(
+            collapsedX = 1100,
+            collapsedWidth = 82,
+            expandedWidth = 360,
+            anchor = DesktopQuickCardHorizontalAnchor.END,
         )
 
-        assertEquals(1, expandedX)
+        assertEquals(140, startExpandedX)
+        assertEquals(822, endExpandedX)
         assertEquals(
             140,
             DesktopQuickCardAnchor.collapsedX(
-                expandedX = expandedX,
+                expandedX = startExpandedX,
                 expandedWidth = 360,
                 collapsedWidth = 82,
+                anchor = DesktopQuickCardHorizontalAnchor.START,
+            ),
+        )
+        assertEquals(
+            1100,
+            DesktopQuickCardAnchor.collapsedX(
+                expandedX = endExpandedX,
+                expandedWidth = 360,
+                collapsedWidth = 82,
+                anchor = DesktopQuickCardHorizontalAnchor.END,
             ),
         )
     }

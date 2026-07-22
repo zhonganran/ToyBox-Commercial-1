@@ -182,33 +182,6 @@ class HelperClientBinderTest {
     }
 
     @Test
-    fun `system rotation operations use dedicated binder transactions`() = runBlocking {
-        val calls = mutableListOf<Int>()
-        val binder = object : FakeIBinder() {
-            override fun transact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
-                calls += code
-                reply!!.writeInt(0)
-                reply.writeInt(if (code == HelperBinderProtocol.TX_GET_SYSTEM_ROTATION_STATE) 2 else 0)
-                reply.setDataPosition(0)
-                return true
-            }
-        }
-        val client = clientWith(binder)
-
-        assertTrue(client.forceSystemLandscape())
-        assertEquals(2, client.systemRotationState())
-        assertTrue(client.restoreSystemRotation())
-        assertEquals(
-            listOf(
-                HelperBinderProtocol.TX_FORCE_SYSTEM_LANDSCAPE,
-                HelperBinderProtocol.TX_GET_SYSTEM_ROTATION_STATE,
-                HelperBinderProtocol.TX_RESTORE_SYSTEM_ROTATION,
-            ),
-            calls,
-        )
-    }
-
-    @Test
     fun `lock sound playback state uses privileged helper transaction`() = runBlocking {
         val values = mutableListOf<Int>()
         val binder = object : FakeIBinder() {

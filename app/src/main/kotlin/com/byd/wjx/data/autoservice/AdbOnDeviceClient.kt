@@ -327,7 +327,7 @@ class AdbOnDeviceClientImpl @Inject constructor(
         val appApk = shellQuote(ctx.packageCodePath)
         val packageLoop = BYD_HELPER_CLASSPATH_PACKAGES.joinToString(" ") { shellQuote(it) }
         val fileLoop = BYD_HELPER_CLASSPATH_FILES.joinToString(" ") { shellQuote(it) }
-        return "HELPER_CP=/system/framework/bmmcamera.jar:$appApk; " +
+        return "HELPER_CP=$appApk; " +
             "for pkg in $packageLoop; do " +
             "path=\$(pm path \"\$pkg\" 2>/dev/null | sed -n 's/^package://p' | head -1); " +
             "[ -n \"\$path\" ] && HELPER_CP=\"\$HELPER_CP:\$path\"; " +

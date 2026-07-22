@@ -1,6 +1,5 @@
 package com.byd.wjx.led
 
-import com.byd.wjx.data.nativestack.BydSignalSemantics
 import com.byd.wjx.data.nativestack.ParsReader
 import com.byd.wjx.data.remote.DiParsData
 import com.byd.wjx.log.WjxFileLogger
@@ -27,7 +26,7 @@ class LedRuntimeCoordinator @Inject constructor(
     private val bleClient: LedBleClient,
     private val parsReader: ParsReader,
 ) {
-    private val arbiter = LedSceneArbiter()
+    private val ruleEngine = LedLinkageEngine()
     private val decisionMutex = Mutex()
     private val _runtime = MutableStateFlow(LedRuntimeState())
     val runtime: StateFlow<LedRuntimeState> = _runtime.asStateFlow()
@@ -40,8 +39,6 @@ class LedRuntimeCoordinator @Inject constructor(
     @Volatile private var latestBrakeSignalsAt = 0L
     @Volatile private var latestBodySignals = LedVehicleSignals()
     @Volatile private var latestBodySignalsAt = 0L
-    @Volatile private var latestAdasSignals = LedVehicleSignals()
-    @Volatile private var latestAdasSignalsAt = 0L
     private var lastSignalLogKey: SignalLogKey? = null
     private var runtimeJob: Job? = null
     private var testRestoreJob: Job? = null
@@ -64,10 +61,39 @@ class LedRuntimeCoordinator @Inject constructor(
                                 }
                                 bleClient.disconnect()
                                 decisionMutex.withLock {
-                                    arbiter.reset()
+                                    ruleEngine.reset()
                                     connectionInitialized = false
                                     resetSignalCaches()
                                     _runtime.value = LedRuntimeState(currentScene = LedScene.DEFAULT)
+                                }
+                            }
+                        }
+                }
+                launch {
+                    var initialEmission = true
+                    preferences.state
+                        .map { it.rules }
+                        .distinctUntilChanged()
+                        .collect {
+                            if (initialEmission) {
+                                initialEmission = false
+                                return@collect
+                            }
+                            decisionMutex.withLock {
+                                testRestoreJob?.cancel()
+                                testRestoreJob = null
+                                ruleEngine.reset()
+                                _runtime.value = LedRuntimeState(currentScene = LedScene.DEFAULT)
+                                if (connectionInitialized && bleClient.connection.value.ready) {
+                                    val sent = bleClient.play(LedScene.DEFAULT)
+                                    _runtime.value = if (sent) {
+                                        _runtime.value.copy(
+                                            lastCommandAt = System.currentTimeMillis(),
+                                            lastError = null,
+                                        )
+                                    } else {
+                                        _runtime.value.copy(lastError = "默认微笑画面发送失败")
+                                    }
                                 }
                             }
                         }
@@ -81,7 +107,7 @@ class LedRuntimeCoordinator @Inject constructor(
                             decisionMutex.withLock {
                                 testRestoreJob?.cancel()
                                 testRestoreJob = null
-                                arbiter.reset()
+                                ruleEngine.reset()
                                 resetSignalCaches()
                                 _runtime.value = LedRuntimeState(currentScene = LedScene.DEFAULT)
                                 bleClient.setBrightness(prefs.brightness)
@@ -133,13 +159,15 @@ class LedRuntimeCoordinator @Inject constructor(
                     }
                 }
                 launch {
-                    runSignalLoop(
-                        label = "ADAS",
-                        intervalMs = ADAS_INTERVAL_MS,
-                        fetch = parsReader::fetchLedAdasVehicleSnapshot,
-                    ) { signals, at ->
-                        latestAdasSignals = signals
-                        latestAdasSignalsAt = at
+                    while (kotlin.coroutines.coroutineContext.isActive) {
+                        delay(ENGINE_TICK_MS)
+                        if (
+                            preferences.state.value.enabled &&
+                            bleClient.connection.value.ready &&
+                            connectionInitialized
+                        ) {
+                            evaluateAndDispatch(System.currentTimeMillis())
+                        }
                     }
                 }
             }
@@ -153,7 +181,7 @@ class LedRuntimeCoordinator @Inject constructor(
         runtimeJob = null
         testRestoreJob?.cancel()
         testRestoreJob = null
-        arbiter.reset()
+        ruleEngine.reset()
         connectionInitialized = false
         resetSignalCaches()
         _runtime.value = LedRuntimeState(currentScene = LedScene.DEFAULT)
@@ -197,10 +225,6 @@ class LedRuntimeCoordinator @Inject constructor(
                 delay(INACTIVE_LOOP_DELAY_MS)
                 continue
             }
-            if (latestVehicleSignals.powerState?.let { !BydSignalSemantics.isPowered(it) } == true) {
-                delay(POWERED_OFF_FAST_DELAY_MS)
-                continue
-            }
             val snapshot = try {
                 fetch()
             } catch (e: CancellationException) {
@@ -224,16 +248,14 @@ class LedRuntimeCoordinator @Inject constructor(
         val motion = freshSignals(now, latestMotionSignalsAt, MOTION_FRESH_MS, latestMotionSignals)
         val brake = freshSignals(now, latestBrakeSignalsAt, BRAKE_FRESH_MS, latestBrakeSignals)
         val body = freshSignals(now, latestBodySignalsAt, BODY_FRESH_MS, latestBodySignals)
-        val adas = freshSignals(now, latestAdasSignalsAt, ADAS_FRESH_MS, latestAdasSignals)
         val signals = latestVehicleSignals
             .mergeMotion(motion)
             .mergeBrake(brake)
             .mergeBody(body)
-            .mergeAdas(adas)
         logSignalChanges(signals)
-        val next = arbiter.evaluate(signals, now)
+        val next = ruleEngine.evaluate(preferences.state.value.rules, signals, now)
+            ?: return@withLock
         val current = _runtime.value.currentScene
-        if (next == current) return@withLock
 
         _runtime.value = _runtime.value.copy(currentScene = next, lastSceneChangedAt = now)
         if (!bleClient.connection.value.ready) return@withLock
@@ -247,11 +269,8 @@ class LedRuntimeCoordinator @Inject constructor(
             TAG,
             "scene $current -> $next sent=$sent turn=${signals.turnSignalFlash} " +
                 "gear=${signals.gear} brake=${signals.brakePedalDepth} " +
-                "brakeLight=${signals.lightBrake} " +
-                "acc=${signals.adasAccMode}/${signals.accCruiseState} " +
-                "lcc=${signals.adasLccNcaStatus} tja=${signals.adasTjaState} " +
-                "lane=${signals.laneKeepState} mnoa=${signals.adasMnoaStatus} " +
-                "exec=${signals.adasExecSpeed} apa=${signals.adasApaParkingStatus}",
+                "accel=${signals.accelPedalDepth} brakeLight=${signals.lightBrake} " +
+                "reverseLight=${signals.lightReversing} trunk=${signals.trunk}",
         )
     }
 
@@ -270,16 +289,11 @@ class LedRuntimeCoordinator @Inject constructor(
         doorFR = doorFR,
         doorRL = doorRL,
         doorRR = doorRR,
-        adasAccMode = adasAccMode,
-        adasLccNcaStatus = adasLccNcaStatus,
-        adasTjaState = adasTjaState,
-        laneKeepState = laneKeepState,
-        accCruiseState = accCruiseState,
-        adasMnoaStatus = adasMnoaStatus,
-        adasExecSpeed = adasExecSpeed,
-        adasApaParkingStatus = adasApaParkingStatus,
+        trunk = trunk,
         brakePedalDepth = brakePedalDepth,
         lightBrake = lightBrake,
+        lightReversing = lightReversing,
+        accelPedalDepth = accelPedalDepth,
     )
 
     private fun LedVehicleSignals.mergeMotion(motion: LedVehicleSignals): LedVehicleSignals = copy(
@@ -290,6 +304,8 @@ class LedRuntimeCoordinator @Inject constructor(
     private fun LedVehicleSignals.mergeBrake(brake: LedVehicleSignals): LedVehicleSignals = copy(
         brakePedalDepth = brake.brakePedalDepth ?: brakePedalDepth,
         lightBrake = brake.lightBrake ?: lightBrake,
+        lightReversing = brake.lightReversing ?: lightReversing,
+        accelPedalDepth = brake.accelPedalDepth ?: accelPedalDepth,
     )
 
     private fun LedVehicleSignals.mergeBody(body: LedVehicleSignals): LedVehicleSignals = copy(
@@ -297,16 +313,7 @@ class LedRuntimeCoordinator @Inject constructor(
         doorFR = body.doorFR ?: doorFR,
         doorRL = body.doorRL ?: doorRL,
         doorRR = body.doorRR ?: doorRR,
-        adasApaParkingStatus = body.adasApaParkingStatus ?: adasApaParkingStatus,
-    )
-
-    private fun LedVehicleSignals.mergeAdas(adas: LedVehicleSignals): LedVehicleSignals = copy(
-        adasAccMode = adas.adasAccMode ?: adasAccMode,
-        adasLccNcaStatus = adas.adasLccNcaStatus ?: adasLccNcaStatus,
-        adasTjaState = adas.adasTjaState ?: adasTjaState,
-        laneKeepState = adas.laneKeepState ?: laneKeepState,
-        accCruiseState = adas.accCruiseState ?: accCruiseState,
-        adasMnoaStatus = adas.adasMnoaStatus ?: adasMnoaStatus,
+        trunk = body.trunk ?: trunk,
     )
 
     private fun freshSignals(
@@ -329,8 +336,6 @@ class LedRuntimeCoordinator @Inject constructor(
         latestBrakeSignalsAt = 0L
         latestBodySignals = LedVehicleSignals()
         latestBodySignalsAt = 0L
-        latestAdasSignals = LedVehicleSignals()
-        latestAdasSignalsAt = 0L
         lastSignalLogKey = null
     }
 
@@ -340,26 +345,21 @@ class LedRuntimeCoordinator @Inject constructor(
             gear = signals.gear,
             moving = (signals.speed ?: 0) > 0,
             brakeBucket = signals.brakePedalDepth?.let { (it / 5) * 5 },
+            accelBucket = signals.accelPedalDepth?.let { (it / 5) * 5 },
             brakeLight = signals.lightBrake,
-            acc = signals.adasAccMode,
-            accCruise = signals.accCruiseState,
-            lcc = signals.adasLccNcaStatus,
-            tja = signals.adasTjaState,
-            lane = signals.laneKeepState,
-            mnoa = signals.adasMnoaStatus,
-            execSpeed = signals.adasExecSpeed,
-            apa = signals.adasApaParkingStatus,
+            reverseLight = signals.lightReversing,
+            doors = listOf(signals.doorFL, signals.doorFR, signals.doorRL, signals.doorRR),
+            trunk = signals.trunk,
         )
         if (key == lastSignalLogKey) return
         lastSignalLogKey = key
         WjxFileLogger.i(
             TAG,
             "signals turn=${signals.turnSignalFlash} gear=${signals.gear} speed=${signals.speed} " +
-                "brake=${signals.brakePedalDepth} brakeLight=${signals.lightBrake} " +
-                "acc=${signals.adasAccMode}/${signals.accCruiseState} " +
-                "lcc=${signals.adasLccNcaStatus} tja=${signals.adasTjaState} " +
-                "lane=${signals.laneKeepState} mnoa=${signals.adasMnoaStatus} " +
-                "exec=${signals.adasExecSpeed} apa=${signals.adasApaParkingStatus}",
+                "brake=${signals.brakePedalDepth} accel=${signals.accelPedalDepth} " +
+                "brakeLight=${signals.lightBrake} reverseLight=${signals.lightReversing} " +
+                "doors=${signals.doorFL}/${signals.doorFR}/${signals.doorRL}/${signals.doorRR} " +
+                "trunk=${signals.trunk}",
         )
     }
 
@@ -368,14 +368,12 @@ class LedRuntimeCoordinator @Inject constructor(
         private const val MOTION_INTERVAL_MS = 100L
         private const val BRAKE_INTERVAL_MS = 200L
         private const val BODY_INTERVAL_MS = 500L
-        private const val ADAS_INTERVAL_MS = 1_000L
+        private const val ENGINE_TICK_MS = 100L
         private const val MOTION_FRESH_MS = 350L
         private const val BRAKE_FRESH_MS = 700L
         private const val BODY_FRESH_MS = 1_500L
-        private const val ADAS_FRESH_MS = 2_500L
         private const val MIN_LOOP_DELAY_MS = 20L
         private const val INACTIVE_LOOP_DELAY_MS = 500L
-        private const val POWERED_OFF_FAST_DELAY_MS = 500L
         private const val TEST_SCENE_DURATION_MS = 4_000L
     }
 
@@ -384,14 +382,10 @@ class LedRuntimeCoordinator @Inject constructor(
         val gear: Int?,
         val moving: Boolean,
         val brakeBucket: Int?,
+        val accelBucket: Int?,
         val brakeLight: Int?,
-        val acc: Int?,
-        val accCruise: Int?,
-        val lcc: Int?,
-        val tja: Int?,
-        val lane: Int?,
-        val mnoa: Int?,
-        val execSpeed: Int?,
-        val apa: Int?,
+        val reverseLight: Int?,
+        val doors: List<Int?>,
+        val trunk: Int?,
     )
 }

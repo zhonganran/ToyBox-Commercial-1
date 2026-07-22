@@ -34,10 +34,7 @@ object BackupPreferencesRegistry {
         PreferenceFilePolicy("wjx_led_link", "LedPreferences", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("wjx_energy_flow_stats", "EnergyFlowStatsStore", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("wjx_desktop_cards", "DesktopQuickCardRepository", PreferenceBackupPolicy.USER_CONFIGURATION),
-        PreferenceFilePolicy("wjx_app_rotation", "AppRotationPreferences", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("wjx_activation", "ActivationManager", PreferenceBackupPolicy.DEVICE_LOCAL),
-        PreferenceFilePolicy("wjx_xiaozhi", "XiaozhiPreferences", PreferenceBackupPolicy.DEVICE_LOCAL),
-        PreferenceFilePolicy("wjx_xiaozhi_wake", "XiaozhiWakePreferences", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy("wjx_drive_session", "SessionPersistence", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy(
             "boot_log",
@@ -51,7 +48,6 @@ object BackupPreferencesRegistry {
         PreferenceFilePolicy("osmdroid", "OsmdroidRuntime", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy("adb_config", "AdbOnDeviceClient", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy("wjx_disclaimer", "DisclaimerPreferences", PreferenceBackupPolicy.DEVICE_LOCAL),
-        PreferenceFilePolicy("wjx_app_rotation_runtime", "AppRotationRuntime", PreferenceBackupPolicy.DEVICE_LOCAL),
     )
 
     val USER_CONFIGURATION_FILES: List<String> = FILE_POLICIES

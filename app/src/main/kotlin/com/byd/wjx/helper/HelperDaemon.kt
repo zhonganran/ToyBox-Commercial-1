@@ -224,8 +224,6 @@ fun main(args: Array<String>) {
     // Keyed by displayId so TX_RELEASE_VIRTUAL_DISPLAY can release the right one.
     val virtualDisplays = ConcurrentHashMap<Int, VirtualDisplay>()
     val lockSoundRuntime = WjxLockSoundRuntime(svc, autoIface, systemContext)
-    val electronicMirrorCamera = ElectronicMirrorCameraRuntime(systemContext)
-    val systemRotation = BydSystemRotationController(systemContext)
 
     // Step 3: build our stub Binder.
     val helperBinder = object : Binder() {
@@ -473,68 +471,6 @@ fun main(args: Array<String>) {
                 }.getOrElse {
                     helperLog("LockSound", "sentry event failed: ${it.javaClass.simpleName}:${it.message.orEmpty()}")
                     reply?.writeInt(-1); reply?.writeInt(0); true
-                }
-
-                HelperBinderProtocol.TX_CAMERA_START -> runCatching {
-                    val cameraTag = data.readString().orEmpty()
-                    val surfaceIndex = data.readInt()
-                    val tileCount = data.readInt()
-                    val bufferWidth = data.readInt()
-                    val bufferHeight = data.readInt()
-                    val fps = data.readInt()
-                    val surface = Surface.CREATOR.createFromParcel(data)
-                    val status = electronicMirrorCamera.start(
-                        surface = surface,
-                        cameraTag = cameraTag,
-                        surfaceIndex = surfaceIndex,
-                        tileCount = tileCount,
-                        bufferWidth = bufferWidth,
-                        bufferHeight = bufferHeight,
-                        fps = fps,
-                    )
-                    reply?.writeInt(status)
-                    reply?.writeInt(0)
-                    true
-                }.getOrElse {
-                    helperLog("ElectronicMirrorCamera", "binder start failed: ${it.javaClass.simpleName}:${it.message.orEmpty()}")
-                    reply?.writeInt(-1); reply?.writeInt(-1); true
-                }
-
-                HelperBinderProtocol.TX_CAMERA_STOP -> runCatching {
-                    val status = electronicMirrorCamera.stop()
-                    reply?.writeInt(status); reply?.writeInt(0)
-                    true
-                }.getOrElse {
-                    helperLog("ElectronicMirrorCamera", "binder stop failed: ${it.javaClass.simpleName}:${it.message.orEmpty()}")
-                    reply?.writeInt(-1); reply?.writeInt(0); true
-                }
-
-                HelperBinderProtocol.TX_FORCE_SYSTEM_LANDSCAPE -> runCatching {
-                    val ok = systemRotation.forceLandscape()
-                    reply?.writeInt(if (ok) 0 else -1); reply?.writeInt(0)
-                    true
-                }.getOrElse {
-                    helperLog("SystemRotation", "force binder failed: ${throwableSummary(it)}")
-                    reply?.writeInt(-1); reply?.writeInt(0); true
-                }
-
-                HelperBinderProtocol.TX_RESTORE_SYSTEM_ROTATION -> runCatching {
-                    val ok = systemRotation.restoreRotation()
-                    reply?.writeInt(if (ok) 0 else -1); reply?.writeInt(0)
-                    true
-                }.getOrElse {
-                    helperLog("SystemRotation", "restore binder failed: ${throwableSummary(it)}")
-                    reply?.writeInt(-1); reply?.writeInt(0); true
-                }
-
-                HelperBinderProtocol.TX_GET_SYSTEM_ROTATION_STATE -> runCatching {
-                    val state = systemRotation.rotationState()
-                    reply?.writeInt(if (state != null) 0 else -1)
-                    reply?.writeInt(state ?: -1)
-                    true
-                }.getOrElse {
-                    helperLog("SystemRotation", "state binder failed: ${throwableSummary(it)}")
-                    reply?.writeInt(-1); reply?.writeInt(-1); true
                 }
 
                 HelperBinderProtocol.TX_SET_LOCK_SOUND_PLAYBACK_STATE -> runCatching {

@@ -192,6 +192,15 @@ fun LedLinkSettingsSection(
             }
         }
 
+        LedLinkageRulesSection(
+            rules = state.preferences.rules,
+            currentScene = state.runtime.currentScene,
+            onSave = viewModel::saveRule,
+            onDelete = viewModel::deleteRule,
+            onEnabledChange = viewModel::setRuleEnabled,
+            onMove = viewModel::moveRule,
+        )
+
         Card(
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = CardSurfaceElevated),
