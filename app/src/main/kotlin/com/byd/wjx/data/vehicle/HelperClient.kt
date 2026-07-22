@@ -24,6 +24,15 @@ data class HelperShellResult(
     val ok: Boolean get() = status == 0 && exitCode == 0
 }
 
+data class ElectronicMirrorCameraRequest(
+    val cameraTag: String,
+    val surfaceIndex: Int,
+    val tileCount: Int,
+    val bufferWidth: Int,
+    val bufferHeight: Int,
+    val fps: Int,
+)
+
 /**
  * Client for the in-vehicle helper daemon registered as the `wjx_helper`
  * binder service (ServiceManager.getService + IBinder.transact).
@@ -65,7 +74,8 @@ interface HelperClient {
     /**
      * Narrow appops grant to our own package: SYSTEM_ALERT_WINDOW (draw the cluster overlay)
      * and PROJECT_MEDIA (third-party access to the fission screen-projection display, else
-     * getDisplay(clusterId) returns null). Returns true only if both grants succeed.
+     * getDisplay(clusterId) returns null). CAPTURE_VIDEO_OUTPUT is additionally attempted for ROMs
+     * that gate external camera surfaces with it. Returns true when both required app-ops succeed.
      */
     suspend fun grantOverlayPermission(): Boolean
     /** Launches [packageName] on [displayId] and pins it (move+bounds+focus loop). Long-running. */
@@ -94,6 +104,12 @@ interface HelperClient {
     suspend fun execShell(command: String): String? = null
     /** Applies BYD's privileged lock-sound playback route state in the helper process. */
     suspend fun setLockSoundPlaybackState(enabled: Boolean): Boolean = false
+    /** Starts the BYD panorama producer into the supplied GPU Surface. */
+    suspend fun startElectronicMirror(
+        surface: Surface,
+        request: ElectronicMirrorCameraRequest,
+    ): Boolean = false
+    suspend fun stopElectronicMirror(): Boolean = false
 }
 
 @Singleton
@@ -302,6 +318,23 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
         statusOk(HelperBinderProtocol.TX_SET_LOCK_SOUND_PLAYBACK_STATE) { data ->
             data.writeInt(if (enabled) 1 else 0)
         }
+
+    override suspend fun startElectronicMirror(
+        surface: Surface,
+        request: ElectronicMirrorCameraRequest,
+    ): Boolean =
+        statusOk(HelperBinderProtocol.TX_CAMERA_START, timeoutMs = FORCE_TIMEOUT_MS) { data ->
+            data.writeString(request.cameraTag)
+            data.writeInt(request.surfaceIndex)
+            data.writeInt(request.tileCount)
+            data.writeInt(request.bufferWidth)
+            data.writeInt(request.bufferHeight)
+            data.writeInt(request.fps)
+            surface.writeToParcel(data, 0)
+        }
+
+    override suspend fun stopElectronicMirror(): Boolean =
+        statusOk(HelperBinderProtocol.TX_CAMERA_STOP) { }
 
     /** (status,value) reply; true iff status == 0. Shared by the boolean projection ops. */
     private suspend fun statusOk(

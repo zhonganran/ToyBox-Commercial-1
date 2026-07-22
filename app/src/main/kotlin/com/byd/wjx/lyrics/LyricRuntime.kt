@@ -24,6 +24,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -53,6 +54,7 @@ class LyricRuntime @Inject constructor(
     private var latestPlayback = MusicPlaybackSnapshot.EMPTY
     private var latestLyrics = LyricsResult()
     private var latestCameraActive = false
+    private var latestElectronicMirrorActive = false
     private var lastSongKey = ""
     private var trackChangeHoldUntilMs = 0L
     private var lastDesktopFrame: LyricFrame? = null
@@ -63,7 +65,7 @@ class LyricRuntime @Inject constructor(
     private var cachedLyricsAllowed = false
     private var lastLyricsAllowedCheckAt = Long.MIN_VALUE
 
-    fun start(cameraActive: StateFlow<Boolean>) {
+    fun start(cameraActive: StateFlow<Boolean>, electronicMirrorActive: StateFlow<Boolean>) {
         if (scope?.isActive == true) return
         val newScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         scope = newScope
@@ -71,9 +73,10 @@ class LyricRuntime @Inject constructor(
 
         newScope.launch(Dispatchers.IO) { ensurePermissionsBestEffort() }
         newScope.launch {
-            cameraActive.collectLatest { active ->
-                latestCameraActive = active
-                if (active) hideOverlays(hard = true)
+            combine(cameraActive, electronicMirrorActive) { camera, mirror -> camera to mirror }
+                .collectLatest { (camera, mirror) ->
+                latestCameraActive = camera
+                latestElectronicMirrorActive = mirror
             }
         }
         newScope.launch {
@@ -194,14 +197,18 @@ class LyricRuntime @Inject constructor(
         val playback = latestPlayback
         val lyricsAllowed = canUseLyrics()
         val desktopVisible = lyricsAllowed && settings.desktopEnabled &&
-            (settings.allowOnOtherApps || isHomeForeground())
+            shouldKeepDesktopLyricsVisible(
+                allowOnOtherApps = settings.allowOnOtherApps,
+                homeForeground = isHomeForeground(),
+                cameraActive = latestCameraActive,
+                electronicMirrorActive = latestElectronicMirrorActive,
+            )
         val clusterVisible = lyricsAllowed && settings.clusterEnabled
-        val shouldHideAll = latestCameraActive ||
-            !playback.playing ||
+        val shouldHideAll = !playback.playing ||
             !playback.hasSong ||
             (!desktopVisible && !clusterVisible)
         if (shouldHideAll || !Settings.canDrawOverlays(appContext)) {
-            hideOverlays(hard = latestCameraActive || !Settings.canDrawOverlays(appContext))
+            hideOverlays(hard = !Settings.canDrawOverlays(appContext))
             return
         }
 
@@ -317,3 +324,10 @@ class LyricRuntime @Inject constructor(
         private const val POSITION_DRIFT_RESET_MS = 2_500L
     }
 }
+
+internal fun shouldKeepDesktopLyricsVisible(
+    allowOnOtherApps: Boolean,
+    homeForeground: Boolean,
+    cameraActive: Boolean,
+    electronicMirrorActive: Boolean,
+): Boolean = allowOnOtherApps || homeForeground || cameraActive || electronicMirrorActive

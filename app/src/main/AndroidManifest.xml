@@ -32,6 +32,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission
+        android:name="android.permission.CAPTURE_VIDEO_OUTPUT"
+        tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.BYDAUTO_AUDIO_COMMON" />
     <uses-permission android:name="android.permission.BYDAUTO_AUDIO_GET" />
     <uses-permission android:name="android.permission.BYDAUTO_AUDIO_SET" />

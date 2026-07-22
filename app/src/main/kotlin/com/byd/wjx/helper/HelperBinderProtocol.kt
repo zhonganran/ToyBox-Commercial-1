@@ -39,6 +39,10 @@ import android.os.IBinder
  *   TX_EXEC_SHELL : writeString(command)                   -> reply: writeInt(status), writeInt(exitCode), writeString(output)
  *   TX_PLAY_SENTRY_EVENT : writeString(source)              -> reply: writeInt(status), writeInt(played)
  *   TX_SET_LOCK_SOUND_PLAYBACK_STATE : writeInt(enabled)    -> reply: writeInt(status), writeInt(0)
+ *   TX_CAMERA_START : writeString(cameraTag), writeInt(surfaceIndex), writeInt(tileCount),
+ *       writeInt(bufferWidth), writeInt(bufferHeight), writeInt(fps), Surface.writeToParcel(surface)
+ *       -> reply: writeInt(status), writeInt(0)
+ *   TX_CAMERA_STOP : (no args)                              -> reply: writeInt(status), writeInt(0)
  *
  * Projection status: 0 = success, <0 = error/unavailable. Surface is written LAST so a
  * marshalling test can assert the scalar args without round-tripping the Surface.
@@ -51,8 +55,8 @@ object HelperBinderProtocol {
     const val DESCRIPTOR = "com.byd.wjx.helper.IHelper"
     // Increment whenever the wire contract or helper-resident behavior changes. The helper process
     // can outlive an APK replacement, so the client verifies this marker before using it. Version
-    // 21 removes retired system-rotation transactions from the helper daemon.
-    const val CURRENT_VERSION = 21
+    // 22 restores the electronic-mirror camera producer on non-conflicting transaction slots.
+    const val CURRENT_VERSION = 22
 
     const val TX_PING = IBinder.FIRST_CALL_TRANSACTION       // 1
     const val TX_READ = IBinder.FIRST_CALL_TRANSACTION + 1   // 2
@@ -76,6 +80,8 @@ object HelperBinderProtocol {
     const val TX_STOP_LOCK_SOUND = IBinder.FIRST_CALL_TRANSACTION + 19          // 20
     const val TX_EXEC_SHELL = IBinder.FIRST_CALL_TRANSACTION + 20               // 21
     const val TX_PLAY_SENTRY_EVENT = IBinder.FIRST_CALL_TRANSACTION + 23        // 24
+    const val TX_CAMERA_START = IBinder.FIRST_CALL_TRANSACTION + 24             // 25
+    const val TX_CAMERA_STOP = IBinder.FIRST_CALL_TRANSACTION + 25              // 26
     const val TX_SET_LOCK_SOUND_PLAYBACK_STATE = IBinder.FIRST_CALL_TRANSACTION + 28 // 29
 
     /** Hard upper bound keeps a malformed caller from creating an oversized Binder reply. */

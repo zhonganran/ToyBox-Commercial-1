@@ -19,6 +19,7 @@ import android.view.WindowManager
 import android.widget.FrameLayout
 import com.byd.wjx.data.vehicle.HelperBootstrap
 import com.byd.wjx.data.vehicle.HelperClient
+import com.byd.wjx.electronicmirror.ElectronicMirrorRuntimeGuard
 import com.byd.wjx.log.WjxFileLogger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -148,6 +149,10 @@ object ClusterProjectionManager {
         scope.launch {
             mutex.withLock {
                 if (mode == ClusterMode.OFF) cancelPendingRecovery()
+                if (mode == ClusterMode.FULLSCREEN && ElectronicMirrorRuntimeGuard.isActive) {
+                    WjxFileLogger.i(TAG, "projection request deferred: electronic mirror owns cluster priority")
+                    return@withLock
+                }
                 if (mode == ClusterMode.FULLSCREEN && isFailureCoolingDown()) {
                     WjxFileLogger.w(TAG, "projection request ignored during failure cooldown")
                     return@withLock

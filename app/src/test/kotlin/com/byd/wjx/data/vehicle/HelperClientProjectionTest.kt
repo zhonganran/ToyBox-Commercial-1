@@ -40,9 +40,11 @@ class HelperClientProjectionTest {
     private fun capturingFake(
         status: Int,
         value: Int,
+        expectedCode: Int? = null,
         capture: (Parcel) -> Unit = {},
     ): IBinder = object : FakeIBinder() {
         override fun transact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+            expectedCode?.let { assertEquals(it, code) }
             data.setDataPosition(0)
             data.enforceInterface(HelperBinderProtocol.DESCRIPTOR)
             capture(data)
@@ -120,6 +122,57 @@ class HelperClientProjectionTest {
         assertArrayEquals(intArrayOf(2, 1280, 480), nums)
         assertFalse(clientWith(capturingFake(status = -1, value = 0))
             .launchAndForce("com.autonavi.amapauto", 2, 1280, 480))
+    }
+
+    @Test
+    fun `electronic mirror start sends independent surface profile before Surface`() = runBlocking {
+        var cameraTag: String? = null
+        val values = IntArray(5)
+        val fake = capturingFake(
+            status = 0,
+            value = 0,
+            capture = {
+                cameraTag = it.readString()
+                values.indices.forEach { index -> values[index] = it.readInt() }
+            },
+            expectedCode = HelperBinderProtocol.TX_CAMERA_START,
+        )
+        val surface = makeSurface()
+        val request = ElectronicMirrorCameraRequest(
+            cameraTag = "pano_h",
+            surfaceIndex = 0,
+            tileCount = 4,
+            bufferWidth = 3000,
+            bufferHeight = 508,
+            fps = 30,
+        )
+
+        assertTrue(clientWith(fake).startElectronicMirror(surface, request))
+        assertEquals("pano_h", cameraTag)
+        assertArrayEquals(intArrayOf(0, 4, 3000, 508, 30), values)
+        surface.release()
+    }
+
+    @Test
+    fun `electronic mirror stop uses camera stop transaction and maps replies`() = runBlocking {
+        assertTrue(
+            clientWith(
+                capturingFake(
+                    status = 0,
+                    value = 0,
+                    expectedCode = HelperBinderProtocol.TX_CAMERA_STOP,
+                ),
+            ).stopElectronicMirror(),
+        )
+        assertFalse(
+            clientWith(
+                capturingFake(
+                    status = -7,
+                    value = -1,
+                    expectedCode = HelperBinderProtocol.TX_CAMERA_STOP,
+                ),
+            ).stopElectronicMirror(),
+        )
     }
 
 }

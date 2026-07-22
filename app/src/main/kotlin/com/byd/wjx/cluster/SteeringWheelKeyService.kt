@@ -251,6 +251,14 @@ class SteeringWheelKeyService : AccessibilityService() {
                 WjxOutsidePlayService.stop(applicationContext)
                 WjxRealtimeHailingService.toggle(applicationContext, channel)
             }
+            KeyShortcutActionType.StreamingRearMirror -> {
+                val visible = entryPoint().electronicMirrorCoordinator()
+                    .toggleStreamingRearFromShortcut()
+                WjxFileLogger.i(
+                    TAG,
+                    "shortcut streaming rear binding=${binding.id} visible=$visible",
+                )
+            }
         }
     }
 

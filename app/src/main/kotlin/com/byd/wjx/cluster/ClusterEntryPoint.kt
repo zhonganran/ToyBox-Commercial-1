@@ -4,6 +4,7 @@ import com.byd.wjx.activation.ActivationManager
 import com.byd.wjx.audio.LockSoundConfigSync
 import com.byd.wjx.data.vehicle.HelperBootstrap
 import com.byd.wjx.data.vehicle.HelperClient
+import com.byd.wjx.electronicmirror.ElectronicMirrorCoordinator
 import com.byd.wjx.vehicle.CarProfileDetector
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
@@ -21,4 +22,5 @@ interface ClusterEntryPoint {
     fun activationManager(): ActivationManager
     fun lockSoundConfigSync(): LockSoundConfigSync
     fun carProfileDetector(): CarProfileDetector
+    fun electronicMirrorCoordinator(): ElectronicMirrorCoordinator
 }

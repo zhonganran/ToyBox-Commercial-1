@@ -13,6 +13,7 @@ import com.byd.wjx.domain.calculator.DrivingMetricsCoordinator
 import com.byd.wjx.domain.tracker.DriveSessionCoordinator
 import com.byd.wjx.domain.tracker.TripTracker
 import com.byd.wjx.desktopcard.DesktopQuickCardRuntime
+import com.byd.wjx.electronicmirror.ElectronicMirrorCoordinator
 import com.byd.wjx.log.WjxFileLogger
 import com.byd.wjx.service.runtime.CameraRuntimeCoordinator
 import com.byd.wjx.service.runtime.SteeringWheelRuntimeCoordinator
@@ -53,6 +54,7 @@ class TrackingService : Service() {
     @Inject lateinit var notificationController: TrackingNotificationController
     @Inject lateinit var ledRuntimeCoordinator: com.byd.wjx.led.LedRuntimeCoordinator
     @Inject lateinit var desktopQuickCardRuntime: DesktopQuickCardRuntime
+    @Inject lateinit var electronicMirrorCoordinator: ElectronicMirrorCoordinator
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val helperReadiness = CompletableDeferred<Boolean>()
@@ -130,7 +132,8 @@ class TrackingService : Service() {
         startPolling()
         cameraRuntimeCoordinator.start(serviceScope)
         desktopQuickCardRuntime.start(serviceScope)
-        lyricRuntime.start(cameraRuntimeCoordinator.active)
+        electronicMirrorCoordinator.start(cameraRuntimeCoordinator.active)
+        lyricRuntime.start(cameraRuntimeCoordinator.active, electronicMirrorCoordinator.active)
         ledRuntimeCoordinator.start(serviceScope)
         publishRunning(true)
         ChainLog.append(this, "TrackingService fully started")
@@ -178,6 +181,7 @@ class TrackingService : Service() {
         }
 
         lyricRuntime.stop()
+        electronicMirrorCoordinator.stop()
         desktopQuickCardRuntime.stop()
         ledRuntimeCoordinator.stop()
         cameraRuntimeCoordinator.stop()
@@ -263,6 +267,15 @@ class TrackingService : Service() {
                 sharedAdaptiveLoop.actionFlow.collect { data ->
                     runCatching { ledRuntimeCoordinator.onVehicleData(data) }
                         .onFailure { WjxFileLogger.e(TAG, "LED linkage tick failed: ${it.message}", it) }
+                }
+            }
+
+            launch {
+                sharedAdaptiveLoop.actionFlow.collect { data ->
+                    runCatching { electronicMirrorCoordinator.onVehicleData(data) }
+                        .onFailure {
+                            WjxFileLogger.e(TAG, "Electronic mirror tick failed: ${it.message}", it)
+                        }
                 }
             }
 

@@ -224,6 +224,7 @@ fun main(args: Array<String>) {
     // Keyed by displayId so TX_RELEASE_VIRTUAL_DISPLAY can release the right one.
     val virtualDisplays = ConcurrentHashMap<Int, VirtualDisplay>()
     val lockSoundRuntime = WjxLockSoundRuntime(svc, autoIface, systemContext)
+    val electronicMirrorCamera = ElectronicMirrorCameraRuntime(systemContext)
 
     // Step 3: build our stub Binder.
     val helperBinder = object : Binder() {
@@ -363,15 +364,22 @@ fun main(args: Array<String>) {
                 }.getOrElse { reply?.writeInt(-1); reply?.writeInt(0); true }
 
                 HelperBinderProtocol.TX_GRANT_OVERLAY_PERMISSION -> runCatching {
-                    // Narrow, hardcoded — NOT a generic shell passthrough. These two app-ops are
-                    // the permissions actually required by the overlay and fission display.
+                    // Narrow, hardcoded — NOT a generic shell passthrough. These permissions are
+                    // only granted to our own package for the overlay and fission display.
                     // SYSTEM_ALERT_WINDOW lets us draw the cluster overlay; PROJECT_MEDIA gates
                     // third-party access to the fission screen-projection display (without it
                     // DisplayManager.getDisplay(clusterId) returns null in our process).
                     val pkg = HelperBinderProtocol.APP_PACKAGE
                     val r1 = shExec("appops set \"\$1\" SYSTEM_ALERT_WINDOW allow", pkg)
                     val r2 = shExec("appops set \"\$1\" PROJECT_MEDIA allow", pkg)
-                    helperLog("Permission", "grant overlay=${r1.code} project=${r2.code}")
+                    val r3 = shExec("pm grant \"\$1\" android.permission.CAPTURE_VIDEO_OUTPUT", pkg)
+                    helperLog(
+                        "Permission",
+                        "grant overlay=${r1.code} project=${r2.code} videoOutput=${r3.code}",
+                    )
+                    // Some DiLink builds do not expose CAPTURE_VIDEO_OUTPUT to package manager.
+                    // Overlay and PROJECT_MEDIA are the hard requirements; keep the third grant
+                    // best-effort while preserving its result in the helper log.
                     val ok = r1.code == 0 && r2.code == 0
                     reply?.writeInt(if (ok) 0 else -1); reply?.writeInt(0)
                     true
@@ -470,6 +478,37 @@ fun main(args: Array<String>) {
                     true
                 }.getOrElse {
                     helperLog("LockSound", "sentry event failed: ${it.javaClass.simpleName}:${it.message.orEmpty()}")
+                    reply?.writeInt(-1); reply?.writeInt(0); true
+                }
+
+                HelperBinderProtocol.TX_CAMERA_START -> runCatching {
+                    val cameraTag = data.readString().orEmpty()
+                    val surfaceIndex = data.readInt()
+                    val tileCount = data.readInt()
+                    val bufferWidth = data.readInt()
+                    val bufferHeight = data.readInt()
+                    val fps = data.readInt()
+                    val surface = Surface.CREATOR.createFromParcel(data)
+                    val status = electronicMirrorCamera.start(
+                        surface = surface,
+                        cameraTag = cameraTag,
+                        surfaceIndex = surfaceIndex,
+                        tileCount = tileCount,
+                        bufferWidth = bufferWidth,
+                        bufferHeight = bufferHeight,
+                        fps = fps,
+                    )
+                    reply?.writeInt(status); reply?.writeInt(0); true
+                }.getOrElse {
+                    helperLog("ElectronicMirrorCamera", "binder start failed: ${throwableSummary(it)}")
+                    reply?.writeInt(-1); reply?.writeInt(0); true
+                }
+
+                HelperBinderProtocol.TX_CAMERA_STOP -> runCatching {
+                    val status = electronicMirrorCamera.stop()
+                    reply?.writeInt(status); reply?.writeInt(0); true
+                }.getOrElse {
+                    helperLog("ElectronicMirrorCamera", "binder stop failed: ${throwableSummary(it)}")
                     reply?.writeInt(-1); reply?.writeInt(0); true
                 }
 

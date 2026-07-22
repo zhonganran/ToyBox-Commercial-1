@@ -18,7 +18,8 @@ enum class KeyShortcutPressType(val storageValue: String, val label: String) {
 
 enum class KeyShortcutActionType(val storageValue: String, val label: String) {
     PlaySound("play_sound", "播放音效"),
-    RealtimeHailing("realtime_hailing", "实时喊话");
+    RealtimeHailing("realtime_hailing", "实时喊话"),
+    StreamingRearMirror("streaming_rear_mirror", "流媒体后视镜");
 
     companion object {
         fun fromStorage(value: String?): KeyShortcutActionType? =
@@ -39,6 +40,7 @@ data class KeyShortcutBinding(
         get() = keyCode > 0 && when (actionType) {
             KeyShortcutActionType.PlaySound -> soundPath.isNotBlank()
             KeyShortcutActionType.RealtimeHailing -> true
+            KeyShortcutActionType.StreamingRearMirror -> true
         }
 }
 
