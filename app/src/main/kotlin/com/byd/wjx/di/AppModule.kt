@@ -16,6 +16,7 @@ import com.byd.wjx.data.loop.CadenceConfig
 import com.byd.wjx.data.loop.SharedAdaptiveLoop
 import com.byd.wjx.data.nativestack.ParsReader
 import com.byd.wjx.data.trips.TripRecorder
+import com.byd.wjx.data.vehicle.HelperBootstrap
 import com.byd.wjx.domain.calculator.OdometerConsumptionBuffer
 import com.byd.wjx.domain.calculator.RangeAvgSource
 import com.byd.wjx.domain.calculator.RangeCalculator
@@ -93,11 +94,13 @@ object AppModule {
         parsReader: ParsReader,
         lastStateDao: LastStateDao,
         energyDataReader: EnergyDataReader,
+        helperBootstrap: HelperBootstrap,
     ): SharedAdaptiveLoop = SharedAdaptiveLoop(
         parsReader = parsReader,
         lastStateDao = lastStateDao,
         energyDataReader = energyDataReader,
         cadence = CadenceConfig.default(),
+        recoverVehicleReads = { helperBootstrap.ensureVehicleReadsReady() },
     )
 
     @Provides

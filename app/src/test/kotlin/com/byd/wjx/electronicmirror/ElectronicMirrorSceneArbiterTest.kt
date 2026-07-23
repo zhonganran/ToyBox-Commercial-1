@@ -126,7 +126,7 @@ class ElectronicMirrorSceneArbiterTest {
 
     @Test
     fun `every logical viewpoint selects a tile from the same panorama Surface`() {
-        val config = ElectronicMirrorConfig(enabled = true)
+        val config = ElectronicMirrorConfig(enabled = true, cameraIdOverride = 3)
             .withSource(ElectronicMirrorViewpoint.LEFT, ElectronicMirrorCameraSource.SOURCE_C)
         val scene = ElectronicMirrorSceneArbiter.resolve(
             config,
@@ -139,6 +139,7 @@ class ElectronicMirrorSceneArbiterTest {
         assertEquals(0, scene?.helperSurfaceIndex)
         assertEquals(4, scene?.surfaceProfile?.tileCount)
         assertEquals("pano_h", scene?.surfaceProfile?.cameraTag)
+        assertEquals(3, scene?.surfaceProfile?.cameraIdOverride)
     }
 
     @Test

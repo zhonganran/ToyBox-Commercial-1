@@ -52,7 +52,11 @@ class ElectronicMirrorTextureTransformTest {
             scene(ElectronicMirrorViewpoint.REAR, ElectronicMirrorCameraSource.SOURCE_C, base.copy(heightOffsetPermille = -100)),
         )
         val high = assertNotNullTransform(
-            scene(ElectronicMirrorViewpoint.REAR, ElectronicMirrorCameraSource.SOURCE_C, base.copy(heightOffsetPermille = 120)),
+            scene(
+                ElectronicMirrorViewpoint.REAR,
+                ElectronicMirrorCameraSource.SOURCE_C,
+                base.copy(heightOffsetPermille = ElectronicMirrorProjectionSpec.MAX_REAR_HEIGHT_OFFSET),
+            ),
         )
 
         assertTrue(high.translateY > low.translateY)

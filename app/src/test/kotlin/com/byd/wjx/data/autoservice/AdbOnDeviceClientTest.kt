@@ -19,10 +19,14 @@ import java.io.IOException
 class AdbOnDeviceClientTest {
 
     private fun newClient(fake: AdbProtocol): AdbOnDeviceClientImpl {
+        return newClient { fake }
+    }
+
+    private fun newClient(factory: () -> AdbProtocol): AdbOnDeviceClientImpl {
         val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
         val keyStore = AdbKeyStore(ctx)
         val client = AdbOnDeviceClientImpl(ctx, keyStore)
-        client.protocolFactory = { fake }
+        client.protocolFactory = factory
         return client
     }
 
@@ -30,7 +34,9 @@ class AdbOnDeviceClientTest {
         var connectResult: Boolean = true,
         var connectThrows: Throwable? = null,
         var connectDelayMs: Long = 0,
-        var execResponses: Map<String, String?> = emptyMap()
+        var execResponses: Map<String, String?> = emptyMap(),
+        var disconnectOnNullExec: Boolean = false,
+        var execResponder: ((String) -> String?)? = null,
     ) : AdbProtocol {
         var connectCalls = 0
         var disconnectCalls = 0
@@ -46,11 +52,23 @@ class AdbOnDeviceClientTest {
         }
         override fun exec(cmd: String): String? {
             execCalls += cmd
-            return execResponses[cmd]
+            val result = if (execResponder != null) {
+                execResponder?.invoke(cmd)
+            } else if (execResponses.containsKey(cmd)) {
+                execResponses[cmd]
+            } else {
+                ""
+            }
+            if (result == null && disconnectOnNullExec) connected = false
+            return result
         }
         override fun isConnected(): Boolean = connected
         override fun disconnect() {
             disconnectCalls++
+            connected = false
+        }
+
+        fun forceDisconnect() {
             connected = false
         }
     }
@@ -161,5 +179,57 @@ class AdbOnDeviceClientTest {
         assertFalse("must not contain base64", cmd.contains("base64"))
         assertFalse("must not contain echo", cmd.contains("echo"))
         assertFalse("must not contain helper.dex", cmd.contains("helper.dex"))
+    }
+
+    @Test
+    fun `spawnHelper reconnects a retained disconnected protocol`() = runTest {
+        val fake = FakeProtocol(connectResult = true)
+        val client = newClient(fake)
+
+        assertTrue(client.connect().isSuccess)
+        fake.forceDisconnect()
+        fake.execCalls.clear()
+
+        assertTrue(client.spawnHelper())
+        assertEquals(2, fake.connectCalls)
+        assertTrue(fake.execCalls.any { it.contains("pkill") })
+        assertTrue(fake.execCalls.any { it.contains("app_process") })
+    }
+
+    @Test
+    fun `spawnHelper discards a broken protocol and retries on a fresh connection`() = runTest {
+        val first = FakeProtocol(connectResult = true)
+        val second = FakeProtocol(connectResult = true)
+        val protocols = ArrayDeque<AdbProtocol>().apply {
+            add(first)
+            add(second)
+        }
+        val client = newClient { protocols.removeFirst() }
+
+        assertTrue(client.connect().isSuccess)
+        first.execResponses = mapOf(
+            "pkill -9 -f wjx_helper 2>/dev/null; sleep 0.5" to null,
+        )
+        first.disconnectOnNullExec = true
+
+        assertTrue(client.spawnHelper())
+        assertEquals(1, first.disconnectCalls)
+        assertEquals(1, second.connectCalls)
+        assertTrue(second.execCalls.any { it.contains("pkill") })
+        assertTrue(second.execCalls.any { it.contains("app_process") })
+    }
+
+    @Test
+    fun `spawnHelper does not report success when spawn dispatch returns null`() = runTest {
+        val fake = FakeProtocol(connectResult = true, disconnectOnNullExec = true)
+        val client = newClient(fake)
+
+        assertTrue(client.connect().isSuccess)
+        val spawnCommandMarker = "sh /data/local/tmp/wjx_helper_start.sh"
+        fake.execResponder = { command ->
+            if (command.contains(spawnCommandMarker)) null else ""
+        }
+
+        assertFalse(client.spawnHelper())
     }
 }

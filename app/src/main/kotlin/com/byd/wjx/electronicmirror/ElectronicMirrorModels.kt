@@ -175,23 +175,23 @@ data class ElectronicMirrorProjectionSpec(
         const val MIN_HORIZONTAL = -450
         const val MAX_HORIZONTAL = 450
         const val MIN_HEIGHT_OFFSET = -100
-        const val MAX_HEIGHT_OFFSET = 120
+        const val MAX_HEIGHT_OFFSET = 320
         const val MIN_VIEW_SCALE = 850
         const val MAX_VIEW_SCALE = 2000
         const val MIN_SIDE_HORIZONTAL = -450
         const val MAX_SIDE_HORIZONTAL = 450
         const val MIN_SIDE_HEIGHT_OFFSET = -80
-        const val MAX_SIDE_HEIGHT_OFFSET = 100
+        const val MAX_SIDE_HEIGHT_OFFSET = 160
         const val MIN_SIDE_VIEW_SCALE = 850
         const val MAX_SIDE_VIEW_SCALE = 2000
         const val MIN_REAR_HORIZONTAL = -350
         const val MAX_REAR_HORIZONTAL = 350
         const val MIN_REAR_HEIGHT_OFFSET = -100
-        const val MAX_REAR_HEIGHT_OFFSET = 120
+        const val MAX_REAR_HEIGHT_OFFSET = 320
         const val MIN_REAR_VIEW_SCALE = 850
         const val MAX_REAR_VIEW_SCALE = 1500
         const val DEFAULT_VERTICAL_CENTER_RATIO = 0.52f
-        const val MIN_VERTICAL_CENTER_RATIO = 0.4f
+        const val MIN_VERTICAL_CENTER_RATIO = 0.20f
         const val MAX_VERTICAL_CENTER_RATIO = 0.62f
 
         val DEFAULT_LEFT = ElectronicMirrorProjectionSpec(
@@ -224,6 +224,7 @@ data class ElectronicMirrorProjectionSpec(
  */
 data class ElectronicMirrorSurfaceProfile(
     val cameraTag: String = DEFAULT_CAMERA_TAG,
+    val cameraIdOverride: Int = AUTO_CAMERA_ID,
     val surfaceIndex: Int = DEFAULT_SURFACE_INDEX,
     val tileCount: Int = DEFAULT_TILE_COUNT,
     val qualityWidth: Int = DEFAULT_QUALITY_WIDTH,
@@ -249,6 +250,7 @@ data class ElectronicMirrorSurfaceProfile(
 
     fun sanitized(): ElectronicMirrorSurfaceProfile = copy(
         cameraTag = cameraTag.trim().ifEmpty { DEFAULT_CAMERA_TAG },
+        cameraIdOverride = sanitizeCameraId(cameraIdOverride),
         surfaceIndex = surfaceIndex.coerceIn(MIN_SURFACE_INDEX, MAX_SURFACE_INDEX),
         tileCount = tileCount.coerceIn(1, MAX_TILE_COUNT),
         qualityWidth = qualityWidth.coerceIn(MIN_QUALITY_WIDTH, MAX_QUALITY_WIDTH),
@@ -258,6 +260,9 @@ data class ElectronicMirrorSurfaceProfile(
 
     companion object {
         const val DEFAULT_CAMERA_TAG = "pano_h"
+        const val AUTO_CAMERA_ID = -1
+        const val MIN_CAMERA_ID = 0
+        const val MAX_CAMERA_ID = 3
         const val DEFAULT_SURFACE_INDEX = 0
         const val DEFAULT_TILE_COUNT = 4
         const val DEFAULT_QUALITY_WIDTH = 750
@@ -278,10 +283,15 @@ data class ElectronicMirrorSurfaceProfile(
         fun panorama(
             surfaceIndex: Int,
             qualityWidth: Int = DEFAULT_QUALITY_WIDTH,
+            cameraIdOverride: Int = AUTO_CAMERA_ID,
         ): ElectronicMirrorSurfaceProfile = ElectronicMirrorSurfaceProfile(
+            cameraIdOverride = cameraIdOverride,
             surfaceIndex = surfaceIndex,
             qualityWidth = qualityWidth,
         ).sanitized()
+
+        fun sanitizeCameraId(cameraId: Int): Int =
+            cameraId.takeIf { it in MIN_CAMERA_ID..MAX_CAMERA_ID } ?: AUTO_CAMERA_ID
 
     }
 }
@@ -310,7 +320,13 @@ data class ElectronicMirrorConfig(
         ElectronicMirrorGeometry.DEFAULT_STREAMING_CLUSTER,
     val streamingRearCenterGeometry: ElectronicMirrorGeometry =
         ElectronicMirrorGeometry.DEFAULT_STREAMING_CENTER,
+    val cameraIdOverride: Int = ElectronicMirrorSurfaceProfile.AUTO_CAMERA_ID,
     val panoramaSurfaceIndex: Int = ElectronicMirrorSurfaceProfile.DEFAULT_SURFACE_INDEX,
+    val manualProfileOverride: Boolean = false,
+    val remoteProfileId: String = "",
+    val remoteProfileVersion: Int = 0,
+    val profileSyncStatus: String = "not_synced",
+    val profileSyncMessage: String = "",
 ) {
     fun geometryFor(target: ElectronicMirrorDisplayTarget = displayTarget): ElectronicMirrorGeometry =
         when (target) {
@@ -400,6 +416,7 @@ data class ElectronicMirrorConfig(
             leftSource = if (sourcesAreUnique) leftSource else ElectronicMirrorCameraSource.SOURCE_A,
             rightSource = if (sourcesAreUnique) rightSource else ElectronicMirrorCameraSource.SOURCE_B,
             rearSource = if (sourcesAreUnique) rearSource else ElectronicMirrorCameraSource.SOURCE_C,
+            cameraIdOverride = ElectronicMirrorSurfaceProfile.sanitizeCameraId(cameraIdOverride),
             panoramaSurfaceIndex = panoramaSurfaceIndex.coerceIn(
                 ElectronicMirrorSurfaceProfile.MIN_SURFACE_INDEX,
                 ElectronicMirrorSurfaceProfile.MAX_SURFACE_INDEX,

@@ -371,4 +371,43 @@ class SharedAdaptiveLoopLifecycleTest {
             job.cancel()
         }
     }
+
+    @Test fun `three unavailable reads trigger helper recovery and resume immediately`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        var reads = 0
+        var recoveries = 0
+        val reader = object : ParsReader {
+            override suspend fun fetchVehicleSnapshot(): VehicleSnapshot? {
+                reads++
+                if (reads <= 3) return null
+                return VehicleSnapshot.synthetic(
+                    diParsData(soc = 78, mileage = 100.0, voltage12v = 12.5, powerState = 3),
+                    VehicleSnapshotKind.FULL,
+                )
+            }
+        }
+        val loop = SharedAdaptiveLoop(
+            parsReader = reader,
+            lastStateDao = mockk(relaxed = true),
+            energyDataReader = mockk<EnergyDataReader> { every { isAvailable() } returns true },
+            dispatcher = dispatcher,
+            recoverVehicleReads = {
+                recoveries++
+                true
+            },
+        )
+
+        val job = loop.start(TestScope(dispatcher))
+        try {
+            advanceTimeBy(2_001L)
+            runCurrent()
+
+            assertEquals(1, recoveries)
+            assertEquals(4, reads)
+            assertTrue(loop.connected.value)
+            assertEquals(78, loop.snapshot.value?.data?.soc)
+        } finally {
+            job.cancel()
+        }
+    }
 }

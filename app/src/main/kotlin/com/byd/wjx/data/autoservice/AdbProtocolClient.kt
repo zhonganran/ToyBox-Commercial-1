@@ -134,6 +134,7 @@ internal class AdbProtocolClient(
             if (!gotOkay) {
                 Log.e(TAG, "shell: never got OKAY for localId=$localId")
                 WjxFileLogger.e(TAG, "shell never got OKAY localId=$localId cmd=${cmd.take(80)}")
+                disconnectInternal()
                 return null
             }
 

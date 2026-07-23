@@ -127,7 +127,7 @@ class HelperClientProjectionTest {
     @Test
     fun `electronic mirror start sends independent surface profile before Surface`() = runBlocking {
         var cameraTag: String? = null
-        val values = IntArray(5)
+        val values = IntArray(6)
         val fake = capturingFake(
             status = 0,
             value = 0,
@@ -140,6 +140,7 @@ class HelperClientProjectionTest {
         val surface = makeSurface()
         val request = ElectronicMirrorCameraRequest(
             cameraTag = "pano_h",
+            cameraIdOverride = 3,
             surfaceIndex = 0,
             tileCount = 4,
             bufferWidth = 3000,
@@ -149,7 +150,7 @@ class HelperClientProjectionTest {
 
         assertTrue(clientWith(fake).startElectronicMirror(surface, request))
         assertEquals("pano_h", cameraTag)
-        assertArrayEquals(intArrayOf(0, 4, 3000, 508, 30), values)
+        assertArrayEquals(intArrayOf(3, 0, 4, 3000, 508, 30), values)
         surface.release()
     }
 

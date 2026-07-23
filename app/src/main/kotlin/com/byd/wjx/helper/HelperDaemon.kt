@@ -483,6 +483,7 @@ fun main(args: Array<String>) {
 
                 HelperBinderProtocol.TX_CAMERA_START -> runCatching {
                     val cameraTag = data.readString().orEmpty()
+                    val cameraIdOverride = data.readInt()
                     val surfaceIndex = data.readInt()
                     val tileCount = data.readInt()
                     val bufferWidth = data.readInt()
@@ -492,6 +493,7 @@ fun main(args: Array<String>) {
                     val status = electronicMirrorCamera.start(
                         surface = surface,
                         cameraTag = cameraTag,
+                        cameraIdOverride = cameraIdOverride,
                         surfaceIndex = surfaceIndex,
                         tileCount = tileCount,
                         bufferWidth = bufferWidth,

@@ -1,13 +1,10 @@
 package com.byd.wjx.vehicle
 
-import android.annotation.SuppressLint
 import com.byd.wjx.audio.ExteriorChannel
-import java.io.BufferedReader
-import java.io.InputStreamReader
 
 class CarProfileDetector(
     private val clock: () -> Long = System::currentTimeMillis,
-    private val propertyReader: (String) -> String = ::readSystemProperty,
+    private val propertyReader: (String) -> String = VehicleSystemProperties::read,
 ) {
     @Volatile private var cachedProfile: CarProfile? = null
     @Volatile private var cachedAtMs: Long = 0L
@@ -55,22 +52,6 @@ class CarProfileDetector(
             val leading = trimmed.substringBefore(".").toIntOrNull()
             if (leading != null && leading in KNOWN_SERIES) return leading
             return SERIES_TOKEN_REGEX.find(trimmed)?.groupValues?.getOrNull(1)?.toIntOrNull()
-        }
-
-        @SuppressLint("PrivateApi")
-        private fun readSystemProperty(name: String): String {
-            val direct = runCatching {
-                val type = Class.forName("android.os.SystemProperties")
-                type.getMethod("get", String::class.java).invoke(null, name) as? String
-            }.getOrNull().orEmpty()
-            if (direct.isNotBlank()) return direct
-
-            return runCatching {
-                val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", "getprop $name"))
-                val line = BufferedReader(InputStreamReader(process.inputStream)).use { it.readLine() }
-                process.waitFor()
-                line.orEmpty()
-            }.getOrDefault("")
         }
     }
 }

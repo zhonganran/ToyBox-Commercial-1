@@ -39,7 +39,8 @@ import android.os.IBinder
  *   TX_EXEC_SHELL : writeString(command)                   -> reply: writeInt(status), writeInt(exitCode), writeString(output)
  *   TX_PLAY_SENTRY_EVENT : writeString(source)              -> reply: writeInt(status), writeInt(played)
  *   TX_SET_LOCK_SOUND_PLAYBACK_STATE : writeInt(enabled)    -> reply: writeInt(status), writeInt(0)
- *   TX_CAMERA_START : writeString(cameraTag), writeInt(surfaceIndex), writeInt(tileCount),
+ *   TX_CAMERA_START : writeString(cameraTag), writeInt(cameraIdOverride),
+ *       writeInt(surfaceIndex), writeInt(tileCount),
  *       writeInt(bufferWidth), writeInt(bufferHeight), writeInt(fps), Surface.writeToParcel(surface)
  *       -> reply: writeInt(status), writeInt(0)
  *   TX_CAMERA_STOP : (no args)                              -> reply: writeInt(status), writeInt(0)
@@ -55,8 +56,8 @@ object HelperBinderProtocol {
     const val DESCRIPTOR = "com.byd.wjx.helper.IHelper"
     // Increment whenever the wire contract or helper-resident behavior changes. The helper process
     // can outlive an APK replacement, so the client verifies this marker before using it. Version
-    // 22 restores the electronic-mirror camera producer on non-conflicting transaction slots.
-    const val CURRENT_VERSION = 22
+    // 23 adds a per-vehicle manual camera id override to the electronic-mirror producer.
+    const val CURRENT_VERSION = 23
 
     const val TX_PING = IBinder.FIRST_CALL_TRANSACTION       // 1
     const val TX_READ = IBinder.FIRST_CALL_TRANSACTION + 1   // 2

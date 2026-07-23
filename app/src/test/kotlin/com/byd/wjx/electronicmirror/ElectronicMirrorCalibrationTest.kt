@@ -43,6 +43,19 @@ class ElectronicMirrorProjectionSpecTest {
     }
 
     @Test
+    fun `picture height can move further upward for cluster calibration`() {
+        val side = ElectronicMirrorProjectionSpec(heightOffsetPermille = 999)
+            .sanitizedFor(ElectronicMirrorViewpoint.LEFT)
+        val rear = ElectronicMirrorProjectionSpec(heightOffsetPermille = 999)
+            .sanitizedFor(ElectronicMirrorViewpoint.REAR)
+
+        assertEquals(ElectronicMirrorProjectionSpec.MAX_SIDE_HEIGHT_OFFSET, side.heightOffsetPermille)
+        assertEquals(ElectronicMirrorProjectionSpec.MAX_REAR_HEIGHT_OFFSET, rear.heightOffsetPermille)
+        assertEquals(0.36f, side.verticalCenterRatio, 0.001f)
+        assertEquals(0.20f, rear.verticalCenterRatio, 0.001f)
+    }
+
+    @Test
     fun `real vehicle panorama profile scales 7680 by 1300 source to 3000 by 508 buffer`() {
         val profile = ElectronicMirrorSurfaceProfile.panorama(surfaceIndex = 0)
 

@@ -49,7 +49,6 @@ import org.robolectric.annotation.Config
 class SettingsViewModelTest {
 
     private val testDispatcher = StandardTestDispatcher()
-    private val logRecorders = mutableListOf<SettingsLogRecorder>()
 
     @Before
     fun setUp() {
@@ -58,8 +57,6 @@ class SettingsViewModelTest {
 
     @After
     fun tearDown() {
-        logRecorders.forEach(SettingsLogRecorder::close)
-        logRecorders.clear()
         Dispatchers.resetMain()
     }
 
@@ -137,6 +134,7 @@ class SettingsViewModelTest {
     private fun buildViewModel(
         updateChecker: UpdateChecker? = null,
         settingsDao: FakeSettingsDao = FakeSettingsDao(),
+        logUploader: SettingsLogUploader = mockk(relaxed = true),
     ): SettingsViewModel {
         val ctx: Context = ApplicationProvider.getApplicationContext()
 
@@ -158,14 +156,6 @@ class SettingsViewModelTest {
         )
         // Stub BackupManager: no AppDatabase available in unit tests, use mockk
         val backupManager = mockk<BackupManager>(relaxed = true)
-        val chargingStateStore = com.byd.wjx.data.charging.ChargingStateStore(settingsRepo)
-        val logRecorder = SettingsLogRecorder(
-            appContext = ctx,
-            settingsRepository = settingsRepo,
-            chargingStateStore = chargingStateStore,
-            catchUpJournal = com.byd.wjx.data.charging.CatchUpJournal(settingsRepo),
-        ).also(logRecorders::add)
-
         return SettingsViewModel(
             appContext = ctx,
             settingsRepository = settingsRepo,
@@ -178,7 +168,7 @@ class SettingsViewModelTest {
             lockSoundConfigSync = mockk<com.byd.wjx.audio.LockSoundConfigSync>(relaxed = true),
             okHttpClient = httpClient,
             serviceQrCache = ServiceQrCache(ctx),
-            logRecorder = logRecorder,
+            logUploader = logUploader,
         )
     }
 
@@ -190,6 +180,35 @@ class SettingsViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(SettingsRepository.DEFAULT_BATTERY_CAPACITY, vm.uiState.value.batteryCapacity)
+    }
+
+    @Test
+    fun `upload logs reports server log id`() = runTest {
+        val uploader = mockk<SettingsLogUploader>()
+        coEvery { uploader.upload() } returns SettingsLogUploadResult(42L, "诊断日志已上传")
+        val vm = buildViewModel(logUploader = uploader)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        vm.uploadLogs()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(false, vm.uiState.value.isUploadingLogs)
+        assertEquals("日志上传成功，编号 #42", vm.uiState.value.logUploadStatus)
+        coVerify(exactly = 1) { uploader.upload() }
+    }
+
+    @Test
+    fun `upload logs exposes failure without leaving loading state`() = runTest {
+        val uploader = mockk<SettingsLogUploader>()
+        coEvery { uploader.upload() } throws IllegalStateException("车辆尚未登记")
+        val vm = buildViewModel(logUploader = uploader)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        vm.uploadLogs()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(false, vm.uiState.value.isUploadingLogs)
+        assertEquals("日志上传失败：车辆尚未登记", vm.uiState.value.logUploadStatus)
     }
 
     @Test

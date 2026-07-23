@@ -25,6 +25,7 @@ class SuperToyBoxApp : Application(), Configuration.Provider {
     @Inject lateinit var workerFactory: HiltWorkerFactory
     @Inject lateinit var activationManager: com.byd.wjx.activation.ActivationManager
     @Inject lateinit var foregroundAppMonitor: com.byd.wjx.data.foreground.ForegroundAppMonitor
+    @Inject lateinit var vehicleProfileSyncManager: com.byd.wjx.vehicle.VehicleProfileSyncManager
     @Volatile private var unlockedRuntimeInitialized = false
 
     override val workManagerConfiguration: Configuration
@@ -62,6 +63,7 @@ class SuperToyBoxApp : Application(), Configuration.Provider {
     fun ensureUnlockedRuntime() {
         if (unlockedRuntimeInitialized || !BootState.isUserUnlocked(this)) return
         activationManager.ensureStarted()
+        vehicleProfileSyncManager.start()
         scheduleDataThinning()
         unlockedRuntimeInitialized = true
         WjxFileLogger.i("SuperToyBoxApp", "credential runtime initialized")

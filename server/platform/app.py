@@ -1,6 +1,8 @@
 import os
 import base64
+import hashlib
 import json
+import re
 import secrets
 import time
 import wave
@@ -29,6 +31,7 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from platform_config import (
     ADMIN_TITLE,
     ALLOWED_IMAGE_EXTENSIONS,
+    ALLOWED_LOG_EXTENSIONS,
     ALLOWED_SOUND_EXTENSIONS,
     APK_DIR,
     DB_PATH,
@@ -40,6 +43,10 @@ from platform_config import (
     LICENSE_MAX_FAILURES,
     LOGIN_LOCK_SECONDS,
     LOGIN_MAX_FAILURES,
+    LOG_DIR,
+    LOG_UPLOAD_DEVICE_LIMIT,
+    LOG_UPLOAD_IP_LIMIT,
+    MAX_LOG_SIZE,
     MAX_SERVICE_QR_SIZE,
     MAX_UPLOAD_SIZE,
     OFFLINE_LICENSE_FEATURES,
@@ -203,6 +210,15 @@ def log_event(conn, kind, message, remote_addr=None):
 @app.before_request
 def ensure_ready():
     init_db()
+    if (
+        request.path == "/api/v1/logs/upload"
+        and request.content_length
+        and request.content_length > MAX_LOG_SIZE + 256 * 1024
+    ):
+        return jsonify({
+            "success": False,
+            "message": f"日志不能超过 {MAX_LOG_SIZE // 1024 // 1024} MB",
+        }), 413
     if request.method in {"POST", "PUT", "PATCH", "DELETE"} and not request.path.startswith("/api/"):
         if not validate_csrf():
             abort(400, "CSRF token invalid")
@@ -244,6 +260,34 @@ def allowed_image_file(filename):
     return suffix in ALLOWED_IMAGE_EXTENSIONS
 
 
+def allowed_log_file(filename):
+    suffix = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    return suffix in ALLOWED_LOG_EXTENSIONS
+
+
+def save_limited_log(upload, target, max_size):
+    total = 0
+    try:
+        with target.open("xb") as output:
+            while True:
+                chunk = upload.stream.read(64 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > max_size:
+                    raise ValueError(f"日志不能超过 {max_size // 1024 // 1024} MB")
+                if b"\x00" in chunk:
+                    raise ValueError("日志内容不是文本文件")
+                output.write(chunk)
+        if total <= 0:
+            raise ValueError("日志文件为空")
+        target.chmod(0o640)
+        return total
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
+
+
 def estimate_duration_ms(path):
     if path.suffix.lower() != ".wav":
         return 0
@@ -265,6 +309,114 @@ def extract_valid_vin(value):
     if len(code) == 17 and code.startswith("L") and code.isalnum():
         return code
     return ""
+
+
+VEHICLE_COMPATIBILITY_FIELDS = (
+    ("display_name", "displayName"),
+    ("model_variant", "modelVariant"),
+    ("vehicle_40d_code", "vehicle40dCode"),
+    ("car_series", "carSeries"),
+    ("vehicle_type", "vehicleType"),
+    ("controller_series", "controllerSeries"),
+    ("controller_compat", "controllerCompat"),
+    ("camera_source_fingerprint", "cameraSourceFingerprint"),
+)
+VEHICLE_CAMERA_SOURCES = {"SOURCE_A", "SOURCE_B", "SOURCE_C"}
+
+
+def normalized_compatibility_value(value):
+    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+
+
+def controller_series_from_version(value):
+    raw = str(value or "").strip()
+    try:
+        leading = int(raw.split(".", 1)[0])
+    except ValueError:
+        leading = 0
+    if leading in {23, 34, 57}:
+        return leading
+    match = re.match(r"^(23|34|57)(?:\s*控|controller|[_\-.]|$)", raw, re.IGNORECASE)
+    return int(match.group(1)) if match else 0
+
+
+def controller_compatibility_from_version(value):
+    parts = [part.strip() for part in re.split(r"[.\-_]", str(value or "").strip())]
+    return ".".join([part for part in parts if part][:3])
+
+
+def vehicle_compatibility_key(vehicle):
+    controller_version = str(vehicle.get("controllerVersion", "")).strip()
+    effective = dict(vehicle)
+    effective["controllerSeries"] = controller_series_from_version(controller_version)
+    effective["controllerCompat"] = controller_compatibility_from_version(controller_version)
+    values = []
+    canonical = []
+    for canonical_name, json_name in VEHICLE_COMPATIBILITY_FIELDS:
+        raw = effective.get(json_name, "")
+        if json_name == "controllerSeries":
+            raw = bounded_int(raw, default=0, minimum=0, maximum=999)
+            raw = str(raw) if raw > 0 else ""
+        normalized = normalized_compatibility_value(raw)
+        values.append(normalized)
+        canonical.append(f"{canonical_name}={normalized}")
+    if not any(values):
+        return ""
+    return hashlib.sha256("\n".join(canonical).encode("utf-8")).hexdigest()
+
+
+def clean_vehicle_payload(value):
+    vehicle = value if isinstance(value, dict) else {}
+    controller_version = str(vehicle.get("controllerVersion", "")).strip()[:240]
+    return {
+        "vehicle_name": str(vehicle.get("displayName", "")).strip()[:160],
+        "model_variant": str(vehicle.get("modelVariant", "")).strip()[:160],
+        "vehicle_40d_code": str(vehicle.get("vehicle40dCode", "")).strip()[:160],
+        "car_series": str(vehicle.get("carSeries", "")).strip()[:160],
+        "vehicle_type": str(vehicle.get("vehicleType", "")).strip()[:160],
+        "controller_version": controller_version,
+        "controller_compat": controller_compatibility_from_version(controller_version),
+        "controller_series": controller_series_from_version(controller_version),
+        "camera_source_fingerprint": str(
+            vehicle.get("cameraSourceFingerprint", "")
+        ).strip().lower()[:128],
+    }
+
+
+def clean_runtime_payload(value):
+    runtime = value if isinstance(value, dict) else {}
+    power_state = runtime.get("powerState")
+    if isinstance(power_state, bool) or power_state is None:
+        power_state = None
+    else:
+        try:
+            power_state = int(power_state)
+        except (TypeError, ValueError):
+            power_state = None
+    camera_id = bounded_int(runtime.get("cameraId"), default=-1, minimum=-1, maximum=3)
+    surface_index = bounded_int(runtime.get("surfaceIndex"), default=0, minimum=0, maximum=15)
+    sources = []
+    for key, fallback in (
+        ("leftSource", "SOURCE_A"),
+        ("rightSource", "SOURCE_B"),
+        ("rearSource", "SOURCE_C"),
+    ):
+        source = str(runtime.get(key, fallback)).strip().upper()
+        sources.append(source if source in VEHICLE_CAMERA_SOURCES else fallback)
+    return {
+        "power_state": power_state,
+        "runtime_state": str(runtime.get("runtimeState", "")).strip()[:48],
+        "current_profile_id": str(runtime.get("currentProfileId", "")).strip()[:120],
+        "current_profile_version": bounded_int(
+            runtime.get("currentProfileVersion"), default=0, minimum=0, maximum=1_000_000
+        ),
+        "manual_override": 1 if runtime.get("manualOverride") is True else 0,
+        "camera_id": camera_id,
+        "surface_index": surface_index,
+        "left_source": sources[0],
+        "right_source": sources[1],
+        "rear_source": sources[2],
+    }
 
 
 def collect_device_codes(payload):
@@ -531,6 +683,52 @@ def is_recent_online(value, minutes=15):
     return parsed >= datetime.utcnow() - timedelta(minutes=minutes)
 
 
+def vehicle_presence(device):
+    last_seen = parse_utc(device["last_seen_at"])
+    if last_seen is None:
+        return "offline", "离线", "gray"
+    age_seconds = max(0, int((datetime.utcnow() - last_seen).total_seconds()))
+    if age_seconds <= 120:
+        if device["power_state"] == 0:
+            return "sleep", "休眠", "blue"
+        return "online", "在线", "green"
+    if device["power_state"] == 0 and age_seconds <= 600:
+        return "sleep", "休眠", "blue"
+    return "offline", "离线", "gray"
+
+
+def device_authorization(conn, device):
+    license_row = conn.execute(
+        """
+        SELECT * FROM license_codes
+        WHERE enabled = 1 AND device_code = ?
+        ORDER BY activated_at DESC, id DESC LIMIT 1
+        """,
+        (device["device_code"],),
+    ).fetchone()
+    trial_end = parse_utc(device["trial_ends_at"])
+    trial_active = bool(trial_end and trial_end > datetime.utcnow())
+    return {
+        "activated": bool(device["activated"] or license_row is not None),
+        "trial_active": trial_active,
+        "license": license_row,
+    }
+
+
+def profile_to_api(row):
+    return {
+        "profileId": row["profile_id"],
+        "version": row["profile_version"],
+        "compatibilityKey": row["compatibility_key"],
+        "cameraId": row["camera_id"],
+        "surfaceIndex": row["surface_index"],
+        "leftSource": row["left_source"],
+        "rightSource": row["right_source"],
+        "rearSource": row["rear_source"],
+        "updatedAt": row["updated_at"],
+    }
+
+
 def status_badge(text, tone="neutral"):
     return f'<span class="badge {h(tone)}">{h(text)}</span>'
 
@@ -543,6 +741,8 @@ def page(title, active, body):
         ("licenses", "激活授权", url_for("licenses"), "L"),
         ("service", "服务授权", url_for("service_qrcodes"), "Q"),
         ("vehicles", "车辆在线", url_for("vehicles"), "V"),
+        ("vehicle_profiles", "车型配置", url_for("vehicle_profiles"), "P"),
+        ("diagnostic_logs", "诊断日志", url_for("diagnostic_logs"), "G"),
         ("settings", "系统设置", url_for("settings"), "C"),
     ]
     nav_html = "".join(
@@ -1206,39 +1406,387 @@ def vehicles():
     params = []
     if keyword:
         like = f"%{keyword}%"
-        conditions.append("(device_code LIKE ? OR app_version LIKE ? OR package_name LIKE ?)")
-        params += [like, like, like]
+        conditions.append(
+            "(device_code LIKE ? OR vehicle_name LIKE ? OR sales_model LIKE ? OR "
+            "app_version LIKE ? OR package_name LIKE ? OR controller_version LIKE ?)"
+        )
+        params += [like, like, like, like, like, like]
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     with db() as conn:
-        matched = conn.execute(f"SELECT activated, last_seen_at FROM devices {where}", params).fetchall()
+        matched = conn.execute(f"SELECT * FROM devices {where}", params).fetchall()
         total = len(matched)
-        online = sum(1 for item in matched if is_recent_online(item["last_seen_at"]))
+        online = sum(1 for item in matched if vehicle_presence(item)[0] == "online")
+        sleeping = sum(1 for item in matched if vehicle_presence(item)[0] == "sleep")
         activated = sum(1 for item in matched if item["activated"])
         rows = conn.execute(f"SELECT * FROM devices {where} ORDER BY last_seen_at DESC LIMIT 300", params).fetchall()
     vehicle_rows = "".join(
         f"""
 <div class="data-row vehicle-row">
+  <span><a href="{h(url_for("vehicle_detail", device_id=item["id"]))}"><b>{h(item["vehicle_name"] or "未识别车型")}</b></a><small>{h(item["sales_model"] or "销售款型待录入")}</small></span>
   <span class="mono">{h(item["device_code"])}</span>
-  <span>{h(item["app_version"] or "-")}</span>
+  <span>{h(str(item["controller_series"]) + " 控制器" if item["controller_series"] else item["controller_version"] or "-")}</span>
   <span>{status_badge("已激活" if item["activated"] else "试用/未激活", "green" if item["activated"] else "orange")}</span>
-  <span>{status_badge("在线" if is_recent_online(item["last_seen_at"]) else "离线", "green" if is_recent_online(item["last_seen_at"]) else "gray")}</span>
-  <span>{h(item["last_seen_at"])}</span>
+  <span>{status_badge(vehicle_presence(item)[1], vehicle_presence(item)[2])}<small>{h(item["runtime_state"] or "-")}</small></span>
+  <span>{status_badge((item["profile_status"] or "not_synced").replace("matched", "已匹配").replace("pending", "待配置").replace("unauthorized", "未授权"), "blue" if item["profile_status"] == "matched" else "gray")}<small>{h(item["current_profile_id"] or "-")} v{h(item["current_profile_version"] or 0)}</small></span>
+  <span>{h(item["app_version"] or "-")}<small>{h(item["last_seen_at"])}</small></span>
 </div>"""
         for item in rows
     ) or '<p class="empty">暂无车辆记录</p>'
     body = f"""
-<section class="metric-grid three">
+<section class="metric-grid">
   <article class="metric"><span>车辆总数</span><b>{total}</b><small>按 VIN 去重</small></article>
-  <article class="metric"><span>最近在线</span><b>{online}</b><small>15 分钟内请求平台</small></article>
+  <article class="metric"><span>当前在线</span><b>{online}</b><small>120 秒内心跳</small></article>
+  <article class="metric"><span>休眠</span><b>{sleeping}</b><small>车机上报低功耗状态</small></article>
   <article class="metric"><span>已激活</span><b>{activated}</b><small>永久授权车辆</small></article>
 </section>
 <section class="panel">
-  <div class="panel-title"><div><h2>车辆列表</h2><p>查看车架号、版本、授权状态和最近在线时间。</p></div></div>
-  <form method="get" class="toolbar"><input name="q" value="{h(keyword)}" placeholder="搜索车架号、版本、包名"><button>搜索</button></form>
-  <div class="data-table vehicles-table"><div class="data-row table-head"><span>车架号</span><span>版本</span><span>授权</span><span>在线</span><span>最近在线</span></div>{vehicle_rows}</div>
+  <div class="panel-title"><div><h2>车辆列表</h2><p>查看车型、控制器、授权、配置和心跳状态。</p></div></div>
+  <form method="get" class="toolbar"><input name="q" value="{h(keyword)}" placeholder="搜索车型、销售款型、VIN、控制器或版本"><button>搜索</button></form>
+  <div class="data-table vehicles-table detailed"><div class="data-row table-head"><span>车型</span><span>VIN</span><span>控制器</span><span>授权</span><span>连接</span><span>配置</span><span>版本 / 心跳</span></div>{vehicle_rows}</div>
 </section>
 """
     return page("车辆在线", "vehicles", body)
+
+
+@app.get("/vehicles/<int:device_id>")
+def vehicle_detail(device_id):
+    guard = require_login()
+    if guard:
+        return guard
+    with db() as conn:
+        device = conn.execute("SELECT * FROM devices WHERE id = ?", (device_id,)).fetchone()
+        if device is None:
+            abort(404)
+        authorization = device_authorization(conn, device)
+        logs = conn.execute(
+            "SELECT * FROM diagnostic_logs WHERE device_code = ? ORDER BY id DESC LIMIT 20",
+            (device["device_code"],),
+        ).fetchall()
+    presence = vehicle_presence(device)
+    auth_text = "已激活" if authorization["activated"] else (
+        "试用中" if authorization["trial_active"] else "未授权"
+    )
+    license_row = authorization["license"]
+    log_rows = "".join(
+        f'<div class="data-row"><span>#{row["id"]}</span><span>{h(row["created_at"])}</span>'
+        f'<span>{format_size(row["file_size"])}</span><span><a class="button soft" href="{h(url_for("view_diagnostic_log", log_id=row["id"]))}" target="_blank">查看</a></span></div>'
+        for row in logs
+    ) or '<p class="empty">该车暂无上传日志</p>'
+    body = f"""
+<section class="metric-grid">
+  <article class="metric"><span>车辆状态</span><b>{h(presence[1])}</b><small>{h(device["runtime_state"] or "-")}</small></article>
+  <article class="metric"><span>授权</span><b>{h(auth_text)}</b><small>{h((license_row["code"] + " · " + (license_row["activated_at"] or "未记录激活时间")) if license_row else (device["trial_ends_at"] or "无激活码"))}</small></article>
+  <article class="metric"><span>远程配置</span><b>{h(device["profile_status"] or "not_synced")}</b><small>{h(device["current_profile_id"] or "-")} v{h(device["current_profile_version"] or 0)}</small></article>
+  <article class="metric"><span>应用版本</span><b>{h(device["app_version"] or "-")}</b><small>{h(device["last_seen_at"])}</small></article>
+</section>
+<section class="page-grid">
+  <article class="panel">
+    <div class="panel-title"><div><h2>{h(device["vehicle_name"] or "未识别车型")} {h(device["sales_model"])}</h2><p class="mono">VIN {h(device["device_code"])}</p></div><a href="{h(url_for("vehicle_profiles", device=device["id"]))}">根据本车创建配置</a></div>
+    <div class="detail-grid">
+      <span><small>销售款型</small><b>{h(device["sales_model"] or "待录入")}</b></span>
+      <span><small>车型变体</small><b>{h(device["model_variant"] or "-")}</b></span>
+      <span><small>40D 代码</small><b>{h(device["vehicle_40d_code"] or "-")}</b></span>
+      <span><small>车系 / 车辆类型</small><b>{h(device["car_series"] or "-")} / {h(device["vehicle_type"] or "-")}</b></span>
+      <span><small>控制器</small><b>{h(device["controller_series"] or "-")} / {h(device["controller_compat"] or device["controller_version"] or "-")}</b></span>
+      <span><small>最近 IP</small><b>{h(device["remote_addr"] or "-")}</b></span>
+      <span class="span-all"><small>兼容指纹</small><b class="mono wrap">{h(device["compatibility_key"] or "-")}</b></span>
+      <span class="span-all"><small>摄像头源指纹</small><b class="mono wrap">{h(device["camera_source_fingerprint"] or "-")}</b></span>
+    </div>
+  </article>
+  <article class="panel">
+    <div class="panel-title"><div><h2>电子后视镜配置</h2><p>本车当前实际上报值。</p></div></div>
+    <div class="mini-metrics"><span><b>{h(device["camera_id"])}</b><small>摄像头 ID</small></span><span><b>{h(device["surface_index"])}</b><small>Surface</small></span><span><b>{"是" if device["manual_override"] else "否"}</b><small>手动优先</small></span></div>
+    <div class="detail-list"><p>左后：<b>{h(device["left_source"])}</b></p><p>右后：<b>{h(device["right_source"])}</b></p><p>流媒体：<b>{h(device["rear_source"])}</b></p><p>配置生效：<b>{h(device["profile_applied_at"] or "-")}</b></p></div>
+  </article>
+</section>
+<section class="panel">
+  <div class="panel-title"><div><h2>最近诊断日志</h2><p>用户确认画面后上传 wjx.log，管理员从这里核对。</p></div></div>
+  <div class="data-table logs-table">{log_rows}</div>
+</section>
+"""
+    return page("车辆详情", "vehicles", body)
+
+
+@app.route("/vehicle-profiles", methods=["GET", "POST"])
+def vehicle_profiles():
+    guard = require_login()
+    if guard:
+        return guard
+    selected_device_id = bounded_int(
+        request.form.get("device_id") if request.method == "POST" else request.args.get("device"),
+        default=0,
+        minimum=0,
+        maximum=2_147_483_647,
+    )
+    with db() as conn:
+        selected_device = conn.execute(
+            "SELECT * FROM devices WHERE id = ?", (selected_device_id,)
+        ).fetchone() if selected_device_id else None
+        if request.method == "POST":
+            if selected_device is None:
+                flash("请选择已上报车型指纹的车辆", "error")
+                return redirect(url_for("vehicle_profiles"))
+            compatibility_key = selected_device["compatibility_key"]
+            if not re.fullmatch(r"[0-9a-f]{64}", compatibility_key or ""):
+                flash("该车兼容指纹无效，请先让车机联网上报", "error")
+                return redirect(url_for("vehicle_profiles", device=selected_device_id))
+            camera_id = bounded_int(request.form.get("camera_id"), -1, -1, 3)
+            surface_index = bounded_int(request.form.get("surface_index"), -1, -1, 15)
+            sources = [request.form.get(name, "").strip().upper() for name in ("left_source", "right_source", "rear_source")]
+            if camera_id not in range(4) or surface_index not in range(16):
+                flash("摄像头 ID 必须为 0–3，Surface 必须为 0–15", "error")
+                return redirect(url_for("vehicle_profiles", device=selected_device_id))
+            if set(sources) != VEHICLE_CAMERA_SOURCES:
+                flash("左后、右后、流媒体必须分别映射 A、B、C，不能重复", "error")
+                return redirect(url_for("vehicle_profiles", device=selected_device_id))
+            previous_version = conn.execute(
+                "SELECT COALESCE(MAX(profile_version), 0) AS v FROM vehicle_profiles WHERE compatibility_key = ?",
+                (compatibility_key,),
+            ).fetchone()["v"]
+            version = max(
+                previous_version + 1,
+                bounded_int(request.form.get("profile_version"), previous_version + 1, 1, 1_000_000),
+            )
+            profile_id = f"mirror-{compatibility_key[:12]}-{secrets.token_hex(3)}"
+            now = utc_now()
+            vehicle_name = request.form.get("vehicle_name", "").strip()[:160] or selected_device["vehicle_name"]
+            sales_model = request.form.get("sales_model", "").strip()[:80]
+            conn.execute(
+                """
+                INSERT INTO vehicle_profiles
+                    (profile_id, profile_version, status, compatibility_key, vehicle_name,
+                     sales_model, model_variant, vehicle_40d_code, car_series, vehicle_type,
+                     controller_series, controller_compat, camera_source_fingerprint,
+                     camera_id, surface_index, left_source, right_source, rear_source,
+                     note, created_at, updated_at)
+                VALUES (?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    profile_id, version, compatibility_key, vehicle_name, sales_model,
+                    selected_device["model_variant"], selected_device["vehicle_40d_code"],
+                    selected_device["car_series"], selected_device["vehicle_type"],
+                    selected_device["controller_series"], selected_device["controller_compat"],
+                    selected_device["camera_source_fingerprint"], camera_id, surface_index,
+                    sources[0], sources[1], sources[2], request.form.get("note", "").strip()[:500],
+                    now, now,
+                ),
+            )
+            conn.execute(
+                "UPDATE devices SET vehicle_name = ?, sales_model = ? WHERE id = ?",
+                (vehicle_name, sales_model, selected_device_id),
+            )
+            log_event(conn, "vehicle_profile", f"创建草稿 {profile_id}，来源车辆 {selected_device['device_code']}")
+            flash("已创建草稿，请核对日志和画面后再标记为已验证", "success")
+            return redirect(url_for("vehicle_profiles"))
+        rows = conn.execute("SELECT * FROM vehicle_profiles ORDER BY id DESC").fetchall()
+        suggested_version = 1
+        if selected_device is not None:
+            suggested_version = conn.execute(
+                "SELECT COALESCE(MAX(profile_version), 0) + 1 AS v FROM vehicle_profiles WHERE compatibility_key = ?",
+                (selected_device["compatibility_key"],),
+            ).fetchone()["v"]
+        devices = conn.execute(
+            "SELECT id, device_code, vehicle_name, sales_model, compatibility_key FROM devices ORDER BY last_seen_at DESC LIMIT 300"
+        ).fetchall()
+    csrf = csrf_input()
+    device_options = "".join(
+        f'<option value="{item["id"]}" {"selected" if item["id"] == selected_device_id else ""}>{h(item["vehicle_name"] or "未识别车型")} {h(item["sales_model"])} / {h(item["device_code"])}</option>'
+        for item in devices if item["compatibility_key"]
+    )
+    source_options = lambda current: "".join(
+        f'<option value="{source}" {"selected" if source == current else ""}>{source}</option>'
+        for source in sorted(VEHICLE_CAMERA_SOURCES)
+    )
+    profile_rows = "".join(
+        f"""
+<div class="data-row profile-row">
+  <span><b>{h(row["vehicle_name"] or "未命名车型")} {h(row["sales_model"])}</b><small class="mono">{h(row["profile_id"])}</small></span>
+  <span>{status_badge({"draft": "草稿", "verified": "已验证", "disabled": "已停用"}.get(row["status"], row["status"]), "green" if row["status"] == "verified" else "orange" if row["status"] == "draft" else "gray")}</span>
+  <span>v{h(row["profile_version"])}<small>{h(row["controller_series"] or "-")} 控制器</small></span>
+  <span>ID {h(row["camera_id"])} / S {h(row["surface_index"])}<small>{h(row["left_source"])} · {h(row["right_source"])} · {h(row["rear_source"])}</small></span>
+  <span class="mono compact-key">{h(row["compatibility_key"])}</span>
+  <span class="actions"><form method="post" action="{h(url_for("toggle_vehicle_profile", profile_db_id=row["id"]))}">{csrf}<button class="{"primary" if row["status"] != "verified" else "soft"}">{"标记已验证" if row["status"] != "verified" else "停用"}</button></form><form method="post" action="{h(url_for("delete_vehicle_profile", profile_db_id=row["id"]))}" onsubmit="return confirm('确定删除这份配置吗？')">{csrf}<button class="danger">删除</button></form></span>
+</div>"""
+        for row in rows
+    ) or '<p class="empty">暂无车型配置</p>'
+    selected = selected_device
+    create_panel = f"""
+<section class="panel">
+  <div class="panel-title"><div><h2>从实车创建草稿</h2><p>只根据用户已确认的画面和上传日志建档，新建后不会立即下发。</p></div></div>
+  <form method="get" class="toolbar"><select name="device" required><option value="">选择车辆</option>{device_options}</select><button>载入实车数据</button></form>
+  {f'''<form method="post" class="form">{csrf}<input type="hidden" name="device_id" value="{selected["id"]}"><div class="two"><label>车型名称<input name="vehicle_name" value="{h(selected["vehicle_name"])}" required></label><label>销售款型<input name="sales_model" value="{h(selected["sales_model"])}" placeholder="例如：2026款" required></label></div><div class="two"><label>配置版本<input name="profile_version" type="number" min="{h(suggested_version)}" value="{h(suggested_version)}" required></label><label>摄像头 ID<input name="camera_id" type="number" min="0" max="3" value="{h(selected["camera_id"] if selected["camera_id"] in range(4) else 0)}" required></label></div><label>Surface Index<input name="surface_index" type="number" min="0" max="15" value="{h(selected["surface_index"])}" required></label><div class="three-fields"><label>左后来源<select name="left_source">{source_options(selected["left_source"])}</select></label><label>右后来源<select name="right_source">{source_options(selected["right_source"])}</select></label><label>流媒体来源<select name="rear_source">{source_options(selected["rear_source"])}</select></label></div><label>核对备注<textarea name="note" rows="3" placeholder="记录车型、年款、测试画面和日志结论"></textarea></label><p class="mono wrap">兼容指纹：{h(selected["compatibility_key"])}</p><button class="primary" type="submit">创建草稿</button></form>''' if selected else '<p class="empty">请先选择一辆已联网上报的车辆。</p>'}
+</section>"""
+    body = create_panel + f"""
+<section class="panel">
+  <div class="panel-title"><div><h2>配置库</h2><p>只有“已验证”且兼容指纹完全相同的配置会自动下发。</p></div></div>
+  <div class="data-table profiles-table"><div class="data-row table-head"><span>车型 / 配置</span><span>状态</span><span>版本</span><span>摄像头</span><span>兼容指纹</span><span>操作</span></div>{profile_rows}</div>
+</section>"""
+    return page("车型配置", "vehicle_profiles", body)
+
+
+@app.post("/vehicle-profiles/<int:profile_db_id>/toggle")
+def toggle_vehicle_profile(profile_db_id):
+    guard = require_login()
+    if guard:
+        return guard
+    with db() as conn:
+        row = conn.execute("SELECT * FROM vehicle_profiles WHERE id = ?", (profile_db_id,)).fetchone()
+        if row is None:
+            abort(404)
+        new_status = "disabled" if row["status"] == "verified" else "verified"
+        if new_status == "verified":
+            mapping = {row["left_source"], row["right_source"], row["rear_source"]}
+            if (
+                not re.fullmatch(r"[0-9a-f]{64}", row["compatibility_key"] or "")
+                or row["camera_id"] not in range(4)
+                or row["surface_index"] not in range(16)
+                or mapping != VEHICLE_CAMERA_SOURCES
+            ):
+                flash("配置字段校验失败，不能标记为已验证", "error")
+                return redirect(url_for("vehicle_profiles"))
+            conn.execute(
+                "UPDATE vehicle_profiles SET status = 'disabled', updated_at = ? WHERE compatibility_key = ? AND status = 'verified' AND id != ?",
+                (utc_now(), row["compatibility_key"], profile_db_id),
+            )
+        conn.execute(
+            "UPDATE vehicle_profiles SET status = ?, updated_at = ? WHERE id = ?",
+            (new_status, utc_now(), profile_db_id),
+        )
+        log_event(conn, "vehicle_profile", f"配置 {row['profile_id']} 切换为 {new_status}")
+    flash("配置已验证，同指纹车辆下次心跳会自动获取" if new_status == "verified" else "配置已停用", "success")
+    return redirect(url_for("vehicle_profiles"))
+
+
+@app.post("/vehicle-profiles/<int:profile_db_id>/delete")
+def delete_vehicle_profile(profile_db_id):
+    guard = require_login()
+    if guard:
+        return guard
+    with db() as conn:
+        row = conn.execute("SELECT * FROM vehicle_profiles WHERE id = ?", (profile_db_id,)).fetchone()
+        if row is None:
+            abort(404)
+        if row["status"] == "verified":
+            flash("已验证配置需要先停用，防止误删正在下发的配置", "error")
+            return redirect(url_for("vehicle_profiles"))
+        conn.execute("DELETE FROM vehicle_profiles WHERE id = ?", (profile_db_id,))
+        log_event(conn, "vehicle_profile", f"删除配置 {row['profile_id']}")
+    flash("配置已删除", "success")
+    return redirect(url_for("vehicle_profiles"))
+
+
+@app.get("/diagnostic-logs")
+def diagnostic_logs():
+    guard = require_login()
+    if guard:
+        return guard
+    keyword = request.args.get("q", "").strip()
+    conditions = []
+    params = []
+    if keyword:
+        like = f"%{keyword}%"
+        conditions.append(
+            "(device_code LIKE ? OR app_version LIKE ? OR package_name LIKE ? OR note LIKE ? OR remote_addr LIKE ?)"
+        )
+        params += [like, like, like, like, like]
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    with db() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM diagnostic_logs {where} ORDER BY id DESC LIMIT 300",
+            params,
+        ).fetchall()
+        summary = conn.execute(
+            f"SELECT COUNT(*) AS total, COALESCE(SUM(file_size), 0) AS bytes FROM diagnostic_logs {where}",
+            params,
+        ).fetchone()
+    csrf = csrf_input()
+    log_rows = "".join(
+        f"""
+<div class="data-row diagnostic-row">
+  <span><b>#{row["id"]}</b><small>{h(row["created_at"])}</small></span>
+  <span class="mono">{h(row["device_code"])}<small>v{h(row["app_version"] or "-")}</small></span>
+  <span>{format_size(row["file_size"])}</span>
+  <span>{h(row["remote_addr"] or "-")}</span>
+  <span>{h(row["note"] or "无备注")}</span>
+  <span class="actions">
+    <a class="button soft" target="_blank" rel="noopener" href="{h(url_for("view_diagnostic_log", log_id=row["id"]))}">查看</a>
+    <a class="button soft" href="{h(url_for("download_diagnostic_log", log_id=row["id"]))}">下载</a>
+    <form method="post" action="{h(url_for("delete_diagnostic_log", log_id=row["id"]))}" onsubmit="return confirm('确定删除这份诊断日志吗？')">{csrf}<button class="danger">删除</button></form>
+  </span>
+</div>"""
+        for row in rows
+    ) or '<p class="empty">暂无诊断日志</p>'
+    body = f"""
+<section class="metric-grid three">
+  <article class="metric"><span>日志数量</span><b>{summary["total"]}</b><small>当前查询结果</small></article>
+  <article class="metric"><span>占用空间</span><b>{format_size(summary["bytes"])}</b><small>单份最多 {MAX_LOG_SIZE // 1024 // 1024} MB</small></article>
+  <article class="metric"><span>上传限制</span><b>{LOG_UPLOAD_DEVICE_LIMIT} 次</b><small>每车每小时</small></article>
+</section>
+<section class="panel">
+  <div class="panel-title"><div><h2>车辆诊断日志</h2><p>按车架号、版本、备注或来源地址查找客户端上传的日志。</p></div></div>
+  <form method="get" class="toolbar"><input name="q" value="{h(keyword)}" placeholder="搜索车架号、版本、备注、IP"><button>搜索</button></form>
+  <div class="data-table diagnostic-table">
+    <div class="data-row table-head"><span>编号 / 时间</span><span>车辆 / 版本</span><span>大小</span><span>来源</span><span>备注</span><span>操作</span></div>
+    {log_rows}
+  </div>
+</section>
+"""
+    return page("诊断日志", "diagnostic_logs", body)
+
+
+def diagnostic_log_row(log_id):
+    with db() as conn:
+        return conn.execute("SELECT * FROM diagnostic_logs WHERE id = ?", (log_id,)).fetchone()
+
+
+@app.get("/diagnostic-logs/<int:log_id>/view")
+def view_diagnostic_log(log_id):
+    guard = require_login()
+    if guard:
+        return guard
+    row = diagnostic_log_row(log_id)
+    if row is None:
+        abort(404)
+    return send_from_directory(
+        LOG_DIR,
+        Path(row["filename"]).name,
+        as_attachment=False,
+        mimetype="text/plain; charset=utf-8",
+    )
+
+
+@app.get("/diagnostic-logs/<int:log_id>/download")
+def download_diagnostic_log(log_id):
+    guard = require_login()
+    if guard:
+        return guard
+    row = diagnostic_log_row(log_id)
+    if row is None:
+        abort(404)
+    download_name = f"wjx-{row['device_code']}-{row['id']}.log"
+    return send_from_directory(
+        LOG_DIR,
+        Path(row["filename"]).name,
+        as_attachment=True,
+        download_name=download_name,
+        mimetype="text/plain; charset=utf-8",
+    )
+
+
+@app.post("/diagnostic-logs/<int:log_id>/delete")
+def delete_diagnostic_log(log_id):
+    guard = require_login()
+    if guard:
+        return guard
+    with db() as conn:
+        row = conn.execute("SELECT * FROM diagnostic_logs WHERE id = ?", (log_id,)).fetchone()
+        if row is None:
+            abort(404)
+        conn.execute("DELETE FROM diagnostic_logs WHERE id = ?", (log_id,))
+        log_event(conn, "diagnostic", f"删除诊断日志 #{log_id} {row['device_code']}")
+    (LOG_DIR / Path(row["filename"]).name).unlink(missing_ok=True)
+    flash(f"诊断日志 #{log_id} 已删除", "success")
+    return redirect(url_for("diagnostic_logs"))
 
 
 @app.route("/settings", methods=["GET", "POST"])
@@ -1360,6 +1908,233 @@ def api_latest_update():
             "updatedAt": row["updated_at"],
         }
     )
+
+
+@app.post("/api/v1/vehicle-profiles/resolve")
+def api_resolve_vehicle_profile():
+    payload = request.get_json(silent=True) or {}
+    device_code = extract_valid_vin(payload.get("deviceCode", ""))
+    if not device_code:
+        return jsonify({"success": False, "message": "车架号格式不正确"}), 400
+    raw_vehicle = payload.get("vehicle") if isinstance(payload.get("vehicle"), dict) else {}
+    vehicle = clean_vehicle_payload(raw_vehicle)
+    server_key = vehicle_compatibility_key(raw_vehicle)
+    submitted_key = str(raw_vehicle.get("compatibilityKey", "")).strip().lower()
+    has_model_identity = any(
+        vehicle[key]
+        for key in ("vehicle_name", "model_variant", "vehicle_40d_code", "car_series", "vehicle_type")
+    )
+    has_camera_fingerprint = bool(
+        re.fullmatch(r"[0-9a-f]{64}", vehicle["camera_source_fingerprint"])
+    )
+    if (
+        not server_key
+        or vehicle["controller_series"] not in {23, 34, 57}
+        or not has_model_identity
+        or not has_camera_fingerprint
+    ):
+        return jsonify({"success": False, "message": "车型兼容指纹信息不完整"}), 400
+    if not re.fullmatch(r"[0-9a-f]{64}", submitted_key) or not secrets.compare_digest(
+        submitted_key, server_key
+    ):
+        return jsonify({"success": False, "message": "车型兼容指纹校验失败"}), 400
+
+    runtime = clean_runtime_payload(payload.get("runtime"))
+    app_version = str(payload.get("appVersion", "")).strip()[:64]
+    package_name = str(payload.get("packageName", "")).strip()[:160]
+    with db() as conn:
+        license_row = license_for_device_codes(conn, [device_code])
+        upsert_device(
+            conn,
+            device_code,
+            device_code,
+            app_version,
+            package_name,
+            license_row is not None,
+        )
+        previous_device = conn.execute(
+            "SELECT * FROM devices WHERE device_code = ?", (device_code,)
+        ).fetchone()
+        now = utc_now()
+        conn.execute(
+            """
+            UPDATE devices SET
+                vehicle_name = ?, model_variant = ?, vehicle_40d_code = ?, car_series = ?,
+                vehicle_type = ?, controller_version = ?, controller_compat = ?,
+                controller_series = ?, compatibility_key = ?, camera_source_fingerprint = ?,
+                power_state = ?, runtime_state = ?, remote_addr = ?, current_profile_id = ?,
+                current_profile_version = ?, manual_override = ?, camera_id = ?,
+                surface_index = ?, left_source = ?, right_source = ?, rear_source = ?
+            WHERE device_code = ?
+            """,
+            (
+                vehicle["vehicle_name"], vehicle["model_variant"], vehicle["vehicle_40d_code"],
+                vehicle["car_series"], vehicle["vehicle_type"], vehicle["controller_version"],
+                vehicle["controller_compat"], vehicle["controller_series"], server_key,
+                vehicle["camera_source_fingerprint"], runtime["power_state"],
+                runtime["runtime_state"], request.remote_addr or "",
+                runtime["current_profile_id"], runtime["current_profile_version"],
+                runtime["manual_override"], runtime["camera_id"], runtime["surface_index"],
+                runtime["left_source"], runtime["right_source"], runtime["rear_source"],
+                device_code,
+            ),
+        )
+        device = conn.execute("SELECT * FROM devices WHERE device_code = ?", (device_code,)).fetchone()
+        authorization = device_authorization(conn, device)
+        if not authorization["activated"] and not authorization["trial_active"]:
+            conn.execute(
+                "UPDATE devices SET profile_status = 'unauthorized' WHERE device_code = ?",
+                (device_code,),
+            )
+            return jsonify({
+                "success": True,
+                "profileStatus": "unauthorized",
+                "message": "车辆未激活或试用已到期，不下发车型配置",
+                "salesModel": device["sales_model"] or "",
+                "profile": None,
+            })
+        profile = conn.execute(
+            """
+            SELECT * FROM vehicle_profiles
+            WHERE compatibility_key = ? AND status = 'verified'
+            ORDER BY profile_version DESC, updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (server_key,),
+        ).fetchone()
+        if profile is None:
+            conn.execute(
+                "UPDATE devices SET profile_status = 'pending' WHERE device_code = ?",
+                (device_code,),
+            )
+            return jsonify({
+                "success": True,
+                "profileStatus": "pending",
+                "message": "已记录车型信息，等待管理员核对画面并验证配置",
+                "salesModel": device["sales_model"] or "",
+                "profile": None,
+            })
+        profile_applied_at = previous_device["profile_applied_at"]
+        if (
+            runtime["current_profile_id"] == profile["profile_id"]
+            and runtime["current_profile_version"] == profile["profile_version"]
+            and not runtime["manual_override"]
+            and (
+                previous_device["current_profile_id"] != profile["profile_id"]
+                or previous_device["current_profile_version"] != profile["profile_version"]
+                or not profile_applied_at
+            )
+        ):
+            profile_applied_at = now
+        conn.execute(
+            """
+            UPDATE devices SET profile_status = 'matched', vehicle_name = ?, sales_model = ?,
+                profile_applied_at = ? WHERE device_code = ?
+            """,
+            (profile["vehicle_name"], profile["sales_model"], profile_applied_at, device_code),
+        )
+        if previous_device["profile_status"] != "matched":
+            log_event(
+                conn,
+                "vehicle_profile",
+                f"车辆 {device_code} 匹配 {profile['profile_id']} v{profile['profile_version']}",
+                request.remote_addr,
+            )
+        return jsonify({
+            "success": True,
+            "profileStatus": "matched",
+            "message": "已匹配已验证车型配置",
+            "salesModel": profile["sales_model"],
+            "profile": profile_to_api(profile),
+        })
+
+
+@app.post("/api/v1/logs/upload")
+def api_upload_log():
+    device_code = extract_valid_vin(request.form.get("deviceCode", ""))
+    attempt_key = api_attempt_key("log_upload", device_code)
+    app_version = request.form.get("appVersion", "").strip()[:64]
+    package_name = request.form.get("packageName", "").strip()[:160]
+    note = request.form.get("note", "").replace("\x00", "").strip()[:500]
+    upload = request.files.get("log")
+
+    with db() as conn:
+        remaining = api_lock_remaining(conn, attempt_key)
+        if remaining > 0:
+            return jsonify({"success": False, "message": f"请求过于频繁，请 {remaining} 秒后再试"}), 429
+
+        def reject(message, status=400):
+            lock_remaining = record_api_failure(conn, attempt_key)
+            if lock_remaining > 0:
+                return jsonify({"success": False, "message": f"请求过于频繁，请 {lock_remaining} 秒后再试"}), 429
+            return jsonify({"success": False, "message": message}), status
+
+        if not device_code:
+            return reject("车架号格式不正确")
+        device = conn.execute(
+            "SELECT * FROM devices WHERE device_code = ?",
+            (device_code,),
+        ).fetchone()
+        if device is None:
+            return reject("车辆尚未在平台登记，请先刷新授权状态", 403)
+        if upload is None or not upload.filename:
+            return reject("请选择日志文件")
+        if not allowed_log_file(upload.filename):
+            return reject("只支持 .log 或 .txt 日志")
+        if request.content_length and request.content_length > MAX_LOG_SIZE + 256 * 1024:
+            return reject(f"日志不能超过 {MAX_LOG_SIZE // 1024 // 1024} MB", 413)
+
+        window_start = (datetime.utcnow() - timedelta(hours=1)).replace(microsecond=0).isoformat() + "Z"
+        device_uploads = conn.execute(
+            "SELECT COUNT(*) AS c FROM diagnostic_logs WHERE device_code = ? AND created_at >= ?",
+            (device_code, window_start),
+        ).fetchone()["c"]
+        ip_uploads = conn.execute(
+            "SELECT COUNT(*) AS c FROM diagnostic_logs WHERE remote_addr = ? AND created_at >= ?",
+            (request.remote_addr or "", window_start),
+        ).fetchone()["c"]
+        if device_uploads >= max(1, LOG_UPLOAD_DEVICE_LIMIT) or ip_uploads >= max(1, LOG_UPLOAD_IP_LIMIT):
+            return jsonify({"success": False, "message": "上传次数过多，请一小时后再试"}), 429
+
+        suffix = upload.filename.rsplit(".", 1)[-1].lower()
+        filename = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(12)}.{suffix}"
+        target = LOG_DIR / filename
+        try:
+            file_size = save_limited_log(upload, target, MAX_LOG_SIZE)
+            now = utc_now()
+            cursor = conn.execute(
+                """
+                INSERT INTO diagnostic_logs
+                    (device_code, app_version, package_name, note, filename, original_filename,
+                     mime_type, file_size, remote_addr, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    device_code,
+                    app_version,
+                    package_name,
+                    note,
+                    filename,
+                    Path(upload.filename).name[:255],
+                    (upload.mimetype or "text/plain")[:120],
+                    file_size,
+                    request.remote_addr or "",
+                    now,
+                ),
+            )
+            log_id = cursor.lastrowid
+            conn.execute(
+                "UPDATE devices SET app_version = ?, package_name = ?, last_seen_at = ? WHERE device_code = ?",
+                (app_version or device["app_version"], package_name or device["package_name"], now, device_code),
+            )
+            record_api_success(conn, attempt_key)
+            log_event(conn, "diagnostic", f"车辆 {device_code} 上传诊断日志 #{log_id}")
+        except ValueError as error:
+            return reject(str(error), 413 if "超过" in str(error) else 400)
+        except Exception:
+            target.unlink(missing_ok=True)
+            raise
+    return jsonify({"success": True, "logId": log_id, "message": "诊断日志已上传"})
 
 
 @app.get("/cdn/apk/<path:filename>")
@@ -1738,13 +2513,14 @@ button,.button{border:0;border-radius:12px;padding:10px 14px;background:var(--so
 .dashboard-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px}.page-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(280px,.7fr);gap:16px}.panel{padding:18px;margin-top:16px}.page-grid .panel{margin-top:0}.panel-title{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}.panel-title h2,h2,h3{margin:0}.panel-title p{margin:4px 0 0;color:var(--muted)}.panel-title a{color:var(--red);text-decoration:none;font-weight:700}.endpoint{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--soft);padding:12px;border-radius:12px;color:#344054;overflow:auto}
 .form{display:grid;gap:12px}.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}label{display:grid;gap:7px;color:#4b5563;font-weight:650}input,textarea,select{width:100%;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--text);padding:11px 12px;outline:none}input:focus,textarea:focus,select:focus{border-color:#f29aa3;box-shadow:0 0 0 3px rgba(232,72,85,.1)}textarea{resize:vertical}.check{display:flex;align-items:center;gap:8px}.check input{width:auto}
 .toolbar{display:flex;gap:10px;margin-bottom:14px}.toolbar input{max-width:390px}.chip-list{display:flex;flex-wrap:wrap;gap:8px}.chip{padding:8px 10px;background:var(--soft);border-radius:999px;text-decoration:none;color:#4b5563}.chip.active,.chip:hover{background:var(--red2);color:#c92a3b}.chip small{opacity:.7}.badge{display:inline-flex;align-items:center;justify-content:center;min-height:24px;padding:4px 9px;border-radius:999px;background:var(--soft);color:#4b5563;font-size:12px;font-weight:750;white-space:nowrap}.badge.red{background:var(--red2);color:#c92a3b}.badge.green{background:var(--green2);color:var(--green)}.badge.blue{background:var(--blue2);color:var(--blue)}.badge.orange{background:var(--orange2);color:var(--orange)}.badge.gray{background:#f1f3f6;color:#667085}
-.data-table{display:grid;gap:6px}.data-row{display:grid;grid-template-columns:1.2fr .7fr .7fr .9fr;gap:12px;align-items:center;padding:11px 12px;border-radius:12px;background:var(--paper2);border:1px solid transparent}.data-row:hover{border-color:var(--line);background:#fff}.table-head{background:transparent;border:0;color:var(--muted);font-weight:800}.release-table .data-row,.license-table .data-row,.vehicles-table .data-row{grid-template-columns:1.2fr .6fr .7fr .9fr 1.15fr}.vehicle-table .data-row,.logs-table .data-row{grid-template-columns:1.2fr .65fr .75fr 1fr}.logs-table .data-row{grid-template-columns:1fr .45fr 2fr .8fr}.actions{display:flex;gap:7px;flex-wrap:wrap}.actions form{display:inline}.mono,.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.code{color:#c92a3b;cursor:pointer;font-weight:750}
+.data-table{display:grid;gap:6px}.data-row{display:grid;grid-template-columns:1.2fr .7fr .7fr .9fr;gap:12px;align-items:center;padding:11px 12px;border-radius:12px;background:var(--paper2);border:1px solid transparent}.data-row:hover{border-color:var(--line);background:#fff}.data-row a{color:var(--text);text-decoration:none}.data-row a:hover{color:var(--red)}.table-head{background:transparent;border:0;color:var(--muted);font-weight:800}.release-table .data-row,.license-table .data-row,.vehicles-table .data-row{grid-template-columns:1.2fr .6fr .7fr .9fr 1.15fr}.vehicles-table.detailed .data-row{grid-template-columns:1.2fr 1.05fr .72fr .65fr .62fr 1fr .9fr}.vehicle-table .data-row,.logs-table .data-row{grid-template-columns:1.2fr .65fr .75fr 1fr}.logs-table .data-row{grid-template-columns:.5fr 1.2fr .55fr .6fr}.diagnostic-table .data-row{grid-template-columns:.85fr 1.15fr .5fr .7fr 1.25fr 1.1fr}.profiles-table .data-row{grid-template-columns:1.25fr .5fr .45fr 1fr 1.2fr 1.1fr}.data-row span small{display:block;margin-top:4px;color:var(--muted)}.actions{display:flex;gap:7px;flex-wrap:wrap}.actions form{display:inline}.mono,.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.code{color:#c92a3b;cursor:pointer;font-weight:750}.compact-key{font-size:11px;overflow-wrap:anywhere}.wrap{overflow-wrap:anywhere;word-break:break-word}
+.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.detail-grid>span{display:grid;gap:5px;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper2)}.detail-grid small{color:var(--muted)}.detail-list{margin-top:14px}.detail-list p{display:flex;justify-content:space-between;gap:12px;padding:9px 0;margin:0;border-bottom:1px solid var(--line)}.three-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 .sound-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.sound-card{padding:15px}.sound-head{display:flex;justify-content:space-between;gap:12px}.sound-head h3{font-size:16px}.sound-head p{margin:5px 0 0;color:var(--muted)}.sound-card audio{width:100%;margin:12px 0}.sound-edit{display:grid;grid-template-columns:1fr 1fr 1fr auto auto;gap:8px;align-items:center}.compact-check{white-space:nowrap}.mini-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.mini-metrics span{display:grid;gap:4px;padding:12px;border-radius:14px;background:var(--paper2)}.mini-metrics b{font-size:24px}.mini-metrics small{color:var(--muted)}
 .qr-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px}.qr-card{display:grid;grid-template-columns:190px minmax(0,1fr);gap:16px;align-items:stretch;padding:16px;background:rgba(255,255,255,.92);border:1px solid rgba(230,233,240,.95);border-radius:18px;box-shadow:var(--shadow)}.qr-preview{min-height:190px;border-radius:18px;background:linear-gradient(135deg,#f8fafc,#eef1f7);border:1px solid var(--line);display:grid;place-items:center;overflow:hidden}.qr-preview img{width:100%;height:100%;object-fit:contain;background:white;padding:10px}.qr-preview span{color:var(--muted);font-weight:800}.qr-form{gap:10px}.panel-title.compact{margin-bottom:0}
 .timeline{display:grid;gap:12px}.timeline-item{display:grid;grid-template-columns:12px 1fr;gap:10px}.timeline-item>span{width:10px;height:10px;border-radius:50%;margin-top:5px;background:var(--red)}.timeline-item p{margin:2px 0;color:#344054}.timeline-item small,.empty{color:var(--muted)}.settings-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.setting-card{padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--paper2)}.setting-card span{font-size:15px;color:var(--text)}.setting-card small{color:var(--muted);font-weight:400}.setting-card.toggle{grid-template-columns:auto 1fr;align-items:start}.setting-card.toggle small{grid-column:2}.setting-card.toggle input{width:18px;margin-top:2px}.span-all{grid-column:1/-1}
 .flash-stack{display:grid;gap:8px;margin-bottom:14px}.flash{padding:11px 13px;border-radius:12px;background:var(--green2);color:var(--green);font-weight:650}.flash.error{background:var(--red2);color:#c92a3b}.auth{max-width:520px;margin:70px auto}.auth.panel{padding:26px}
 @media(max-width:1100px){.hero-grid,.page-grid,.dashboard-grid{grid-template-columns:1fr}.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.settings-grid{grid-template-columns:1fr 1fr}.sound-grid,.qr-grid{grid-template-columns:1fr}}
-@media(max-width:820px){.sidebar{position:sticky;top:0;z-index:20;width:auto;border-right:0;border-bottom:1px solid var(--line);padding:14px}.brand{padding:0}.sidebar nav{display:flex;overflow:auto}.nav-item{white-space:nowrap}.sidebar-foot{display:none}.main{margin-left:0;padding:16px}.topbar{align-items:flex-start}.top-actions{display:none}.hero-card h2{font-size:24px}.metric-grid,.metric-grid.three,.two,.settings-grid{grid-template-columns:1fr}.toolbar{display:grid}.toolbar input{max-width:none}.data-row,.release-table .data-row,.license-table .data-row,.vehicles-table .data-row,.vehicle-table .data-row,.logs-table .data-row{grid-template-columns:1fr}.table-head{display:none}.sound-edit{grid-template-columns:1fr}.qr-card{grid-template-columns:1fr}.actions button,.actions .button{width:100%}}
+@media(max-width:820px){.sidebar{position:sticky;top:0;z-index:20;width:auto;border-right:0;border-bottom:1px solid var(--line);padding:14px}.brand{padding:0}.sidebar nav{display:flex;overflow:auto}.nav-item{white-space:nowrap}.sidebar-foot{display:none}.main{margin-left:0;padding:16px}.topbar{align-items:flex-start}.top-actions{display:none}.hero-card h2{font-size:24px}.metric-grid,.metric-grid.three,.two,.settings-grid,.detail-grid,.three-fields{grid-template-columns:1fr}.toolbar{display:grid}.toolbar input{max-width:none}.data-row,.release-table .data-row,.license-table .data-row,.vehicles-table .data-row,.vehicles-table.detailed .data-row,.vehicle-table .data-row,.logs-table .data-row,.diagnostic-table .data-row,.profiles-table .data-row{grid-template-columns:1fr}.table-head{display:none}.sound-edit{grid-template-columns:1fr}.qr-card{grid-template-columns:1fr}.actions button,.actions .button{width:100%}}
 """
 
 

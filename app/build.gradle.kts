@@ -40,6 +40,12 @@ val activationApiUrl: String =
 val serviceQrApiUrl: String =
     providers.gradleProperty("superToyBoxServiceQrApiUrl").orNull
         ?: "https://api.689588.xyz/api/v1/service/qrcodes"
+val logUploadApiUrl: String =
+    providers.gradleProperty("superToyBoxLogUploadApiUrl").orNull
+        ?: "https://api.689588.xyz/api/v1/logs/upload"
+val vehicleProfileApiUrl: String =
+    providers.gradleProperty("superToyBoxVehicleProfileApiUrl").orNull
+        ?: "https://api.689588.xyz/api/v1/vehicle-profiles/resolve"
 
 android {
     namespace = "com.byd.wjx"
@@ -52,14 +58,16 @@ android {
         // on DiLink Android 12 (requestLegacyExternalStorage works).
         // targetSdk 30+ would break listFiles() on /storage/emulated/0/energydata/
         targetSdk = 29
-        versionCode = 18
-        versionName = "1.8"
+        versionCode = 20
+        versionName = "1.9.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "UPDATE_API_URL", "\"$updateApiUrl\"")
         buildConfigField("String", "SOUND_API_BASE_URL", "\"$soundApiBaseUrl\"")
         buildConfigField("String", "ACTIVATION_API_URL", "\"$activationApiUrl\"")
         buildConfigField("String", "SERVICE_QR_API_URL", "\"$serviceQrApiUrl\"")
+        buildConfigField("String", "LOG_UPLOAD_API_URL", "\"$logUploadApiUrl\"")
+        buildConfigField("String", "VEHICLE_PROFILE_API_URL", "\"$vehicleProfileApiUrl\"")
 
     }
 

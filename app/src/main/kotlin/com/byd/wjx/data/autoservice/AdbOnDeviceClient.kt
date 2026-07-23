@@ -102,13 +102,21 @@ class AdbOnDeviceClientImpl @Inject constructor(
                 return@withLock Result.success(Unit)
             }
 
+            var candidate: AdbProtocol? = null
             try {
                 val p = protocol ?: protocolFactory().also { protocol = it }
+                candidate = p
                 val ok = p.connect()
                 if (ok) {
                     saveAuthorizedState(true)
                     persistAuthorizedKey(p)
-                    Result.success(Unit)
+                    if (p.isConnected()) {
+                        Result.success(Unit)
+                    } else {
+                        protocol = null
+                        saveAuthorizedState(false)
+                        Result.failure(IOException("ADB disconnected during setup"))
+                    }
                 } else {
                     protocol = null
                     saveAuthorizedState(false)
@@ -116,6 +124,7 @@ class AdbOnDeviceClientImpl @Inject constructor(
                 }
             } catch (e: Exception) {
                 WjxFileLogger.w(TAG, "connect failed: ${e.message}", e)
+                runCatching { candidate?.disconnect() }
                 protocol = null
                 saveAuthorizedState(false)
                 Result.failure(e)
@@ -124,59 +133,28 @@ class AdbOnDeviceClientImpl @Inject constructor(
     }
 
     override suspend fun isConnected(): Boolean = withContext(Dispatchers.IO) {
-        protocol?.isConnected() ?: false
+        runCatching { protocol?.isConnected() ?: false }.getOrDefault(false)
     }
 
     override suspend fun getprop(name: String): String? = withContext(Dispatchers.IO) {
         require(name.matches(GETPROP_NAME_REGEX)) {
             "AdbOnDeviceClient: refused getprop name: $name"
         }
-        val p = protocol ?: run {
-            if (connect().isFailure) return@withContext null
-            protocol ?: return@withContext null
-        }
-        try {
-            kotlinx.coroutines.runInterruptible { p.exec("getprop $name") }
-        } catch (e: Exception) {
-            WjxFileLogger.w(TAG, "getprop failed name=$name: ${e.message}")
-            null
-        }
+        execWithReconnect("getprop $name", "getprop:$name")
     }
 
     override suspend fun getSecureSetting(name: String): String? = withContext(Dispatchers.IO) {
         require(name.matches(SETTING_NAME_REGEX)) {
             "AdbOnDeviceClient: refused secure setting name: $name"
         }
-        val p = protocol ?: run {
-            if (connect().isFailure) return@withContext null
-            protocol ?: return@withContext null
-        }
-        try {
-            kotlinx.coroutines.runInterruptible { p.exec("settings get secure $name") }
-        } catch (e: Exception) {
-            WjxFileLogger.w(TAG, "getSecureSetting failed name=$name: ${e.message}")
-            null
-        }
+        execWithReconnect("settings get secure $name", "secure_setting:$name")
     }
 
     override suspend fun readMediaSessionDump(): String? = withContext(Dispatchers.IO) {
-        val p = protocol ?: run {
-            if (connect().isFailure) return@withContext null
-            protocol ?: return@withContext null
-        }
-        try {
-            kotlinx.coroutines.runInterruptible { p.exec("dumpsys media_session") }
-        } catch (e: Exception) {
-            WjxFileLogger.w(TAG, "readMediaSessionDump failed: ${e.message}")
-            null
-        }
+        execWithReconnect("dumpsys media_session", "media_session")
     }
 
     override suspend fun grantMusicNotificationListenerAccess(): Boolean = withContext(Dispatchers.IO) {
-        val p = protocol ?: run {
-            if (connect().isFailure) return@withContext false
-            protocol ?: return@withContext false
-        }
         try {
             val component = "com.byd.wjx/com.byd.wjx.lyrics.MusicNotificationListenerService"
             val quotedComponent = shellQuote(component)
@@ -186,7 +164,8 @@ class AdbOnDeviceClientImpl @Inject constructor(
                     "*) settings put secure enabled_notification_listeners \"\$current:$component\" ;; esac; " +
                     "cmd notification allow_listener $quotedComponent 2>/dev/null || true; " +
                     "echo ok"
-            val out = p.exec(cmd) ?: return@withContext false
+            val out = execWithReconnect(cmd, "grant_notification_listener")
+                ?: return@withContext false
             out.contains("ok")
         } catch (e: Exception) {
             WjxFileLogger.w(TAG, "grantMusicNotificationListenerAccess failed: ${e.message}", e)
@@ -200,11 +179,10 @@ class AdbOnDeviceClientImpl @Inject constructor(
             "grantUsageStatsAppop: refused package $packageName"
         }
         val cmd = "appops set $packageName GET_USAGE_STATS allow"
-        val p = protocol ?: return@withContext false
         try {
             // appops prints nothing on success; null means transport error.
             // Treat any non-null output as failure (e.g. "Bad permission") too.
-            val out = p.exec(cmd) ?: return@withContext false
+            val out = execWithReconnect(cmd, "grant_usage_stats") ?: return@withContext false
             out.isBlank()
         } catch (e: Exception) {
             WjxFileLogger.w(TAG, "grantUsageStatsAppop failed: ${e.message}", e)
@@ -213,18 +191,12 @@ class AdbOnDeviceClientImpl @Inject constructor(
     }
 
     override suspend fun spawnHelper(): Boolean = withContext(Dispatchers.IO) {
-        val p = protocol ?: run {
-            val r = connect()
-            if (r.isFailure) return@withContext false
-            protocol ?: return@withContext false
-        }
         try {
-            runCatching {
-                val killOut = p.exec("pkill -9 -f $HELPER_PROCESS_NAME 2>/dev/null; sleep 0.5")
-                WjxFileLogger.i(TAG, "pkill helper result=${killOut.orEmpty().ifBlank { "<empty>" }}")
-            }.onFailure {
-                WjxFileLogger.w(TAG, "pkill helper failed: ${it.message}")
-            }
+            val killOut = execWithReconnect(
+                "pkill -9 -f $HELPER_PROCESS_NAME 2>/dev/null; sleep 0.5",
+                "pkill_helper",
+            ) ?: return@withContext false
+            WjxFileLogger.i(TAG, "pkill helper result=${killOut.ifBlank { "<empty>" }}")
             // Raw protocol exec — bypasses the public exec() write barrier by design
             // (this is not an autoservice GET). Hardcoded, no caller input.
             // CLASSPATH = the app's own signed base.apk; setsid detaches the daemon
@@ -244,8 +216,9 @@ class AdbOnDeviceClientImpl @Inject constructor(
                 "printf '%s\\n' $helperStartScript >/data/local/tmp/wjx_helper_start.sh; " +
                 "chmod 755 /data/local/tmp/wjx_helper_start.sh; " +
                 "sh /data/local/tmp/wjx_helper_start.sh"
-            p.exec(spawnCmd)
-            true
+            // Do not retry this command automatically: a timeout can happen after app_process
+            // has already started. HelperBootstrap polls Binder liveness and decides the result.
+            execWithReconnect(spawnCmd, "spawn_helper", retryOnce = false) != null
         } catch (e: Exception) {
             WjxFileLogger.w(TAG, "spawnHelper failed: ${e.message}", e)
             false
@@ -257,17 +230,67 @@ class AdbOnDeviceClientImpl @Inject constructor(
     }
 
     override suspend fun helperHeartbeat(): Boolean = withContext(Dispatchers.IO) {
-        val p = protocol ?: return@withContext false
-        val out = runCatching { p.exec("ps -A -o NAME") }.getOrNull() ?: return@withContext false
+        val out = execWithReconnect("ps -A -o NAME", "helper_heartbeat")
+            ?: return@withContext false
         out.lineSequence().any { it.trim() == HELPER_PROCESS_NAME }
     }
 
     override suspend fun shutdown() {
         withContext(Dispatchers.IO) {
-            try {
-                protocol?.disconnect()
-            } catch (_: Exception) { /* idempotent */ }
+            connectMutex.withLock {
+                try {
+                    protocol?.disconnect()
+                } catch (_: Exception) { /* idempotent */ }
+                protocol = null
+            }
+        }
+    }
+
+    private suspend fun connectedProtocol(): AdbProtocol? {
+        val current = protocol
+        if (current != null && runCatching { current.isConnected() }.getOrDefault(false)) {
+            return current
+        }
+        if (connect().isFailure) return null
+        return protocol?.takeIf { runCatching { it.isConnected() }.getOrDefault(false) }
+    }
+
+    private suspend fun execWithReconnect(
+        command: String,
+        operation: String,
+        retryOnce: Boolean = true,
+    ): String? {
+        val attempts = if (retryOnce) 2 else 1
+        repeat(attempts) { attempt ->
+            val active = connectedProtocol() ?: return null
+            val output = try {
+                kotlinx.coroutines.runInterruptible { active.exec(command) }
+            } catch (e: Exception) {
+                WjxFileLogger.w(TAG, "$operation failed: ${e.message}", e)
+                null
+            }
+            if (output != null) return output
+
+            invalidateProtocol(active, operation)
+            if (attempt + 1 < attempts) {
+                WjxFileLogger.w(TAG, "$operation transport lost; reconnecting attempt=${attempt + 2}")
+            }
+        }
+        return null
+    }
+
+    private suspend fun invalidateProtocol(failed: AdbProtocol, operation: String) {
+        val invalidated = connectMutex.withLock {
+            if (protocol !== failed || runCatching { failed.isConnected() }.getOrDefault(false)) {
+                return@withLock false
+            }
+            runCatching { failed.disconnect() }
             protocol = null
+            saveAuthorizedState(false)
+            true
+        }
+        if (invalidated) {
+            WjxFileLogger.w(TAG, "$operation invalidated disconnected ADB protocol")
         }
     }
 

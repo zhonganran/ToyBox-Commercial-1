@@ -559,6 +559,7 @@ class ElectronicMirrorCoordinator @Inject constructor(
 
     private data class CameraRoute(
         val cameraTag: String,
+        val cameraIdOverride: Int,
         val surfaceIndex: Int,
         val tileCount: Int,
         val bufferWidth: Int,
@@ -568,6 +569,7 @@ class ElectronicMirrorCoordinator @Inject constructor(
         fun matches(scene: ElectronicMirrorScene): Boolean {
             val profile = scene.surfaceProfile.sanitized()
             return cameraTag == profile.cameraTag &&
+                cameraIdOverride == profile.cameraIdOverride &&
                 surfaceIndex == profile.surfaceIndex &&
                 tileCount == profile.tileCount &&
                 bufferWidth == profile.bufferWidth &&
@@ -577,6 +579,7 @@ class ElectronicMirrorCoordinator @Inject constructor(
 
         fun request(): ElectronicMirrorCameraRequest = ElectronicMirrorCameraRequest(
             cameraTag = cameraTag,
+            cameraIdOverride = cameraIdOverride,
             surfaceIndex = surfaceIndex,
             tileCount = tileCount,
             bufferWidth = bufferWidth,
@@ -589,6 +592,7 @@ class ElectronicMirrorCoordinator @Inject constructor(
                 val profile = scene.surfaceProfile.sanitized()
                 return CameraRoute(
                     cameraTag = profile.cameraTag,
+                    cameraIdOverride = profile.cameraIdOverride,
                     surfaceIndex = profile.surfaceIndex,
                     tileCount = profile.tileCount,
                     bufferWidth = profile.bufferWidth,

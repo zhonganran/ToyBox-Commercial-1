@@ -127,6 +127,8 @@ class PlatformWorkflowTest(unittest.TestCase):
                 "sounds",
                 "license_codes",
                 "devices",
+                "vehicle_profiles",
+                "diagnostic_logs",
                 "audit_logs",
                 "api_attempts",
                 "login_attempts",
@@ -149,6 +151,7 @@ class PlatformWorkflowTest(unittest.TestCase):
             platform_app.APK_DIR,
             platform_app.SOUND_DIR,
             platform_app.SERVICE_QR_DIR,
+            platform_app.LOG_DIR,
         ):
             directory.mkdir(parents=True, exist_ok=True)
             for path in directory.iterdir():
@@ -341,6 +344,277 @@ class PlatformWorkflowTest(unittest.TestCase):
         )
         self.assertEqual(409, duplicate_activation.status_code)
         self.assertFalse(duplicate_activation.json["activated"])
+
+    def register_device(self, vin="L1234567890123456"):
+        response = self.client.post(
+            "/api/v1/license/status",
+            json={
+                "deviceCode": vin,
+                "appVersion": "1.9",
+                "packageName": "com.byd.wjx",
+            },
+        )
+        self.assertEqual(200, response.status_code)
+        return vin
+
+    def upload_log(self, vin, data=b"07-23 12:00:00.000 I/Test diagnostic\n", filename="wjx.log"):
+        return self.client.post(
+            "/api/v1/logs/upload",
+            data={
+                "deviceCode": vin,
+                "appVersion": "1.9",
+                "packageName": "com.byd.wjx",
+                "log": (io.BytesIO(data), filename, "text/plain"),
+            },
+            content_type="multipart/form-data",
+        )
+
+    def profile_payload(self, vin="L1234567890123456", manual_override=False):
+        vehicle = {
+            "displayName": "宋 PLUS DM-i",
+            "modelVariant": "SA3HEV",
+            "vehicle40dCode": "BYD-S3",
+            "carSeries": "SONG_PLUS",
+            "vehicleType": "PHEV",
+            "controllerVersion": "57.1.3.2501010.1",
+            "controllerCompat": "57.1.3",
+            "controllerSeries": 57,
+            "cameraSourceFingerprint": "a" * 64,
+        }
+        vehicle["compatibilityKey"] = platform_app.vehicle_compatibility_key(vehicle)
+        return {
+            "deviceCode": vin,
+            "appVersion": "1.9.1",
+            "packageName": "com.byd.wjx",
+            "vehicle": vehicle,
+            "runtime": {
+                "connected": True,
+                "powerState": 1,
+                "runtimeState": "active",
+                "manualOverride": manual_override,
+                "currentProfileId": "",
+                "currentProfileVersion": 0,
+                "cameraId": 2,
+                "surfaceIndex": 0,
+                "leftSource": "SOURCE_A",
+                "rightSource": "SOURCE_B",
+                "rearSource": "SOURCE_C",
+            },
+        }
+
+    def insert_vehicle_profile(self, payload, status="verified", sales_model="2026款"):
+        vehicle = payload["vehicle"]
+        now = platform_app.utc_now()
+        with platform_app.db() as conn:
+            conn.execute(
+                """
+                INSERT INTO vehicle_profiles
+                    (profile_id, profile_version, status, compatibility_key, vehicle_name,
+                     sales_model, model_variant, vehicle_40d_code, car_series, vehicle_type,
+                     controller_series, controller_compat, camera_source_fingerprint,
+                     camera_id, surface_index, left_source, right_source, rear_source,
+                     note, created_at, updated_at)
+                VALUES (?, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2, 0,
+                        'SOURCE_A', 'SOURCE_B', 'SOURCE_C', '', ?, ?)
+                """,
+                (
+                    "mirror-song-plus-57",
+                    status,
+                    vehicle["compatibilityKey"],
+                    vehicle["displayName"],
+                    sales_model,
+                    vehicle["modelVariant"],
+                    vehicle["vehicle40dCode"],
+                    vehicle["carSeries"],
+                    vehicle["vehicleType"],
+                    vehicle["controllerSeries"],
+                    vehicle["controllerCompat"],
+                    vehicle["cameraSourceFingerprint"],
+                    now,
+                    now,
+                ),
+            )
+
+    def test_vehicle_profile_rejects_client_forged_compatibility_key(self):
+        payload = self.profile_payload()
+        payload["vehicle"]["compatibilityKey"] = "0" * 64
+
+        response = self.client.post("/api/v1/vehicle-profiles/resolve", json=payload)
+
+        self.assertEqual(400, response.status_code)
+        self.assertFalse(response.json["success"])
+        with platform_app.db() as conn:
+            self.assertEqual(0, conn.execute("SELECT COUNT(*) AS c FROM devices").fetchone()["c"])
+
+    def test_vehicle_profile_draft_is_recorded_but_never_returned(self):
+        payload = self.profile_payload()
+        self.insert_vehicle_profile(payload, status="draft")
+
+        response = self.client.post("/api/v1/vehicle-profiles/resolve", json=payload)
+
+        self.assertEqual(200, response.status_code)
+        self.assertTrue(response.json["success"])
+        self.assertEqual("pending", response.json["profileStatus"])
+        self.assertIsNone(response.json["profile"])
+        with platform_app.db() as conn:
+            device = conn.execute("SELECT * FROM devices WHERE device_code = ?", (payload["deviceCode"],)).fetchone()
+        self.assertEqual(payload["vehicle"]["compatibilityKey"], device["compatibility_key"])
+        self.assertEqual(57, device["controller_series"])
+        self.assertEqual("127.0.0.1", device["remote_addr"])
+
+    def test_verified_exact_profile_is_returned_even_when_client_has_manual_override(self):
+        payload = self.profile_payload(manual_override=True)
+        self.insert_vehicle_profile(payload)
+
+        response = self.client.post("/api/v1/vehicle-profiles/resolve", json=payload)
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("matched", response.json["profileStatus"])
+        self.assertEqual("2026款", response.json["salesModel"])
+        self.assertEqual("mirror-song-plus-57", response.json["profile"]["profileId"])
+        self.assertEqual(3, response.json["profile"]["version"])
+        self.assertEqual(2, response.json["profile"]["cameraId"])
+        with platform_app.db() as conn:
+            device = conn.execute("SELECT * FROM devices WHERE device_code = ?", (payload["deviceCode"],)).fetchone()
+        self.assertEqual("2026款", device["sales_model"])
+        self.assertEqual(1, device["manual_override"])
+        self.assertEqual("matched", device["profile_status"])
+
+    def test_expired_unlicensed_vehicle_does_not_receive_verified_profile(self):
+        payload = self.profile_payload()
+        self.insert_vehicle_profile(payload)
+        first = self.client.post("/api/v1/vehicle-profiles/resolve", json=payload)
+        self.assertEqual("matched", first.json["profileStatus"])
+        with platform_app.db() as conn:
+            conn.execute(
+                """
+                UPDATE devices SET activated = 0, trial_started_at = '2020-01-01T00:00:00Z',
+                    trial_ends_at = '2020-01-08T00:00:00Z'
+                WHERE device_code = ?
+                """,
+                (payload["deviceCode"],),
+            )
+
+        response = self.client.post("/api/v1/vehicle-profiles/resolve", json=payload)
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("unauthorized", response.json["profileStatus"])
+        self.assertIsNone(response.json["profile"])
+
+    def test_admin_can_review_vehicle_create_draft_and_verify_profile(self):
+        payload = self.profile_payload()
+        pending = self.client.post("/api/v1/vehicle-profiles/resolve", json=payload)
+        self.assertEqual("pending", pending.json["profileStatus"])
+        with platform_app.db() as conn:
+            device_id = conn.execute(
+                "SELECT id FROM devices WHERE device_code = ?", (payload["deviceCode"],)
+            ).fetchone()["id"]
+        csrf_token = self.login_and_get_csrf()
+
+        listing = self.client.get("/vehicles")
+        detail = self.client.get(f"/vehicles/{device_id}")
+        create_page = self.client.get(f"/vehicle-profiles?device={device_id}")
+        self.assertEqual(200, listing.status_code)
+        self.assertEqual(200, detail.status_code)
+        self.assertEqual(200, create_page.status_code)
+        self.assertIn("宋 PLUS DM-i".encode(), create_page.data)
+
+        created = self.client.post(
+            "/vehicle-profiles",
+            data={
+                "csrf_token": csrf_token,
+                "device_id": str(device_id),
+                "vehicle_name": "宋 PLUS DM-i",
+                "sales_model": "2026款",
+                "profile_version": "1",
+                "camera_id": "2",
+                "surface_index": "0",
+                "left_source": "SOURCE_A",
+                "right_source": "SOURCE_B",
+                "rear_source": "SOURCE_C",
+                "note": "用户已确认画面正常",
+            },
+            follow_redirects=False,
+        )
+        self.assertEqual(302, created.status_code)
+        with platform_app.db() as conn:
+            profile = conn.execute("SELECT * FROM vehicle_profiles").fetchone()
+        self.assertEqual("draft", profile["status"])
+
+        verified = self.client.post(
+            f"/vehicle-profiles/{profile['id']}/toggle",
+            data={"csrf_token": csrf_token},
+            follow_redirects=False,
+        )
+        self.assertEqual(302, verified.status_code)
+        with platform_app.db() as conn:
+            status = conn.execute(
+                "SELECT status FROM vehicle_profiles WHERE id = ?", (profile["id"],)
+            ).fetchone()["status"]
+        self.assertEqual("verified", status)
+
+        matched = self.client.post("/api/v1/vehicle-profiles/resolve", json=payload)
+        self.assertEqual("matched", matched.json["profileStatus"])
+        self.assertEqual("2026款", matched.json["salesModel"])
+
+    def test_diagnostic_log_upload_requires_registered_vehicle(self):
+        response = self.upload_log("L1234567890123456")
+
+        self.assertEqual(403, response.status_code)
+        self.assertFalse(response.json["success"])
+        self.assertEqual([], list(platform_app.LOG_DIR.iterdir()))
+
+    def test_diagnostic_log_upload_is_private_downloadable_and_deletable(self):
+        vin = self.register_device()
+        log_bytes = "07-23 12:00:00.000 E/Test 中文异常\n".encode("utf-8")
+
+        upload = self.upload_log(vin, log_bytes)
+        self.assertEqual(200, upload.status_code)
+        self.assertTrue(upload.json["success"])
+        log_id = upload.json["logId"]
+
+        private_view = self.client.get(f"/diagnostic-logs/{log_id}/view")
+        self.assertEqual(302, private_view.status_code)
+        self.assertTrue(private_view.headers["Location"].startswith("/login"))
+
+        csrf_token = self.login_and_get_csrf()
+        listing = self.client.get("/diagnostic-logs")
+        self.assertEqual(200, listing.status_code)
+        self.assertIn(vin.encode("utf-8"), listing.data)
+
+        view = self.client.get(f"/diagnostic-logs/{log_id}/view")
+        download = self.client.get(f"/diagnostic-logs/{log_id}/download")
+        self.assertEqual(log_bytes, view.data)
+        self.assertEqual(log_bytes, download.data)
+        self.assertIn("attachment", download.headers["Content-Disposition"])
+        view.close()
+        download.close()
+
+        deleted = self.client.post(
+            f"/diagnostic-logs/{log_id}/delete",
+            data={"csrf_token": csrf_token},
+            follow_redirects=False,
+        )
+        self.assertEqual(302, deleted.status_code)
+        with platform_app.db() as conn:
+            self.assertIsNone(
+                conn.execute("SELECT id FROM diagnostic_logs WHERE id = ?", (log_id,)).fetchone()
+            )
+        self.assertEqual([], list(platform_app.LOG_DIR.iterdir()))
+
+    def test_diagnostic_log_rejects_wrong_extension_binary_and_oversize(self):
+        vin = self.register_device()
+
+        wrong_extension = self.upload_log(vin, b"plain text", "payload.apk")
+        self.assertEqual(400, wrong_extension.status_code)
+
+        binary = self.upload_log(vin, b"text\x00binary", "wjx.log")
+        self.assertEqual(400, binary.status_code)
+
+        with patch.object(platform_app, "MAX_LOG_SIZE", 4):
+            oversize = self.upload_log(vin, b"12345", "wjx.log")
+        self.assertEqual(413, oversize.status_code)
+        self.assertEqual([], list(platform_app.LOG_DIR.iterdir()))
 
 
 if __name__ == "__main__":

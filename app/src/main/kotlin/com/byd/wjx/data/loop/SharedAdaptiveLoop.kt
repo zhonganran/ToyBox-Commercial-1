@@ -39,6 +39,7 @@ class SharedAdaptiveLoop constructor(
     private val energyDataReader: EnergyDataReader,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val cadence: CadenceConfig = CadenceConfig.default(),
+    private val recoverVehicleReads: suspend () -> Boolean = { false },
 ) {
     private val _flow = MutableSharedFlow<DiParsData>(
         replay = 1, extraBufferCapacity = 0,
@@ -120,6 +121,18 @@ class SharedAdaptiveLoop constructor(
                 consecutiveNull++
                 _connected.value = false
                 regularDelayRemainingMs = 0L
+                if (shouldAttemptRecovery(consecutiveNull)) {
+                    val recovered = runCatching { recoverVehicleReads() }
+                        .onFailure {
+                            WjxFileLogger.w(TAG, "vehicle read recovery failed: ${it.message}", it)
+                        }
+                        .getOrDefault(false)
+                    WjxFileLogger.i(
+                        TAG,
+                        "vehicle read recovery attempt consecutive=$consecutiveNull recovered=$recovered",
+                    )
+                    if (recovered) continue
+                }
                 val backoff = (NULL_RETRY_BASE_MS * pow15(consecutiveNull - 1))
                     .coerceAtMost(CadenceConfig.MAX_POLL_INTERVAL_MS)
                 WjxFileLogger.w(TAG, "vehicle data unavailable consecutive=$consecutiveNull retryIn=${backoff}ms")
@@ -233,11 +246,17 @@ class SharedAdaptiveLoop constructor(
         return v.toLong().coerceAtLeast(1L)
     }
 
+    private fun shouldAttemptRecovery(consecutiveNull: Int): Boolean =
+        consecutiveNull >= RECOVERY_AFTER_FAILURES &&
+            (consecutiveNull - RECOVERY_AFTER_FAILURES) % RECOVERY_EVERY_FAILURES == 0
+
     private companion object {
         private const val TAG = "SharedAdaptiveLoop"
         const val MIN_ACTION_INTERVAL_MS = 300L
         const val NULL_RETRY_BASE_MS = 1_000L
         const val SLOW_FETCH_LOG_MS = 1_000L
+        const val RECOVERY_AFTER_FAILURES = 3
+        const val RECOVERY_EVERY_FAILURES = 3
     }
 }
 

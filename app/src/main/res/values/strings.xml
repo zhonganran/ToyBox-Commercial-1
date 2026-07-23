@@ -423,9 +423,12 @@
     <string name="settings_export_in_progress">导出中…</string>
     <string name="settings_error_with_message">错误：%1$s</string>
     <string name="settings_error_prefix">错误</string>
-    <string name="settings_log_recording_started">录制中（2 小时后自动停止）… - %1$s</string>
-    <string name="settings_log_saved">已保存：%1$s（%2$d 千字节）</string>
-    <string name="settings_log_error_no_fs_access">错误：无法访问文件系统</string>
+    <string name="settings_diagnostic_log_header">问题诊断</string>
+    <string name="settings_diagnostic_log_title">诊断日志</string>
+    <string name="settings_diagnostic_log_description">直接上传 WJX 文件夹中的 wjx.log，后台会按车架号和版本保存。</string>
+    <string name="settings_log_upload_button">上传日志</string>
+    <string name="settings_log_uploading_button">上传中</string>
+    <string name="settings_log_upload_complete_button">上传完成</string>
     <string name="settings_update_check_in_progress">检查中…</string>
     <string name="settings_update_available_short">可更新至 %1$s</string>
 

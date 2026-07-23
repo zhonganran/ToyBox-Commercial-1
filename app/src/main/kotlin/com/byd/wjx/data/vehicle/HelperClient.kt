@@ -26,6 +26,7 @@ data class HelperShellResult(
 
 data class ElectronicMirrorCameraRequest(
     val cameraTag: String,
+    val cameraIdOverride: Int,
     val surfaceIndex: Int,
     val tileCount: Int,
     val bufferWidth: Int,
@@ -325,6 +326,7 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
     ): Boolean =
         statusOk(HelperBinderProtocol.TX_CAMERA_START, timeoutMs = FORCE_TIMEOUT_MS) { data ->
             data.writeString(request.cameraTag)
+            data.writeInt(request.cameraIdOverride)
             data.writeInt(request.surfaceIndex)
             data.writeInt(request.tileCount)
             data.writeInt(request.bufferWidth)

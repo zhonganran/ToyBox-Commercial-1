@@ -8,9 +8,22 @@ import org.junit.Test
 
 class ElectronicMirrorCameraRuntimeTest {
     @Test
-    fun `validated APA strip camera is preferred before discovered and legacy ids`() {
-        assertEquals(listOf(2, 1, 5, 3), electronicMirrorCameraIdPriority(listOf(1, 5)))
-        assertEquals(listOf(2, 3), electronicMirrorCameraIdPriority(listOf(2, 3, -1)))
+    fun `vehicle discovered panorama camera is preferred before numeric fallbacks`() {
+        assertEquals(listOf(1, 5, 2, 3), electronicMirrorCameraIdPriority(listOf(1, 5)))
+        assertEquals(listOf(3, 2), electronicMirrorCameraIdPriority(listOf(3, -1)))
+        assertEquals(listOf(2, 3), electronicMirrorCameraIdPriority(emptyList()))
+    }
+
+    @Test
+    fun `manual camera selection is strict and ignores every automatic candidate`() {
+        assertEquals(
+            listOf(7),
+            electronicMirrorCameraIdsForSelection(listOf(3, 2), cameraIdOverride = 7),
+        )
+        assertEquals(
+            listOf(3, 2),
+            electronicMirrorCameraIdsForSelection(listOf(3), cameraIdOverride = -1),
+        )
     }
 
     @Test

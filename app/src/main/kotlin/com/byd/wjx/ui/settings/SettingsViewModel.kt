@@ -62,7 +62,7 @@ class SettingsViewModel @Inject constructor(
     private val lockSoundConfigSync: LockSoundConfigSync,
     private val okHttpClient: OkHttpClient,
     private val serviceQrCache: ServiceQrCache,
-    private val logRecorder: SettingsLogRecorder,
+    private val logUploader: SettingsLogUploader,
     private val carProfileDetector: CarProfileDetector = CarProfileDetector(),
 ) : ViewModel() {
     private val lockSoundSettings = LockSoundSettings(appContext)
@@ -86,16 +86,6 @@ class SettingsViewModel @Inject constructor(
         loadLockSoundSettings()
         refreshActivation(refreshDeviceCode = true)
         refreshServiceQrCodes()
-        viewModelScope.launch {
-            logRecorder.state.collect { recordingState ->
-                _uiState.update {
-                    it.copy(
-                        isRecordingLogs = recordingState.isRecording,
-                        logSaveStatus = recordingState.status ?: it.logSaveStatus,
-                    )
-                }
-            }
-        }
     }
 
     fun reloadLockSoundChoices() {
@@ -582,12 +572,35 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun startLogRecording() {
-        logRecorder.start()
-    }
-
-    fun stopLogRecording() {
-        logRecorder.stop()
+    fun uploadLogs() {
+        if (_uiState.value.isUploadingLogs) return
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isUploadingLogs = true,
+                    logUploadStatus = "正在上传诊断日志…",
+                )
+            }
+            runCatching { logUploader.upload() }
+                .onSuccess { result ->
+                    val idLabel = result.id.takeIf { it > 0L }?.let { "，编号 #$it" }.orEmpty()
+                    _uiState.update {
+                        it.copy(
+                            isUploadingLogs = false,
+                            logUploadStatus = "日志上传成功$idLabel",
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    WjxFileLogger.w("SettingsViewModel", "diagnostic log upload failed", error)
+                    _uiState.update {
+                        it.copy(
+                            isUploadingLogs = false,
+                            logUploadStatus = "日志上传失败：${error.message ?: "网络不可用"}",
+                        )
+                    }
+                }
+        }
     }
 
     fun showUpdateDialog() {
@@ -731,11 +744,6 @@ class SettingsViewModel @Inject constructor(
                 downloadJob = null
             }
         }
-    }
-
-    override fun onCleared() {
-        logRecorder.close()
-        super.onCleared()
     }
 
 }

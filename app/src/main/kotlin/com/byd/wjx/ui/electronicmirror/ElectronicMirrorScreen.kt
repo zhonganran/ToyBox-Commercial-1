@@ -71,6 +71,13 @@ fun ElectronicMirrorSettingsContent(
             qualityWidth = config.qualityWidth,
         )
 
+        CameraSourceCard(
+            config = config,
+            onSelectManualCamera = viewModel::selectManualCamera,
+            onRestoreAutomatic = viewModel::restoreAutomaticProfile,
+            onPreview = viewModel::preview,
+        )
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(16.dp),

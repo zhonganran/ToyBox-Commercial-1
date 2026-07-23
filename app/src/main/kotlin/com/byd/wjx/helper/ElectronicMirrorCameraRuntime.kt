@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.view.Surface
+import com.byd.wjx.electronicmirror.VehicleCameraPropertyResolver
 import java.lang.reflect.Constructor
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
@@ -31,6 +32,7 @@ internal class ElectronicMirrorCameraRuntime(
     fun start(
         surface: Surface,
         cameraTag: String,
+        cameraIdOverride: Int,
         surfaceIndex: Int,
         tileCount: Int,
         bufferWidth: Int,
@@ -43,6 +45,8 @@ internal class ElectronicMirrorCameraRuntime(
         }
         val safeCameraTag = cameraTag.trim().lowercase()
         val requestValid = safeCameraTag == PANORAMA_CAMERA_TAG &&
+            (cameraIdOverride == AUTO_CAMERA_ID ||
+                cameraIdOverride in MIN_CAMERA_ID..MAX_CAMERA_ID) &&
             surfaceIndex in MIN_SURFACE_INDEX..MAX_SURFACE_INDEX &&
             tileCount == PANORAMA_TILE_COUNT &&
             bufferWidth in MIN_BUFFER_WIDTH..MAX_BUFFER_WIDTH &&
@@ -51,7 +55,8 @@ internal class ElectronicMirrorCameraRuntime(
             surface.release()
             return@synchronized fail(
                 STATUS_INVALID_REQUEST,
-                "invalid request cameraTag=$cameraTag surfaceIndex=$surfaceIndex tiles=$tileCount " +
+                "invalid request cameraTag=$cameraTag cameraIdOverride=$cameraIdOverride " +
+                    "surfaceIndex=$surfaceIndex tiles=$tileCount " +
                     "buffer=${bufferWidth}x$bufferHeight",
             )
         }
@@ -63,9 +68,15 @@ internal class ElectronicMirrorCameraRuntime(
         try {
             val api = resolveCameraApi()
             // Do not silently fall back to pano_l/APA side feeds: those are the round/door-facing
-            // images that caused the incorrect mirror view. pano_h plus the validated numeric
-            // fallback is the only producer route for this feature.
-            val cameraCandidates = resolveCameraCandidates(listOf(safeCameraTag))
+            // images that caused the incorrect mirror view. Resolve pano_h from this vehicle first;
+            // numeric ids are only fallbacks because the same id can represent DMS on another model.
+            val cameraCandidates = if (cameraIdOverride >= MIN_CAMERA_ID) {
+                electronicMirrorCameraIdsForSelection(emptyList(), cameraIdOverride)
+                    .map { CameraIdCandidate(it, "manual-selection") }
+                    .also { helperLog(TAG, "camera candidates=$cameraIdOverride(manual-selection)") }
+            } else {
+                resolveCameraCandidates(listOf(safeCameraTag))
+            }
             val fpsValue = fps.coerceIn(15, 30)
             var startedCamera: StartedCamera? = null
             for (candidate in cameraCandidates) {
@@ -116,6 +127,7 @@ internal class ElectronicMirrorCameraRuntime(
                 "started cameraId=${startedCamera.candidate.id} " +
                     "source=${startedCamera.candidate.source} " +
                     "cameraTag=$safeCameraTag " +
+                    "cameraIdOverride=$cameraIdOverride " +
                     "surfaceIndex=$surfaceIndex tiles=$tileCount " +
                     "binding=${startedCamera.bindingMethod} " +
                     "fps=$fpsValue fpsApplied=${startedCamera.fpsApplied} " +
@@ -176,18 +188,18 @@ internal class ElectronicMirrorCameraRuntime(
             }
         }
 
-        // Discover model-specific ids as fallbacks. The tested DiLink APA strip is camera 2;
-        // cam_sort can expose a different pano_h id that opens successfully but emits no frames.
-        CAMERA_SORT_PROPERTIES.forEach { propertyName ->
-            val cameraSort = readSystemProperty(propertyName)
+        // Discover model-specific ids first. Numeric camera ids are not stable across BYD models:
+        // camera 2 is the panorama strip on some vehicles but the driver-monitoring camera on this
+        // one, whose cam_sort explicitly maps pano_h to camera 3.
+        VehicleCameraPropertyResolver.readAll(::readSystemProperty).forEach { property ->
             tags.forEach { tag ->
-                val propertyId = cameraIdFromProperty(cameraSort, tag)
+                val propertyId = cameraIdFromProperty(property.value, tag)
                 helperLog(
                     TAG,
-                    "camera property name=$propertyName tag=$tag " +
+                    "camera property name=${property.name} tag=$tag " +
                         "id=${propertyId ?: "unavailable"}",
                 )
-                addCandidate(propertyId, "property:$propertyName:$tag")
+                addCandidate(propertyId, "property:${property.name}:$tag")
             }
         }
 
@@ -223,15 +235,16 @@ internal class ElectronicMirrorCameraRuntime(
             helperLog(TAG, "camera tag=$tag id=${resolved ?: "unavailable"}")
             addCandidate(resolved, "BmmCameraInfo:$tag")
         }
-        return electronicMirrorCameraIdPriority(discovered.keys.toList()).map { cameraId ->
-            CameraIdCandidate(
-                id = cameraId,
-                source = discovered[cameraId] ?: when (cameraId) {
-                    VALIDATED_PANORAMA_CAMERA_ID -> "validated-apa-strip"
-                    else -> "legacy-fallback"
-                },
-            )
-        }.also { resolved ->
+        return electronicMirrorCameraIdsForSelection(discovered.keys.toList(), AUTO_CAMERA_ID)
+            .map { cameraId ->
+                CameraIdCandidate(
+                    id = cameraId,
+                    source = discovered[cameraId] ?: when (cameraId) {
+                        FALLBACK_PANORAMA_CAMERA_ID -> "numeric-pano-fallback"
+                        else -> "legacy-fallback"
+                    },
+                )
+            }.also { resolved ->
             helperLog(
                 TAG,
                 "camera candidates=" + resolved.joinToString { "${it.id}(${it.source})" },
@@ -522,8 +535,11 @@ internal class ElectronicMirrorCameraRuntime(
         private const val TAG = "ElectronicMirrorCamera"
         private const val AVM_CAMERA_CLASS = "android.hardware.AVMCamera"
         private const val BMM_CAMERA_INFO_CLASS = "android.hardware.BmmCameraInfo"
-        private const val VALIDATED_PANORAMA_CAMERA_ID = 2
-        private const val PANORAMA_CAMERA_TAG = "pano_h"
+        private const val FALLBACK_PANORAMA_CAMERA_ID = 2
+        private const val PANORAMA_CAMERA_TAG = VehicleCameraPropertyResolver.PANORAMA_CAMERA_TAG
+        private const val AUTO_CAMERA_ID = -1
+        private const val MIN_CAMERA_ID = 0
+        private const val MAX_CAMERA_ID = 32_767
         private const val PANORAMA_TILE_COUNT = 4
         private const val SURFACE_NONE = -1
         private const val MIN_SURFACE_INDEX = 0
@@ -533,10 +549,6 @@ internal class ElectronicMirrorCameraRuntime(
         private const val MIN_BUFFER_HEIGHT = 160
         private const val MAX_BUFFER_HEIGHT = 2160
         private val CAMERA_ID_METHOD_NAMES = setOf("getCameraId", "getCameraID")
-        private val CAMERA_SORT_PROPERTIES = listOf(
-            "vehicle.config.cam_sort",
-            "vendor.vehicle.config.cam_sort",
-        )
     }
 
     private data class Invocation(val value: Any?)
@@ -563,10 +575,19 @@ internal class ElectronicMirrorCameraRuntime(
 
 internal fun electronicMirrorCameraIdPriority(discoveredIds: List<Int>): List<Int> =
     buildList {
-        add(2)
         addAll(discoveredIds)
+        add(2)
         add(3)
     }.filter { it >= 0 }.distinct()
+
+internal fun electronicMirrorCameraIdsForSelection(
+    discoveredIds: List<Int>,
+    cameraIdOverride: Int,
+): List<Int> = if (cameraIdOverride >= 0) {
+    listOf(cameraIdOverride)
+} else {
+    electronicMirrorCameraIdPriority(discoveredIds)
+}
 
 internal fun electronicMirrorArgumentsCompatible(
     parameterTypes: Array<Class<*>>,
@@ -596,16 +617,4 @@ internal fun electronicMirrorArgumentsCompatible(
 }
 
 internal fun cameraIdFromProperty(raw: String, tag: String): Int? =
-    raw.split(';', ',')
-        .asSequence()
-        .map(String::trim)
-        .filter(String::isNotEmpty)
-        .mapNotNull { entry ->
-            val separator = entry.indexOfAny(charArrayOf(':', '='))
-            if (separator <= 0) null
-            else entry.substring(0, separator).trim() to entry.substring(separator + 1).trim()
-        }
-        .firstOrNull { (name, _) -> name.equals(tag, ignoreCase = true) }
-        ?.second
-        ?.toIntOrNull()
-        ?.takeIf { it >= 0 }
+    VehicleCameraPropertyResolver.cameraIdFromSort(raw, tag)

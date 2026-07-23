@@ -12,6 +12,7 @@ from platform_config import (
     DEFAULT_CONFIG,
     DEFAULT_TRIAL_DAYS,
     LEGACY_DEFAULT_ADMIN_PASSWORD,
+    LOG_DIR,
     MIN_ADMIN_PASSWORD_LENGTH,
     PASSWORD_HASH_METHOD,
     SERVICE_QR_DIR,
@@ -77,6 +78,7 @@ def init_db(force=False):
         APK_DIR.mkdir(parents=True, exist_ok=True)
         SOUND_DIR.mkdir(parents=True, exist_ok=True)
         SERVICE_QR_DIR.mkdir(parents=True, exist_ok=True)
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
         with db() as conn:
             conn.executescript(
                 """
@@ -137,6 +139,32 @@ def init_db(force=False):
                     first_seen_at TEXT NOT NULL,
                     last_seen_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS vehicle_profiles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    profile_id TEXT NOT NULL UNIQUE,
+                    profile_version INTEGER NOT NULL DEFAULT 1,
+                    status TEXT NOT NULL DEFAULT 'draft',
+                    compatibility_key TEXT NOT NULL,
+                    vehicle_name TEXT NOT NULL DEFAULT '',
+                    sales_model TEXT NOT NULL DEFAULT '',
+                    model_variant TEXT NOT NULL DEFAULT '',
+                    vehicle_40d_code TEXT NOT NULL DEFAULT '',
+                    car_series TEXT NOT NULL DEFAULT '',
+                    vehicle_type TEXT NOT NULL DEFAULT '',
+                    controller_series INTEGER NOT NULL DEFAULT 0,
+                    controller_compat TEXT NOT NULL DEFAULT '',
+                    camera_source_fingerprint TEXT NOT NULL DEFAULT '',
+                    camera_id INTEGER NOT NULL,
+                    surface_index INTEGER NOT NULL DEFAULT 0,
+                    left_source TEXT NOT NULL DEFAULT 'SOURCE_A',
+                    right_source TEXT NOT NULL DEFAULT 'SOURCE_B',
+                    rear_source TEXT NOT NULL DEFAULT 'SOURCE_C',
+                    note TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_vehicle_profiles_compat_status
+                    ON vehicle_profiles(compatibility_key, status, updated_at);
                 CREATE TABLE IF NOT EXISTS audit_logs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     type TEXT NOT NULL,
@@ -144,6 +172,23 @@ def init_db(force=False):
                     remote_addr TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS diagnostic_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    device_code TEXT NOT NULL,
+                    app_version TEXT NOT NULL DEFAULT '',
+                    package_name TEXT NOT NULL DEFAULT '',
+                    note TEXT NOT NULL DEFAULT '',
+                    filename TEXT NOT NULL UNIQUE,
+                    original_filename TEXT NOT NULL DEFAULT '',
+                    mime_type TEXT NOT NULL DEFAULT '',
+                    file_size INTEGER NOT NULL DEFAULT 0,
+                    remote_addr TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_diagnostic_logs_device_created
+                    ON diagnostic_logs(device_code, created_at);
+                CREATE INDEX IF NOT EXISTS idx_diagnostic_logs_ip_created
+                    ON diagnostic_logs(remote_addr, created_at);
                 CREATE TABLE IF NOT EXISTS config (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
@@ -178,6 +223,33 @@ def init_db(force=False):
             )
             ensure_column(conn, "devices", "trial_started_at", "TEXT")
             ensure_column(conn, "devices", "trial_ends_at", "TEXT")
+            for column, definition in (
+                ("vehicle_name", "TEXT NOT NULL DEFAULT ''"),
+                ("sales_model", "TEXT NOT NULL DEFAULT ''"),
+                ("model_variant", "TEXT NOT NULL DEFAULT ''"),
+                ("vehicle_40d_code", "TEXT NOT NULL DEFAULT ''"),
+                ("car_series", "TEXT NOT NULL DEFAULT ''"),
+                ("vehicle_type", "TEXT NOT NULL DEFAULT ''"),
+                ("controller_version", "TEXT NOT NULL DEFAULT ''"),
+                ("controller_compat", "TEXT NOT NULL DEFAULT ''"),
+                ("controller_series", "INTEGER NOT NULL DEFAULT 0"),
+                ("compatibility_key", "TEXT NOT NULL DEFAULT ''"),
+                ("camera_source_fingerprint", "TEXT NOT NULL DEFAULT ''"),
+                ("power_state", "INTEGER"),
+                ("runtime_state", "TEXT NOT NULL DEFAULT ''"),
+                ("remote_addr", "TEXT NOT NULL DEFAULT ''"),
+                ("current_profile_id", "TEXT NOT NULL DEFAULT ''"),
+                ("current_profile_version", "INTEGER NOT NULL DEFAULT 0"),
+                ("manual_override", "INTEGER NOT NULL DEFAULT 0"),
+                ("camera_id", "INTEGER NOT NULL DEFAULT -1"),
+                ("surface_index", "INTEGER NOT NULL DEFAULT 0"),
+                ("left_source", "TEXT NOT NULL DEFAULT 'SOURCE_A'"),
+                ("right_source", "TEXT NOT NULL DEFAULT 'SOURCE_B'"),
+                ("rear_source", "TEXT NOT NULL DEFAULT 'SOURCE_C'"),
+                ("profile_status", "TEXT NOT NULL DEFAULT 'not_synced'"),
+                ("profile_applied_at", "TEXT"),
+            ):
+                ensure_column(conn, "devices", column, definition)
             ensure_config_defaults(conn)
             now = utc_now()
             for key, (title, subtitle, description) in SERVICE_QR_TYPES.items():

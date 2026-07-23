@@ -2,6 +2,7 @@ package com.byd.wjx.ui.electronicmirror
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -14,10 +15,14 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DesktopWindows
 import androidx.compose.material.icons.outlined.DirectionsCar
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -39,6 +44,8 @@ import androidx.compose.ui.unit.sp
 import com.byd.wjx.electronicmirror.ElectronicMirrorConfig
 import com.byd.wjx.electronicmirror.ElectronicMirrorDisplayTarget
 import com.byd.wjx.electronicmirror.ElectronicMirrorGeometry
+import com.byd.wjx.electronicmirror.ElectronicMirrorSurfaceProfile
+import com.byd.wjx.electronicmirror.ElectronicMirrorViewpoint
 import com.byd.wjx.ui.components.bydSwitchColors
 import com.byd.wjx.ui.theme.AccentGreen
 import com.byd.wjx.ui.theme.CardBorder
@@ -48,6 +55,121 @@ import com.byd.wjx.ui.theme.TextMuted
 import com.byd.wjx.ui.theme.TextPrimary
 import com.byd.wjx.ui.theme.TextSecondary
 import kotlin.math.roundToInt
+
+@Composable
+internal fun CameraSourceCard(
+    config: ElectronicMirrorConfig,
+    onSelectManualCamera: (Int) -> Unit,
+    onRestoreAutomatic: () -> Unit,
+    onPreview: (ElectronicMirrorViewpoint) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val automatic = !config.manualProfileOverride
+    val automaticDescription = when {
+        config.remoteProfileId.isNotBlank() ->
+            "已应用 ${config.remoteProfileId} v${config.remoteProfileVersion} · 摄像头 ID ${config.cameraIdOverride}"
+        config.profileSyncStatus == "pending" -> "服务器暂无本车已验证配置"
+        config.profileSyncStatus == "unauthorized" -> "车辆未授权，暂不下发车型配置"
+        else -> "自动读取本车 pano_h 映射"
+    }
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = CardSurface.copy(alpha = 0.76f)),
+        shape = RoundedCornerShape(24.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, SceneBlue.copy(alpha = 0.46f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "摄像头来源",
+                        color = TextPrimary,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                    )
+                    Text(
+                        if (automatic) {
+                            automaticDescription
+                        } else {
+                            "固定使用摄像头 ID ${config.cameraIdOverride}"
+                        },
+                        color = if (automatic) AccentGreen else SceneBlue,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                Button(
+                    onClick = { onPreview(ElectronicMirrorViewpoint.REAR) },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = SceneBlue.copy(alpha = 0.18f),
+                        contentColor = TextPrimary,
+                    ),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Icon(Icons.Outlined.Visibility, contentDescription = null)
+                    Spacer(Modifier.width(7.dp))
+                    Text("预览当前摄像头", fontWeight = FontWeight.Bold)
+                }
+            }
+            Text(
+                "自动模式优先使用车型配置；手动模式不会切换到其他摄像头。",
+                color = TextMuted,
+                fontSize = 12.sp,
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                CameraIdChip(
+                    label = "自动",
+                    selected = automatic,
+                    onClick = onRestoreAutomatic,
+                )
+                (0..3).forEach { cameraId ->
+                    CameraIdChip(
+                        label = "ID $cameraId",
+                        selected = config.cameraIdOverride == cameraId,
+                        onClick = { onSelectManualCamera(cameraId) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CameraIdChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(label, fontWeight = FontWeight.Bold) },
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = SceneBlue.copy(alpha = 0.2f),
+            selectedLabelColor = TextPrimary,
+            containerColor = Color.Transparent,
+            labelColor = TextSecondary,
+        ),
+        border = FilterChipDefaults.filterChipBorder(
+            enabled = true,
+            selected = selected,
+            borderColor = CardBorder,
+            selectedBorderColor = SceneBlue.copy(alpha = 0.7f),
+        ),
+    )
+}
 
 @Composable
 internal fun StreamingRearMirrorCard(
@@ -109,7 +231,12 @@ internal fun StreamingRearMirrorCard(
                         FilterChip(
                             selected = config.panoramaSurfaceIndex == surfaceIndex,
                             onClick = {
-                                onUpdate { it.copy(panoramaSurfaceIndex = surfaceIndex) }
+                                onUpdate {
+                                    it.copy(
+                                        panoramaSurfaceIndex = surfaceIndex,
+                                        manualProfileOverride = true,
+                                    )
+                                }
                             },
                             label = { Text(surfaceIndex.toString(), fontWeight = FontWeight.Bold) },
                             colors = FilterChipDefaults.filterChipColors(

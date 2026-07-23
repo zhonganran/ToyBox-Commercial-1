@@ -84,6 +84,7 @@ object ElectronicMirrorSceneArbiter {
         val surfaceProfile = ElectronicMirrorSurfaceProfile.panorama(
             surfaceIndex = config.panoramaSurfaceIndex,
             qualityWidth = config.qualityWidth,
+            cameraIdOverride = config.cameraIdOverride,
         )
         val geometry = if (isStreamingRear) {
             config.streamingRearGeometryFor(target).sanitizedStreaming()
