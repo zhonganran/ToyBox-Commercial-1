@@ -115,6 +115,15 @@ class ElectronicMirrorViewModel @Inject constructor(
         coordinator.stopPreview()
     }
 
+    fun stopAllPreviewOutputs() {
+        val current = _config.value
+        if (current.streamingRearEnabled && current.streamingRearVisible) {
+            updateDraft { it.copy(streamingRearVisible = false) }
+            preferences.save(_config.value)
+        }
+        coordinator.stopPreview()
+    }
+
     private fun persistAndApply() {
         preferences.save(_config.value)
         coordinator.applyPreferences()

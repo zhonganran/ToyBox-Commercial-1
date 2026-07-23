@@ -66,8 +66,11 @@ internal class ElectronicMirrorFrameHub(
             }
         },
         onFrameRendered = {
-            frameCount.incrementAndGet()
+            val count = frameCount.incrementAndGet()
             lastFrameAtMs = SystemClock.elapsedRealtime()
+            if (count == 1L) {
+                WjxFileLogger.i(TAG, "first camera frame buffer=${outputWidth}x$outputHeight")
+            }
         },
         onRendererFailed = { error ->
             if (!inputReady.isCompleted) inputReady.complete(null)
@@ -587,10 +590,8 @@ internal class ElectronicMirrorOpaqueTextureView(
     private var released = false
 
     init {
-        // Keep a black backing before the first camera buffer arrives. TextureView opacity alone is
-        // not enough on every DiLink compositor: an uninitialised Surface can otherwise expose the
-        // navigation or application layer below the overlay.
-        setBackgroundColor(android.graphics.Color.BLACK)
+        // TextureView rejects background drawables on Android. The owning FrameLayout supplies the
+        // black backing before the first camera buffer so the layer below never shows through.
         isOpaque = true
         alpha = 1f
         surfaceTextureListener = this

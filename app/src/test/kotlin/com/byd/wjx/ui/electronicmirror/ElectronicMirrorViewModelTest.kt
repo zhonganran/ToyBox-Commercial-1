@@ -93,4 +93,17 @@ class ElectronicMirrorViewModelTest {
         }
         verify(exactly = 1) { coordinator.applyPreferences() }
     }
+
+    @Test
+    fun `stop all preview outputs hides a visible streaming rear window`() {
+        val visible = initial.copy(streamingRearEnabled = true, streamingRearVisible = true)
+        every { preferences.snapshot() } returns visible
+        val model = ElectronicMirrorViewModel(preferences, coordinator)
+
+        model.stopAllPreviewOutputs()
+
+        assertEquals(false, model.config.value.streamingRearVisible)
+        verify(exactly = 1) { preferences.save(match { !it.streamingRearVisible }) }
+        verify(exactly = 1) { coordinator.stopPreview() }
+    }
 }

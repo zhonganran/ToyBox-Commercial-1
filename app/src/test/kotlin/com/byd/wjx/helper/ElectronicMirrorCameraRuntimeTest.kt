@@ -8,6 +8,12 @@ import org.junit.Test
 
 class ElectronicMirrorCameraRuntimeTest {
     @Test
+    fun `validated APA strip camera is preferred before discovered and legacy ids`() {
+        assertEquals(listOf(2, 1, 5, 3), electronicMirrorCameraIdPriority(listOf(1, 5)))
+        assertEquals(listOf(2, 3), electronicMirrorCameraIdPriority(listOf(2, 3, -1)))
+    }
+
+    @Test
     fun `camera sort parser accepts colon separated entries`() {
         assertEquals(3, cameraIdFromProperty("ims:0;apa:3;pano_h:5", "apa"))
         assertEquals(

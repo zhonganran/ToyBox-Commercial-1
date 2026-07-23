@@ -110,6 +110,7 @@ class ElectronicMirrorCoordinator @Inject constructor(
     fun stopPreview() {
         applicationScope.launch {
             mutex.withLock {
+                currentConfig = preferences.snapshot()
                 manualPreview = null
                 resetRetryLocked()
                 reconcileLocked()
@@ -431,23 +432,28 @@ class ElectronicMirrorCoordinator @Inject constructor(
 
     private fun startFrameWatchdogLocked(hub: ElectronicMirrorFrameHub) {
         frameWatchdogJob?.cancel()
+        val startedAtMs = SystemClock.elapsedRealtime()
         frameWatchdogJob = applicationScope.launch {
             while (true) {
                 delay(FRAME_WATCHDOG_INTERVAL_MS)
+                val now = SystemClock.elapsedRealtime()
                 val lastFrameAt = hub.lastFrameAtMs
-                // No first-frame gate: opening a window never waits for or reveals on frame one.
-                if (lastFrameAt <= 0L || SystemClock.elapsedRealtime() - lastFrameAt <= FRAME_STALL_TIMEOUT_MS) {
-                    continue
+                val failureCause = when {
+                    lastFrameAt <= 0L && now - startedAtMs > FIRST_FRAME_TIMEOUT_MS ->
+                        "摄像头启动后未收到首帧"
+                    lastFrameAt > 0L && now - lastFrameAt > FRAME_STALL_TIMEOUT_MS ->
+                        "超过3秒未收到新画面"
+                    else -> continue
                 }
                 mutex.withLock {
                     if (frameHub !== hub) return@withLock
                     val desired = desiredScenesLocked()
                     frameWatchdogJob = null
-                    stopSessionLocked("画面已中断", cancelWatchdog = false, publishStatus = false)
+                    stopSessionLocked(failureCause, cancelWatchdog = false, publishStatus = false)
                     if (desired.isNotEmpty() && !cameraPriorityActive()) {
-                        scheduleRetryLocked(desired, "超过3秒未收到新画面")
+                        scheduleRetryLocked(desired, failureCause)
                     } else {
-                        setInactiveStatus("画面已中断")
+                        setInactiveStatus(failureCause)
                     }
                 }
                 return@launch
@@ -597,6 +603,7 @@ class ElectronicMirrorCoordinator @Inject constructor(
         const val TAG = "ElectronicMirror"
         const val AUTO_PARKING_ACTIVE = 4
         const val CAMERA_INPUT_SURFACE_TIMEOUT_MS = 3_000L
+        const val FIRST_FRAME_TIMEOUT_MS = 4_000L
         const val FRAME_STALL_TIMEOUT_MS = 3_000L
         const val FRAME_WATCHDOG_INTERVAL_MS = 1_000L
         const val CAMERA_REATTACH_GUARD_MS = 360L

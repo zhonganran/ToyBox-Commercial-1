@@ -169,17 +169,15 @@ internal class ElectronicMirrorCameraRuntime(
     }
 
     private fun resolveCameraCandidates(tags: List<String>): List<CameraIdCandidate> {
-        val candidates = linkedMapOf<Int, CameraIdCandidate>()
+        val discovered = linkedMapOf<Int, String>()
         fun addCandidate(id: Int?, source: String) {
             id?.takeIf { it >= 0 }?.let { validId ->
-                candidates.putIfAbsent(validId, CameraIdCandidate(validId, source))
+                discovered.putIfAbsent(validId, source)
             }
         }
 
-        // Vehicle configuration is authoritative. On the tested vehicle BmmCameraInfo reports
-        // pano_h as camera 0 (the raw circular fisheye producer), while cam_sort explicitly maps
-        // pano_h to camera 1 (the validated rectified horizontal panorama). Read both BYD
-        // property spellings before consulting BmmCameraInfo so the raw producer cannot win.
+        // Discover model-specific ids as fallbacks. The tested DiLink APA strip is camera 2;
+        // cam_sort can expose a different pano_h id that opens successfully but emits no frames.
         CAMERA_SORT_PROPERTIES.forEach { propertyName ->
             val cameraSort = readSystemProperty(propertyName)
             tags.forEach { tag ->
@@ -225,8 +223,15 @@ internal class ElectronicMirrorCameraRuntime(
             helperLog(TAG, "camera tag=$tag id=${resolved ?: "unavailable"}")
             addCandidate(resolved, "BmmCameraInfo:$tag")
         }
-        addCandidate(DEFAULT_PANORAMA_CAMERA_ID, "fallback")
-        return candidates.values.toList().also { resolved ->
+        return electronicMirrorCameraIdPriority(discovered.keys.toList()).map { cameraId ->
+            CameraIdCandidate(
+                id = cameraId,
+                source = discovered[cameraId] ?: when (cameraId) {
+                    VALIDATED_PANORAMA_CAMERA_ID -> "validated-apa-strip"
+                    else -> "legacy-fallback"
+                },
+            )
+        }.also { resolved ->
             helperLog(
                 TAG,
                 "camera candidates=" + resolved.joinToString { "${it.id}(${it.source})" },
@@ -369,15 +374,11 @@ internal class ElectronicMirrorCameraRuntime(
         return null
     }
 
-    /**
-     * setPreviewSurface is the primary binding API. addPreviewSurface is only a compatibility
-     * fallback: registering the same Surface through both paths can leave two producers attached
-     * and causes the flashing seen in the vehicle.
-     */
+    /** Bind exactly once. BYD's AVM strip producer uses addPreviewSurface on the tested vehicle. */
     private fun bindPreviewSurface(camera: Any, surface: Surface, surfaceIndex: Int): String? {
         check(surfaceIndex >= MIN_SURFACE_INDEX) { "invalid Surface index=$surfaceIndex" }
-        if (invokeBoolean(camera, "setPreviewSurface", surface, surfaceIndex)) return "set"
         if (invokeBoolean(camera, "addPreviewSurface", surface, surfaceIndex)) return "add"
+        if (invokeBoolean(camera, "setPreviewSurface", surface, surfaceIndex)) return "set"
         return null
     }
 
@@ -521,7 +522,7 @@ internal class ElectronicMirrorCameraRuntime(
         private const val TAG = "ElectronicMirrorCamera"
         private const val AVM_CAMERA_CLASS = "android.hardware.AVMCamera"
         private const val BMM_CAMERA_INFO_CLASS = "android.hardware.BmmCameraInfo"
-        private const val DEFAULT_PANORAMA_CAMERA_ID = 3
+        private const val VALIDATED_PANORAMA_CAMERA_ID = 2
         private const val PANORAMA_CAMERA_TAG = "pano_h"
         private const val PANORAMA_TILE_COUNT = 4
         private const val SURFACE_NONE = -1
@@ -559,6 +560,13 @@ internal class ElectronicMirrorCameraRuntime(
         val fpsApplied: Boolean,
     )
 }
+
+internal fun electronicMirrorCameraIdPriority(discoveredIds: List<Int>): List<Int> =
+    buildList {
+        add(2)
+        addAll(discoveredIds)
+        add(3)
+    }.filter { it >= 0 }.distinct()
 
 internal fun electronicMirrorArgumentsCompatible(
     parameterTypes: Array<Class<*>>,

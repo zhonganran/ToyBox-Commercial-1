@@ -150,7 +150,7 @@ fun ElectronicMirrorSettingsContent(
 
         MirrorPreviewActions(
             onPreview = viewModel::preview,
-            onStopPreview = viewModel::stopPreview,
+            onStopPreview = viewModel::stopAllPreviewOutputs,
         )
 
         Text(
@@ -235,7 +235,7 @@ private fun MirrorPreviewActions(
         ) {
             Icon(Icons.Outlined.StopCircle, contentDescription = null)
             Spacer(Modifier.width(8.dp))
-            Text("停止预览", fontWeight = FontWeight.Bold)
+            Text("停止全部画面", fontWeight = FontWeight.Bold)
         }
     }
 }
