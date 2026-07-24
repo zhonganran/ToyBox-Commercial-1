@@ -103,7 +103,9 @@ class ActivationManager @Inject constructor(
             val now = System.currentTimeMillis()
             val lastChecked = prefs.getLong(KEY_LAST_CHECKED_AT, 0L)
             val missingDevice = storedVinCode().isBlank() || storedDeviceAliases().isEmpty()
-            if (missingDevice || forceAfterMs <= 0L || lastChecked <= 0L || now - lastChecked >= forceAfterMs) {
+            val missingCredential = currentDeviceToken().isBlank() &&
+                !prefs.getBoolean(KEY_DEVICE_CREDENTIAL_REQUIRES_ACTIVATION, false)
+            if (missingDevice || missingCredential || forceAfterMs <= 0L || lastChecked <= 0L || now - lastChecked >= forceAfterMs) {
                 refreshSnapshotSingleFlight()
             } else {
                 currentSnapshot()
@@ -116,6 +118,8 @@ class ActivationManager @Inject constructor(
         val deviceCode = storedVinCode()
         return buildSnapshot(now, firstStarted, deviceCode, storedDeviceAliases())
     }
+
+    fun currentDeviceToken(): String = prefs.getString(KEY_DEVICE_API_TOKEN, "").orEmpty()
 
     suspend fun refreshSnapshot(): ActivationSnapshot = withContext(Dispatchers.IO) {
         refreshSnapshotSingleFlight()
@@ -380,15 +384,20 @@ class ActivationManager @Inject constructor(
         })
         put("appVersion", BuildConfig.VERSION_NAME)
         put("packageName", appContext.packageName)
+        put("credentialVersion", DEVICE_CREDENTIAL_VERSION)
+        readOfflineLicense()?.let { put("deviceProof", it) }
     }
 
     private fun postJson(path: String, payload: JSONObject): JSONObject {
         val apiBase = BuildConfig.ACTIVATION_API_URL.trim().trimEnd('/')
-        val request = Request.Builder()
+        val requestBuilder = Request.Builder()
             .url("$apiBase/$path")
             .post(payload.toString().toRequestBody(JSON))
             .header("Content-Type", "application/json")
-            .build()
+        currentDeviceToken().takeIf(String::isNotBlank)?.let { token ->
+            requestBuilder.header("Authorization", "Bearer $token")
+        }
+        val request = requestBuilder.build()
         WjxFileLogger.i(TAG, "activation api request path=$path url=$apiBase/$path deviceCodes=${payload.optJSONArray("deviceCodes")?.length() ?: 0}")
         okHttpClient.newCall(request).execute().use { response ->
             val text = response.body?.string().orEmpty()
@@ -427,7 +436,8 @@ class ActivationManager @Inject constructor(
         } else {
             ""
         }
-        prefs.edit()
+        val deviceToken = json.optString("deviceToken", "").trim()
+        val editor = prefs.edit()
             .putString(KEY_DEVICE_CODE, candidates.firstOrNull().orEmpty())
             .putString(KEY_DEVICE_CODE_ALIASES, aliases.joinToString(","))
             .putBoolean(KEY_ACTIVATED, activated)
@@ -436,7 +446,16 @@ class ActivationManager @Inject constructor(
             .putLong(KEY_ACTIVATED_AT, activatedAt)
             .putLong(KEY_SERVER_TRIAL_ENDS_AT, serverTrialEndsAt)
             .putLong(KEY_LAST_CHECKED_AT, now)
-            .apply()
+        if (deviceToken.isNotBlank()) {
+            editor
+                .putString(KEY_DEVICE_API_TOKEN, deviceToken)
+                .putBoolean(KEY_DEVICE_CREDENTIAL_REQUIRES_ACTIVATION, false)
+        } else if (json.optBoolean("deviceCredentialRequired", false)) {
+            editor
+                .remove(KEY_DEVICE_API_TOKEN)
+                .putBoolean(KEY_DEVICE_CREDENTIAL_REQUIRES_ACTIVATION, true)
+        }
+        editor.apply()
         if (activated) {
             persistOfflineLicense(json.optJSONObject(KEY_OFFLINE_LICENSE), aliases, normalizedDevice)
         } else {
@@ -445,7 +464,8 @@ class ActivationManager @Inject constructor(
         WjxFileLogger.i(
             TAG,
             "server status applied activated=$activated aliases=${aliases.size} " +
-                "boundCode=${boundActivationCode.isNotBlank()} trialEndsAt=$serverTrialEndsAt",
+                "boundCode=${boundActivationCode.isNotBlank()} credential=${deviceToken.isNotBlank()} " +
+                "trialEndsAt=$serverTrialEndsAt",
         )
     }
 
@@ -710,9 +730,13 @@ class ActivationManager @Inject constructor(
         private const val KEY_ACTIVATED_AT = "activated_at"
         private const val KEY_SERVER_TRIAL_ENDS_AT = "server_trial_ends_at"
         private const val KEY_LAST_CHECKED_AT = "last_checked_at"
+        private const val KEY_DEVICE_API_TOKEN = "device_api_token"
+        private const val KEY_DEVICE_CREDENTIAL_REQUIRES_ACTIVATION =
+            "device_credential_requires_activation"
         private const val KEY_OFFLINE_LICENSE_JSON = "offline_license_json"
         private const val KEY_OFFLINE_LICENSE = "offlineLicense"
         private const val OFFLINE_LICENSE_FILE_NAME = "wjx_license.dat"
+        private const val DEVICE_CREDENTIAL_VERSION = 1
         private const val OFFLINE_LICENSE_PUBLIC_KEY_DER =
             "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxkUw/ZPkswbCgkV60bKska+/srSc216njAlFXq6eC5ws57doamyRvJvniWxv0aBf2vmgvTiKzdKCvZ2WmyIlTzl2W7GTvgeuJWcLURW9Np451/O/fcrTrI1bOB2FI2JhFnH2ZxwUS4yGU7kb+m+l6JgfAtaD/sBb4s++Ejz31+Kh5/ZLTmMMtSWi01B80NfR5gBriNhGR3ZL+l7kzp9zxA3XW89Jz2jkjedytZGyufgr8WLWxtEDpW2nanWA4Tqwu91A6iV95YrnUUEjh5EH54SA9X9HFAdAfFYWcfGxWkxD0lpQC9uTTCf+0lBTFt4EbJ6RYsiQHl0eXNLV48LGNQIDAQAB"
         private const val VIN_SUCCESS_CACHE_MS = 60_000L

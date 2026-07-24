@@ -6,7 +6,7 @@ import com.byd.wjx.R
 /**
  * Known steering-wheel keycodes → display name string resource. Display only — it does NOT gate
  * which keys are assignable (that is [isAssignable]). This table mirrors the key profiles seen in
- * validated 23/34-controller vehicle profiles, plus the OpenBYD public keycodes we already used.
+ * validated 23/34-controller families, plus the OpenBYD public keycodes we already used.
  * Unknown codes fall back to R.string.steering_button_unknown with the raw number.
  */
 val KNOWN_BUTTON_NAMES: Map<Int, Int> = mapOf(

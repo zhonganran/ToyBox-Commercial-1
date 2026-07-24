@@ -16,11 +16,12 @@ enum class ElectronicMirrorCameraSource(
     val stripTileIndex: Int,
     val displayName: String,
 ) {
-    // The validated strip order is rear, left, right, front. Keep A/B/C labels so the
-    // image-order editor can correct a vehicle whose configured order differs.
+    // The validated strip order is rear, left, right, front. Keep opaque A/B/C/D labels so the
+    // image-order editor can correct vehicles whose configured tile order differs.
     SOURCE_A(1, "来源 A"),
     SOURCE_B(2, "来源 B"),
     SOURCE_C(0, "来源 C"),
+    SOURCE_D(3, "来源 D"),
 }
 
 enum class ElectronicMirrorReason {
@@ -61,15 +62,15 @@ data class ElectronicMirrorGeometry(
         const val MIN_OFFSET_PCT = 0
         const val MAX_OFFSET_PCT = 100
         const val MIN_SIDE_WIDTH_PCT = 16
-        const val MAX_SIDE_WIDTH_PCT = 48
+        const val MAX_SIDE_WIDTH_PCT = 100
         const val MIN_SIDE_HEIGHT_PCT = 24
-        const val MAX_SIDE_HEIGHT_PCT = 80
+        const val MAX_SIDE_HEIGHT_PCT = 100
         const val MIN_SIDE_INSET_PCT = 0
         const val MAX_SIDE_INSET_PCT = 50
         const val MIN_STREAMING_WIDTH_PCT = 28
         const val MAX_STREAMING_WIDTH_PCT = 100
         const val MIN_STREAMING_HEIGHT_PCT = 10
-        const val MAX_STREAMING_HEIGHT_PCT = 52
+        const val MAX_STREAMING_HEIGHT_PCT = 100
 
         val DEFAULT_CLUSTER = ElectronicMirrorGeometry(
             widthPct = 30,
@@ -322,11 +323,6 @@ data class ElectronicMirrorConfig(
         ElectronicMirrorGeometry.DEFAULT_STREAMING_CENTER,
     val cameraIdOverride: Int = ElectronicMirrorSurfaceProfile.AUTO_CAMERA_ID,
     val panoramaSurfaceIndex: Int = ElectronicMirrorSurfaceProfile.DEFAULT_SURFACE_INDEX,
-    val manualProfileOverride: Boolean = false,
-    val remoteProfileId: String = "",
-    val remoteProfileVersion: Int = 0,
-    val profileSyncStatus: String = "not_synced",
-    val profileSyncMessage: String = "",
 ) {
     fun geometryFor(target: ElectronicMirrorDisplayTarget = displayTarget): ElectronicMirrorGeometry =
         when (target) {
@@ -399,7 +395,7 @@ data class ElectronicMirrorConfig(
 
     fun sanitized(): ElectronicMirrorConfig {
         val sourcesAreUnique = setOf(leftSource, rightSource, rearSource).size ==
-            ElectronicMirrorCameraSource.entries.size
+            ElectronicMirrorViewpoint.entries.size
         return copy(
             fps = fps.coerceIn(MIN_FPS, MAX_FPS),
             qualityWidth = qualityWidth.coerceIn(

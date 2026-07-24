@@ -5,7 +5,7 @@ internal data class VehicleCameraSortProperty(
     val value: String,
 )
 
-/** Keeps camera discovery and vehicle-profile identity on the same ordered property chain. */
+/** Resolves the local panorama camera mapping from the head unit property chain. */
 internal object VehicleCameraPropertyResolver {
     const val PANORAMA_CAMERA_TAG = "pano_h"
 

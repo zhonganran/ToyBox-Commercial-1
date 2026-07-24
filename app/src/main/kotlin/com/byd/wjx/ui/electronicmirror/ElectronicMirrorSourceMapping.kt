@@ -161,31 +161,39 @@ private fun SourceMappingColumn(
             }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            ElectronicMirrorCameraSource.entries.forEach { source ->
-                FilterChip(
-                    selected = selectedSource == source,
-                    onClick = { onAssign(viewpoint, source) },
-                    label = {
-                        Text(
-                            "${source.displayName.removePrefix("来源 ")} · 格${source.stripTileIndex + 1}",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
+        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            ElectronicMirrorCameraSource.entries.chunked(2).forEach { sources ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    sources.forEach { source ->
+                        FilterChip(
+                            selected = selectedSource == source,
+                            onClick = { onAssign(viewpoint, source) },
+                            label = {
+                                Text(
+                                    "${source.displayName.removePrefix("来源 ")} · 格${source.stripTileIndex + 1}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = AccentGreen.copy(alpha = 0.18f),
+                                selectedLabelColor = TextPrimary,
+                                containerColor = Color.Transparent,
+                                labelColor = TextSecondary,
+                            ),
+                            border = FilterChipDefaults.filterChipBorder(
+                                enabled = true,
+                                selected = selectedSource == source,
+                                borderColor = CardBorder,
+                                selectedBorderColor = AccentGreen.copy(alpha = 0.6f),
+                            ),
                         )
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = AccentGreen.copy(alpha = 0.18f),
-                        selectedLabelColor = TextPrimary,
-                        containerColor = Color.Transparent,
-                        labelColor = TextSecondary,
-                    ),
-                    border = FilterChipDefaults.filterChipBorder(
-                        enabled = true,
-                        selected = selectedSource == source,
-                        borderColor = CardBorder,
-                        selectedBorderColor = AccentGreen.copy(alpha = 0.6f),
-                    ),
-                )
+                    }
+                }
             }
         }
     }

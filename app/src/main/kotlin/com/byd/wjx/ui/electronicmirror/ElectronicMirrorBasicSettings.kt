@@ -60,18 +60,11 @@ import kotlin.math.roundToInt
 internal fun CameraSourceCard(
     config: ElectronicMirrorConfig,
     onSelectManualCamera: (Int) -> Unit,
-    onRestoreAutomatic: () -> Unit,
+    onSelectAutomaticCamera: () -> Unit,
     onPreview: (ElectronicMirrorViewpoint) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val automatic = !config.manualProfileOverride
-    val automaticDescription = when {
-        config.remoteProfileId.isNotBlank() ->
-            "已应用 ${config.remoteProfileId} v${config.remoteProfileVersion} · 摄像头 ID ${config.cameraIdOverride}"
-        config.profileSyncStatus == "pending" -> "服务器暂无本车已验证配置"
-        config.profileSyncStatus == "unauthorized" -> "车辆未授权，暂不下发车型配置"
-        else -> "自动读取本车 pano_h 映射"
-    }
+    val automatic = config.cameraIdOverride == ElectronicMirrorSurfaceProfile.AUTO_CAMERA_ID
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = CardSurface.copy(alpha = 0.76f)),
@@ -96,7 +89,7 @@ internal fun CameraSourceCard(
                     )
                     Text(
                         if (automatic) {
-                            automaticDescription
+                            "自动读取本车 pano_h 摄像头通道"
                         } else {
                             "固定使用摄像头 ID ${config.cameraIdOverride}"
                         },
@@ -119,7 +112,7 @@ internal fun CameraSourceCard(
                 }
             }
             Text(
-                "自动模式优先使用车型配置；手动模式不会切换到其他摄像头。",
+                "自动模式读取车机实际摄像头映射；手动模式固定使用所选 ID。",
                 color = TextMuted,
                 fontSize = 12.sp,
             )
@@ -132,7 +125,7 @@ internal fun CameraSourceCard(
                 CameraIdChip(
                     label = "自动",
                     selected = automatic,
-                    onClick = onRestoreAutomatic,
+                    onClick = onSelectAutomaticCamera,
                 )
                 (0..3).forEach { cameraId ->
                     CameraIdChip(
@@ -234,7 +227,6 @@ internal fun StreamingRearMirrorCard(
                                 onUpdate {
                                     it.copy(
                                         panoramaSurfaceIndex = surfaceIndex,
-                                        manualProfileOverride = true,
                                     )
                                 }
                             },

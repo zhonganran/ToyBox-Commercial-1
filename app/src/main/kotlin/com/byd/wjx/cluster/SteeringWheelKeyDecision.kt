@@ -41,7 +41,7 @@ val NON_ASSIGNABLE_KEYCODES: Set<Int> = setOf(
     5,  // KEYCODE_CALL
     6,  // KEYCODE_ENDCALL
     294, // 360-view button on some 23-controller cars
-    310, // 360-view button (parking cameras) from validated vehicle profiles
+    310, // 360-view button (parking cameras) from validated controller families
     309, // cluster carousel (native widget switch) on Leopard 3
 )
 

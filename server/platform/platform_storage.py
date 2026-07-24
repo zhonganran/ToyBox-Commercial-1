@@ -42,6 +42,95 @@ def ensure_column(conn, table, column, definition):
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
+DEVICE_SCHEMA_COLUMNS = (
+    "id",
+    "device_code",
+    "raw_device_code",
+    "app_version",
+    "package_name",
+    "activated",
+    "trial_started_at",
+    "trial_ends_at",
+    "first_seen_at",
+    "last_seen_at",
+    "vehicle_name",
+    "vin_year",
+    "model_variant",
+    "car_series",
+    "vehicle_type",
+    "controller_version",
+    "controller_series",
+    "power_state",
+    "runtime_state",
+    "remote_addr",
+    "api_token_hash",
+    "api_token_issued_at",
+)
+LEGACY_DEVICE_CONFIGURATION_COLUMNS = {
+    "sales_model",
+    "vehicle_40d_code",
+    "controller_compat",
+    "compatibility_key",
+    "camera_source_fingerprint",
+    "current_profile_id",
+    "current_profile_version",
+    "manual_override",
+    "camera_id",
+    "surface_index",
+    "left_source",
+    "right_source",
+    "rear_source",
+    "profile_status",
+    "profile_applied_at",
+}
+
+
+def remove_legacy_vehicle_configuration(conn):
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(devices)").fetchall()}
+    if columns & LEGACY_DEVICE_CONFIGURATION_COLUMNS:
+        selected = ", ".join(DEVICE_SCHEMA_COLUMNS)
+        conn.executescript(
+            """
+            DROP TABLE IF EXISTS devices_without_profiles;
+            CREATE TABLE devices_without_profiles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_code TEXT NOT NULL UNIQUE,
+                raw_device_code TEXT NOT NULL DEFAULT '',
+                app_version TEXT NOT NULL DEFAULT '',
+                package_name TEXT NOT NULL DEFAULT '',
+                activated INTEGER NOT NULL DEFAULT 0,
+                trial_started_at TEXT,
+                trial_ends_at TEXT,
+                first_seen_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL,
+                vehicle_name TEXT NOT NULL DEFAULT '',
+                vin_year INTEGER,
+                model_variant TEXT NOT NULL DEFAULT '',
+                car_series TEXT NOT NULL DEFAULT '',
+                vehicle_type TEXT NOT NULL DEFAULT '',
+                controller_version TEXT NOT NULL DEFAULT '',
+                controller_series INTEGER NOT NULL DEFAULT 0,
+                power_state INTEGER,
+                runtime_state TEXT NOT NULL DEFAULT '',
+                remote_addr TEXT NOT NULL DEFAULT '',
+                api_token_hash TEXT NOT NULL DEFAULT '',
+                api_token_issued_at TEXT
+            );
+            """
+        )
+        conn.execute(
+            f"INSERT INTO devices_without_profiles ({selected}) SELECT {selected} FROM devices"
+        )
+        conn.executescript(
+            """
+            DROP TABLE devices;
+            ALTER TABLE devices_without_profiles RENAME TO devices;
+            """
+        )
+    conn.execute("DROP TABLE IF EXISTS vehicle_profiles")
+    conn.execute("DROP TABLE IF EXISTS vehicle_models")
+
+
 def ensure_config_defaults(conn):
     for key, value in DEFAULT_CONFIG.items():
         conn.execute("INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)", (key, value))
@@ -139,32 +228,6 @@ def init_db(force=False):
                     first_seen_at TEXT NOT NULL,
                     last_seen_at TEXT NOT NULL
                 );
-                CREATE TABLE IF NOT EXISTS vehicle_profiles (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    profile_id TEXT NOT NULL UNIQUE,
-                    profile_version INTEGER NOT NULL DEFAULT 1,
-                    status TEXT NOT NULL DEFAULT 'draft',
-                    compatibility_key TEXT NOT NULL,
-                    vehicle_name TEXT NOT NULL DEFAULT '',
-                    sales_model TEXT NOT NULL DEFAULT '',
-                    model_variant TEXT NOT NULL DEFAULT '',
-                    vehicle_40d_code TEXT NOT NULL DEFAULT '',
-                    car_series TEXT NOT NULL DEFAULT '',
-                    vehicle_type TEXT NOT NULL DEFAULT '',
-                    controller_series INTEGER NOT NULL DEFAULT 0,
-                    controller_compat TEXT NOT NULL DEFAULT '',
-                    camera_source_fingerprint TEXT NOT NULL DEFAULT '',
-                    camera_id INTEGER NOT NULL,
-                    surface_index INTEGER NOT NULL DEFAULT 0,
-                    left_source TEXT NOT NULL DEFAULT 'SOURCE_A',
-                    right_source TEXT NOT NULL DEFAULT 'SOURCE_B',
-                    rear_source TEXT NOT NULL DEFAULT 'SOURCE_C',
-                    note TEXT NOT NULL DEFAULT '',
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS idx_vehicle_profiles_compat_status
-                    ON vehicle_profiles(compatibility_key, status, updated_at);
                 CREATE TABLE IF NOT EXISTS audit_logs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     type TEXT NOT NULL,
@@ -225,31 +288,20 @@ def init_db(force=False):
             ensure_column(conn, "devices", "trial_ends_at", "TEXT")
             for column, definition in (
                 ("vehicle_name", "TEXT NOT NULL DEFAULT ''"),
-                ("sales_model", "TEXT NOT NULL DEFAULT ''"),
+                ("vin_year", "INTEGER"),
                 ("model_variant", "TEXT NOT NULL DEFAULT ''"),
-                ("vehicle_40d_code", "TEXT NOT NULL DEFAULT ''"),
                 ("car_series", "TEXT NOT NULL DEFAULT ''"),
                 ("vehicle_type", "TEXT NOT NULL DEFAULT ''"),
                 ("controller_version", "TEXT NOT NULL DEFAULT ''"),
-                ("controller_compat", "TEXT NOT NULL DEFAULT ''"),
                 ("controller_series", "INTEGER NOT NULL DEFAULT 0"),
-                ("compatibility_key", "TEXT NOT NULL DEFAULT ''"),
-                ("camera_source_fingerprint", "TEXT NOT NULL DEFAULT ''"),
                 ("power_state", "INTEGER"),
                 ("runtime_state", "TEXT NOT NULL DEFAULT ''"),
                 ("remote_addr", "TEXT NOT NULL DEFAULT ''"),
-                ("current_profile_id", "TEXT NOT NULL DEFAULT ''"),
-                ("current_profile_version", "INTEGER NOT NULL DEFAULT 0"),
-                ("manual_override", "INTEGER NOT NULL DEFAULT 0"),
-                ("camera_id", "INTEGER NOT NULL DEFAULT -1"),
-                ("surface_index", "INTEGER NOT NULL DEFAULT 0"),
-                ("left_source", "TEXT NOT NULL DEFAULT 'SOURCE_A'"),
-                ("right_source", "TEXT NOT NULL DEFAULT 'SOURCE_B'"),
-                ("rear_source", "TEXT NOT NULL DEFAULT 'SOURCE_C'"),
-                ("profile_status", "TEXT NOT NULL DEFAULT 'not_synced'"),
-                ("profile_applied_at", "TEXT"),
+                ("api_token_hash", "TEXT NOT NULL DEFAULT ''"),
+                ("api_token_issued_at", "TEXT"),
             ):
                 ensure_column(conn, "devices", column, definition)
+            remove_legacy_vehicle_configuration(conn)
             ensure_config_defaults(conn)
             now = utc_now()
             for key, (title, subtitle, description) in SERVICE_QR_TYPES.items():

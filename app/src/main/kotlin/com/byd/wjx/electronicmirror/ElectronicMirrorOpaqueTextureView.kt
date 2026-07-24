@@ -88,6 +88,7 @@ internal class ElectronicMirrorFrameHub(
         outputId: Long,
         texture: SurfaceTexture,
         onAttached: (Boolean) -> Unit,
+        onFrameReadyToReveal: () -> Unit,
         onOutputFailed: (Throwable) -> Unit,
     ) {
         if (released) {
@@ -95,7 +96,13 @@ internal class ElectronicMirrorFrameHub(
             return
         }
         texture.setDefaultBufferSize(outputWidth, outputHeight)
-        renderer.attachOutput(outputId, texture, onAttached, onOutputFailed)
+        renderer.attachOutput(
+            outputId = outputId,
+            texture = texture,
+            onAttached = onAttached,
+            onFrameReadyToReveal = onFrameReadyToReveal,
+            onOutputFailed = onOutputFailed,
+        )
     }
 
     fun detachOutput(outputId: Long) {
@@ -173,6 +180,7 @@ internal class ElectronicMirrorFrameHub(
             outputId: Long,
             texture: SurfaceTexture,
             onAttached: (Boolean) -> Unit,
+            onFrameReadyToReveal: () -> Unit,
             onOutputFailed: (Throwable) -> Unit,
         ) {
             if (released || !::handler.isInitialized) {
@@ -202,6 +210,7 @@ internal class ElectronicMirrorFrameHub(
                     outputs[outputId] = OutputTarget(
                         surface = surface,
                         eglSurface = eglSurface,
+                        onFrameReadyToReveal = onFrameReadyToReveal,
                         onFailure = onOutputFailed,
                     )
                     WjxFileLogger.i(TAG, "output attached id=$outputId count=${outputs.size}")
@@ -365,7 +374,24 @@ internal class ElectronicMirrorFrameHub(
                 val failedOutputs = mutableListOf<Pair<Long, Throwable>>()
                 outputs.forEach { (outputId, output) ->
                     runCatching { drawTo(output.eglSurface) }
-                        .onSuccess { rendered++ }
+                        .onSuccess {
+                            rendered++
+                            if (!output.revealNotified) {
+                                output.renderedFrameCount++
+                            }
+                            if (
+                                !output.revealNotified &&
+                                output.renderedFrameCount >= MIN_RENDERED_FRAMES_BEFORE_REVEAL
+                            ) {
+                                output.revealNotified = true
+                                runCatching(output.onFrameReadyToReveal).onFailure { error ->
+                                    WjxFileLogger.w(
+                                        TAG,
+                                        "frame reveal callback failed id=$outputId: ${error.message}",
+                                    )
+                                }
+                            }
+                        }
                         .onFailure { failedOutputs += outputId to it }
                 }
                 failedOutputs.forEach { (outputId, error) ->
@@ -523,16 +549,21 @@ internal class ElectronicMirrorFrameHub(
                 check(compiled[0] == GLES20.GL_TRUE) { "GLES compile failed: $log" }
             }
 
-        private data class OutputTarget(
+        private class OutputTarget(
             val surface: Surface,
             val eglSurface: EGLSurface,
+            val onFrameReadyToReveal: () -> Unit,
             val onFailure: (Throwable) -> Unit,
-        )
+        ) {
+            var renderedFrameCount: Int = 0
+            var revealNotified: Boolean = false
+        }
 
         companion object {
             private const val RELEASE_TIMEOUT_MS = 1_000L
             private const val MAX_REPORTED_INPUT_FAILURES = 3
             private const val MAX_CONSECUTIVE_INPUT_FAILURES = 3
+            private const val MIN_RENDERED_FRAMES_BEFORE_REVEAL = 2
 
             private val VERTEX_SHADER = """
                 attribute vec4 aPosition;
@@ -581,6 +612,7 @@ internal class ElectronicMirrorOpaqueTextureView(
     context: Context,
     private val frameHub: ElectronicMirrorFrameHub,
     private val onOutputReady: (Boolean) -> Unit,
+    private val onFrameReadyToReveal: () -> Unit,
     private val onOutputDestroyed: () -> Unit,
     private val onOutputFailed: (Throwable) -> Unit,
 ) : TextureView(context), TextureView.SurfaceTextureListener {
@@ -609,6 +641,7 @@ internal class ElectronicMirrorOpaqueTextureView(
             outputId = outputId,
             texture = texture,
             onAttached = onOutputReady,
+            onFrameReadyToReveal = onFrameReadyToReveal,
             onOutputFailed = onOutputFailed,
         )
     }

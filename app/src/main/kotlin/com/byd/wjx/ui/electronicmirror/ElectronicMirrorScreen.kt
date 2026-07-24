@@ -74,7 +74,7 @@ fun ElectronicMirrorSettingsContent(
         CameraSourceCard(
             config = config,
             onSelectManualCamera = viewModel::selectManualCamera,
-            onRestoreAutomatic = viewModel::restoreAutomaticProfile,
+            onSelectAutomaticCamera = viewModel::selectAutomaticCamera,
             onPreview = viewModel::preview,
         )
 
@@ -137,7 +137,7 @@ fun ElectronicMirrorSettingsContent(
                 ElectronicMirrorGeometry.MAX_SIDE_WIDTH_PCT,
             heightRange = ElectronicMirrorGeometry.MIN_SIDE_HEIGHT_PCT..
                 ElectronicMirrorGeometry.MAX_SIDE_HEIGHT_PCT,
-            heightLabel = "高度上限（16:9）",
+            heightLabel = "窗口高度",
         )
 
         SourceMappingEditor(

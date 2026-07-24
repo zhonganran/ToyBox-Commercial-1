@@ -35,6 +35,7 @@ object BackupPreferencesRegistry {
         PreferenceFilePolicy("wjx_energy_flow_stats", "EnergyFlowStatsStore", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("wjx_desktop_cards", "DesktopQuickCardRepository", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("wjx_activation", "ActivationManager", PreferenceBackupPolicy.DEVICE_LOCAL),
+        PreferenceFilePolicy("wjx_vehicle_info", "VehicleInfoSyncManager", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy("wjx_drive_session", "SessionPersistence", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy(
             "boot_log",

@@ -12,7 +12,7 @@ class SettingsLogUploaderTest {
             val source = directory.resolve("wjx.log").apply { writeText("line-1\nline-2\n") }
             val target = directory.resolve("snapshot.log")
 
-            copyLatestLogSnapshot(source, target, maxBytes = 1024L)
+            copyRawLogSnapshot(source, target, maxBytes = 1024L)
 
             assertArrayEquals(source.readBytes(), target.readBytes())
         } finally {
@@ -21,16 +21,16 @@ class SettingsLogUploaderTest {
     }
 
     @Test
-    fun `snapshot keeps the newest bytes when wjx log exceeds upload limit`() {
+    fun `snapshot preserves raw bytes without treating the log as text`() {
         val directory = Files.createTempDirectory("wjx-log-upload").toFile()
         try {
-            val sourceBytes = ByteArray(64) { index -> index.toByte() }
+            val sourceBytes = byteArrayOf(0x57, 0x4a, 0x58, 0x00, 0xff.toByte(), 0x0a)
             val source = directory.resolve("wjx.log").apply { writeBytes(sourceBytes) }
             val target = directory.resolve("snapshot.log")
 
-            copyLatestLogSnapshot(source, target, maxBytes = 16L)
+            copyRawLogSnapshot(source, target, maxBytes = 16L)
 
-            assertArrayEquals(sourceBytes.takeLast(16).toByteArray(), target.readBytes())
+            assertArrayEquals(sourceBytes, target.readBytes())
         } finally {
             directory.deleteRecursively()
         }

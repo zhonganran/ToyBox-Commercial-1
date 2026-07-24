@@ -62,7 +62,7 @@ class ElectronicMirrorSceneArbiterTest {
     }
 
     @Test
-    fun `side windows are clamped to validated size limits`() {
+    fun `side windows allow full display geometry`() {
         val scene = ElectronicMirrorSceneArbiter.resolve(
             enabled.copy(
                 displayTarget = ElectronicMirrorDisplayTarget.CENTER,
@@ -71,8 +71,8 @@ class ElectronicMirrorSceneArbiterTest {
             ElectronicMirrorSignals(turnSignalFlash = 2, gear = 4, originalCameraActive = false),
         )
 
-        assertEquals(48, scene?.geometry?.widthPct)
-        assertEquals(80, scene?.geometry?.heightPct)
+        assertEquals(100, scene?.geometry?.widthPct)
+        assertEquals(100, scene?.geometry?.heightPct)
     }
 
     @Test
@@ -127,15 +127,15 @@ class ElectronicMirrorSceneArbiterTest {
     @Test
     fun `every logical viewpoint selects a tile from the same panorama Surface`() {
         val config = ElectronicMirrorConfig(enabled = true, cameraIdOverride = 3)
-            .withSource(ElectronicMirrorViewpoint.LEFT, ElectronicMirrorCameraSource.SOURCE_C)
+            .withSource(ElectronicMirrorViewpoint.RIGHT, ElectronicMirrorCameraSource.SOURCE_D)
         val scene = ElectronicMirrorSceneArbiter.resolve(
             config,
-            ElectronicMirrorSignals(turnSignalFlash = 2, gear = 4, originalCameraActive = false),
+            ElectronicMirrorSignals(turnSignalFlash = 4, gear = 4, originalCameraActive = false),
         )
 
-        assertEquals(ElectronicMirrorViewpoint.LEFT, scene?.viewpoint)
-        assertEquals(ElectronicMirrorCameraSource.SOURCE_C, scene?.source)
-        assertEquals(ElectronicMirrorCameraSource.SOURCE_C.stripTileIndex, scene?.tileIndex)
+        assertEquals(ElectronicMirrorViewpoint.RIGHT, scene?.viewpoint)
+        assertEquals(ElectronicMirrorCameraSource.SOURCE_D, scene?.source)
+        assertEquals(3, scene?.tileIndex)
         assertEquals(0, scene?.helperSurfaceIndex)
         assertEquals(4, scene?.surfaceProfile?.tileCount)
         assertEquals("pano_h", scene?.surfaceProfile?.cameraTag)

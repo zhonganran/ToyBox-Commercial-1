@@ -99,32 +99,30 @@ class ElectronicMirrorViewModel @Inject constructor(
         source: ElectronicMirrorCameraSource,
     ) {
         updateDraft { config ->
-            config.withSource(viewpoint, source).copy(manualProfileOverride = true)
+            config.withSource(viewpoint, source)
         }
         persistAndApply()
     }
 
     fun resetSources() {
         updateDraft { config ->
-            config.resetSources().copy(manualProfileOverride = true)
+            config.resetSources()
         }
         persistAndApply()
     }
 
     fun selectManualCamera(cameraId: Int) {
         updateDraft { config ->
-            config.copy(
-                cameraIdOverride = cameraId,
-                manualProfileOverride = true,
-            )
+            config.copy(cameraIdOverride = cameraId)
         }
         persistAndApply()
     }
 
-    fun restoreAutomaticProfile() {
-        preferences.restoreAutomaticProfile()
-        _config.value = preferences.snapshot()
-        coordinator.applyPreferences()
+    fun selectAutomaticCamera() {
+        updateDraft { config ->
+            config.copy(cameraIdOverride = com.byd.wjx.electronicmirror.ElectronicMirrorSurfaceProfile.AUTO_CAMERA_ID)
+        }
+        persistAndApply()
     }
 
     fun preview(viewpoint: ElectronicMirrorViewpoint) {

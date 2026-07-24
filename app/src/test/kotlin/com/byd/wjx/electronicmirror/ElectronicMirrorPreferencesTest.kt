@@ -2,8 +2,6 @@ package com.byd.wjx.electronicmirror
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
-import com.byd.wjx.vehicle.VehicleIdentityResolver
-import com.byd.wjx.vehicle.VehicleMirrorProfile
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -23,83 +21,6 @@ class ElectronicMirrorPreferencesTest {
         context.getSharedPreferences(ElectronicMirrorPreferences.PREFS_NAME, Context.MODE_PRIVATE)
             .edit().clear().commit()
         preferences = ElectronicMirrorPreferences(context)
-        setVehicleIdentityProperties()
-    }
-
-    @Test
-    fun `verified remote profile applies until a local manual choice overrides it`() {
-        val profile = testRemoteProfile(cameraId = 3)
-        assertTrue(preferences.installRemoteProfile(profile))
-
-        val automatic = preferences.snapshot()
-        assertEquals(3, automatic.cameraIdOverride)
-        assertEquals("verified-test", automatic.remoteProfileId)
-        assertFalse(automatic.manualProfileOverride)
-
-        preferences.save(
-            automatic.copy(
-                cameraIdOverride = 1,
-                manualProfileOverride = true,
-            ),
-        )
-        val manual = preferences.snapshot()
-        assertEquals(1, manual.cameraIdOverride)
-        assertTrue(manual.manualProfileOverride)
-
-        preferences.restoreAutomaticProfile()
-        val restored = preferences.snapshot()
-        assertEquals(3, restored.cameraIdOverride)
-        assertFalse(restored.manualProfileOverride)
-    }
-
-    @Test
-    fun `remote profile with another compatibility key is ignored`() {
-        preferences.installRemoteProfile(testRemoteProfile(cameraId = 2).copy(compatibilityKey = "0".repeat(64)))
-
-        val config = preferences.snapshot()
-
-        assertEquals(ElectronicMirrorSurfaceProfile.AUTO_CAMERA_ID, config.cameraIdOverride)
-        assertEquals("", config.remoteProfileId)
-    }
-
-    @Test
-    fun `clearing a disabled remote profile returns automatic mode to local defaults`() {
-        preferences.installRemoteProfile(testRemoteProfile(cameraId = 2))
-        assertEquals(2, preferences.snapshot().cameraIdOverride)
-
-        assertTrue(preferences.clearRemoteProfile())
-
-        val config = preferences.snapshot()
-        assertEquals(ElectronicMirrorSurfaceProfile.AUTO_CAMERA_ID, config.cameraIdOverride)
-        assertEquals("", config.remoteProfileId)
-    }
-
-    private fun testRemoteProfile(cameraId: Int): VehicleMirrorProfile = VehicleMirrorProfile(
-        profileId = "verified-test",
-        version = 2,
-        compatibilityKey = VehicleIdentityResolver.currentCompatibilityKey(),
-        cameraId = cameraId,
-        surfaceIndex = 0,
-        leftSource = ElectronicMirrorCameraSource.SOURCE_A,
-        rightSource = ElectronicMirrorCameraSource.SOURCE_B,
-        rearSource = ElectronicMirrorCameraSource.SOURCE_C,
-        updatedAt = "2026-07-23T12:00:00Z",
-    )
-
-    private fun setVehicleIdentityProperties() {
-        val properties = mapOf(
-            "persist.sys.byd.default_name" to "宋 PLUS DM-i",
-            "persist.sys.byd.bluetooth_name" to "",
-            "persist.sys.model_variant.model" to "SA3HEV",
-            "persist.sys.vehicle_40d_code" to "BYD-S3",
-            "ro.build.car.series" to "SONG_PLUS",
-            "ro.vehicle.type" to "PHEV",
-            "apps.setting.product.outswver" to "57.1.3.2501010.1",
-            "vendor.vehicle.config.cam_sort" to "rear,left,right,front",
-        )
-        val type = Class.forName("android.os.SystemProperties")
-        val setter = type.getDeclaredMethod("set", String::class.java, String::class.java)
-        properties.forEach { (name, value) -> setter.invoke(null, name, value) }
     }
 
     @Test
@@ -159,8 +80,7 @@ class ElectronicMirrorPreferencesTest {
     @Test
     fun `custom image order is persisted`() {
         val changed = ElectronicMirrorConfig()
-            .withSource(ElectronicMirrorViewpoint.LEFT, ElectronicMirrorCameraSource.SOURCE_C)
-            .withSource(ElectronicMirrorViewpoint.RIGHT, ElectronicMirrorCameraSource.SOURCE_A)
+            .withSource(ElectronicMirrorViewpoint.RIGHT, ElectronicMirrorCameraSource.SOURCE_D)
 
         preferences.save(changed)
 
@@ -266,7 +186,7 @@ class ElectronicMirrorPreferencesTest {
         val restored = preferences.snapshot()
         assertEquals(30, restored.fps)
         assertEquals(ElectronicMirrorSurfaceProfile.MAX_QUALITY_WIDTH, restored.qualityWidth)
-        assertEquals(ElectronicMirrorGeometry(16, 80, 0, 100), restored.clusterGeometry)
+        assertEquals(ElectronicMirrorGeometry(16, 100, 0, 100), restored.clusterGeometry)
         assertEquals(ElectronicMirrorSurfaceProfile.AUTO_CAMERA_ID, restored.cameraIdOverride)
         assertEquals(ElectronicMirrorSurfaceProfile.MAX_SURFACE_INDEX, restored.panoramaSurfaceIndex)
     }

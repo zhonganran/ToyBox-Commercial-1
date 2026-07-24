@@ -24,7 +24,7 @@ class ElectronicMirrorWindowLayoutTest {
     )
 
     @Test
-    fun `side window uses validated 30 percent width and 16 by 9`() {
+    fun `default side window keeps 30 percent width and 16 by 9`() {
         val layout = electronicMirrorWindowLayout(
             scene(
                 ElectronicMirrorViewpoint.LEFT,
@@ -37,6 +37,39 @@ class ElectronicMirrorWindowLayoutTest {
 
         assertEquals(576, layout.width)
         assertEquals(324, layout.height)
+    }
+
+    @Test
+    fun `side window can fill an ultra wide cluster display`() {
+        val layout = electronicMirrorWindowLayout(
+            scene(
+                ElectronicMirrorViewpoint.LEFT,
+                ElectronicMirrorReason.LEFT_TURN,
+                ElectronicMirrorGeometry(100, 100, 50, 50),
+            ),
+            1280,
+            480,
+        )
+
+        assertEquals(ElectronicMirrorWindowLayout(1280, 480, 0, 0), layout)
+    }
+
+    @Test
+    fun `streaming rear window can fill the center display`() {
+        val geometry = ElectronicMirrorGeometry(100, 100, 50, 50).sanitizedStreaming()
+        val layout = electronicMirrorWindowLayout(
+            scene(
+                ElectronicMirrorViewpoint.REAR,
+                ElectronicMirrorReason.STREAMING_REAR,
+                geometry,
+            ),
+            1920,
+            1080,
+        )
+
+        assertEquals(100, geometry.widthPct)
+        assertEquals(100, geometry.heightPct)
+        assertEquals(ElectronicMirrorWindowLayout(1920, 1080, 0, 0), layout)
     }
 
     @Test

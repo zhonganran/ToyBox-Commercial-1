@@ -99,6 +99,13 @@ internal class ElectronicMirrorOverlayController(
             handle.layoutParams.x = layout.x
             handle.layoutParams.y = layout.y
             handle.scene = scene
+            applyWindowChrome(
+                container = handle.container,
+                scene = scene,
+                layout = layout,
+                displayWidth = handle.displayWidth,
+                displayHeight = handle.displayHeight,
+            )
             handle.windowManager.updateViewLayout(handle.container, handle.layoutParams)
             handle.textureView.post { applyTexturePresentation(handle) }
         }
@@ -120,23 +127,14 @@ internal class ElectronicMirrorOverlayController(
         val displayContext = appContext.createDisplayContext(display)
         val windowManager = displayContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val layout = electronicMirrorWindowLayout(scene, point.x, point.y)
-        val cornerRadiusDp = windowCornerRadiusDp(scene)
-        val background = roundedDrawable(displayContext, MIRROR_BACKGROUND_COLOR, cornerRadiusDp, null)
         val container = FrameLayout(displayContext).apply {
             clipChildren = true
             clipToPadding = true
-            alpha = 1f
+            // Stay transparent while the camera starts so the previous screen remains visible.
+            alpha = 0f
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
-            this.background = background
-            outlineProvider = ViewOutlineProvider.BACKGROUND
-            clipToOutline = true
-            foreground = roundedDrawable(
-                displayContext,
-                Color.TRANSPARENT,
-                cornerRadiusDp,
-                BORDER_COLOR,
-            )
         }
+        applyWindowChrome(container, scene, layout, point.x, point.y)
         val ready = CompletableDeferred<Boolean>()
         var handle: ElectronicMirrorOverlayHandle? = null
         val textureView = ElectronicMirrorOpaqueTextureView(
@@ -149,6 +147,17 @@ internal class ElectronicMirrorOverlayController(
                     "camera output Surface ready=$attached target=${scene.target} " +
                         "buffer=${scene.previewBufferWidth}x${scene.previewBufferHeight}",
                 )
+            },
+            onFrameReadyToReveal = {
+                container.post {
+                    if (container.alpha != 1f) {
+                        container.alpha = 1f
+                        WjxFileLogger.i(
+                            TAG,
+                            "camera frames revealed target=${scene.target} reason=${scene.reason}",
+                        )
+                    }
+                }
             },
             onOutputDestroyed = {
                 handle?.let { activeHandle ->
@@ -172,15 +181,15 @@ internal class ElectronicMirrorOverlayController(
         val label = TextView(displayContext).apply {
             text = labelFor(scene)
             setTextColor(Color.WHITE)
-            textSize = 13f
+            textSize = 10f
             gravity = Gravity.CENTER
             setPadding(
-                dp(displayContext, 12),
-                dp(displayContext, 5),
-                dp(displayContext, 12),
-                dp(displayContext, 5),
+                dp(displayContext, 8),
+                dp(displayContext, 3),
+                dp(displayContext, 8),
+                dp(displayContext, 3),
             )
-            this.background = roundedDrawable(displayContext, LABEL_BACKGROUND_COLOR, 8f, null)
+            setShadowLayer(dp(displayContext, 2).toFloat(), 0f, 1f, Color.BLACK)
         }
         container.addView(
             label,
@@ -188,33 +197,8 @@ internal class ElectronicMirrorOverlayController(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT,
             ).apply {
-                gravity = Gravity.TOP or Gravity.START
-                leftMargin = dp(displayContext, 12)
-                topMargin = dp(displayContext, 10)
-            },
-        )
-
-        val live = TextView(displayContext).apply {
-            text = LIVE_LABEL
-            setTextColor(0xFF63E6BE.toInt())
-            textSize = 11f
-            setPadding(
-                dp(displayContext, 10),
-                dp(displayContext, 5),
-                dp(displayContext, 10),
-                dp(displayContext, 5),
-            )
-            this.background = roundedDrawable(displayContext, LABEL_BACKGROUND_COLOR, 8f, null)
-        }
-        container.addView(
-            live,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-            ).apply {
-                gravity = Gravity.TOP or Gravity.END
-                rightMargin = dp(displayContext, 12)
-                topMargin = dp(displayContext, 10)
+                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                topMargin = dp(displayContext, 6)
             },
         )
 
@@ -259,6 +243,7 @@ internal class ElectronicMirrorOverlayController(
                 "prepared alpha-normalized TextureView target=${scene.target} display=${display.displayId} " +
                     "${layout.width}x${layout.height}+${layout.x},${layout.y} " +
                     "format=TRANSLUCENT blackBacking=true frameAlpha=1 alpha=${params.alpha} " +
+                    "deferredReveal=true " +
                     "buffer=${scene.previewBufferWidth}x${scene.previewBufferHeight} " +
                     "tile=${scene.tileIndex}/${scene.surfaceProfile.tileCount}",
             )
@@ -342,12 +327,10 @@ internal class ElectronicMirrorOverlayController(
         }
     }
 
-    private fun labelFor(scene: ElectronicMirrorScene): String = when (scene.reason) {
-        ElectronicMirrorReason.REVERSE -> "倒挡 · 后方影像"
-        ElectronicMirrorReason.LEFT_TURN -> "左转 · 左后侧影像"
-        ElectronicMirrorReason.RIGHT_TURN -> "右转 · 右后侧影像"
-        ElectronicMirrorReason.MANUAL_PREVIEW -> "预览 · ${scene.viewpoint.displayName}影像"
-        ElectronicMirrorReason.STREAMING_REAR -> "流媒体后视"
+    private fun labelFor(scene: ElectronicMirrorScene): String = when (scene.viewpoint) {
+        ElectronicMirrorViewpoint.LEFT -> "左后"
+        ElectronicMirrorViewpoint.RIGHT -> "右后"
+        ElectronicMirrorViewpoint.REAR -> "正后"
     }
 
     private fun roundedDrawable(
@@ -362,6 +345,31 @@ internal class ElectronicMirrorOverlayController(
             if (strokeColor != null) setStroke(dp(context, 1), strokeColor)
         }
 
+    private fun applyWindowChrome(
+        container: FrameLayout,
+        scene: ElectronicMirrorScene,
+        layout: ElectronicMirrorWindowLayout,
+        displayWidth: Int,
+        displayHeight: Int,
+    ) {
+        val fullScreen = layout.width == displayWidth && layout.height == displayHeight
+        val cornerRadiusDp = if (fullScreen) 0f else windowCornerRadiusDp(scene)
+        container.background = roundedDrawable(
+            container.context,
+            MIRROR_BACKGROUND_COLOR,
+            cornerRadiusDp,
+            null,
+        )
+        container.outlineProvider = ViewOutlineProvider.BACKGROUND
+        container.clipToOutline = !fullScreen
+        container.foreground = roundedDrawable(
+            container.context,
+            Color.TRANSPARENT,
+            cornerRadiusDp,
+            if (fullScreen) null else BORDER_COLOR,
+        )
+    }
+
     private fun windowCornerRadiusDp(scene: ElectronicMirrorScene): Float =
         if (scene.reason == ElectronicMirrorReason.STREAMING_REAR) 10f else 14f
 
@@ -370,11 +378,9 @@ internal class ElectronicMirrorOverlayController(
 
     companion object {
         private const val TAG = "ElectronicMirrorOverlay"
-        private const val LIVE_LABEL = "●  实时"
         private const val DEFAULT_CLUSTER_DISPLAY_ID = 2
         private const val SURFACE_TIMEOUT_MS = 3_000L
         private const val MIRROR_BACKGROUND_COLOR = 0xFF000000.toInt()
-        private const val LABEL_BACKGROUND_COLOR = 0xE6121B22.toInt()
         private const val BORDER_COLOR = 0x9945D6B5.toInt()
         private const val WINDOW_FLAGS =
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -411,9 +417,11 @@ internal fun electronicMirrorWindowLayout(
         .roundToInt()
         .coerceIn(MIN_WINDOW_HEIGHT, displayHeight)
 
-    // Electronic left/right/reverse windows use 16:9. Streaming rear keeps its
-    // independently configured wide window dimensions.
-    if (scene.reason != ElectronicMirrorReason.STREAMING_REAR) {
+    // Keep the normal electronic-mirror window at 16:9. An explicit 100% x 100%
+    // request means true display fill, including ultra-wide cluster displays.
+    val fillDisplay = geometry.widthPct == ElectronicMirrorGeometry.MAX_SIZE_PCT &&
+        geometry.heightPct == ElectronicMirrorGeometry.MAX_SIZE_PCT
+    if (scene.reason != ElectronicMirrorReason.STREAMING_REAR && !fillDisplay) {
         val heightForWidth = (width * 9f / 16f).roundToInt().coerceAtLeast(1)
         if (heightForWidth > height) {
             width = (height * 16f / 9f).roundToInt().coerceAtLeast(1)

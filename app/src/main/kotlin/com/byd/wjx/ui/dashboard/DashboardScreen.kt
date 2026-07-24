@@ -110,7 +110,7 @@ fun DashboardScreen(
     ) {
         ProPageHeader(
             eyebrow = "VEHICLE DATA",
-            title = "车辆数据",
+            title = state.vehicleDisplayLabel ?: "车辆数据",
             subtitle = when {
                 !state.isServiceRunning -> "后台服务未运行"
                 !state.vehicleDataConnected -> "正在等待车辆数据"

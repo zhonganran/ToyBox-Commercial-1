@@ -7,7 +7,6 @@ import com.byd.wjx.log.WjxFileLogger
 import com.byd.wjx.storage.WjxDirectories
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
-import java.io.RandomAccessFile
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
@@ -36,10 +35,14 @@ class SettingsLogUploader @Inject constructor(
         val apiUrl = BuildConfig.LOG_UPLOAD_API_URL.trim()
         require(apiUrl.isNotBlank()) { "日志上传地址未配置" }
 
-        val activation = activationManager.currentSnapshot().takeIf { it.deviceCode.isNotBlank() }
-            ?: activationManager.refreshIfNeeded(forceAfterMs = 0L)
+        var activation = activationManager.currentSnapshot()
+        if (activation.deviceCode.isBlank() || activationManager.currentDeviceToken().isBlank()) {
+            activation = activationManager.refreshIfNeeded(forceAfterMs = 0L)
+        }
         val deviceCode = activation.deviceCode.trim()
         require(deviceCode.isNotBlank()) { "未读取到车架号，请先启动车辆并刷新授权状态" }
+        val deviceToken = activationManager.currentDeviceToken()
+        require(deviceToken.isNotBlank()) { "设备凭证无效，请刷新授权或重新输入激活码" }
 
         WjxFileLogger.i(TAG, "diagnostic log upload requested version=${BuildConfig.VERSION_NAME}")
         WjxFileLogger.flush()
@@ -48,20 +51,21 @@ class SettingsLogUploader @Inject constructor(
 
         val snapshot = File.createTempFile("wjx-diagnostic-", ".log", appContext.cacheDir)
         try {
-            copyLatestLogSnapshot(source, snapshot, WjxFileLogger.MAX_LOG_BYTES)
+            copyRawLogSnapshot(source, snapshot, WjxFileLogger.MAX_LOG_BYTES)
             require(snapshot.length() in 1..WjxFileLogger.MAX_LOG_BYTES) { "日志文件大小无效" }
 
-            val text = "text/plain; charset=utf-8".toMediaType()
+            val rawBytes = "application/octet-stream".toMediaType()
             val body = MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
                 .addFormDataPart("deviceCode", deviceCode)
                 .addFormDataPart("appVersion", BuildConfig.VERSION_NAME)
                 .addFormDataPart("packageName", BuildConfig.APPLICATION_ID)
-                .addFormDataPart("log", "wjx.log", snapshot.asRequestBody(text))
+                .addFormDataPart("log", "wjx.log", snapshot.asRequestBody(rawBytes))
                 .build()
             val request = Request.Builder()
                 .url(apiUrl)
                 .post(body)
+                .header("Authorization", "Bearer $deviceToken")
                 .build()
 
             okHttpClient.newCall(request).execute().use { response ->
@@ -88,7 +92,7 @@ class SettingsLogUploader @Inject constructor(
     }
 }
 
-internal fun copyLatestLogSnapshot(
+internal fun copyRawLogSnapshot(
     source: File,
     target: File,
     maxBytes: Long,
@@ -96,20 +100,23 @@ internal fun copyLatestLogSnapshot(
     require(source.isFile && source.length() > 0L) { "日志文件不存在或为空" }
     require(maxBytes > 0L) { "日志上传大小限制无效" }
 
-    val sourceLength = source.length()
-    val bytesToCopy = minOf(sourceLength, maxBytes)
-    RandomAccessFile(source, "r").use { input ->
-        input.seek(sourceLength - bytesToCopy)
-        target.outputStream().buffered().use { output ->
-            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-            var remaining = bytesToCopy
-            while (remaining > 0L) {
-                val requested = minOf(buffer.size.toLong(), remaining).toInt()
-                val read = input.read(buffer, 0, requested)
-                if (read < 0) break
-                output.write(buffer, 0, read)
-                remaining -= read
+    var copied = 0L
+    try {
+        source.inputStream().buffered().use { input ->
+            target.outputStream().buffered().use { output ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    copied += read
+                    require(copied <= maxBytes) { "日志文件超过 ${maxBytes / 1024 / 1024} MB" }
+                    output.write(buffer, 0, read)
+                }
             }
         }
+    } catch (error: Throwable) {
+        target.delete()
+        throw error
     }
+    require(copied > 0L) { "日志文件不存在或为空" }
 }
