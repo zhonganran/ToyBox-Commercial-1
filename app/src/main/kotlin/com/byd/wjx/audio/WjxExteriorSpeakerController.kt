@@ -1,21 +1,14 @@
 package com.byd.wjx.audio
 
 import android.content.Context
-import android.media.AudioAttributes
-import android.media.AudioFocusRequest
 import android.media.AudioManager
-import android.os.Handler
-import android.os.Looper
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
 class WjxExteriorSpeakerController(private val context: Context) {
-    private var naviFocus: AudioFocusRequest? = null
     private val savedStreamVolumes = mutableMapOf<Int, Int>()
     private var acquiredCount = 0
-    @Volatile private var naviFocusActive = false
-    private val mainHandler = Handler(Looper.getMainLooper())
 
     fun acquire(
         channel: ExteriorChannel,
@@ -28,9 +21,8 @@ class WjxExteriorSpeakerController(private val context: Context) {
             flushStream(channel.streamType)
             sleepQuietly(80L)
             applyStreamVolume(channel.streamType, volumePercent, fallbackVolume, scaleFromMax)
-            requestNaviFocus()
+            true
         } else {
-            applyStreamVolume(channel.streamType, volumePercent, fallbackVolume = -1, scaleFromMax = scaleFromMax)
             true
         }
     }
@@ -41,12 +33,14 @@ class WjxExteriorSpeakerController(private val context: Context) {
         fallbackVolume: Int = CHANNEL0_PLAYBACK_PRESET_VOLUME,
         scaleFromMax: Boolean = false,
     ) {
-        applyStreamVolume(
-            streamType = channel.streamType,
-            volumePercent = volumePercent,
-            fallbackVolume = if (channel == ExteriorChannel.Channel0) fallbackVolume else -1,
-            scaleFromMax = scaleFromMax,
-        )
+        if (channel == ExteriorChannel.Channel0) {
+            applyStreamVolume(
+                streamType = channel.streamType,
+                volumePercent = volumePercent,
+                fallbackVolume = fallbackVolume,
+                scaleFromMax = scaleFromMax,
+            )
+        }
     }
 
     fun reinforce(
@@ -55,13 +49,15 @@ class WjxExteriorSpeakerController(private val context: Context) {
         fallbackVolume: Int = CHANNEL0_PLAYBACK_PRESET_VOLUME,
         scaleFromMax: Boolean = false,
     ): Boolean {
-        applyStreamVolume(
-            streamType = channel.streamType,
-            volumePercent = volumePercent,
-            fallbackVolume = if (channel == ExteriorChannel.Channel0) fallbackVolume else -1,
-            scaleFromMax = scaleFromMax,
-        )
-        return channel != ExteriorChannel.Channel0 || requestNaviFocus()
+        if (channel == ExteriorChannel.Channel0) {
+            applyStreamVolume(
+                streamType = channel.streamType,
+                volumePercent = volumePercent,
+                fallbackVolume = fallbackVolume,
+                scaleFromMax = scaleFromMax,
+            )
+        }
+        return true
     }
 
     fun release(channel: ExteriorChannel) {
@@ -70,70 +66,7 @@ class WjxExteriorSpeakerController(private val context: Context) {
         if (channel == ExteriorChannel.Channel0) {
             flushStream(channel.streamType)
             sleepQuietly(120L)
-            abandonNaviFocus()
-            sleepQuietly(300L)
-            sleepQuietly(500L)
             restoreStream(channel.streamType)
-        } else {
-            restoreStream(channel.streamType)
-        }
-    }
-
-    private fun requestNaviFocus(): Boolean {
-        val audioManager = context.getSystemService(AudioManager::class.java) ?: return false
-        naviFocusActive = true
-        runCatching {
-            audioManager.javaClass.methods.firstOrNull {
-                it.name.contains("requestAudioNaviFocus", ignoreCase = true) && it.parameterTypes.isEmpty()
-            }?.let {
-                it.isAccessible = true
-                it.invoke(audioManager)
-            }
-        }
-        naviFocus?.let { current ->
-            return audioManager.requestAudioFocus(current) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-        }
-        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .setLegacyStreamType(ExteriorChannel.Channel0.streamType)
-                    .build()
-            )
-            .setOnAudioFocusChangeListener(naviFocusListener)
-            .build()
-        val granted = audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-        if (granted) naviFocus = request
-        return granted
-    }
-
-    private fun abandonNaviFocus() {
-        val audioManager = context.getSystemService(AudioManager::class.java) ?: return
-        naviFocusActive = false
-        mainHandler.removeCallbacksAndMessages(null)
-        runCatching {
-            audioManager.javaClass.methods.firstOrNull {
-                it.name.contains("abandonAudioNaviFocus", ignoreCase = true) && it.parameterTypes.isEmpty()
-            }?.let {
-                it.isAccessible = true
-                it.invoke(audioManager)
-            }
-        }
-        runCatching {
-            naviFocus?.let { audioManager.abandonAudioFocusRequest(it) }
-        }
-        naviFocus = null
-    }
-
-    private val naviFocusListener = AudioManager.OnAudioFocusChangeListener { change ->
-        if (naviFocusActive && (
-            change == AudioManager.AUDIOFOCUS_LOSS ||
-                change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT ||
-                change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK
-            )
-        ) {
-            mainHandler.post { requestNaviFocus() }
         }
     }
 
@@ -184,7 +117,7 @@ class WjxExteriorSpeakerController(private val context: Context) {
                     (max * (volume / 100f)).roundToInt().coerceIn(1, max)
                 } else {
                     val saved = savedStreamVolumes[streamType] ?: audioManager.getStreamVolume(streamType)
-                    val fallback = if (fallbackVolume > 0) fallbackVolume else (max * CHANNEL1_FALLBACK_VOLUME_RATIO).roundToInt()
+                    val fallback = fallbackVolume.coerceAtLeast(1)
                     val base = if (saved in 1 until max) saved else fallback.coerceIn(1, max)
                     (base * (volume / 100f)).roundToInt().coerceIn(1, max)
                 }
@@ -212,7 +145,6 @@ class WjxExteriorSpeakerController(private val context: Context) {
     companion object {
         const val CHANNEL0_PLAYBACK_PRESET_VOLUME = 1
         const val CHANNEL0_TALK_PRESET_VOLUME = 3
-        private const val CHANNEL1_FALLBACK_VOLUME_RATIO = 0.55f
         private const val MIN_VOLUME_PERCENT = 0
         private const val MAX_VOLUME_PERCENT = 200
     }

@@ -40,13 +40,11 @@ object ExteriorRoutePlan {
         writeResults: Map<ExteriorRouteWrite, Boolean>,
         speakerOk: Boolean,
         lockStateOk: Boolean,
-        focusOk: Boolean,
     ): Boolean {
         val writes = armWrites(channel)
         return when (channel) {
             ExteriorChannel.Channel0 ->
                 speakerOk &&
-                    focusOk &&
                     writeResults[writes[0]] == true
 
             ExteriorChannel.Channel1 -> {
@@ -59,7 +57,6 @@ object ExteriorRoutePlan {
                 val supportedRouteOk = writeResults.values.any { it }
                 exteriorControlOk &&
                     speakerOk &&
-                    focusOk &&
                     supportedRouteOk
             }
         }

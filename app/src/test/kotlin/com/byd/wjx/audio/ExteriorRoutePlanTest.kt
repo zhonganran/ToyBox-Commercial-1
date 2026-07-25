@@ -59,13 +59,12 @@ class ExteriorRoutePlanTest {
                 writeResults = results,
                 speakerOk = true,
                 lockStateOk = false,
-                focusOk = true,
             )
         )
     }
 
     @Test
-    fun `channel zero primary speaker and focus confirmation permits playback`() {
+    fun `channel zero primary speaker and route confirmation permits playback`() {
         val writes = ExteriorRoutePlan.armWrites(ExteriorChannel.Channel0)
         val results = mapOf(writes[0] to true)
 
@@ -75,7 +74,6 @@ class ExteriorRoutePlanTest {
                 writeResults = results,
                 speakerOk = true,
                 lockStateOk = false,
-                focusOk = true,
             )
         )
     }
@@ -94,7 +92,6 @@ class ExteriorRoutePlanTest {
                 writeResults = results,
                 speakerOk = true,
                 lockStateOk = false,
-                focusOk = true,
             )
         )
     }
@@ -112,7 +109,6 @@ class ExteriorRoutePlanTest {
                 writeResults = results,
                 speakerOk = true,
                 lockStateOk = false,
-                focusOk = true,
             )
         )
     }
@@ -127,13 +123,12 @@ class ExteriorRoutePlanTest {
                 writeResults = writes.associateWith { false },
                 speakerOk = true,
                 lockStateOk = true,
-                focusOk = true,
             )
         )
     }
 
     @Test
-    fun `channel one requires speaker supported route and focus confirmation`() {
+    fun `channel one requires speaker and supported exterior route`() {
         val writes = ExteriorRoutePlan.armWrites(ExteriorChannel.Channel1)
         val results = writes.associateWith { true }
 
@@ -143,7 +138,6 @@ class ExteriorRoutePlanTest {
                 writeResults = results,
                 speakerOk = false,
                 lockStateOk = true,
-                focusOk = true,
             )
         )
         assertFalse(
@@ -152,16 +146,14 @@ class ExteriorRoutePlanTest {
                 writeResults = writes.associateWith { false },
                 speakerOk = true,
                 lockStateOk = true,
-                focusOk = true,
             )
         )
-        assertFalse(
+        assertTrue(
             ExteriorRoutePlan.isStronglyConfirmed(
                 channel = ExteriorChannel.Channel1,
                 writeResults = results,
                 speakerOk = true,
                 lockStateOk = true,
-                focusOk = false,
             )
         )
     }
@@ -176,7 +168,6 @@ class ExteriorRoutePlanTest {
                 writeResults = writes.associateWith { true },
                 speakerOk = true,
                 lockStateOk = true,
-                focusOk = true,
             )
         )
     }

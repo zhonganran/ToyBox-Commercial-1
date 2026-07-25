@@ -1,5 +1,6 @@
 package com.byd.wjx.ui.settings
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -24,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.BluetoothConnected
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Key
@@ -41,6 +43,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -66,6 +69,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.byd.wjx.R
 import com.byd.wjx.audio.LockSoundEvent
 import com.byd.wjx.ui.electronicmirror.ElectronicMirrorSettingsContent
+import com.byd.wjx.ui.help.UsageGuideScreen
 import com.byd.wjx.ui.theme.*
 
 
@@ -79,6 +83,14 @@ fun SettingsScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val categories = SettingsCategory.entries
+    var showUsageGuide by rememberSaveable { mutableStateOf(false) }
+
+    if (showUsageGuide) {
+        BackHandler { showUsageGuide = false }
+        UsageGuideScreen(onBack = { showUsageGuide = false })
+        return
+    }
+
     // Recalculate confirmation dialog
     if (state.showRecalcConfirm) {
         val tariffLabel = when (state.tripCostTariff) {
@@ -134,6 +146,22 @@ fun SettingsScreen(
                 Text("设置", color = TextPrimary, fontSize = 36.sp, lineHeight = 38.sp, fontWeight = FontWeight.ExtraBold)
                 Text("授权、车辆、控制和数据管理", color = TextSecondary, fontSize = 15.sp, fontWeight = FontWeight.Medium)
             }
+            OutlinedButton(
+                onClick = { showUsageGuide = true },
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, AccentGreen.copy(alpha = 0.68f)),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Outlined.HelpOutline,
+                    contentDescription = null,
+                    tint = AccentGreen,
+                    modifier = Modifier.size(19.dp),
+                )
+                Spacer(Modifier.width(7.dp))
+                Text("使用说明", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.width(10.dp))
             Text(
                 "V${state.appVersion}",
                 color = TextPrimary,

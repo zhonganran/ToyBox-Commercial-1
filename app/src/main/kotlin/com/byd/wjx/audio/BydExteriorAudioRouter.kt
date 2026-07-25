@@ -1,13 +1,6 @@
 package com.byd.wjx.audio
 
 import android.content.Context
-import android.media.AudioAttributes
-import android.media.AudioFocusRequest
-import android.media.AudioManager
-import android.os.Handler
-import android.os.Looper
-import android.util.Log
-import android.view.KeyEvent
 import com.byd.wjx.data.vehicle.HelperBootstrap
 import com.byd.wjx.data.vehicle.HelperClient
 import com.byd.wjx.log.WjxFileLogger
@@ -27,10 +20,6 @@ class BydExteriorAudioRouter @Inject constructor(
 ) {
     private val routeMutex = Mutex()
     private val speakerController = WjxExteriorSpeakerController(context)
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private var playFocus: AudioFocusRequest? = null
-    private var playFocusChannel: ExteriorChannel? = null
-    private var pauseFocus: AudioFocusRequest? = null
 
     data class ArmResult(
         val channel: ExteriorChannel,
@@ -38,14 +27,13 @@ class BydExteriorAudioRouter @Inject constructor(
         val writeResults: Map<ExteriorRouteWrite, Boolean>,
         val speakerOk: Boolean,
         val lockStateOk: Boolean,
-        val focusOk: Boolean,
     ) {
         val anyWriteAccepted: Boolean
             get() = writeResults.values.any { it }
 
         fun summary(): String =
             "confirmed=$confirmed writes=${writeResults.values.count { it }}/${writeResults.size} " +
-                "speaker=$speakerOk lock=$lockStateOk focus=$focusOk"
+                "speaker=$speakerOk lock=$lockStateOk"
     }
 
     suspend fun armVerified(
@@ -86,7 +74,6 @@ class BydExteriorAudioRouter @Inject constructor(
                 WjxFileLogger.w(TAG, "helper not ready, confirmed outside route blocked")
                 return@withLock failedArmResult(channel)
             }
-            if (usage != Usage.AutoSound) pauseActiveMedia()
             val speakerOk = speakerController.acquire(
                 channel,
                 volumePercent = volumePercent,
@@ -103,7 +90,6 @@ class BydExteriorAudioRouter @Inject constructor(
                 writeResults = writeAll(ExteriorRoutePlan.armWrites(channel)),
                 speakerOk = speakerOk,
                 lockStateOk = lockStateOk,
-                focusOk = requestPlaybackFocus(channel),
             ).also {
                 WjxFileLogger.i(TAG, "armConfirmed channel=$channel usage=$usage volume=$volumePercent ${it.summary()}")
             }
@@ -131,7 +117,6 @@ class BydExteriorAudioRouter @Inject constructor(
                 writeResults = writeAll(ExteriorRoutePlan.armWrites(channel)),
                 speakerOk = speakerOk,
                 lockStateOk = lockStateOk,
-                focusOk = requestPlaybackFocus(channel),
             ).also {
                 WjxFileLogger.i(TAG, "reinforceConfirmed channel=$channel usage=$usage volume=$volumePercent ${it.summary()}")
             }
@@ -160,9 +145,7 @@ class BydExteriorAudioRouter @Inject constructor(
                 if (channel == ExteriorChannel.Channel1) {
                     setLockSoundPlaybackState(false)
                 }
-                abandonPlaybackFocus()
                 speakerController.release(channel)
-                abandonPausedMediaFocus()
             }.onFailure {
                 WjxFileLogger.w(TAG, "disarm failed: ${it.message}")
             }
@@ -184,7 +167,6 @@ class BydExteriorAudioRouter @Inject constructor(
         writeResults: Map<ExteriorRouteWrite, Boolean>,
         speakerOk: Boolean,
         lockStateOk: Boolean,
-        focusOk: Boolean,
     ): ArmResult {
         return ArmResult(
             channel = channel,
@@ -193,12 +175,10 @@ class BydExteriorAudioRouter @Inject constructor(
                 writeResults = writeResults,
                 speakerOk = speakerOk,
                 lockStateOk = lockStateOk,
-                focusOk = focusOk,
             ),
             writeResults = writeResults,
             speakerOk = speakerOk,
             lockStateOk = lockStateOk,
-            focusOk = focusOk,
         )
     }
 
@@ -222,84 +202,7 @@ class BydExteriorAudioRouter @Inject constructor(
             writeResults = emptyMap(),
             speakerOk = false,
             lockStateOk = false,
-            focusOk = false,
         )
-
-    private fun pauseActiveMedia() {
-        val audioManager = context.getSystemService(AudioManager::class.java) ?: return
-        val hadActivePlayback = runCatching {
-            audioManager.activePlaybackConfigurations.any { config ->
-                runCatching {
-                    config.javaClass.getMethod("isActive").invoke(config) as? Boolean
-                }.getOrDefault(false) == true ||
-                    runCatching {
-                        config.javaClass.getMethod("getPlayerState").invoke(config) as? Int
-                    }.getOrDefault(-1) == 2
-            }
-        }.getOrDefault(false)
-        val musicActive = runCatching { audioManager.isMusicActive }.getOrDefault(false)
-        runCatching {
-            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .setLegacyStreamType(AudioManager.STREAM_MUSIC)
-                        .build()
-                )
-                .build()
-            val focusGranted =
-                audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-            pauseFocus = request
-            dispatchMediaPause(audioManager)
-            Log.i(
-                TAG,
-                "pauseActiveMedia hadActivePlayback=$hadActivePlayback musicActive=$musicActive " +
-                    "focusGranted=$focusGranted"
-            )
-        }.onFailure {
-            WjxFileLogger.w(TAG, "pauseActiveMedia failed: ${it.message}")
-        }
-    }
-
-    private fun abandonPausedMediaFocus() {
-        val audioManager = context.getSystemService(AudioManager::class.java) ?: return
-        runCatching {
-            dispatchMediaPause(audioManager)
-            pauseFocus?.let { audioManager.abandonAudioFocusRequest(it) }
-            pauseFocus = null
-            mainHandler.postDelayed({ dispatchMediaPause(audioManager) }, MEDIA_RESUME_GUARD_MS)
-        }
-    }
-
-    private fun dispatchMediaPause(audioManager: AudioManager) {
-        val event = KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE)
-        audioManager.dispatchMediaKeyEvent(event)
-        audioManager.dispatchMediaKeyEvent(KeyEvent.changeAction(event, KeyEvent.ACTION_UP))
-    }
-
-    private fun requestPlaybackFocus(channel: ExteriorChannel): Boolean {
-        val audioManager = context.getSystemService(AudioManager::class.java) ?: return false
-        return runCatching {
-            if (playFocusChannel == channel) {
-                playFocus?.let { current ->
-                    return@runCatching audioManager.requestAudioFocus(current) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-                }
-            }
-            playFocus?.let { audioManager.abandonAudioFocusRequest(it) }
-            val attributes = WjxAudioAttributes.forOutside(channel)
-            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-                .setAudioAttributes(attributes)
-                .build()
-            playFocus = request
-            playFocusChannel = channel
-            val result = audioManager.requestAudioFocus(request)
-            result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-        }.getOrElse {
-            WjxFileLogger.w(TAG, "requestPlaybackFocus failed: ${it.message}")
-            false
-        }
-    }
 
     private fun fallbackStreamVolume(usage: Usage): Int =
         if (usage == Usage.Talk) {
@@ -307,15 +210,6 @@ class BydExteriorAudioRouter @Inject constructor(
         } else {
             WjxExteriorSpeakerController.CHANNEL0_PLAYBACK_PRESET_VOLUME
         }
-
-    private fun abandonPlaybackFocus() {
-        val audioManager = context.getSystemService(AudioManager::class.java) ?: return
-        runCatching {
-            playFocus?.let { audioManager.abandonAudioFocusRequest(it) }
-            playFocus = null
-            playFocusChannel = null
-        }
-    }
 
     enum class Usage {
         Playback,
@@ -326,7 +220,6 @@ class BydExteriorAudioRouter @Inject constructor(
     companion object {
         private const val TAG = "BydExteriorAudio"
         private const val HELPER_READY_TIMEOUT_MS = 12_000L
-        private const val MEDIA_RESUME_GUARD_MS = 180L
         private const val CHANNEL_0_SETTLE_MS = 300L
         private const val CHANNEL_1_SETTLE_MS = 120L
     }
