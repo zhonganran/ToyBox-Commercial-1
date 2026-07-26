@@ -65,6 +65,17 @@ DEVICE_SCHEMA_COLUMNS = (
     "remote_addr",
     "api_token_hash",
     "api_token_issued_at",
+    "soc",
+    "electric_range_km",
+    "fuel_range_km",
+    "gear",
+    "lock_state",
+    "inside_temp",
+    "outside_temp",
+    "mileage_km",
+    "voltage_12v",
+    "charging_status",
+    "telemetry_updated_at",
 )
 LEGACY_DEVICE_CONFIGURATION_COLUMNS = {
     "sales_model",
@@ -114,7 +125,18 @@ def remove_legacy_vehicle_configuration(conn):
                 runtime_state TEXT NOT NULL DEFAULT '',
                 remote_addr TEXT NOT NULL DEFAULT '',
                 api_token_hash TEXT NOT NULL DEFAULT '',
-                api_token_issued_at TEXT
+                api_token_issued_at TEXT,
+                soc INTEGER,
+                electric_range_km INTEGER,
+                fuel_range_km INTEGER,
+                gear INTEGER,
+                lock_state INTEGER,
+                inside_temp INTEGER,
+                outside_temp INTEGER,
+                mileage_km REAL,
+                voltage_12v REAL,
+                charging_status INTEGER,
+                telemetry_updated_at TEXT
             );
             """
         )
@@ -282,6 +304,110 @@ def init_db(force=False):
                     locked_until INTEGER NOT NULL DEFAULT 0,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS miniapp_users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    openid TEXT NOT NULL UNIQUE,
+                    unionid TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    last_login_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS miniapp_sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    token_hash TEXT NOT NULL UNIQUE,
+                    expires_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    last_seen_at TEXT NOT NULL,
+                    remote_addr TEXT NOT NULL DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_miniapp_sessions_user_expiry
+                    ON miniapp_sessions(user_id, expires_at);
+                CREATE TABLE IF NOT EXISTS miniapp_vehicle_bindings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL UNIQUE,
+                    device_id INTEGER NOT NULL UNIQUE,
+                    bound_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS miniapp_binding_codes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    device_id INTEGER NOT NULL,
+                    code_hash TEXT NOT NULL UNIQUE,
+                    expires_at TEXT NOT NULL,
+                    used_at TEXT,
+                    used_by_user_id INTEGER,
+                    created_at TEXT NOT NULL,
+                    remote_addr TEXT NOT NULL DEFAULT ''
+                );
+                CREATE INDEX IF NOT EXISTS idx_miniapp_binding_codes_device_expiry
+                    ON miniapp_binding_codes(device_id, expires_at);
+                CREATE TABLE IF NOT EXISTS vehicle_trips (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    device_id INTEGER NOT NULL,
+                    source_id TEXT NOT NULL,
+                    start_ts INTEGER NOT NULL,
+                    end_ts INTEGER,
+                    distance_km REAL,
+                    kwh_consumed REAL,
+                    kwh_per_100km REAL,
+                    avg_speed_kmh REAL,
+                    soc_start INTEGER,
+                    soc_end INTEGER,
+                    cost REAL,
+                    start_name TEXT NOT NULL DEFAULT '',
+                    end_name TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(device_id, source_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_vehicle_trips_device_start
+                    ON vehicle_trips(device_id, start_ts DESC);
+                CREATE TABLE IF NOT EXISTS vehicle_trip_points (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    device_id INTEGER NOT NULL,
+                    trip_source_id TEXT NOT NULL,
+                    source_id TEXT NOT NULL,
+                    timestamp INTEGER NOT NULL,
+                    lat REAL NOT NULL,
+                    lon REAL NOT NULL,
+                    speed_kmh REAL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(device_id, source_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_vehicle_trip_points_trip_time
+                    ON vehicle_trip_points(device_id, trip_source_id, timestamp);
+                CREATE TABLE IF NOT EXISTS vehicle_charges (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    device_id INTEGER NOT NULL,
+                    source_id TEXT NOT NULL,
+                    start_ts INTEGER NOT NULL,
+                    end_ts INTEGER,
+                    soc_start INTEGER,
+                    soc_end INTEGER,
+                    kwh_charged REAL,
+                    charge_type TEXT NOT NULL DEFAULT '',
+                    cost REAL,
+                    lat REAL,
+                    lon REAL,
+                    status TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(device_id, source_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_vehicle_charges_device_start
+                    ON vehicle_charges(device_id, start_ts DESC);
+                CREATE TABLE IF NOT EXISTS miniapp_log_requests (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    device_id INTEGER NOT NULL,
+                    requested_by_user_id INTEGER NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    message TEXT NOT NULL DEFAULT '',
+                    diagnostic_log_id INTEGER,
+                    requested_at TEXT NOT NULL,
+                    acknowledged_at TEXT,
+                    completed_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_miniapp_log_requests_device_status
+                    ON miniapp_log_requests(device_id, status, requested_at DESC);
                 """
             )
             ensure_column(conn, "devices", "trial_started_at", "TEXT")
@@ -299,11 +425,27 @@ def init_db(force=False):
                 ("remote_addr", "TEXT NOT NULL DEFAULT ''"),
                 ("api_token_hash", "TEXT NOT NULL DEFAULT ''"),
                 ("api_token_issued_at", "TEXT"),
+                ("soc", "INTEGER"),
+                ("electric_range_km", "INTEGER"),
+                ("fuel_range_km", "INTEGER"),
+                ("gear", "INTEGER"),
+                ("lock_state", "INTEGER"),
+                ("inside_temp", "INTEGER"),
+                ("outside_temp", "INTEGER"),
+                ("mileage_km", "REAL"),
+                ("voltage_12v", "REAL"),
+                ("charging_status", "INTEGER"),
+                ("telemetry_updated_at", "TEXT"),
             ):
                 ensure_column(conn, "devices", column, definition)
             remove_legacy_vehicle_configuration(conn)
-            ensure_config_defaults(conn)
             now = utc_now()
+            conn.execute("DELETE FROM miniapp_sessions WHERE expires_at <= ?", (now,))
+            conn.execute(
+                "DELETE FROM miniapp_binding_codes WHERE expires_at <= ? AND used_at IS NULL",
+                (now,),
+            )
+            ensure_config_defaults(conn)
             for key, (title, subtitle, description) in SERVICE_QR_TYPES.items():
                 conn.execute(
                     """

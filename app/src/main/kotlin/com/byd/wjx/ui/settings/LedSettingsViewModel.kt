@@ -74,7 +74,7 @@ class LedSettingsViewModel @Inject constructor(
     fun stopScan() = bleClient.stopScan()
 
     fun bind(device: LedDevice) {
-        preferences.setDevice(device.address, device.name)
+        preferences.setDevice(device.address, device.name, device.kind)
         preferences.setEnabled(true)
         showMessage("正在绑定 ${device.name}")
     }

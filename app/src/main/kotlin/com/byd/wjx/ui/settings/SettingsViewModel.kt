@@ -25,6 +25,7 @@ import com.byd.wjx.log.WjxFileLogger
 import com.byd.wjx.storage.SoundLibrary
 import com.byd.wjx.vehicle.CarProfile
 import com.byd.wjx.vehicle.CarProfileDetector
+import com.byd.wjx.vehicle.MiniappBindingCodeManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -63,6 +64,7 @@ class SettingsViewModel @Inject constructor(
     private val okHttpClient: OkHttpClient,
     private val serviceQrCache: ServiceQrCache,
     private val logUploader: SettingsLogUploader,
+    private val miniappBindingCodeManager: MiniappBindingCodeManager,
     private val carProfileDetector: CarProfileDetector = CarProfileDetector(),
 ) : ViewModel() {
     private val lockSoundSettings = LockSoundSettings(appContext)
@@ -597,6 +599,42 @@ class SettingsViewModel @Inject constructor(
                         it.copy(
                             isUploadingLogs = false,
                             logUploadStatus = "日志上传失败：${error.message ?: "网络不可用"}",
+                        )
+                    }
+                }
+        }
+    }
+
+    fun generateMiniappBindingCode() {
+        if (_uiState.value.miniappBindingLoading) return
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    miniappBindingLoading = true,
+                    miniappBindingCode = null,
+                    miniappBindingExpiresAt = 0L,
+                    miniappBindingMessage = null,
+                )
+            }
+            runCatching { miniappBindingCodeManager.generate() }
+                .onSuccess { result ->
+                    val remainingMinutes = ((result.expiresAt - System.currentTimeMillis()) / 60_000L)
+                        .coerceAtLeast(1L)
+                    _uiState.update {
+                        it.copy(
+                            miniappBindingLoading = false,
+                            miniappBindingCode = result.code,
+                            miniappBindingExpiresAt = result.expiresAt,
+                            miniappBindingMessage = "绑定码将在 $remainingMinutes 分钟后失效，使用一次后立即作废",
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    WjxFileLogger.w("SettingsViewModel", "miniapp binding code failed", error)
+                    _uiState.update {
+                        it.copy(
+                            miniappBindingLoading = false,
+                            miniappBindingMessage = "生成失败：${error.message ?: "网络不可用"}",
                         )
                     }
                 }

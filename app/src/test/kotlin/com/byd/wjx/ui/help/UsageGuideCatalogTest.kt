@@ -26,18 +26,17 @@ class UsageGuideCatalogTest {
     }
 
     @Test
-    fun searchFindsLogsMirrorAndLyrics() {
+    fun searchFindsLogsAndLyrics() {
         assertTrue(filterUsageGuideSections("wjx.log", null).any { it.id == "data_update_logs" })
-        assertTrue(filterUsageGuideSections("电子后视镜", null).any { it.id == "electronic_mirror" })
         assertTrue(filterUsageGuideSections("歌词", null).any { it.id == "lyrics" })
     }
 
     @Test
     fun categoryFilterOnlyReturnsRequestedCategory() {
-        val results = filterUsageGuideSections("", UsageGuideCategory.Mirror)
+        val results = filterUsageGuideSections("", UsageGuideCategory.Components)
 
         assertTrue(results.isNotEmpty())
-        assertTrue(results.all { it.category == UsageGuideCategory.Mirror })
+        assertTrue(results.all { it.category == UsageGuideCategory.Components })
     }
 
     @Test

@@ -46,7 +46,12 @@ val logUploadApiUrl: String =
 val vehicleInfoApiUrl: String =
     providers.gradleProperty("superToyBoxVehicleInfoApiUrl").orNull
         ?: "https://api.689588.xyz/api/v1/vehicles/heartbeat"
-
+val vehicleHistorySyncApiUrl: String =
+    providers.gradleProperty("superToyBoxVehicleHistorySyncApiUrl").orNull
+        ?: "https://api.689588.xyz/api/v1/vehicles/history-sync"
+val miniappBindingCodeApiUrl: String =
+    providers.gradleProperty("superToyBoxMiniappBindingCodeApiUrl").orNull
+        ?: "https://api.689588.xyz/api/v1/miniapp/vehicles/binding-code"
 android {
     namespace = "com.byd.wjx"
     compileSdk = 34
@@ -58,8 +63,8 @@ android {
         // on DiLink Android 12 (requestLegacyExternalStorage works).
         // targetSdk 30+ would break listFiles() on /storage/emulated/0/energydata/
         targetSdk = 29
-        versionCode = 23
-        versionName = "1.9.4"
+        versionCode = 27
+        versionName = "1.9.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "UPDATE_API_URL", "\"$updateApiUrl\"")
@@ -68,7 +73,8 @@ android {
         buildConfigField("String", "SERVICE_QR_API_URL", "\"$serviceQrApiUrl\"")
         buildConfigField("String", "LOG_UPLOAD_API_URL", "\"$logUploadApiUrl\"")
         buildConfigField("String", "VEHICLE_INFO_API_URL", "\"$vehicleInfoApiUrl\"")
-
+        buildConfigField("String", "VEHICLE_HISTORY_SYNC_API_URL", "\"$vehicleHistorySyncApiUrl\"")
+        buildConfigField("String", "MINIAPP_BINDING_CODE_API_URL", "\"$miniappBindingCodeApiUrl\"")
     }
 
     signingConfigs {

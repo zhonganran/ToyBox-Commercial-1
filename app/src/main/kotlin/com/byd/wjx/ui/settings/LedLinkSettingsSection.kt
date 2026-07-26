@@ -141,6 +141,7 @@ fun LedLinkSettingsSection(
                     LedBoundDeviceRow(
                         name = state.preferences.deviceName.ifBlank { "LED设备" },
                         address = state.preferences.deviceAddress,
+                        kindTitle = state.preferences.deviceKind.title,
                         connected = state.connection.ready,
                         onReconnect = viewModel::reconnect,
                         onUnbind = viewModel::unbind,
@@ -273,6 +274,7 @@ fun LedLinkSettingsSection(
 private fun LedBoundDeviceRow(
     name: String,
     address: String,
+    kindTitle: String,
     connected: Boolean,
     onReconnect: () -> Unit,
     onUnbind: () -> Unit,
@@ -288,7 +290,7 @@ private fun LedBoundDeviceRow(
         Box(Modifier.size(8.dp).background(if (connected) AccentGreen else AccentOrange, RoundedCornerShape(4.dp)))
         Column(modifier = Modifier.weight(1f)) {
             Text(name, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            Text(address, color = TextMuted, fontSize = 10.sp)
+            Text("$kindTitle  ·  $address", color = TextMuted, fontSize = 10.sp)
         }
         Icon(
             Icons.Outlined.Refresh,
@@ -319,7 +321,13 @@ private fun LedDeviceRow(device: LedDevice, onClick: () -> Unit) {
         Spacer(Modifier.size(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(device.name, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            Text(device.address, color = TextMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                "${device.kind.title}  ·  ${device.address}",
+                color = TextMuted,
+                fontSize = 10.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
         Text("${device.rssi} dBm", color = TextSecondary, fontSize = 11.sp)
     }

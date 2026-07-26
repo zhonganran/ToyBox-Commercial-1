@@ -11,13 +11,14 @@
 - 应用显示名：超级玩具箱
 - 包名：com.byd.wjx
 - 项目名：SuperToyBox
-- APK 命名：超级玩具箱-v版本号.apk
+- APK 命名：超级玩具箱-V版本号.apk
 - 更新后台：https://api.689588.xyz/api/v1/update/latest
 
 ## 构建
 
 ```bash
 ./gradlew :app:assembleDebug
+./gradlew :app:assembleRelease
 ```
 
 正式包需要本地 `keystore.properties`，未配置签名时 release 构建会保持未签名。

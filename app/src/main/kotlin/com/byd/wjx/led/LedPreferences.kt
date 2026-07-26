@@ -20,14 +20,24 @@ class LedPreferences @Inject constructor(
         putBoolean(KEY_ENABLED, enabled)
     }
 
-    fun setDevice(address: String, name: String) = update {
+    fun setDevice(
+        address: String,
+        name: String,
+        kind: LedDeviceKind = LedDeviceKind.UNKNOWN,
+    ) = update {
         putString(KEY_DEVICE_ADDRESS, address)
         putString(KEY_DEVICE_NAME, name)
+        putString(KEY_DEVICE_KIND, kind.name)
+    }
+
+    fun setDeviceKind(kind: LedDeviceKind) = update {
+        putString(KEY_DEVICE_KIND, kind.name)
     }
 
     fun clearDevice() = update {
         remove(KEY_DEVICE_ADDRESS)
         remove(KEY_DEVICE_NAME)
+        remove(KEY_DEVICE_KIND)
     }
 
     fun setBrightness(percent: Int) = update {
@@ -84,6 +94,9 @@ class LedPreferences @Inject constructor(
         enabled = prefs.getBoolean(KEY_ENABLED, false),
         deviceAddress = prefs.getString(KEY_DEVICE_ADDRESS, "").orEmpty(),
         deviceName = prefs.getString(KEY_DEVICE_NAME, "").orEmpty(),
+        deviceKind = prefs.getString(KEY_DEVICE_KIND, null)
+            ?.let { stored -> LedDeviceKind.entries.firstOrNull { it.name == stored } }
+            ?: LedDeviceKind.UNKNOWN,
         brightness = prefs.getInt(KEY_BRIGHTNESS, 70).coerceIn(0, 100),
         rules = prefs.getString(KEY_RULES_V2, null)
             ?.let(LedLinkageRuleCodec::decode)
@@ -95,6 +108,7 @@ class LedPreferences @Inject constructor(
         private const val KEY_ENABLED = "enabled"
         private const val KEY_DEVICE_ADDRESS = "device_address"
         private const val KEY_DEVICE_NAME = "device_name"
+        internal const val KEY_DEVICE_KIND = "device_kind"
         private const val KEY_BRIGHTNESS = "brightness"
         internal const val KEY_RULES_V2 = "rules_v2"
     }

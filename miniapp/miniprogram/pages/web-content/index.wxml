@@ -1,0 +1,19 @@
+<view class="content-page" wx:if="{{content}}">
+  <view class="detail-header"><view class="back-button pressable" bindtap="goBack"><image src="/assets/icons/chevron-left.png" /></view><view><view class="detail-title">{{content.title}}</view><view class="detail-caption">{{content.caption}}</view></view><view class="wechat-capsule-space"></view></view>
+  <view class="content-hero hero-{{content.tone}}">
+    <view class="content-icon"><image src="/assets/icons/{{content.icon}}-white.png" /></view>
+    <view class="content-title">{{content.title}}</view>
+    <view class="content-description">{{content.description}}</view>
+  </view>
+  <view class="section-heading"><view class="section-title">功能内容</view><view class="section-action">车机数据</view></view>
+  <view class="content-list surface">
+    <view wx:for="{{content.rows}}" wx:key="*this" class="content-row"><view class="row-dot dot-{{content.tone}}"></view><text>{{item}}</text><image src="/assets/icons/chevron-right.png" /></view>
+  </view>
+  <view wx:if="{{type === 'updates' && update}}" class="update-panel surface">
+    <view><text>服务器最新版本</text><view>v{{update.version}}</view></view>
+    <text>{{update.releaseNotes}}</text>
+  </view>
+  <button wx:if="{{content.action}}" class="primary-button action-button" loading="{{actionLoading}}" bindtap="runAction">{{content.action}}</button>
+  <view wx:if="{{actionStatus}}" class="action-status">{{actionStatus}}</view>
+  <view class="safety-panel surface"><image src="/assets/icons/shield-check-blue.png" /><view><view>执行结果必须由车机回执</view><text>小程序只显示服务器确认过的状态，不把“请求已发送”当成“车辆已执行”。</text></view></view>
+</view>

@@ -3,18 +3,23 @@ package com.byd.wjx.led
 /** Fixed firmware scenes exposed by the vehicle LED panel. */
 enum class LedScene(
     val title: String,
-    val remotePresetId: Int,
     val priority: Int,
 ) {
-    DEFAULT("微笑", 6, 0),
-    LEFT_TURN("左转", 3, 70),
-    RIGHT_TURN("右转", 5, 70),
-    TEMPORARY_STOP("临时停靠", 4, 40),
-    REVERSE_PARKING("倒车入库", 11, 90),
-    AUTOPILOT("自动驾驶", 14, 60),
-    EXIT_VEHICLE("下车", 19, 50),
-    HAZARD("双闪", 20, 100),
-    BRAKE_WARNING("刹车提醒", 8, 55),
+    DEFAULT("微笑", 0),
+    LEFT_TURN("左转", 70),
+    RIGHT_TURN("右转", 70),
+    TEMPORARY_STOP("临时停靠", 40),
+    REVERSE_PARKING("倒车入库", 90),
+    AUTOPILOT("自动驾驶", 60),
+    EXIT_VEHICLE("下车", 50),
+    HAZARD("双闪", 100),
+    BRAKE_WARNING("刹车提醒", 55),
+}
+
+enum class LedDeviceKind(val title: String) {
+    UNKNOWN("连接后自动识别"),
+    IPIXEL_FA("标准LED屏"),
+    A950("增强LED屏"),
 }
 
 enum class LedConnectionPhase {
@@ -32,12 +37,14 @@ data class LedDevice(
     val address: String,
     val name: String,
     val rssi: Int,
+    val kind: LedDeviceKind = LedDeviceKind.UNKNOWN,
 )
 
 data class LedConnectionState(
     val phase: LedConnectionPhase = LedConnectionPhase.IDLE,
     val address: String = "",
     val name: String = "",
+    val deviceKind: LedDeviceKind = LedDeviceKind.UNKNOWN,
     val message: String = "未连接",
     val retryInSeconds: Int? = null,
 ) {
@@ -48,6 +55,7 @@ data class LedPreferenceSnapshot(
     val enabled: Boolean = false,
     val deviceAddress: String = "",
     val deviceName: String = "",
+    val deviceKind: LedDeviceKind = LedDeviceKind.UNKNOWN,
     val brightness: Int = 70,
     val rules: List<LedLinkageRule> = LedLinkageDefaults.rules,
 )

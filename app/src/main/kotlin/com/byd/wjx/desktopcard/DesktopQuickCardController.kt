@@ -138,7 +138,13 @@ class DesktopQuickCardController @Inject constructor(
         if (renderState.value.activeSoundPath != null) {
             WjxOutsidePlayService.stop(appContext, owner = OWNER)
         }
-        renderState.update { it.copy(expanded = false, activeCommand = null, activeSoundPath = null) }
+        renderState.update {
+            it.copy(
+                expanded = false,
+                activeCommand = null,
+                activeSoundPath = null,
+            )
+        }
         if (receiverRegistered) {
             runCatching { appContext.unregisterReceiver(playbackReceiver) }
             receiverRegistered = false
@@ -270,6 +276,7 @@ class DesktopQuickCardController @Inject constructor(
                     val doorResult = autoDoorController.toggleDoor(item.payload)
                     CommandExecutionResult(doorResult.success, doorResult.message)
                 }
+
             }
             if (result.success) {
                 WjxFileLogger.i(TAG, "command success command=$command")

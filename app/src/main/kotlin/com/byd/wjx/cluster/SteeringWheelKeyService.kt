@@ -225,8 +225,6 @@ class SteeringWheelKeyService : AccessibilityService() {
     }
 
     private fun executeShortcut(binding: KeyShortcutBinding) {
-        val profile = entryPoint().carProfileDetector().detect()
-        val channel = hailingSettings.effectiveChannel(profile)
         when (binding.actionType) {
             KeyShortcutActionType.PlaySound -> {
                 val file = File(binding.soundPath)
@@ -234,6 +232,8 @@ class SteeringWheelKeyService : AccessibilityService() {
                     WjxFileLogger.w(TAG, "shortcut sound missing: ${binding.soundPath}")
                     return
                 }
+                val profile = entryPoint().carProfileDetector().detect()
+                val channel = hailingSettings.effectiveChannel(profile)
                 WjxFileLogger.i(TAG, "shortcut play sound binding=${binding.id} file=${file.name} channel=$channel")
                 WjxOutsidePlayService.toggle(
                     applicationContext,
@@ -247,17 +247,11 @@ class SteeringWheelKeyService : AccessibilityService() {
                     WjxFileLogger.w(TAG, "shortcut hailing ignored: RECORD_AUDIO not granted binding=${binding.id}")
                     return
                 }
+                val profile = entryPoint().carProfileDetector().detect()
+                val channel = hailingSettings.effectiveChannel(profile)
                 WjxFileLogger.i(TAG, "shortcut toggle hailing binding=${binding.id} channel=$channel")
                 WjxOutsidePlayService.stop(applicationContext)
                 WjxRealtimeHailingService.toggle(applicationContext, channel)
-            }
-            KeyShortcutActionType.StreamingRearMirror -> {
-                val visible = entryPoint().electronicMirrorCoordinator()
-                    .toggleStreamingRearFromShortcut()
-                WjxFileLogger.i(
-                    TAG,
-                    "shortcut streaming rear binding=${binding.id} visible=$visible",
-                )
             }
         }
     }

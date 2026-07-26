@@ -5,6 +5,7 @@ import android.graphics.drawable.AnimatedImageDrawable
 import android.graphics.drawable.Drawable
 import android.view.View
 import android.widget.ImageView
+import androidx.appcompat.widget.AppCompatImageView
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -40,7 +41,7 @@ internal fun DesktopQuickCardIconImage(
     )
 }
 
-private class RestartableAnimatedImageView(context: android.content.Context) : ImageView(context) {
+private class RestartableAnimatedImageView(context: android.content.Context) : AppCompatImageView(context) {
     private val animationWatchdog = object : Runnable {
         override fun run() {
             ensureAnimationRunning()

@@ -33,7 +33,11 @@ jobs:
         run: python -m pip install -r server/platform/requirements.txt
 
       - name: Run backend tests
-        run: python -m unittest discover -s server/platform -p 'test_*.py'
+        run: >-
+          python -W error::ResourceWarning
+          -m unittest discover
+          -s server/platform
+          -p 'test_*.py'
 
   android:
     name: Android checks
@@ -62,11 +66,13 @@ jobs:
           "cmake;3.22.1"
           "ndk;27.0.12077973"
 
-      - name: Run unit tests, lint, and debug build
+      - name: Run unit tests, lint, and Android builds
         run: >-
           ./gradlew
           :app:testDebugUnitTest
+          :app:compileDebugAndroidTestKotlin
           :app:lintDebug
           :app:assembleDebug
+          :app:assembleRelease
           --no-daemon
           --stacktrace

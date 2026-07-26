@@ -28,7 +28,7 @@ class LedProtocolTest {
         )
 
         expected.forEach { (scene, presetId) ->
-            assertEquals(scene.name, presetId, scene.remotePresetId)
+            assertEquals(scene.name, presetId, LedProtocol.presetId(scene))
         }
     }
 
@@ -37,6 +37,45 @@ class LedProtocolTest {
         assertArrayEquals(
             byteArrayOf(0x05, 0x00, 0x04, 0x80.toByte(), 0x64),
             LedProtocol.brightness(120),
+        )
+    }
+
+    @Test
+    fun `A950 scene command uses semantic device mapping and checksum`() {
+        val expected = mapOf(
+            LedScene.DEFAULT to 5,
+            LedScene.LEFT_TURN to 2,
+            LedScene.RIGHT_TURN to 3,
+            LedScene.TEMPORARY_STOP to 4,
+            LedScene.REVERSE_PARKING to 10,
+            LedScene.AUTOPILOT to 13,
+            LedScene.EXIT_VEHICLE to 18,
+            LedScene.HAZARD to 19,
+            LedScene.BRAKE_WARNING to 0,
+        )
+
+        expected.forEach { (scene, presetId) ->
+            assertEquals(scene.name, presetId, A950LedProtocol.presetId(scene))
+        }
+        assertArrayEquals(
+            byteArrayOf(0x4E, 0x52, 0x04, 0x01, 0x05, 0x02, 0xAC.toByte()),
+            A950LedProtocol.playScene(LedScene.LEFT_TURN),
+        )
+    }
+
+    @Test
+    fun `A950 initialization and keepalive packets match firmware protocol`() {
+        assertArrayEquals(
+            byteArrayOf(0x4E, 0x52, 0x04, 0x01, 0x08, 0x01, 0xAE.toByte()),
+            A950LedProtocol.prepareUploadPacket,
+        )
+        assertArrayEquals(
+            byteArrayOf(0x4E, 0x52, 0x04, 0x01, 0x01, 0x54, 0xFA.toByte()),
+            A950LedProtocol.initializePacket,
+        )
+        assertArrayEquals(
+            byteArrayOf(0x4E, 0x52, 0x04, 0x81.toByte(), 0x01, 0x01, 0x27),
+            A950LedProtocol.keepalivePacket,
         )
     }
 }

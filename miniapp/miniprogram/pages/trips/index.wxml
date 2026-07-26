@@ -1,0 +1,79 @@
+<view class="page-shell trips-page">
+  <view class="page-header">
+    <view><view class="page-heading">行程与轨迹</view><view class="page-caption">{{dataSet ? dataSet.month : '车辆历史记录'}}</view></view>
+    <view class="wechat-capsule-space"></view>
+  </view>
+
+  <view class="segment-control">
+    <view class="segment-item {{activeTab === 'trips' ? 'active' : ''}}" data-tab="trips" bindtap="selectTab">行程</view>
+    <view class="segment-item {{activeTab === 'charges' ? 'active' : ''}}" data-tab="charges" bindtap="selectTab">充电</view>
+  </view>
+
+  <block wx:if="{{loading}}">
+    <view class="map-card surface skeleton"></view>
+    <view class="summary-card surface skeleton"></view>
+    <view class="record-skeleton surface skeleton"></view>
+  </block>
+
+  <view wx:elif="{{error}}" class="surface empty-state">
+    <view class="empty-icon"><image src="/assets/icons/route-blue.png" /></view>
+    <view class="empty-title">行程暂时不可用</view>
+    <view class="empty-copy">{{error}}</view>
+    <button class="secondary-button retry-button" bindtap="retry">重新加载</button>
+  </view>
+
+  <block wx:elif="{{dataSet}}">
+    <block wx:if="{{activeTab === 'trips'}}">
+      <view wx:if="{{dataSet.latestRoute}}" class="map-card surface">
+        <map
+          class="route-map"
+          latitude="{{dataSet.latestRoute.center.latitude}}"
+          longitude="{{dataSet.latestRoute.center.longitude}}"
+          scale="12"
+          markers="{{dataSet.latestRoute.markers}}"
+          polyline="{{dataSet.latestRoute.polyline}}"
+          show-location="{{false}}"
+          enable-zoom="{{true}}"
+          enable-scroll="{{false}}"
+        />
+        <cover-view wx:if="{{dataSet.items.length}}" class="latest-chip">最近行程 · {{dataSet.items[0].distanceKm}} km</cover-view>
+      </view>
+
+      <view wx:else class="surface compact-empty"><view class="empty-title">还没有轨迹数据</view><view class="empty-copy">车机同步首条带定位点的行程后，这里会显示真实路线。</view></view>
+
+      <view class="summary-card surface">
+        <view><text>{{dataSet.summary.distanceKm}} km</text><text>本月里程</text></view>
+        <view><text>{{dataSet.summary.tripCount}}次</text><text>行程数量</text></view>
+        <view><text>{{dataSet.summary.avgConsumption}}</text><text>平均能耗</text></view>
+      </view>
+
+      <view class="section-heading"><view class="section-title">历史行程</view><view class="section-action">筛选 · 日历</view></view>
+      <view wx:if="{{!dataSet.items.length}}" class="surface compact-empty"><view class="empty-title">暂无行程记录</view><view class="empty-copy">车辆完成行程并同步后自动显示。</view></view>
+      <view
+        wx:for="{{dataSet.items}}"
+        wx:key="id"
+        class="trip-row surface pressable"
+        data-id="{{item.id}}"
+        bindtap="openTrip"
+      >
+        <view class="date-tile date-{{item.color}}"><text>{{item.month}}</text><text>{{item.day}}日</text></view>
+        <view class="trip-copy"><view>{{item.startName}} → {{item.endName}}</view><text>{{item.distanceKm}} km · {{item.durationMinutes}}分钟 · {{item.time}}</text></view>
+        <view class="consumption"><text>{{item.consumption}}</text><text>kWh/100km</text></view>
+      </view>
+    </block>
+
+    <block wx:else>
+      <view class="charge-summary">
+        <view class="charge-total surface"><view class="charge-icon"><image src="/assets/icons/zap-white.png" /></view><view><text>本月充电</text><text>{{dataSet.charges.length}} 次</text></view></view>
+        <view class="charge-tip surface"><text>充电记录来自车机本地数据库同步</text><text>数据以车辆实际上报为准</text></view>
+      </view>
+      <view class="section-heading"><view class="section-title">充电记录</view><view class="section-action">全部类型</view></view>
+      <view wx:if="{{!dataSet.charges.length}}" class="surface compact-empty"><view class="empty-title">暂无充电记录</view><view class="empty-copy">充电结束并同步后自动显示。</view></view>
+      <view wx:for="{{dataSet.charges}}" wx:key="id" class="charge-row surface">
+        <view class="charge-date"><text>{{item.day}}</text><text>{{item.month}}</text></view>
+        <view class="charge-copy"><view><text>{{item.type}}</text><text>{{item.socText}}</text></view><text>{{item.energyKwh}} kWh · {{item.durationMinutes}}分钟</text></view>
+        <view class="charge-cost">¥{{item.cost}}</view>
+      </view>
+    </block>
+  </block>
+</view>

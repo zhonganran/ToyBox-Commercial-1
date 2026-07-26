@@ -1,7 +1,7 @@
 import os
-import base64
 import hashlib
 import json
+import math
 import re
 import secrets
 import time
@@ -26,8 +26,6 @@ from flask import (
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding
 from platform_config import (
     ADMIN_TITLE,
     ALLOWED_IMAGE_EXTENSIONS,
@@ -38,7 +36,6 @@ from platform_config import (
     DEFAULT_CONFIG,
     DEFAULT_TRIAL_DAYS,
     LEGACY_DEFAULT_ADMIN_PASSWORD,
-    LICENSE_ALPHABET,
     LICENSE_LOCK_SECONDS,
     LICENSE_MAX_FAILURES,
     LOGIN_LOCK_SECONDS,
@@ -49,9 +46,6 @@ from platform_config import (
     MAX_LOG_SIZE,
     MAX_SERVICE_QR_SIZE,
     MAX_UPLOAD_SIZE,
-    OFFLINE_LICENSE_FEATURES,
-    OFFLINE_LICENSE_PRIVATE_KEY_FILE,
-    OFFLINE_LICENSE_PRIVATE_KEY_PEM,
     PASSWORD_HASH_METHOD,
     PUBLIC_API_BASE_URL,
     PUBLIC_CDN_BASE_URL,
@@ -60,13 +54,38 @@ from platform_config import (
     SOUND_DIR,
     TRUSTED_PROXY_COUNT,
 )
+from platform_identity import extract_valid_vin, normalize_device_code, vin_year
+from platform_license import (
+    add_days_from_iso,
+    add_days_iso,
+    build_offline_license,
+    epoch_millis,
+    format_license_code,
+    generate_license_code,
+    is_valid_license_code,
+    license_row_activated_at,
+    load_offline_license_private_key,
+    mask_license_code,
+    normalize_license_code,
+    offline_license_private_key_status,
+    parse_utc,
+    sign_offline_license,
+    verify_offline_license_proof,
+)
 from platform_storage import configured_admin_credentials, db, init_db, utc_now
+
+
+def configured_secret_key():
+    value = os.environ.get("WJX_PLATFORM_SECRET_KEY", "").strip()
+    if not value:
+        raise RuntimeError("WJX_PLATFORM_SECRET_KEY must be configured before platform startup")
+    return value
 
 
 app = Flask(__name__)
 if TRUSTED_PROXY_COUNT > 0:
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=TRUSTED_PROXY_COUNT)
-app.secret_key = os.environ.get("WJX_PLATFORM_SECRET_KEY", secrets.token_hex(32))
+app.secret_key = configured_secret_key()
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_SIZE
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
@@ -298,44 +317,6 @@ def estimate_duration_ms(path):
         return 0
 
 
-def normalize_device_code(value):
-    return "".join(ch for ch in (value or "").upper() if ch.isalnum())
-
-
-def extract_valid_vin(value):
-    code = normalize_device_code(value)
-    if (
-        len(code) == 17
-        and code.startswith("L")
-        and code.isalnum()
-        and not any(character in "IOQ" for character in code)
-    ):
-        return code
-    return ""
-
-
-VIN_YEAR_CODES = {
-    "A": 1980, "B": 1981, "C": 1982, "D": 1983, "E": 1984,
-    "F": 1985, "G": 1986, "H": 1987, "J": 1988, "K": 1989,
-    "L": 1990, "M": 1991, "N": 1992, "P": 1993, "R": 1994,
-    "S": 1995, "T": 1996, "V": 1997, "W": 1998, "X": 1999,
-    "Y": 2000, "1": 2001, "2": 2002, "3": 2003, "4": 2004,
-    "5": 2005, "6": 2006, "7": 2007, "8": 2008, "9": 2009,
-}
-
-
-def vin_year(value):
-    vin = extract_valid_vin(value)
-    if not vin:
-        return None
-    base = VIN_YEAR_CODES.get(vin[9])
-    if base is None:
-        return None
-    upper_bound = datetime.utcnow().year + 1
-    candidates = range(base, upper_bound + 1, 30)
-    return max(candidates, default=None)
-
-
 def controller_series_from_version(value):
     raw = str(value or "").strip()
     try:
@@ -361,20 +342,53 @@ def clean_vehicle_payload(value):
     }
 
 
+def optional_int(value, minimum=None, maximum=None):
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    if minimum is not None and parsed < minimum:
+        return None
+    if maximum is not None and parsed > maximum:
+        return None
+    return parsed
+
+
+def optional_float(value, minimum=None, maximum=None):
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(parsed):
+        return None
+    if minimum is not None and parsed < minimum:
+        return None
+    if maximum is not None and parsed > maximum:
+        return None
+    return parsed
+
+
 def clean_runtime_payload(value):
     runtime = value if isinstance(value, dict) else {}
-    power_state = runtime.get("powerState")
-    if isinstance(power_state, bool) or power_state is None:
-        power_state = None
-    else:
-        try:
-            power_state = int(power_state)
-        except (TypeError, ValueError):
-            power_state = None
+    power_state = optional_int(runtime.get("powerState"), 0, 20)
     connected = runtime.get("connected") is True
     return {
         "power_state": power_state,
         "runtime_state": "sleep" if power_state == 0 else "active" if connected else "disconnected",
+        "soc": optional_int(runtime.get("soc"), 0, 100),
+        "electric_range_km": optional_int(runtime.get("electricRangeKm"), 0, 5000),
+        "fuel_range_km": optional_int(runtime.get("fuelRangeKm"), 0, 5000),
+        "gear": optional_int(runtime.get("gear"), 1, 4),
+        "lock_state": optional_int(runtime.get("lockState"), 1, 2),
+        "inside_temp": optional_int(runtime.get("insideTemp"), -60, 100),
+        "outside_temp": optional_int(runtime.get("outsideTemp"), -60, 100),
+        "mileage_km": optional_float(runtime.get("mileageKm"), 0, 10_000_000),
+        "voltage_12v": optional_float(runtime.get("voltage12v"), 0, 40),
+        "charging_status": optional_int(runtime.get("chargingStatus"), 0, 100),
     }
 
 
@@ -476,218 +490,6 @@ def resolve_device_token(
 
 def sql_placeholders(values):
     return ",".join("?" for _ in values)
-
-
-def normalize_license_code(value):
-    normalized = "".join(ch for ch in (value or "").upper() if ch.isalnum())
-    return normalized[3:] if normalized.startswith("STB") else normalized
-
-
-def add_days_iso(days):
-    return (datetime.utcnow() + timedelta(days=max(0, days))).replace(microsecond=0).isoformat() + "Z"
-
-
-def add_days_from_iso(value, days):
-    parsed = parse_utc(value)
-    if parsed is None:
-        return add_days_iso(days)
-    return (parsed + timedelta(days=max(0, days))).replace(microsecond=0).isoformat() + "Z"
-
-
-def parse_utc(value):
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).replace(tzinfo=None)
-    except ValueError:
-        return None
-
-
-def epoch_millis(value):
-    parsed = parse_utc(value)
-    if parsed is None:
-        return 0
-    return int(parsed.timestamp() * 1000)
-
-
-def format_license_code(raw):
-    normalized = normalize_license_code(raw)
-    if not normalized:
-        return ""
-    return "STB-" + "-".join(normalized[i:i + 4] for i in range(0, len(normalized), 4))
-
-
-def is_valid_license_code(code):
-    raw = normalize_license_code(code)
-    return len(raw) == 20 and all(ch in LICENSE_ALPHABET for ch in raw)
-
-
-def generate_license_code():
-    raw = "".join(secrets.choice(LICENSE_ALPHABET) for _ in range(20))
-    return format_license_code(raw)
-
-
-def mask_license_code(code):
-    formatted = format_license_code(code)
-    parts = formatted.split("-")
-    if len(parts) >= 6 and parts[0] == "STB":
-        return f"STB-{parts[1]}-****-****-****-{parts[-1]}"
-    raw = normalize_license_code(code)
-    if len(raw) <= 8:
-        return raw
-    return f"{raw[:4]}-****-****-{raw[-4:]}"
-
-
-def offline_license_canonical(payload):
-    device_codes = ",".join(sorted({normalize_device_code(code) for code in payload.get("deviceCodes", []) if normalize_device_code(code)}))
-    features = ",".join(sorted({str(feature) for feature in payload.get("features", []) if str(feature)}))
-    fields = [
-        f"version={int(payload.get('version') or 1)}",
-        f"signatureAlg={payload.get('signatureAlg') or 'RS256'}",
-        f"deviceCodes={device_codes}",
-        f"activated={'1' if payload.get('activated') else '0'}",
-        f"activatedAt={int(payload.get('activatedAt') or 0)}",
-        f"issuedAt={int(payload.get('issuedAt') or 0)}",
-        f"expiresAt={int(payload.get('expiresAt') or 0)}",
-        f"packageName={payload.get('packageName') or ''}",
-        f"licenseCodeMasked={payload.get('licenseCodeMasked') or ''}",
-        f"features={features}",
-    ]
-    return "\n".join(fields)
-
-
-def load_offline_license_private_key():
-    pem, _source = offline_license_private_key_material()
-    if not pem:
-        app.logger.warning("offline license private key is not configured")
-        return None
-    try:
-        return serialization.load_pem_private_key(pem.encode("utf-8"), password=None)
-    except Exception as exc:
-        app.logger.warning("offline license private key load failed: %s", exc)
-        return None
-
-
-def offline_license_private_key_material():
-    pem = OFFLINE_LICENSE_PRIVATE_KEY_PEM.strip().replace("\\n", "\n")
-    if pem:
-        return pem, "环境变量"
-    key_path = Path(OFFLINE_LICENSE_PRIVATE_KEY_FILE)
-    if key_path.is_file():
-        return key_path.read_text(encoding="utf-8").strip(), str(key_path)
-    return "", str(key_path)
-
-
-def offline_license_private_key_status():
-    pem, source = offline_license_private_key_material()
-    if not pem:
-        return False, f"未配置：{source}"
-    try:
-        serialization.load_pem_private_key(pem.encode("utf-8"), password=None)
-        return True, source
-    except Exception as exc:
-        return False, f"加载失败：{exc}"
-
-
-def sign_offline_license(payload):
-    private_key = load_offline_license_private_key()
-    if private_key is None:
-        return ""
-    signature = private_key.sign(
-        offline_license_canonical(payload).encode("utf-8"),
-        padding.PKCS1v15(),
-        hashes.SHA256(),
-    )
-    return base64.urlsafe_b64encode(signature).decode("ascii").rstrip("=")
-
-
-def verify_offline_license_proof(proof, device_codes, package_name):
-    if not isinstance(proof, dict) or not proof.get("activated"):
-        return False
-    proof_codes = {
-        normalize_device_code(code)
-        for code in proof.get("deviceCodes", [])
-        if extract_valid_vin(code)
-    }
-    requested_codes = {normalize_device_code(code) for code in device_codes if extract_valid_vin(code)}
-    if not proof_codes.intersection(requested_codes):
-        return False
-    proof_package = str(proof.get("packageName") or "")
-    if proof_package and proof_package != str(package_name or ""):
-        return False
-    expires_at = bounded_int(proof.get("expiresAt"), default=0, minimum=0, maximum=9_223_372_036_854_775_807)
-    if expires_at > 0 and expires_at <= int(time.time() * 1000):
-        return False
-    signature = str(proof.get("signature") or "").strip()
-    if proof.get("signatureAlg") != "RS256" or not signature:
-        return False
-    private_key = load_offline_license_private_key()
-    if private_key is None:
-        return False
-    try:
-        padded = signature + "=" * ((4 - len(signature) % 4) % 4)
-        private_key.public_key().verify(
-            base64.urlsafe_b64decode(padded.encode("ascii")),
-            offline_license_canonical(proof).encode("utf-8"),
-            padding.PKCS1v15(),
-            hashes.SHA256(),
-        )
-        return True
-    except Exception:
-        return False
-
-
-def build_offline_license(device_codes, package_name, license_code, activated_at):
-    codes = sorted({normalize_device_code(code) for code in device_codes if extract_valid_vin(code)})
-    if not codes:
-        return None
-    activated_at_ms = int(activated_at or 0)
-    if activated_at_ms <= 0:
-        activated_at_ms = int(time.time() * 1000)
-    payload = {
-        "version": 1,
-        "signatureAlg": "RS256",
-        "deviceCodes": codes,
-        "activated": True,
-        "activatedAt": activated_at_ms,
-        "issuedAt": int(time.time() * 1000),
-        "expiresAt": 0,
-        "packageName": package_name or "",
-        "licenseCodeMasked": mask_license_code(license_code),
-        "features": OFFLINE_LICENSE_FEATURES,
-    }
-    signature = sign_offline_license(payload)
-    if not signature:
-        return None
-    payload["signature"] = signature
-    return payload
-
-
-def license_row_activated_at(conn, row):
-    if row is None:
-        return "", 0
-    for key in ("activated_at", "updated_at", "created_at"):
-        value = row[key] or ""
-        millis = epoch_millis(value)
-        if millis > 0:
-            if key != "activated_at":
-                conn.execute(
-                    """
-                    UPDATE license_codes
-                    SET activated_at = ?, updated_at = ?
-                    WHERE id = ? AND (activated_at IS NULL OR activated_at = '')
-                    """,
-                    (value, utc_now(), row["id"]),
-                )
-                app.logger.info("backfilled license activated_at id=%s source=%s", row["id"], key)
-            return value, millis
-    now = utc_now()
-    conn.execute(
-        "UPDATE license_codes SET activated_at = ?, updated_at = ? WHERE id = ?",
-        (now, now, row["id"]),
-    )
-    app.logger.info("backfilled license activated_at id=%s source=now", row["id"])
-    return now, epoch_millis(now)
 
 
 def latest_release():
@@ -852,28 +654,28 @@ def page(title, active, body):
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{h(title)} - {h(ADMIN_TITLE)}</title>
-  <style>{CSS}</style>
-	</head>
-	<body>
-	  <aside class="sidebar">
-	    <div class="brand"><span class="logo-mark"></span><div><strong>超级玩具箱</strong><small>统一商业平台</small></div></div>
-	    <nav>{nav_html}</nav>
-	    <div class="sidebar-foot">
-	      <small>管理员</small>
-	      <strong>{h(current_admin() or "未登录")}</strong>
-	      {logout}
-	    </div>
-	  </aside>
-	  <main class="main">
-	    <header class="topbar">
-	      <div><p>SuperToyBox Platform</p><h1>{h(title)}</h1></div>
-	      <div class="top-actions"><span class="search-pill">统一更新 · 音效库 · 激活授权</span><span class="avatar">{h((current_admin() or "A")[:1].upper())}</span></div>
-	    </header>
-	    {messages}
-	    {body}
-	  </main>
-	</body>
-	</html>"""
+  <link rel="stylesheet" href="{h(url_for('static', filename='platform.css'))}">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand"><span class="logo-mark"></span><div><strong>超级玩具箱</strong><small>统一商业平台</small></div></div>
+    <nav>{nav_html}</nav>
+    <div class="sidebar-foot">
+      <small>管理员</small>
+      <strong>{h(current_admin() or "未登录")}</strong>
+      {logout}
+    </div>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <div><p>SuperToyBox Platform</p><h1>{h(title)}</h1></div>
+      <div class="top-actions"><span class="search-pill">统一更新 · 音效库 · 激活授权</span><span class="avatar">{h((current_admin() or "A")[:1].upper())}</span></div>
+    </header>
+    {messages}
+    {body}
+  </main>
+</body>
+</html>"""
 
 
 @app.get("/")
@@ -1869,6 +1671,21 @@ def api_vehicle_heartbeat():
 
     vehicle = clean_vehicle_payload(raw_vehicle)
     runtime = clean_runtime_payload(payload.get("runtime"))
+    telemetry_updated_at = utc_now() if any(
+        runtime[key] is not None
+        for key in (
+            "soc",
+            "electric_range_km",
+            "fuel_range_km",
+            "gear",
+            "lock_state",
+            "inside_temp",
+            "outside_temp",
+            "mileage_km",
+            "voltage_12v",
+            "charging_status",
+        )
+    ) else None
     app_version = str(payload.get("appVersion", "")).strip()[:64]
     package_name = str(payload.get("packageName", "")).strip()[:160]
     with db() as conn:
@@ -1897,7 +1714,18 @@ def api_vehicle_heartbeat():
                 vehicle_type = COALESCE(NULLIF(?, ''), vehicle_type),
                 controller_version = COALESCE(NULLIF(?, ''), controller_version),
                 controller_series = CASE WHEN ? > 0 THEN ? ELSE controller_series END,
-                power_state = ?, runtime_state = ?, remote_addr = ?
+                power_state = ?, runtime_state = ?, remote_addr = ?,
+                soc = COALESCE(?, soc),
+                electric_range_km = COALESCE(?, electric_range_km),
+                fuel_range_km = COALESCE(?, fuel_range_km),
+                gear = COALESCE(?, gear),
+                lock_state = COALESCE(?, lock_state),
+                inside_temp = COALESCE(?, inside_temp),
+                outside_temp = COALESCE(?, outside_temp),
+                mileage_km = COALESCE(?, mileage_km),
+                voltage_12v = COALESCE(?, voltage_12v),
+                charging_status = COALESCE(?, charging_status),
+                telemetry_updated_at = COALESCE(?, telemetry_updated_at)
             WHERE device_code = ?
             """,
             (
@@ -1912,6 +1740,17 @@ def api_vehicle_heartbeat():
                 runtime["power_state"],
                 runtime["runtime_state"],
                 request.remote_addr or "",
+                runtime["soc"],
+                runtime["electric_range_km"],
+                runtime["fuel_range_km"],
+                runtime["gear"],
+                runtime["lock_state"],
+                runtime["inside_temp"],
+                runtime["outside_temp"],
+                runtime["mileage_km"],
+                runtime["voltage_12v"],
+                runtime["charging_status"],
+                telemetry_updated_at,
                 device_code,
             ),
         )
@@ -1920,12 +1759,34 @@ def api_vehicle_heartbeat():
             (device_code,),
         ).fetchone()
         category = authorization_category(device_authorization(conn, device))
+        log_request = conn.execute(
+            """
+            SELECT * FROM miniapp_log_requests
+            WHERE device_id = ? AND status IN ('pending', 'acknowledged')
+            ORDER BY requested_at ASC LIMIT 1
+            """,
+            (device["id"],),
+        ).fetchone()
+        if log_request is not None and log_request["status"] == "pending":
+            conn.execute(
+                """
+                UPDATE miniapp_log_requests
+                SET status = 'acknowledged', message = ?, acknowledged_at = ?
+                WHERE id = ?
+                """,
+                ("车机已接收请求", utc_now(), log_request["id"]),
+            )
     return jsonify(
         {
             "success": True,
             "vinYear": parsed_vin_year,
             "authorizationStatus": category[0],
             "authorizationLabel": category[1],
+            "logUploadRequest": (
+                {"id": log_request["id"], "type": "upload_log"}
+                if log_request is not None
+                else None
+            ),
         }
     )
 
@@ -2052,6 +1913,23 @@ def api_upload_log():
                 ),
             )
             log_id = cursor.lastrowid
+            pending_request = conn.execute(
+                """
+                SELECT * FROM miniapp_log_requests
+                WHERE device_id = ? AND status IN ('pending', 'acknowledged')
+                ORDER BY requested_at ASC LIMIT 1
+                """,
+                (device["id"],),
+            ).fetchone()
+            if pending_request is not None:
+                conn.execute(
+                    """
+                    UPDATE miniapp_log_requests
+                    SET status = 'completed', message = ?, diagnostic_log_id = ?, completed_at = ?
+                    WHERE id = ?
+                    """,
+                    ("诊断日志已上传", log_id, now, pending_request["id"]),
+                )
             conn.execute(
                 "UPDATE devices SET app_version = ?, package_name = ?, last_seen_at = ? WHERE device_code = ?",
                 (app_version or device["app_version"], package_name or device["package_name"], now, device_code),
@@ -2471,27 +2349,23 @@ def api_license_activate():
     return jsonify(result)
 
 
-CSS = r"""
-:root{color-scheme:light;--bg:#f6f7fb;--paper:#fff;--paper2:#fbfcff;--text:#172033;--muted:#6b7280;--soft:#eef1f7;--line:#e6e9f0;--red:#e84855;--red2:#fff0f1;--green:#11a76a;--green2:#eafaf2;--blue:#2f74ff;--blue2:#eef4ff;--orange:#d97706;--orange2:#fff6e8;--shadow:0 18px 45px rgba(24,39,75,.08)}
-*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top left,#fff7f7 0,#f7f8fc 36%,#f2f5fb 100%);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:14px}
-a{color:inherit}.sidebar{position:fixed;inset:0 auto 0 0;width:246px;background:rgba(255,255,255,.88);backdrop-filter:blur(18px);border-right:1px solid var(--line);padding:22px 16px;display:flex;flex-direction:column;gap:22px}.brand{display:flex;align-items:center;gap:12px;padding:4px 6px}.logo-mark{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#f04455,#ff8b5f);box-shadow:0 10px 25px rgba(232,72,85,.22)}.brand strong{display:block;font-size:17px}.brand small,.sidebar-foot small,.muted{color:var(--muted)}
-nav{display:grid;gap:6px}.nav-item{display:flex;align-items:center;gap:10px;text-decoration:none;padding:11px;border-radius:12px;color:#586174}.nav-item span{width:28px;height:28px;border-radius:10px;display:grid;place-items:center;background:var(--soft);font-size:12px;font-weight:800}.nav-item b{font-weight:650}.nav-item.active,.nav-item:hover{background:var(--red2);color:#bf2334}.nav-item.active span,.nav-item:hover span{background:#fff;color:var(--red);box-shadow:0 8px 20px rgba(232,72,85,.12)}.sidebar-foot{margin-top:auto;padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--paper2);display:grid;gap:8px}.sidebar-foot strong{font-size:15px}
-.main{margin-left:246px;min-height:100vh;padding:26px}.topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}.topbar p,.eyebrow{margin:0;color:var(--red);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:700}.topbar h1{margin:5px 0 0;font-size:29px;letter-spacing:0}.top-actions{display:flex;align-items:center;gap:12px}.search-pill{padding:10px 14px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.78);color:var(--muted)}.avatar{width:38px;height:38px;border-radius:50%;background:#172033;color:white;display:grid;place-items:center;font-weight:800}
-button,.button{border:0;border-radius:12px;padding:10px 14px;background:var(--soft);color:var(--text);cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-weight:650}.primary{background:var(--red);color:white}.soft{background:var(--red2);color:#c92a3b}.ghost{background:#fff;border:1px solid var(--line)}.danger{background:#fff0f1;color:#c92a3b}.full{width:100%}.big-action{width:100%;margin-top:10px}
-.hero-grid{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px}.hero-card,.license-card,.panel,.metric,.sound-card{background:rgba(255,255,255,.92);border:1px solid rgba(230,233,240,.95);border-radius:18px;box-shadow:var(--shadow)}.hero-card{padding:24px;min-height:190px;background:linear-gradient(135deg,#ffffff 0,#fff7f7 100%);display:grid;align-content:space-between}.hero-card h2{font-size:31px;margin:8px 0}.hero-card p{color:var(--muted);max-width:680px}.hero-actions{display:flex;gap:10px;flex-wrap:wrap}.license-card{padding:22px;display:grid;align-content:center;gap:8px}.license-card h3{font-size:38px;margin:0}.license-card p,.license-card small{margin:0;color:var(--muted)}
-.metric-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:16px}.metric-grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}.metric{padding:18px}.metric span{color:var(--muted);font-weight:650}.metric b{display:block;margin:8px 0 4px;font-size:31px}.metric small{color:var(--muted)}
-.dashboard-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px}.page-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(280px,.7fr);gap:16px}.panel{padding:18px;margin-top:16px}.page-grid .panel{margin-top:0}.panel-title{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}.panel-title h2,h2,h3{margin:0}.panel-title p{margin:4px 0 0;color:var(--muted)}.panel-title a{color:var(--red);text-decoration:none;font-weight:700}.endpoint{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--soft);padding:12px;border-radius:12px;color:#344054;overflow:auto}
-.form{display:grid;gap:12px}.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}label{display:grid;gap:7px;color:#4b5563;font-weight:650}input,textarea,select{width:100%;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--text);padding:11px 12px;outline:none}input:focus,textarea:focus,select:focus{border-color:#f29aa3;box-shadow:0 0 0 3px rgba(232,72,85,.1)}textarea{resize:vertical}.check{display:flex;align-items:center;gap:8px}.check input{width:auto}
-.toolbar{display:flex;gap:10px;margin-bottom:14px}.toolbar input{max-width:390px}.chip-list{display:flex;flex-wrap:wrap;gap:8px}.chip{padding:8px 10px;background:var(--soft);border-radius:999px;text-decoration:none;color:#4b5563}.chip.active,.chip:hover{background:var(--red2);color:#c92a3b}.chip small{opacity:.7}.badge{display:inline-flex;align-items:center;justify-content:center;min-height:24px;padding:4px 9px;border-radius:999px;background:var(--soft);color:#4b5563;font-size:12px;font-weight:750;white-space:nowrap}.badge.red{background:var(--red2);color:#c92a3b}.badge.green{background:var(--green2);color:var(--green)}.badge.blue{background:var(--blue2);color:var(--blue)}.badge.orange{background:var(--orange2);color:var(--orange)}.badge.gray{background:#f1f3f6;color:#667085}
-.data-table{display:grid;gap:6px}.data-row{display:grid;grid-template-columns:1.2fr .7fr .7fr .9fr;gap:12px;align-items:center;padding:11px 12px;border-radius:12px;background:var(--paper2);border:1px solid transparent}.data-row:hover{border-color:var(--line);background:#fff}.data-row a{color:var(--text);text-decoration:none}.data-row a:hover{color:var(--red)}.table-head{background:transparent;border:0;color:var(--muted);font-weight:800}.release-table .data-row,.license-table .data-row,.vehicles-table .data-row{grid-template-columns:1.2fr .6fr .7fr .9fr 1.15fr}.vehicles-table.detailed .data-row{grid-template-columns:1.4fr .62fr .72fr .62fr 1fr}.vehicle-table .data-row,.logs-table .data-row{grid-template-columns:1.2fr .65fr .75fr 1fr}.logs-table .data-row{grid-template-columns:.5fr 1.2fr .55fr .6fr}.diagnostic-table .data-row{grid-template-columns:.85fr 1.15fr .5fr .7fr 1.25fr 1.1fr}.data-row span small{display:block;margin-top:4px;color:var(--muted)}.actions{display:flex;gap:7px;flex-wrap:wrap}.actions form{display:inline}.mono,.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.code{color:#c92a3b;cursor:pointer;font-weight:750}.wrap{overflow-wrap:anywhere;word-break:break-word}
-.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.detail-grid>span{display:grid;gap:5px;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--paper2)}.detail-grid small{color:var(--muted)}.detail-list{margin-top:14px}.detail-list p{display:flex;justify-content:space-between;gap:12px;padding:9px 0;margin:0;border-bottom:1px solid var(--line)}.three-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
-.sound-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.sound-card{padding:15px}.sound-head{display:flex;justify-content:space-between;gap:12px}.sound-head h3{font-size:16px}.sound-head p{margin:5px 0 0;color:var(--muted)}.sound-card audio{width:100%;margin:12px 0}.sound-edit{display:grid;grid-template-columns:1fr 1fr 1fr auto auto;gap:8px;align-items:center}.compact-check{white-space:nowrap}.mini-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.mini-metrics span{display:grid;gap:4px;padding:12px;border-radius:14px;background:var(--paper2)}.mini-metrics b{font-size:24px}.mini-metrics small{color:var(--muted)}
-.qr-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:16px}.qr-card{display:grid;grid-template-columns:190px minmax(0,1fr);gap:16px;align-items:stretch;padding:16px;background:rgba(255,255,255,.92);border:1px solid rgba(230,233,240,.95);border-radius:18px;box-shadow:var(--shadow)}.qr-preview{min-height:190px;border-radius:18px;background:linear-gradient(135deg,#f8fafc,#eef1f7);border:1px solid var(--line);display:grid;place-items:center;overflow:hidden}.qr-preview img{width:100%;height:100%;object-fit:contain;background:white;padding:10px}.qr-preview span{color:var(--muted);font-weight:800}.qr-form{gap:10px}.panel-title.compact{margin-bottom:0}
-.timeline{display:grid;gap:12px}.timeline-item{display:grid;grid-template-columns:12px 1fr;gap:10px}.timeline-item>span{width:10px;height:10px;border-radius:50%;margin-top:5px;background:var(--red)}.timeline-item p{margin:2px 0;color:#344054}.timeline-item small,.empty{color:var(--muted)}.settings-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.setting-card{padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--paper2)}.setting-card span{font-size:15px;color:var(--text)}.setting-card small{color:var(--muted);font-weight:400}.setting-card.toggle{grid-template-columns:auto 1fr;align-items:start}.setting-card.toggle small{grid-column:2}.setting-card.toggle input{width:18px;margin-top:2px}.span-all{grid-column:1/-1}
-.flash-stack{display:grid;gap:8px;margin-bottom:14px}.flash{padding:11px 13px;border-radius:12px;background:var(--green2);color:var(--green);font-weight:650}.flash.error{background:var(--red2);color:#c92a3b}.auth{max-width:520px;margin:70px auto}.auth.panel{padding:26px}
-@media(max-width:1100px){.hero-grid,.page-grid,.dashboard-grid{grid-template-columns:1fr}.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.settings-grid{grid-template-columns:1fr 1fr}.sound-grid,.qr-grid{grid-template-columns:1fr}}
-@media(max-width:820px){.sidebar{position:sticky;top:0;z-index:20;width:auto;border-right:0;border-bottom:1px solid var(--line);padding:14px}.brand{padding:0}.sidebar nav{display:flex;overflow:auto}.nav-item{white-space:nowrap}.sidebar-foot{display:none}.main{margin-left:0;padding:16px}.topbar{align-items:flex-start}.top-actions{display:none}.hero-card h2{font-size:24px}.metric-grid,.metric-grid.three,.two,.settings-grid,.detail-grid,.three-fields{grid-template-columns:1fr}.toolbar{display:grid}.toolbar input{max-width:none}.data-row,.release-table .data-row,.license-table .data-row,.vehicles-table .data-row,.vehicles-table.detailed .data-row,.vehicle-table .data-row,.logs-table .data-row,.diagnostic-table .data-row{grid-template-columns:1fr}.table-head{display:none}.sound-edit{grid-template-columns:1fr}.qr-card{grid-template-columns:1fr}.actions button,.actions .button{width:100%}}
-"""
+from platform_miniapp_api import create_miniapp_blueprint
+
+
+app.register_blueprint(
+    create_miniapp_blueprint(
+        device_token_matches=device_token_matches,
+        device_authorization=device_authorization,
+        authorization_category=authorization_category,
+        vehicle_presence=vehicle_presence,
+        vehicle_display_label=vehicle_display_label,
+        latest_release=latest_release,
+        api_lock_remaining=api_lock_remaining,
+        record_api_success=record_api_success,
+        record_api_failure=record_api_failure,
+        client_key=client_key,
+    )
+)
 
 
 if __name__ == "__main__":

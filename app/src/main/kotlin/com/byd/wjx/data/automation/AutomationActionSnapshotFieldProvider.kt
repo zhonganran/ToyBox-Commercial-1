@@ -4,30 +4,14 @@ import com.byd.wjx.data.local.entity.ActionDef
 import com.byd.wjx.data.local.entity.RuleEntity
 import com.byd.wjx.data.local.entity.TriggerDef
 import com.byd.wjx.data.nativestack.ActionSnapshotFieldProvider
-import com.byd.wjx.electronicmirror.ElectronicMirrorPreferences
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class AutomationActionSnapshotFieldProvider @Inject constructor(
     private val repository: AutomationConfigRepository,
-    private val electronicMirrorPreferences: ElectronicMirrorPreferences,
 ) : ActionSnapshotFieldProvider {
-    override suspend fun additionalFields(): Set<String> {
-        val mirror = electronicMirrorPreferences.snapshot()
-        return repository.current().requiredVehicleFields + requiredElectronicMirrorFields(
-            linkageEnabled = mirror.enabled,
-            streamingRearEnabled = mirror.streamingRearEnabled && mirror.streamingRearVisible,
-        )
-    }
-}
-
-internal fun requiredElectronicMirrorFields(
-    linkageEnabled: Boolean,
-    streamingRearEnabled: Boolean,
-): Set<String> = buildSet {
-    if (linkageEnabled || streamingRearEnabled) add("adasApaParkingStatus")
-    if (linkageEnabled) add("turnSignalFlash")
+    override suspend fun additionalFields(): Set<String> = repository.current().requiredVehicleFields
 }
 
 internal fun requiredAutomationVehicleFields(rules: List<RuleEntity>): Set<String> = buildSet {

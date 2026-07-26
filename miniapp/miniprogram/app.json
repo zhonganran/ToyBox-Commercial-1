@@ -1,0 +1,30 @@
+{
+  "pages": [
+    "pages/home/index",
+    "pages/trips/index",
+    "pages/tools/index",
+    "pages/profile/index",
+    "pages/bind/index",
+    "pages/trip-detail/index",
+    "pages/web-content/index"
+  ],
+  "window": {
+    "navigationStyle": "custom",
+    "backgroundColor": "#F4F7FB",
+    "backgroundTextStyle": "dark"
+  },
+  "tabBar": {
+    "custom": true,
+    "color": "#8794A8",
+    "selectedColor": "#1769F5",
+    "backgroundColor": "#FFFFFF",
+    "list": [
+      { "pagePath": "pages/home/index", "text": "首页" },
+      { "pagePath": "pages/trips/index", "text": "行程" },
+      { "pagePath": "pages/tools/index", "text": "工具" },
+      { "pagePath": "pages/profile/index", "text": "我的" }
+    ]
+  },
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

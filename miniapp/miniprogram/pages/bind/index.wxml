@@ -1,0 +1,27 @@
+<view class="bind-page">
+  <view class="detail-header">
+    <view class="back-button pressable" bindtap="goBack"><image src="/assets/icons/chevron-left.png" /></view>
+    <view><view class="detail-title">绑定车辆</view><view class="detail-caption">使用车机端一次性绑定码</view></view>
+    <view class="wechat-capsule-space"></view>
+  </view>
+
+  <view class="binding-visual">
+    <view class="binding-icon"><image src="/assets/icons/link-white.png" /></view>
+    <view class="binding-title">让小程序识别你的车辆</view>
+    <view class="binding-copy">绑定码仅在短时间内有效，使用后立即失效，不需要在小程序中填写完整车架号。</view>
+  </view>
+
+  <view class="form-card surface">
+    <view class="field-label">车辆绑定码</view>
+    <input class="code-input" value="{{bindingCode}}" maxlength="8" placeholder="请输入 6–8 位绑定码" placeholder-class="input-placeholder" bindinput="onCodeInput" />
+    <view wx:if="{{error}}" class="field-error">{{error}}</view>
+    <button class="primary-button submit-button" loading="{{submitting}}" disabled="{{submitting}}" bindtap="submit">确认绑定</button>
+  </view>
+
+  <view class="steps surface">
+    <view class="steps-title">如何获取绑定码</view>
+    <view class="step"><text>1</text><view><view>打开车机端超级玩具箱</view><text>进入“设置 → 小程序绑定”</text></view></view>
+    <view class="step"><text>2</text><view><view>点击生成绑定码</view><text>绑定码默认 10 分钟内有效</text></view></view>
+    <view class="step"><text>3</text><view><view>回到小程序输入并确认</view><text>成功后自动显示真实车型和车辆状态</text></view></view>
+  </view>
+</view>

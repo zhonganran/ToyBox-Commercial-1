@@ -24,7 +24,19 @@ object LedProtocol {
         )
     }
 
-    fun playScene(scene: LedScene): ByteArray = playRemotePreset(scene.remotePresetId)
+    fun playScene(scene: LedScene): ByteArray = playRemotePreset(presetId(scene))
+
+    fun presetId(scene: LedScene): Int = when (scene) {
+        LedScene.DEFAULT -> 6
+        LedScene.LEFT_TURN -> 3
+        LedScene.RIGHT_TURN -> 5
+        LedScene.TEMPORARY_STOP -> 4
+        LedScene.REVERSE_PARKING -> 11
+        LedScene.AUTOPILOT -> 14
+        LedScene.EXIT_VEHICLE -> 19
+        LedScene.HAZARD -> 20
+        LedScene.BRAKE_WARNING -> 8
+    }
 
     fun brightness(percent: Int): ByteArray = byteArrayOf(
         0x05,

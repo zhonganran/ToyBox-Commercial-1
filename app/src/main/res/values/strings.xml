@@ -325,49 +325,12 @@
     <string name="service_confirm_action_yes">执行</string>
     <string name="service_confirm_action_no">取消</string>
 
-    <!-- 首页 -->
-    <string name="dashboard_trip_duration_hours">%1$d小时 %2$d分</string>
-    <string name="dashboard_trip_duration_minutes">%1$d 分钟</string>
-    <string name="dashboard_trip_km_value">%1$.1f 公里</string>
-    <string name="dashboard_unit_km">公里</string>
-    <string name="dashboard_unit_kwh">千瓦时</string>
-    <string name="dashboard_range_label">预估续航</string>
-    <string name="dashboard_idle_time_min">%1$.0f 分钟</string>
-    <string name="dashboard_idle_time_hours">%1$.1f 小时</string>
-
-    <!-- 停车能耗卡片 -->
-    <string name="dashboard_idle_drain_parking_label">停车</string>
-    <string name="dashboard_idle_drain_title">停车能耗</string>
-    <string name="dashboard_idle_drain_rate_label">速率</string>
-    <string name="dashboard_idle_drain_rate_value">%1$.2f 千瓦时/小时</string>
-    <string name="dashboard_idle_drain_week_label">近 7 天</string>
-    <string name="dashboard_idle_drain_week_value">%1$.1f 千瓦时</string>
-    <string name="dashboard_idle_drain_avg_day_label">日均</string>
-
-    <!-- 电池卡片 -->
-    <string name="dashboard_battery_temp_label">电池温度</string>
-    <string name="dashboard_battery_voltage_label">车载电源</string>
-
     <!-- 时间范围按钮 -->
     <string name="dashboard_period_day">日</string>
     <string name="dashboard_period_week">周</string>
     <string name="dashboard_period_month">月</string>
     <string name="dashboard_period_year">年</string>
     <string name="dashboard_period_all">全部</string>
-
-    <!-- 统计卡片 -->
-    <string name="dashboard_stat_distance">里程</string>
-    <string name="dashboard_stat_energy">能耗</string>
-    <string name="dashboard_trip_count">%1$d 次行程</string>
-
-    <!-- 最近行程 -->
-    <string name="dashboard_recent_trips_title">最近行程</string>
-    <string name="dashboard_empty_no_trips">暂无行程</string>
-
-    <string name="dashboard_stat_km_value">%1$.1f 公里</string>
-    <string name="dashboard_stat_kwh_value">%1$.1f 千瓦时</string>
-    <string name="dashboard_voltage_value">%1$.1f 伏</string>
-
 
     <!-- 安装或更新后的自启动引导 -->
     <string name="autostart_guide_title">开启应用自启动</string>
@@ -387,33 +350,6 @@
     <string name="applauncher_empty">未找到结果</string>
     <string name="applauncher_close_button">关闭</string>
 
-    <!-- 电量环：充电图标说明 -->
-    <string name="battery_health_charging_cd">充电中</string>
-
-    <!-- 电池健康弹窗 -->
-    <string name="battery_health_dialog_title">电池健康</string>
-    <string name="battery_health_now_header">当前（车辆实时数据）</string>
-    <string name="battery_health_lifetime_header">全生命周期（系统数据）</string>
-    <string name="battery_health_cell_delta_value">%1$.3f 伏</string>
-    <string name="battery_health_banks_header">电池组</string>
-    <string name="battery_health_cell_voltage_value">%1$.3f 伏</string>
-    <string name="battery_health_bat_temp_label">电池温度</string>
-    <string name="battery_health_12v_label">车载电源</string>
-    <string name="battery_health_12v_value">%1$.1f 伏</string>
-    <string name="battery_health_bms_mileage_label">电池管理系统里程</string>
-    <string name="battery_health_bms_mileage_value">%1$.1f 公里</string>
-    <string name="battery_health_pumped_label">累计充入</string>
-    <string name="battery_health_pumped_value">%1$.0f 千瓦时</string>
-
-    <!-- 通用汇总行 -->
-    <string name="summary_unit_km">公里</string>
-    <string name="summary_label_mileage">里程</string>
-    <string name="summary_unit_kwh">千瓦时</string>
-    <string name="summary_label_energy">能耗</string>
-    <string name="summary_unit_kwh_per_100km">千瓦时/百公里</string>
-    <string name="summary_label_consumption">百公里电耗</string>
-    <string name="summary_label_cost">费用</string>
-
     <!-- 设置：单位按钮 -->
     <string name="settings_tariff_trip_custom_chip">自定义</string>
 
@@ -424,6 +360,11 @@
     <string name="settings_error_with_message">错误：%1$s</string>
     <string name="settings_error_prefix">错误</string>
     <string name="settings_diagnostic_log_header">问题诊断</string>
+    <string name="settings_miniapp_header">微信小程序</string>
+    <string name="settings_miniapp_title">绑定车辆</string>
+    <string name="settings_miniapp_description">生成一次性绑定码后，在超级玩具箱小程序中输入。无需填写完整车架号。</string>
+    <string name="settings_miniapp_generate_button">生成绑定码</string>
+    <string name="settings_miniapp_generating">正在生成…</string>
     <string name="settings_diagnostic_log_title">诊断日志</string>
     <string name="settings_diagnostic_log_description">直接上传 WJX 文件夹中的 wjx.log，后台会按车架号和版本保存。</string>
     <string name="settings_log_upload_button">上传日志</string>
@@ -443,10 +384,6 @@
     <!-- 充电：日期分组 -->
     <string name="charges_day_today">今天（%1$s）</string>
     <string name="charges_day_yesterday">昨天</string>
-
-    <!-- 通用时长格式 -->
-    <string name="common_duration_hours_minutes">%1$d 小时 %2$d 分钟</string>
-    <string name="common_duration_minutes">%1$d 分钟</string>
 
     <!-- 智能联动确认悬浮按钮 -->
     <string name="confirm_overlay_cancel">取消</string>

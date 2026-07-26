@@ -53,6 +53,8 @@ class CommercialBaselineSchemaTest {
             AppDatabase.SCHEMA_VERSION,
             true,
             AppDatabase.MIGRATION_17_18,
+            AppDatabase.MIGRATION_18_19,
+            AppDatabase.MIGRATION_19_20,
         ).use { db ->
             db.query(
                 "SELECT name, exit_actions, repeat_interval_seconds FROM automation_rules WHERE id = 1"

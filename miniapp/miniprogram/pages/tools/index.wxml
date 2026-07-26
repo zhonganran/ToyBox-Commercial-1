@@ -1,0 +1,32 @@
+<view class="page-shell tools-page">
+  <view class="page-header">
+    <view><view class="page-heading">工具</view><view class="page-caption">与车机保持一致的功能入口</view></view>
+    <view class="wechat-capsule-space"></view>
+  </view>
+
+  <view class="sync-banner surface">
+    <view class="sync-icon"><image src="/assets/icons/cloud-white.png" /></view>
+    <view class="sync-copy"><view>车机数据同步</view><text>{{sync.description}}</text></view>
+    <view class="sync-status"><view class="status-dot {{sync.onlineState}}"></view>{{sync.statusLabel}}</view>
+  </view>
+
+  <view class="section-heading"><view class="section-title">功能入口</view><view class="section-action">真实项目能力</view></view>
+  <block wx:if="{{loading}}">
+    <view class="tool-grid"><view wx:for="{{[1,2,3,4]}}" wx:key="*this" class="tool-card surface skeleton"></view></view>
+  </block>
+  <view wx:elif="{{error}}" class="surface empty-state"><view class="empty-title">工具加载失败</view><view class="empty-copy">{{error}}</view><button class="secondary-button retry-button" bindtap="retry">重新加载</button></view>
+  <view wx:else class="tool-grid">
+    <view wx:for="{{items}}" wx:key="id" class="tool-card surface pressable tool-{{item.tone}}" data-route="{{item.route}}" bindtap="openTool">
+      <view class="tool-icon"><image src="/assets/icons/{{item.icon}}-white.png" /></view>
+      <view class="tool-title">{{item.title}}</view>
+      <view class="tool-subtitle">{{item.subtitle}}</view>
+      <image class="tool-arrow" src="/assets/icons/arrow-up-right.png" />
+    </view>
+  </view>
+
+  <view class="section-heading"><view class="section-title">安全说明</view></view>
+  <view class="security-note surface">
+    <image src="/assets/icons/shield-check-blue.png" />
+    <view><view>所有配置都需要车机确认接收</view><text>小程序不直接连接车辆控制总线，也不会在车辆离线时伪造执行成功。</text></view>
+  </view>
+</view>

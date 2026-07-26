@@ -34,7 +34,6 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Route
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -382,7 +381,6 @@ private val UsageGuideCategory.accent: Color
         UsageGuideCategory.Sound -> AccentOrange
         UsageGuideCategory.Components -> AccentPurple
         UsageGuideCategory.Automation -> ScenePink
-        UsageGuideCategory.Mirror -> AccentGreen
         UsageGuideCategory.Settings -> AccentBlue
         UsageGuideCategory.Troubleshooting -> AccentOrange
     }
@@ -395,7 +393,6 @@ private val UsageGuideCategory.icon: ImageVector
         UsageGuideCategory.Sound -> Icons.AutoMirrored.Outlined.VolumeUp
         UsageGuideCategory.Components -> Icons.Outlined.Apps
         UsageGuideCategory.Automation -> Icons.Outlined.Bolt
-        UsageGuideCategory.Mirror -> Icons.Outlined.Visibility
         UsageGuideCategory.Settings -> Icons.Outlined.Settings
         UsageGuideCategory.Troubleshooting -> Icons.Outlined.DirectionsCar
     }

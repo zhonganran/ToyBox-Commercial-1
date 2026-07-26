@@ -66,38 +66,6 @@ class AutomationActionSnapshotFieldProviderTest {
     }
 
     @Test
-    fun `turn linkage requests turn signal and auto parking safety fields`() {
-        assertEquals(
-            setOf("turnSignalFlash", "adasApaParkingStatus"),
-            requiredElectronicMirrorFields(
-                linkageEnabled = true,
-                streamingRearEnabled = false,
-            ),
-        )
-    }
-
-    @Test
-    fun `streaming rear requests only auto parking safety field`() {
-        assertEquals(
-            setOf("adasApaParkingStatus"),
-            requiredElectronicMirrorFields(
-                linkageEnabled = false,
-                streamingRearEnabled = true,
-            ),
-        )
-    }
-
-    @Test
-    fun `disabled electronic mirror adds no vehicle fields`() {
-        assertTrue(
-            requiredElectronicMirrorFields(
-                linkageEnabled = false,
-                streamingRearEnabled = false,
-            ).isEmpty(),
-        )
-    }
-
-    @Test
     fun `comfort triggers select their on demand fields`() {
         val fields = requiredAutomationVehicleFields(
             listOf(

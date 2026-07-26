@@ -1,0 +1,32 @@
+<view class="page-shell profile-page">
+  <view class="page-header"><view><view class="page-heading">我的</view><view class="page-caption">账户、车辆与服务</view></view><view class="wechat-capsule-space"></view></view>
+
+  <view wx:if="{{loading}}" class="profile-card surface skeleton"></view>
+  <view wx:elif="{{error}}" class="surface empty-state"><view class="empty-title">账户信息加载失败</view><view class="empty-copy">{{error}}</view><button class="secondary-button retry-button" bindtap="retry">重新加载</button></view>
+  <block wx:elif="{{profile}}">
+    <view class="profile-card surface">
+      <view class="vehicle-avatar">车</view>
+      <view class="profile-copy"><view>{{profile.vehicle ? profile.vehicle.displayName : '未绑定车辆'}}</view><text>{{profile.vehicle ? profile.vehicle.vinMasked : '绑定后查看车辆数据'}}</text></view>
+      <view class="auth-chip {{profile.authorization.status}}">{{profile.authorization.label}}</view>
+    </view>
+
+    <view class="license-card surface">
+      <view><text>超级玩具箱授权</text><view>有效期至 {{profile.authorization.expiresAt}}</view></view>
+      <view class="license-shield"><image src="/assets/icons/shield-check-green.png" /></view>
+    </view>
+
+    <view class="section-heading"><view class="section-title">车辆与授权</view><view class="section-action">安全绑定</view></view>
+    <view class="menu surface">
+      <view class="menu-row pressable" bindtap="openBinding"><view class="menu-icon blue"><image src="/assets/icons/car-white.png" /></view><view class="menu-copy"><view>车辆管理</view><text>查看或更换绑定车辆</text></view><image class="chevron" src="/assets/icons/chevron-right.png" /></view>
+      <view class="menu-row pressable" data-type="authorization" bindtap="openContent"><view class="menu-icon green"><image src="/assets/icons/key-white.png" /></view><view class="menu-copy"><view>授权信息</view><text>授权状态与有效期</text></view><image class="chevron" src="/assets/icons/chevron-right.png" /></view>
+    </view>
+
+    <view class="section-heading"><view class="section-title">支持与诊断</view><view class="section-action">车机在线</view></view>
+    <view class="menu surface">
+      <view class="menu-row pressable" data-type="diagnostics" bindtap="openContent"><view class="menu-icon yellow"><image src="/assets/icons/file-up-white.png" /></view><view class="menu-copy"><view>上传日志</view><text>{{profile.diagnostic.lastUploadAt}}</text></view><view class="row-status success">{{profile.diagnostic.lastUploadLabel}}</view><image class="chevron" src="/assets/icons/chevron-right.png" /></view>
+      <view class="menu-row pressable" data-type="guide" bindtap="openContent"><view class="menu-icon cyan"><image src="/assets/icons/book-open-white.png" /></view><view class="menu-copy"><view>使用说明</view><text>功能操作与常见问题</text></view><image class="chevron" src="/assets/icons/chevron-right.png" /></view>
+      <view class="menu-row pressable" data-type="updates" bindtap="openContent"><view class="menu-icon coral"><image src="/assets/icons/download-white.png" /></view><view class="menu-copy"><view>版本更新</view><text>更新内容与安装包</text></view><view class="row-status">当前 {{profile.version.current}}</view><image class="chevron" src="/assets/icons/chevron-right.png" /></view>
+      <view class="menu-row pressable" data-type="service" bindtap="openContent"><view class="menu-icon violet"><image src="/assets/icons/headphones-white.png" /></view><view class="menu-copy"><view>联系客服</view><text>授权与问题咨询</text></view><image class="chevron" src="/assets/icons/chevron-right.png" /></view>
+    </view>
+  </block>
+</view>

@@ -90,13 +90,14 @@ fun DesktopQuickCardContent(
     val sounds = state.config.soundPaths.map { path -> path to File(path).nameWithoutExtension }
     val tiles = buildList {
         commands.forEach { item ->
+            val active = state.activeCommand == item.command
             add(
                 DesktopQuickCardTileModel(
                     label = item.label,
-                    subtitle = if (state.activeCommand == item.command) "执行中" else item.category,
+                    subtitle = if (active) "执行中" else item.category,
                     icon = commandIcon(item),
                     accent = AccentGreen,
-                    active = state.activeCommand == item.command,
+                    active = active,
                     onClick = { onCommandClick(item.command) },
                 ),
             )

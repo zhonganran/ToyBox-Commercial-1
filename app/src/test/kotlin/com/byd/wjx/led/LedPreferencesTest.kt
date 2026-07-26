@@ -65,4 +65,25 @@ class LedPreferencesTest {
 
         assertEquals(LedLinkageDefaults.rules, LedPreferences(context).state.value.rules)
     }
+
+    @Test
+    fun `legacy bound devices migrate to automatic protocol detection`() {
+        context.getSharedPreferences(LedPreferences.PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString("device_address", "AA:BB:CC:DD:EE:FF")
+            .putString("device_name", "LED")
+            .commit()
+
+        assertEquals(LedDeviceKind.UNKNOWN, LedPreferences(context).state.value.deviceKind)
+    }
+
+    @Test
+    fun `detected device kind persists with the binding`() {
+        val preferences = LedPreferences(context)
+        preferences.setDevice("AA:BB:CC:DD:EE:FF", "LED", LedDeviceKind.A950)
+
+        assertEquals(LedDeviceKind.A950, LedPreferences(context).state.value.deviceKind)
+        preferences.clearDevice()
+        assertEquals(LedDeviceKind.UNKNOWN, preferences.state.value.deviceKind)
+    }
 }

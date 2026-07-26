@@ -18,10 +18,23 @@ os.environ["WJX_PLATFORM_SECRET_KEY"] = "test-secret-key"
 os.environ["WJX_PLATFORM_TRUSTED_PROXY_COUNT"] = "0"
 
 import app as platform_app
+import platform_license
+import platform_miniapp
+import platform_miniapp_api
 import platform_storage
 
 
+def tearDownModule():
+    _TEST_DATA_DIR.cleanup()
+
+
 class AdminBootstrapSecurityTest(unittest.TestCase):
+    def test_platform_secret_key_is_required(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("WJX_PLATFORM_SECRET_KEY", None)
+            with self.assertRaisesRegex(RuntimeError, "must be configured"):
+                platform_app.configured_secret_key()
+
     def test_admin_password_is_required(self):
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("WJX_PLATFORM_ADMIN_PASSWORD", None)
@@ -109,6 +122,18 @@ class PlatformRequestSecurityTest(unittest.TestCase):
     def setUp(self):
         self.client = platform_app.app.test_client()
 
+    def test_admin_stylesheet_is_served_from_static_assets(self):
+        login_page = self.client.get("/login")
+        stylesheet = self.client.get("/static/platform.css")
+        try:
+            self.assertEqual(200, login_page.status_code)
+            self.assertIn(b'/static/platform.css', login_page.data)
+            self.assertEqual(200, stylesheet.status_code)
+            self.assertIn(b":root", stylesheet.data)
+        finally:
+            login_page.close()
+            stylesheet.close()
+
     def login(self, next_target=None):
         self.client.get("/login")
         with self.client.session_transaction() as session:
@@ -160,6 +185,13 @@ class PlatformRequestSecurityTest(unittest.TestCase):
         self.assertEqual(1, response.json["page"])
         self.assertEqual(50, response.json["pageSize"])
 
+    def test_miniapp_version_comparison_uses_numeric_order(self):
+        self.assertTrue(platform_miniapp_api.version_is_newer("1.9.9", "1.10.0"))
+        self.assertTrue(platform_miniapp_api.version_is_newer("v1.9.7", "2.0"))
+        self.assertFalse(platform_miniapp_api.version_is_newer("1.10.0", "1.9.9"))
+        self.assertFalse(platform_miniapp_api.version_is_newer("1.9.7", "v1.9.7.0"))
+        self.assertFalse(platform_miniapp_api.version_is_newer("--", "1.9.8"))
+
 
 class PlatformWorkflowTest(unittest.TestCase):
     @classmethod
@@ -178,6 +210,14 @@ class PlatformWorkflowTest(unittest.TestCase):
     def reset_platform_state(self):
         with platform_app.db() as conn:
             for table in (
+                "miniapp_log_requests",
+                "vehicle_trip_points",
+                "vehicle_trips",
+                "vehicle_charges",
+                "miniapp_binding_codes",
+                "miniapp_vehicle_bindings",
+                "miniapp_sessions",
+                "miniapp_users",
                 "releases",
                 "sounds",
                 "license_codes",
@@ -445,6 +485,38 @@ class PlatformWorkflowTest(unittest.TestCase):
             headers=headers,
         )
 
+    def miniapp_login(self, openid="openid-test-user"):
+        with patch.object(
+            platform_miniapp,
+            "exchange_wechat_code",
+            return_value={"openid": openid, "unionid": ""},
+        ):
+            response = self.client.post(
+                "/api/v1/miniapp/login",
+                json={"code": "temporary-wechat-code"},
+            )
+        self.assertEqual(200, response.status_code)
+        self.assertTrue(response.json["token"])
+        self.assertGreater(response.json["expiresAt"], 0)
+        return response.json["token"]
+
+    def generate_miniapp_binding_code(self, vin):
+        response = self.client.post(
+            "/api/v1/miniapp/vehicles/binding-code",
+            json={"deviceCode": vin},
+            headers={"Authorization": f"Bearer {self.device_tokens[vin]}"},
+        )
+        self.assertEqual(200, response.status_code)
+        self.assertRegex(response.json["bindingCode"], r"^\d{8}$")
+        return response.json["bindingCode"]
+
+    def bind_miniapp_vehicle(self, miniapp_token, binding_code):
+        return self.client.post(
+            "/api/v1/miniapp/vehicles/bind",
+            json={"bindingCode": binding_code},
+            headers={"Authorization": f"Bearer {miniapp_token}"},
+        )
+
     def vehicle_heartbeat_payload(self, vin="LC0FD4C42S7184345"):
         return {
             "deviceCode": vin,
@@ -551,7 +623,7 @@ class PlatformWorkflowTest(unittest.TestCase):
             "licenseCodeMasked": "STB-TEST-****-TEST",
             "features": [],
         }
-        with patch.object(platform_app, "load_offline_license_private_key", return_value=private_key):
+        with patch.object(platform_license, "load_offline_license_private_key", return_value=private_key):
             proof["signature"] = platform_app.sign_offline_license(proof)
             recovered = self.client.post(
                 "/api/v1/license/status",
@@ -819,6 +891,193 @@ class PlatformWorkflowTest(unittest.TestCase):
             oversize = self.upload_log(vin, b"12345", "wjx.log")
         self.assertEqual(413, oversize.status_code)
         self.assertEqual(1, len(list(platform_app.LOG_DIR.iterdir())))
+
+    def test_miniapp_login_requires_wechat_configuration_without_test_exchange(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("WJX_MINIAPP_APP_ID", None)
+            os.environ.pop("WJX_MINIAPP_APP_SECRET", None)
+            response = self.client.post(
+                "/api/v1/miniapp/login",
+                json={"code": "temporary-wechat-code"},
+            )
+
+        self.assertEqual(503, response.status_code)
+        self.assertFalse(response.json["success"])
+
+    def test_miniapp_binding_is_one_time_and_dashboard_uses_real_telemetry(self):
+        vin = self.register_device("LC0FD4C42S7184345")
+        payload = self.vehicle_heartbeat_payload(vin)
+        payload["runtime"].update(
+            {
+                "soc": 76,
+                "electricRangeKm": 118,
+                "fuelRangeKm": 506,
+                "gear": 1,
+                "lockState": 2,
+                "insideTemp": 24,
+                "outsideTemp": 33,
+                "mileageKm": 18426.4,
+                "voltage12v": 14.1,
+                "chargingStatus": 0,
+            }
+        )
+        heartbeat = self.client.post(
+            "/api/v1/vehicles/heartbeat",
+            json=payload,
+            headers={"Authorization": f"Bearer {self.device_tokens[vin]}"},
+        )
+        self.assertEqual(200, heartbeat.status_code)
+
+        miniapp_token = self.miniapp_login()
+        binding_code = self.generate_miniapp_binding_code(vin)
+        bound = self.bind_miniapp_vehicle(miniapp_token, binding_code)
+        self.assertEqual(200, bound.status_code)
+        self.assertEqual("2025款 宋 PLUS DM-i", bound.json["vehicle"]["displayName"])
+
+        dashboard = self.client.get(
+            "/api/v1/miniapp/dashboard",
+            headers={"Authorization": f"Bearer {miniapp_token}"},
+        )
+        self.assertEqual(200, dashboard.status_code)
+        vehicle = dashboard.json["vehicle"]
+        self.assertEqual(76, vehicle["soc"])
+        self.assertEqual(624, vehicle["rangeKm"])
+        self.assertEqual("P 挡", vehicle["gearLabel"])
+        self.assertEqual("已锁车", vehicle["lockLabel"])
+        self.assertEqual(24, vehicle["insideTemp"])
+        self.assertEqual(33, vehicle["outsideTemp"])
+        self.assertEqual(18426.4, vehicle["mileageKm"])
+        self.assertEqual(14.1, vehicle["voltage12v"])
+        self.assertNotIn(vin, vehicle["vinMasked"])
+
+        second_user_token = self.miniapp_login("openid-second-user")
+        reused = self.bind_miniapp_vehicle(second_user_token, binding_code)
+        self.assertEqual(400, reused.status_code)
+        self.assertEqual(401, self.client.get("/api/v1/miniapp/dashboard").status_code)
+
+    def test_miniapp_history_sync_returns_trip_route_and_charge_records(self):
+        vin = self.register_device("LC0FD4C42S7184345")
+        miniapp_token = self.miniapp_login()
+        binding_code = self.generate_miniapp_binding_code(vin)
+        self.assertEqual(200, self.bind_miniapp_vehicle(miniapp_token, binding_code).status_code)
+        start_ts = platform_miniapp.epoch_millis(platform_app.utc_now()) - 60 * 60 * 1000
+        end_ts = start_ts + 32 * 60 * 1000
+        sync = self.client.post(
+            "/api/v1/vehicles/history-sync",
+            json={
+                "deviceCode": vin,
+                "trips": [
+                    {
+                        "sourceId": "trip-41",
+                        "startTs": start_ts,
+                        "endTs": end_ts,
+                        "distanceKm": 18.4,
+                        "kwhConsumed": 2.54,
+                        "kwhPer100km": 13.8,
+                        "avgSpeedKmh": 34.5,
+                        "socStart": 82,
+                        "socEnd": 76,
+                        "cost": 1.45,
+                    }
+                ],
+                "tripPoints": [
+                    {
+                        "sourceId": "point-1",
+                        "tripSourceId": "trip-41",
+                        "timestamp": start_ts,
+                        "lat": 30.641,
+                        "lon": 104.043,
+                        "speedKmh": 0,
+                    },
+                    {
+                        "sourceId": "point-2",
+                        "tripSourceId": "trip-41",
+                        "timestamp": end_ts,
+                        "lat": 30.677,
+                        "lon": 104.092,
+                        "speedKmh": 0,
+                    },
+                ],
+                "charges": [
+                    {
+                        "sourceId": "charge-12",
+                        "startTs": start_ts - 24 * 60 * 60 * 1000,
+                        "endTs": start_ts - 24 * 60 * 60 * 1000 + 46 * 60 * 1000,
+                        "socStart": 28,
+                        "socEnd": 82,
+                        "kwhCharged": 31.8,
+                        "type": "DC",
+                        "cost": 38.4,
+                        "status": "COMPLETED",
+                    }
+                ],
+            },
+            headers={"Authorization": f"Bearer {self.device_tokens[vin]}"},
+        )
+        self.assertEqual(200, sync.status_code)
+        self.assertEqual(1, sync.json["trips"])
+        self.assertEqual(2, sync.json["tripPoints"])
+        self.assertEqual(1, sync.json["charges"])
+
+        listing = self.client.get(
+            "/api/v1/miniapp/trips",
+            headers={"Authorization": f"Bearer {miniapp_token}"},
+        )
+        self.assertEqual(200, listing.status_code)
+        self.assertEqual(1, listing.json["summary"]["tripCount"])
+        self.assertEqual(18.4, listing.json["summary"]["distanceKm"])
+        self.assertEqual(2, len(listing.json["latestRoute"]["markers"]))
+        self.assertEqual("直流快充", listing.json["charges"][0]["type"])
+
+        trip_id = listing.json["items"][0]["id"]
+        detail = self.client.get(
+            f"/api/v1/miniapp/trips/{trip_id}",
+            headers={"Authorization": f"Bearer {miniapp_token}"},
+        )
+        self.assertEqual(200, detail.status_code)
+        self.assertEqual(2, len(detail.json["route"]["polyline"][0]["points"]))
+
+        unauthorized_sync = self.client.post(
+            "/api/v1/vehicles/history-sync",
+            json={"deviceCode": vin},
+        )
+        self.assertEqual(401, unauthorized_sync.status_code)
+
+    def test_miniapp_log_request_is_completed_by_the_next_vehicle_upload(self):
+        vin = self.register_device("LC0FD4C42S7184345")
+        miniapp_token = self.miniapp_login()
+        binding_code = self.generate_miniapp_binding_code(vin)
+        self.assertEqual(200, self.bind_miniapp_vehicle(miniapp_token, binding_code).status_code)
+
+        requested = self.client.post(
+            "/api/v1/miniapp/logs/request-upload",
+            headers={"Authorization": f"Bearer {miniapp_token}"},
+        )
+        self.assertEqual(200, requested.status_code)
+        request_id = requested.json["requestId"]
+
+        heartbeat = self.client.post(
+            "/api/v1/vehicles/heartbeat",
+            json=self.vehicle_heartbeat_payload(vin),
+            headers={"Authorization": f"Bearer {self.device_tokens[vin]}"},
+        )
+        self.assertEqual(request_id, heartbeat.json["logUploadRequest"]["id"])
+
+        uploaded = self.upload_log(vin)
+        self.assertEqual(200, uploaded.status_code)
+        with platform_app.db() as conn:
+            log_request = conn.execute(
+                "SELECT * FROM miniapp_log_requests WHERE id = ?",
+                (request_id,),
+            ).fetchone()
+        self.assertEqual("completed", log_request["status"])
+        self.assertEqual(uploaded.json["logId"], log_request["diagnostic_log_id"])
+
+        profile = self.client.get(
+            "/api/v1/miniapp/profile",
+            headers={"Authorization": f"Bearer {miniapp_token}"},
+        )
+        self.assertEqual("最近上传成功", profile.json["diagnostic"]["lastUploadLabel"])
 
 
 if __name__ == "__main__":
