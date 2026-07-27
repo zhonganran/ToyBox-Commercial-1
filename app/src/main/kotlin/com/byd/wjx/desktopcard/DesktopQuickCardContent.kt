@@ -23,6 +23,7 @@ import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.DirectionsCar
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.WbSunny
@@ -54,6 +55,8 @@ data class DesktopQuickCardRenderState(
     val horizontalAnchor: DesktopQuickCardHorizontalAnchor = DesktopQuickCardHorizontalAnchor.START,
     val activeCommand: String? = null,
     val activeSoundPath: String? = null,
+    val realtimeHailingRunning: Boolean = false,
+    val realtimeHailingBusy: Boolean = false,
 )
 
 @Composable
@@ -90,13 +93,30 @@ fun DesktopQuickCardContent(
     val sounds = state.config.soundPaths.map { path -> path to File(path).nameWithoutExtension }
     val tiles = buildList {
         commands.forEach { item ->
-            val active = state.activeCommand == item.command
+            val realtimeHailing = item.kind == DesktopQuickCardCommandKind.REALTIME_HAILING
+            val active = if (realtimeHailing) {
+                state.realtimeHailingRunning || state.realtimeHailingBusy
+            } else {
+                state.activeCommand == item.command
+            }
+            val subtitle = if (realtimeHailing) {
+                when {
+                    state.realtimeHailingBusy && state.realtimeHailingRunning -> "停止中"
+                    state.realtimeHailingBusy -> "启动中"
+                    state.realtimeHailingRunning -> "喊话中"
+                    else -> item.category
+                }
+            } else if (active) {
+                "执行中"
+            } else {
+                item.category
+            }
             add(
                 DesktopQuickCardTileModel(
                     label = item.label,
-                    subtitle = if (active) "执行中" else item.category,
+                    subtitle = subtitle,
                     icon = commandIcon(item),
-                    accent = AccentGreen,
+                    accent = if (realtimeHailing) AccentOrange else AccentGreen,
                     active = active,
                     onClick = { onCommandClick(item.command) },
                 ),
@@ -312,7 +332,11 @@ private data class DesktopQuickCardTileModel(
 
 private fun stateScale(cellSize: Dp): Float = cellSize.value / 88f
 
-private fun commandIcon(item: DesktopQuickCardCommand): ImageVector = when (item.category) {
+private fun commandIcon(item: DesktopQuickCardCommand): ImageVector = if (
+    item.kind == DesktopQuickCardCommandKind.REALTIME_HAILING
+) {
+    Icons.Outlined.Mic
+} else when (item.category) {
     "电滑门" -> Icons.Outlined.DirectionsCar
     "车窗" -> Icons.Outlined.Air
     "空调" -> Icons.Outlined.AcUnit

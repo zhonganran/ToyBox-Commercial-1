@@ -585,7 +585,8 @@ class AutomationEngine @Inject constructor(
         ownerPhase: String,
     ) {
         actions.forEachIndexed { index, action ->
-            val shouldStop = (action.kind == "outside_sound" && action.outsideSoundLoop()) ||
+            val shouldStop = (action.kind == "inside_sound" && action.automationMediaLoop()) ||
+                (action.kind == "outside_sound" && action.outsideSoundLoop()) ||
                 action.kind == "play_video" ||
                 (action.kind == "play_music" && action.automationMediaLoop())
             if (!shouldStop) return@forEachIndexed
@@ -610,7 +611,7 @@ class AutomationEngine @Inject constructor(
         index: Int,
         action: ActionDef,
     ): String? =
-        if (action.kind in setOf("outside_sound", "play_music", "play_video")) {
+        if (action.kind in setOf("inside_sound", "outside_sound", "play_music", "play_video")) {
             val ownerPhase = if (phase == "exit") "exit" else "enter"
             "automation:$ruleId:$ownerPhase:$index"
         } else {

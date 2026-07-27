@@ -148,7 +148,56 @@ fun ActionDef.withUrl(url: String, minimize: Boolean): ActionDef = copy(
     }.toString()
 )
 
-// --- 车外音效动作 ---
+// --- WJX 音效库动作 ---
+
+fun newInsideSoundAction(context: Context): ActionDef {
+    val firstSound = SoundLibrary(context.applicationContext).listSounds().firstOrNull()
+    val name = firstSound?.name.orEmpty()
+    val path = firstSound?.file?.absolutePath.orEmpty()
+    return ActionDef(
+        command = "inside_sound",
+        displayName = insideSoundDisplayName(name, loop = false),
+        kind = "inside_sound",
+        payload = org.json.JSONObject().apply {
+            put("path", path)
+            put("name", name)
+            put("loop", false)
+        }.toString()
+    )
+}
+
+fun ActionDef.insideSoundPath(): String = try {
+    org.json.JSONObject(payload ?: "{}").optString("path")
+} catch (_: Exception) { "" }
+
+fun ActionDef.insideSoundName(): String = try {
+    org.json.JSONObject(payload ?: "{}").optString("name")
+} catch (_: Exception) { "" }
+
+fun ActionDef.insideSoundLoop(): Boolean = try {
+    org.json.JSONObject(payload ?: "{}").optBoolean("loop", false)
+} catch (_: Exception) { false }
+
+fun ActionDef.withInsideSound(sound: SoundLibrary.SoundItem): ActionDef = copy(
+    displayName = insideSoundDisplayName(sound.name, insideSoundLoop()),
+    payload = org.json.JSONObject().apply {
+        put("path", sound.file.absolutePath)
+        put("name", sound.name)
+        put("loop", insideSoundLoop())
+    }.toString()
+)
+
+fun ActionDef.withInsideSoundLoop(loop: Boolean): ActionDef = copy(
+    displayName = insideSoundDisplayName(insideSoundName(), loop),
+    payload = org.json.JSONObject(payload ?: "{}").apply {
+        put("loop", loop)
+    }.toString()
+)
+
+private fun insideSoundDisplayName(name: String, loop: Boolean): String {
+    val base = if (name.isBlank()) "车内播放音效" else "车内播放：$name"
+    return if (loop) "$base（循环）" else base
+}
 
 fun newOutsideSoundAction(context: Context): ActionDef {
     val firstSound = SoundLibrary(context.applicationContext).listSounds().firstOrNull()
@@ -212,6 +261,12 @@ fun newStopOutsideSoundAction(): ActionDef = ActionDef(
     command = "stop_outside_sound",
     displayName = "停止车外音效",
     kind = "stop_outside_sound",
+)
+
+fun newStopInsideSoundAction(): ActionDef = ActionDef(
+    command = "stop_inside_sound",
+    displayName = "停止车内音效",
+    kind = "stop_inside_sound",
 )
 
 fun newGoHomeAction(): ActionDef = ActionDef(

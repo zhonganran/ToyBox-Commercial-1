@@ -46,7 +46,7 @@ internal fun ActionRow(
     action: ActionDef,
     places: List<PlaceEntity>,
     onUpdate: (ActionDef) -> Unit,
-    onTest: (String) -> Unit,
+    onTest: (ActionDef) -> Unit,
     onMoveUp: (() -> Unit)?,
     onMoveDown: (() -> Unit)?,
     onDelete: () -> Unit
@@ -79,13 +79,15 @@ internal fun ActionRow(
                 MediaVolumeActionControls(action = action, onUpdate = onUpdate, modifier = Modifier.weight(1f))
             "outside_sound" ->
                 OutsideSoundActionControls(action = action, onUpdate = onUpdate, modifier = Modifier.weight(1f))
+            "inside_sound" ->
+                InsideSoundActionControls(action = action, onUpdate = onUpdate, modifier = Modifier.weight(1f))
             "play_music", "play_video" ->
                 AutomationMediaActionControls(action = action, onUpdate = onUpdate, modifier = Modifier.weight(1f))
             "sentry_mode" ->
                 SentryModeActionControls(action = action, onUpdate = onUpdate, modifier = Modifier.weight(1f))
             "http" ->
                 HttpActionControls(action = action, onUpdate = onUpdate, modifier = Modifier.weight(1f))
-            "stop_outside_sound", "stop_music", "stop_video", "go_home" ->
+            "stop_inside_sound", "stop_outside_sound", "stop_music", "stop_video", "go_home" ->
                 SimpleActionControls(action = action, modifier = Modifier.weight(1f))
             "auto_door" ->
                 AutoDoorActionControls(action = action, onUpdate = onUpdate, modifier = Modifier.weight(1f))
@@ -93,11 +95,12 @@ internal fun ActionRow(
                 ParamActionControls(action = action, onUpdate = onUpdate, modifier = Modifier.weight(1f))
         }
 
-        // Fire this vehicle command immediately for live testing.
-        // Only for param (vehicle) actions; result is shown via Toast + logcat status line.
-        if (action.kind == "param" && action.command.isNotBlank()) {
+        // Vehicle commands and cabin sounds can use the exact saved action path for live testing.
+        val canTest = (action.kind == "param" && action.command.isNotBlank()) ||
+            (action.kind == "inside_sound" && action.insideSoundPath().isNotBlank())
+        if (canTest) {
             Spacer(Modifier.width(4.dp))
-            IconButton(onClick = { onTest(action.command) }, modifier = Modifier.size(34.dp)) {
+            IconButton(onClick = { onTest(action) }, modifier = Modifier.size(34.dp)) {
                 Icon(Icons.Outlined.PlayArrow, "立即执行", tint = AccentGreen, modifier = Modifier.size(18.dp))
             }
         }
@@ -552,6 +555,14 @@ internal fun AddActionButton(
             AutomationMenuGroupHeader(
                 stringResource(R.string.automation_action_group_media),
                 AccentTeal,
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.automation_action_inside_sound), fontSize = 13.sp) },
+                onClick = { menuExpanded = false; onAdd(newInsideSoundAction(context)) }
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.automation_action_stop_inside_sound), fontSize = 13.sp) },
+                onClick = { menuExpanded = false; onAdd(newStopInsideSoundAction()) }
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.automation_action_outside_sound), fontSize = 13.sp) },

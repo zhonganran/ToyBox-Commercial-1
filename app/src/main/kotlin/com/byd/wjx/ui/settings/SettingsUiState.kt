@@ -3,6 +3,8 @@ package com.byd.wjx.ui.settings
 import com.byd.wjx.activation.ActivationSnapshot
 import com.byd.wjx.audio.LockSoundConfig
 import com.byd.wjx.data.repository.SettingsRepository
+import com.byd.wjx.data.vehicle.HeadlightAvailability
+import com.byd.wjx.data.vehicle.HeadlightMode
 import com.byd.wjx.vehicle.CarProfile
 
 /**
@@ -52,6 +54,10 @@ data class SettingsUiState(
     val lockSoundChoices: List<LockSoundChoice> = emptyList(),
     val lockSoundSyncing: Boolean = false,
     val lockSoundStatus: String? = null,
+    val headlightAvailability: HeadlightAvailability = HeadlightAvailability.UNKNOWN,
+    val headlightMode: HeadlightMode? = null,
+    val headlightLoading: Boolean = false,
+    val headlightMessage: String = "尚未检测车辆灯光服务",
     val carProfile: CarProfile? = null,
 )
 

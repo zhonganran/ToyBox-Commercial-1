@@ -33,10 +33,12 @@ internal fun SectionHeader(text: String) {
 internal fun UnitChip(
     label: String,
     selected: Boolean,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     FilterChip(
         selected = selected,
+        enabled = enabled,
         onClick = onClick,
         label = {
             Text(text = label, fontSize = 14.sp, fontWeight = FontWeight.Medium)
@@ -51,7 +53,7 @@ internal fun UnitChip(
         border = FilterChipDefaults.filterChipBorder(
             borderColor = Color.Transparent,
             selectedBorderColor = Color.Transparent,
-            enabled = true,
+            enabled = enabled,
             selected = selected,
         ),
     )

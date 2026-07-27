@@ -10,6 +10,7 @@ const val DESKTOP_QUICK_CARD_COLLAPSED_ICON_DP = 82f
 const val DESKTOP_QUICK_CARD_EXPANDED_ICON_DP = 76f
 const val DESKTOP_QUICK_CARD_LEFT_SLIDING_DOOR = "wjx_auto_door_left"
 const val DESKTOP_QUICK_CARD_RIGHT_SLIDING_DOOR = "wjx_auto_door_right"
+const val DESKTOP_QUICK_CARD_REALTIME_HAILING = "wjx_realtime_hailing"
 const val DESKTOP_QUICK_CARD_ICON_TOOLBOX = "builtin_toolbox"
 const val DESKTOP_QUICK_CARD_ICON_SMILE = "builtin_smile"
 
@@ -41,6 +42,7 @@ object DesktopQuickCardIconCatalog {
 enum class DesktopQuickCardCommandKind {
     AUTOMATION,
     AUTO_DOOR,
+    REALTIME_HAILING,
 }
 
 data class DesktopQuickCardCommand(
@@ -71,6 +73,14 @@ object DesktopQuickCardCommandCatalog {
                 category = "电滑门",
                 kind = DesktopQuickCardCommandKind.AUTO_DOOR,
                 payload = "slide_l",
+            ),
+        )
+        add(
+            DesktopQuickCardCommand(
+                command = DESKTOP_QUICK_CARD_REALTIME_HAILING,
+                label = "实时喊话",
+                category = "实时喊话",
+                kind = DesktopQuickCardCommandKind.REALTIME_HAILING,
             ),
         )
         add(

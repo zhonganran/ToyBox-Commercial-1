@@ -89,6 +89,26 @@ internal fun MediaVolumeActionControls(
 }
 
 @Composable
+internal fun InsideSoundActionControls(
+    action: ActionDef,
+    onUpdate: (ActionDef) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val sounds = remember { SoundLibrary(context.applicationContext).listSounds() }
+    SoundLibraryActionControls(
+        sounds = sounds,
+        selectedPath = action.insideSoundPath(),
+        fallbackName = action.insideSoundName(),
+        label = stringResource(R.string.automation_action_inside_sound_label),
+        loop = action.insideSoundLoop(),
+        onSoundSelected = { onUpdate(action.withInsideSound(it)) },
+        onLoopChanged = { onUpdate(action.withInsideSoundLoop(it)) },
+        modifier = modifier,
+    )
+}
+
+@Composable
 internal fun OutsideSoundActionControls(
     action: ActionDef,
     onUpdate: (ActionDef) -> Unit,
@@ -96,13 +116,34 @@ internal fun OutsideSoundActionControls(
 ) {
     val context = LocalContext.current
     val sounds = remember { SoundLibrary(context.applicationContext).listSounds() }
-    val selectedPath = action.outsideSoundPath()
+    SoundLibraryActionControls(
+        sounds = sounds,
+        selectedPath = action.outsideSoundPath(),
+        fallbackName = action.outsideSoundName(),
+        label = stringResource(R.string.automation_action_outside_sound_label),
+        loop = action.outsideSoundLoop(),
+        onSoundSelected = { onUpdate(action.withOutsideSound(it)) },
+        onLoopChanged = { onUpdate(action.withOutsideSoundLoop(it)) },
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun SoundLibraryActionControls(
+    sounds: List<SoundLibrary.SoundItem>,
+    selectedPath: String,
+    fallbackName: String,
+    label: String,
+    loop: Boolean,
+    onSoundSelected: (SoundLibrary.SoundItem) -> Unit,
+    onLoopChanged: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val selected = sounds.firstOrNull { it.file.absolutePath == selectedPath }
     val selectedName = selected?.name
-        ?: action.outsideSoundName().takeIf(String::isNotBlank)
+        ?: fallbackName.takeIf(String::isNotBlank)
         ?: stringResource(R.string.automation_action_outside_sound_empty)
     val isMissing = selectedPath.isNotBlank() && selected == null
-    val loop = action.outsideSoundLoop()
     var expanded by remember { mutableStateOf(false) }
 
     Column(
@@ -117,7 +158,7 @@ internal fun OutsideSoundActionControls(
                 modifier = Modifier.size(16.dp)
             )
             Spacer(Modifier.width(6.dp))
-            Text(stringResource(R.string.automation_action_outside_sound_label), fontSize = 13.sp, color = TextMuted)
+            Text(label, fontSize = 13.sp, color = TextMuted)
             Spacer(Modifier.width(6.dp))
             Box(modifier = Modifier.weight(1f)) {
                 Text(
@@ -143,7 +184,7 @@ internal fun OutsideSoundActionControls(
                             text = { Text("${sound.name} · ${sound.sizeLabel}", fontSize = 13.sp) },
                             onClick = {
                                 expanded = false
-                                onUpdate(action.withOutsideSound(sound))
+                                onSoundSelected(sound)
                             }
                         )
                     }
@@ -162,7 +203,7 @@ internal fun OutsideSoundActionControls(
             Text("循环播放", color = TextSecondary, fontSize = 12.sp)
             Switch(
                 checked = loop,
-                onCheckedChange = { onUpdate(action.withOutsideSoundLoop(it)) },
+                onCheckedChange = onLoopChanged,
                 colors = bydSwitchColors(),
                 modifier = Modifier.size(width = 44.dp, height = 24.dp)
             )
@@ -248,4 +289,3 @@ internal fun AutomationMediaActionControls(
         }
     }
 }
-

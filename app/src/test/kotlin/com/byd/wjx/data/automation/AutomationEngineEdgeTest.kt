@@ -415,6 +415,35 @@ class AutomationEngineEdgeTest {
         }
     }
 
+    @Test fun `reenter stops looping inside sound owned by the previous exit phase`() = runBlocking {
+        val dispatcher = mockk<ActionDispatcher>(relaxed = true)
+        val exitSound = ActionDef(
+            command = "inside_sound",
+            displayName = "exit inside sound",
+            kind = "inside_sound",
+            payload = """{"path":"/tmp/sound.mp3","name":"sound","loop":true}""",
+        )
+        val r = rule(
+            id = 1,
+            triggers = listOf(paramTrigger("ExtTemp", ">", "23")),
+            exitActions = listOf(exitSound),
+        )
+        val engine = engineFor(listOf(r), mockk(relaxed = true), dispatcher)
+
+        engine.evaluate(diParsData(exteriorTemp = 25), null)
+        engine.evaluate(diParsData(exteriorTemp = 10), null)
+        engine.evaluate(diParsData(exteriorTemp = 10), null)
+        engine.evaluate(diParsData(exteriorTemp = 25), null)
+        engine.evaluate(diParsData(exteriorTemp = 25), null)
+
+        coVerify(timeout = 2_000, exactly = 1) {
+            dispatcher.dispatch(exitSound, any(), "automation:1:exit:0")
+        }
+        verify(exactly = 1) {
+            dispatcher.stopTransientMedia("inside_sound", "automation:1:exit:0")
+        }
+    }
+
     @Test fun `repeat interval executes only when due`() = runBlocking {
         val r = rule(
             id = 1,

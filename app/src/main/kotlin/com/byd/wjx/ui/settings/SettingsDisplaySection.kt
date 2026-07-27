@@ -41,6 +41,7 @@ import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.DirectionsCar
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.Refresh
@@ -126,6 +127,8 @@ import com.byd.wjx.R
 import com.byd.wjx.audio.ExteriorChannelMode
 import com.byd.wjx.audio.ExteriorHailingSettings
 import com.byd.wjx.audio.LockSoundEvent
+import com.byd.wjx.data.vehicle.HeadlightAvailability
+import com.byd.wjx.data.vehicle.HeadlightMode
 import com.byd.wjx.storage.SoundLibrary
 import com.byd.wjx.ui.components.AppLaunchPickerDialog
 import com.byd.wjx.ui.components.bydSwitchColors
@@ -190,6 +193,17 @@ internal fun DisplaySection(state: SettingsUiState, viewModel: SettingsViewModel
     var projectionLayout by remember {
         mutableStateOf(projectionSnapshot.layout)
     }
+    LaunchedEffect(Unit) {
+        viewModel.refreshHeadlightControl()
+    }
+    HeadlightControlSection(
+        availability = state.headlightAvailability,
+        mode = state.headlightMode,
+        loading = state.headlightLoading,
+        message = state.headlightMessage,
+        onRefresh = viewModel::refreshHeadlightControl,
+        onModeSelected = viewModel::setHeadlightMode,
+    )
     SectionHeader(text = "车外音效")
     Card(
         shape = RoundedCornerShape(12.dp),
@@ -559,5 +573,78 @@ internal fun DisplaySection(state: SettingsUiState, viewModel: SettingsViewModel
             fontSize = 12.sp,
             modifier = Modifier.padding(top = 8.dp),
         )
+    }
+}
+
+@Composable
+private fun HeadlightControlSection(
+    availability: HeadlightAvailability,
+    mode: HeadlightMode?,
+    loading: Boolean,
+    message: String,
+    onRefresh: () -> Unit,
+    onModeSelected: (HeadlightMode) -> Unit,
+) {
+    val controlsEnabled = availability == HeadlightAvailability.SUPPORTED && !loading
+    SectionHeader(text = "灯光控制")
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = CardSurfaceElevated),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.LightMode,
+                    contentDescription = null,
+                    tint = SceneAmber,
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("前照灯模式", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    Text(
+                        text = message,
+                        color = if (availability == HeadlightAvailability.UNAVAILABLE) SocRed else TextSecondary,
+                        fontSize = 12.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                IconButton(onClick = onRefresh, enabled = !loading) {
+                    if (loading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = AccentGreen,
+                        )
+                    } else {
+                        Icon(Icons.Outlined.Refresh, contentDescription = "刷新灯光状态", tint = AccentGreen)
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                HeadlightMode.entries.forEach { option ->
+                    Box(modifier = Modifier.weight(1f)) {
+                        UnitChip(
+                            label = option.label,
+                            selected = mode == option,
+                            enabled = controlsEnabled,
+                            onClick = { onModeSelected(option) },
+                        )
+                    }
+                }
+            }
+        }
     }
 }

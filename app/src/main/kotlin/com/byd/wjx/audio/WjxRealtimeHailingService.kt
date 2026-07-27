@@ -321,14 +321,21 @@ class WjxRealtimeHailingService : Service() {
         )
         @Volatile private var serviceActive = false
 
+        fun isActive(): Boolean = serviceActive
+
         fun start(context: Context, channel: ExteriorChannel) {
             serviceActive = true
-            ContextCompat.startForegroundService(
-                context.applicationContext,
-                Intent(context.applicationContext, WjxRealtimeHailingService::class.java)
-                    .setAction(ACTION_START)
-                    .putExtra(EXTRA_CHANNEL, channel.name)
-            )
+            try {
+                ContextCompat.startForegroundService(
+                    context.applicationContext,
+                    Intent(context.applicationContext, WjxRealtimeHailingService::class.java)
+                        .setAction(ACTION_START)
+                        .putExtra(EXTRA_CHANNEL, channel.name)
+                )
+            } catch (error: RuntimeException) {
+                serviceActive = false
+                throw error
+            }
         }
 
         fun stop(context: Context, notifyIfIdle: Boolean = false): Boolean {

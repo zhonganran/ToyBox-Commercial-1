@@ -61,7 +61,20 @@ class NativeParsReader @Inject constructor(
     override suspend fun readPowertrainTelemetry(): DiParsData? =
         fetchPlan(PowertrainTelemetryReadPlan, VehicleSnapshotKind.ACTION)?.data
 
+    override suspend fun readPowertrainTelemetry(fields: Set<String>): DiParsData? {
+        val selectedFields = fields.intersect(VehicleReadProfiles.powertrainTelemetryFields)
+        if (selectedFields.isEmpty()) return null
+        val normalizedFields = buildSet {
+            addAll(selectedFields)
+            if ("frontMotorSpeed" in selectedFields || "rearMotorSpeed" in selectedFields) {
+                add("gear")
+            }
+        }
+        return fetchPlan(instrumentPlan(normalizedFields), VehicleSnapshotKind.ACTION)?.data
+    }
+
     @Volatile private var cachedActionSelection = ActionSelection(emptySet(), ReadPlan(emptyList()))
+    @Volatile private var cachedInstrumentSelection = ActionSelection(emptySet(), ReadPlan(emptyList()))
     private val fullReadMutex = Mutex()
     private val fullRawCache = HashMap<VehicleReadSpec, com.byd.wjx.data.vehicle.VehicleRawRead>()
     private var fullCacheInitialized = false
@@ -144,6 +157,18 @@ class NativeParsReader @Inject constructor(
         WjxFileLogger.i(
             TAG,
             "action batch selected count=${entries.size} fields=${entries.joinToString(",") { it.field }}",
+        )
+        return plan
+    }
+
+    private fun instrumentPlan(fields: Set<String>): ReadPlan {
+        cachedInstrumentSelection.takeIf { it.fields == fields }?.let { return it.plan }
+        val entries = FidMap.entries.filter { it.field in fields }
+        val plan = ReadPlan(entries)
+        cachedInstrumentSelection = ActionSelection(fields.toSet(), plan)
+        WjxFileLogger.i(
+            TAG,
+            "instrument batch selected count=${entries.size} fields=${entries.joinToString(",") { it.field }}",
         )
         return plan
     }

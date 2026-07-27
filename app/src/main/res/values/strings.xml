@@ -233,6 +233,8 @@
     <string name="automation_action_navigate">高德地图路线</string>
     <string name="automation_action_url">打开链接</string>
     <string name="automation_action_delay">延迟</string>
+    <string name="automation_action_inside_sound">车内播放音效</string>
+    <string name="automation_action_stop_inside_sound">停止车内音效</string>
     <string name="automation_action_outside_sound">车外播放音效</string>
     <string name="automation_action_stop_outside_sound">停止车外音效</string>
     <string name="automation_action_go_home">返回桌面</string>
@@ -242,6 +244,7 @@
     <string name="automation_action_play_video">播放视频</string>
     <string name="automation_action_stop_video">结束视频播放</string>
     <string name="automation_action_sentry_mode">哨兵模式</string>
+    <string name="automation_action_inside_sound_label">车内音效</string>
     <string name="automation_action_outside_sound_label">车外音效</string>
     <string name="automation_action_outside_sound_empty">未选择音效</string>
     <string name="automation_action_auto_door">自动滑门</string>

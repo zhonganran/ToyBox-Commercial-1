@@ -224,6 +224,7 @@ fun main(args: Array<String>) {
     // Keyed by displayId so TX_RELEASE_VIRTUAL_DISPLAY can release the right one.
     val virtualDisplays = ConcurrentHashMap<Int, VirtualDisplay>()
     val lockSoundRuntime = WjxLockSoundRuntime(svc, autoIface, systemContext)
+    val headlightClient = BydHeadlightBinderClient(systemContext)
 
     // Step 3: build our stub Binder.
     val helperBinder = object : Binder() {
@@ -432,6 +433,28 @@ fun main(args: Array<String>) {
                     true
                 }
 
+                HelperBinderProtocol.TX_HEADLIGHT_QUERY_SUPPORT -> runCatching {
+                    val result = headlightClient.querySupport()
+                    reply?.writeInt(result.transportStatus)
+                    reply?.writeInt(result.serviceCode)
+                    reply?.writeInt(result.value)
+                    true
+                }.getOrElse {
+                    helperLog("HeadlightBinder", "support transaction failed: ${throwableSummary(it)}")
+                    reply?.writeInt(-1); reply?.writeInt(-1); reply?.writeInt(-1); true
+                }
+
+                HelperBinderProtocol.TX_HEADLIGHT_GET_MODE -> runCatching {
+                    val result = headlightClient.getMode()
+                    reply?.writeInt(result.transportStatus)
+                    reply?.writeInt(result.serviceCode)
+                    reply?.writeInt(result.value)
+                    true
+                }.getOrElse {
+                    helperLog("HeadlightBinder", "get transaction failed: ${throwableSummary(it)}")
+                    reply?.writeInt(-1); reply?.writeInt(-1); reply?.writeInt(-1); true
+                }
+
                 HelperBinderProtocol.TX_SYNC_LOCK_SOUND_CONFIG -> runCatching {
                     val json = data.readString().orEmpty()
                     val ok = lockSoundRuntime.syncConfig(json)
@@ -474,6 +497,17 @@ fun main(args: Array<String>) {
                 }.getOrElse {
                     helperLog("LockSound", "sentry event failed: ${it.javaClass.simpleName}:${it.message.orEmpty()}")
                     reply?.writeInt(-1); reply?.writeInt(0); true
+                }
+
+                HelperBinderProtocol.TX_HEADLIGHT_SET_MODE -> runCatching {
+                    val result = headlightClient.setMode(data.readInt())
+                    reply?.writeInt(result.transportStatus)
+                    reply?.writeInt(result.serviceCode)
+                    reply?.writeInt(result.value)
+                    true
+                }.getOrElse {
+                    helperLog("HeadlightBinder", "set transaction failed: ${throwableSummary(it)}")
+                    reply?.writeInt(-1); reply?.writeInt(-1); reply?.writeInt(-1); true
                 }
 
                 HelperBinderProtocol.TX_SET_LOCK_SOUND_PLAYBACK_STATE -> runCatching {

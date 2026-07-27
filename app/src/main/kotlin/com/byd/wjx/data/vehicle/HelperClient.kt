@@ -24,6 +24,28 @@ data class HelperShellResult(
     val ok: Boolean get() = status == 0 && exitCode == 0
 }
 
+enum class HeadlightMode(val serviceValue: Int, val label: String) {
+    OFF(16, "关闭"),
+    AUTO(2, "自动"),
+    LOW_BEAM(4, "近光"),
+    HIGH_BEAM(8, "远光");
+
+    companion object {
+        fun fromServiceValue(value: Int): HeadlightMode? = entries.firstOrNull {
+            it.serviceValue == value
+        }
+    }
+}
+
+data class HelperHeadlightReply(
+    val transportStatus: Int,
+    val serviceCode: Int,
+    val value: Int,
+) {
+    val transportOk: Boolean get() = transportStatus == 0
+    val serviceOk: Boolean get() = serviceCode == 0
+}
+
 /**
  * Client for the in-vehicle helper daemon registered as the `wjx_helper`
  * binder service (ServiceManager.getService + IBinder.transact).
@@ -92,6 +114,12 @@ interface HelperClient {
     suspend fun execShellResult(command: String): HelperShellResult? = null
     /** Generic helper-side shell execution. Keep call sites narrow and logged. */
     suspend fun execShell(command: String): String? = null
+    /** Checks BYD's official external-light capability bit for headlight mode control. */
+    suspend fun queryHeadlightSupport(): HelperHeadlightReply? = null
+    /** Reads the current mode from BYD's official external-light service. */
+    suspend fun getHeadlightMode(): HelperHeadlightReply? = null
+    /** Sets one official mode and returns the actual mode read back by the helper. */
+    suspend fun setHeadlightMode(mode: HeadlightMode): HelperHeadlightReply? = null
     /** Applies BYD's privileged lock-sound playback route state in the helper process. */
     suspend fun setLockSoundPlaybackState(enabled: Boolean): Boolean = false
 }
@@ -298,10 +326,37 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
     override suspend fun execShell(command: String): String? =
         execShellResult(command)?.takeIf { it.status == 0 }?.output
 
+    override suspend fun queryHeadlightSupport(): HelperHeadlightReply? =
+        transactHeadlight(HelperBinderProtocol.TX_HEADLIGHT_QUERY_SUPPORT) { }
+
+    override suspend fun getHeadlightMode(): HelperHeadlightReply? =
+        transactHeadlight(HelperBinderProtocol.TX_HEADLIGHT_GET_MODE) { }
+
+    override suspend fun setHeadlightMode(mode: HeadlightMode): HelperHeadlightReply? =
+        transactHeadlight(HelperBinderProtocol.TX_HEADLIGHT_SET_MODE) { data ->
+            data.writeInt(mode.serviceValue)
+        }
+
     override suspend fun setLockSoundPlaybackState(enabled: Boolean): Boolean =
         statusOk(HelperBinderProtocol.TX_SET_LOCK_SOUND_PLAYBACK_STATE) { data ->
             data.writeInt(if (enabled) 1 else 0)
         }
+
+    private suspend fun transactHeadlight(
+        code: Int,
+        writeArgs: (Parcel) -> Unit,
+    ): HelperHeadlightReply? = transactParsed(
+        code = code,
+        writeArgs = writeArgs,
+        timeoutMs = HEADLIGHT_TIMEOUT_MS,
+    ) { reply ->
+        if (reply.dataAvail() < 12) return@transactParsed null
+        HelperHeadlightReply(
+            transportStatus = reply.readInt(),
+            serviceCode = reply.readInt(),
+            value = reply.readInt(),
+        )
+    }
 
     /** (status,value) reply; true iff status == 0. Shared by the boolean projection ops. */
     private suspend fun statusOk(
@@ -414,6 +469,7 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
         private const val BATCH_TIMEOUT_PER_READ_MS = 50L
         private const val BATCH_TIMEOUT_MAX_MS = 15000L
         private const val FORCE_TIMEOUT_MS = 15000L
+        private const val HEADLIGHT_TIMEOUT_MS = 8000L
         private const val DEV_SHELL_TIMEOUT_MS = 620000L
     }
 }

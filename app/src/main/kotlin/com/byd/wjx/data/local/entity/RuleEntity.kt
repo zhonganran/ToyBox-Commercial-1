@@ -80,7 +80,7 @@ data class TriggerDef(
 data class ActionDef(
     val command: String,
     val displayName: String,
-    val kind: String = "param",    // "param" | "notification_silent" | "notification_sound" | "app_launch" | "call" | "navigate" | "url" | "outside_sound" | "auto_door"
+    val kind: String = "param",    // "param" | "notification_silent" | "notification_sound" | "app_launch" | "call" | "navigate" | "url" | "inside_sound" | "outside_sound" | "auto_door"
     val payload: String? = null    // JSON string with kind-specific params (null for kind="param")
 ) {
     fun toJson(): JSONObject = JSONObject().apply {

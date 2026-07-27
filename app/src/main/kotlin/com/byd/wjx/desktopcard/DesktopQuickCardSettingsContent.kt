@@ -136,7 +136,7 @@ fun DesktopQuickCardSettingsContent(
 
     DesktopQuickCardItemSection(
         title = "车辆控制",
-        subtitle = "点击卡片时复用智能联动的安全控制链路",
+        subtitle = "车辆控制复用安全写入链路，实时喊话复用现有麦克风与车外通道",
         count = state.config.functionCommands.size,
         onAdd = { showCommandPicker = true },
     ) {

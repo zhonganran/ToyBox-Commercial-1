@@ -117,6 +117,8 @@ class ActionDispatcher @Inject constructor(
             "url" -> openUrl(action)
             "delay" -> dispatchDelay(action)
             "media_volume" -> setMediaVolume(action)
+            "inside_sound" -> playInsideSound(action, owner)
+            "stop_inside_sound" -> stopAllInsideSound()
             "outside_sound" -> playOutsideSound(action, data, owner)
             "stop_outside_sound" -> stopAllOutsideSound()
             "auto_door" -> controlAutoDoor(action)
@@ -173,6 +175,45 @@ class ActionDispatcher @Inject constructor(
         return DispatchResult(true)
     }
 
+    private suspend fun playInsideSound(action: ActionDef, owner: String?): DispatchResult {
+        val payload = parsePayload(action.payload) ?: return DispatchResult(false, "未设置车内音效")
+        val source = payload.optString("path").trim()
+        if (source.isBlank()) return DispatchResult(false, "未选择车内音效")
+        if (!canReadMediaSource(source)) return DispatchResult(false, "车内音效文件不存在或无法读取")
+        val loop = payload.optBoolean("loop", false)
+        val file = File(source)
+        val audio = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        val streamVolume = audio?.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val streamMax = audio?.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        WjxFileLogger.i(
+            TAG,
+            "inside sound request source=${source.takeLast(100)} size=${file.takeIf { it.isFile }?.length()} " +
+                "loop=$loop owner=${owner.orEmpty()} streamVolume=$streamVolume/$streamMax",
+        )
+        AutomationVideoActivity.stop(context)
+        kotlinx.coroutines.delay(MEDIA_REPLACEMENT_GUARD_MS)
+        val started = AutomationMusicService.play(
+            context = context,
+            source = source,
+            volume = 0,
+            loop = loop,
+            owner = owner,
+            adjustStreamVolume = false,
+        )
+        return if (started) {
+            DispatchResult(true, "车内音效播放请求已提交")
+        } else {
+            DispatchResult(false, "车内音效播放服务启动失败")
+        }
+    }
+
+    private fun stopAllInsideSound(): DispatchResult {
+        WjxFileLogger.i(TAG, "stop all inside sound from automation")
+        AutomationMediaRegistry.musicOwner = null
+        AutomationMusicService.stop(context)
+        return DispatchResult(true)
+    }
+
     private suspend fun playMusic(action: ActionDef, owner: String?): DispatchResult {
         val payload = parsePayload(action.payload) ?: return DispatchResult(false, "未设置音乐")
         val source = payload.optString("path").trim()
@@ -210,7 +251,7 @@ class ActionDispatcher @Inject constructor(
 
     fun stopTransientMedia(kind: String, owner: String) {
         when (kind) {
-            "play_music" -> AutomationMusicService.stop(context, owner)
+            "inside_sound", "play_music" -> AutomationMusicService.stop(context, owner)
             "play_video" -> AutomationVideoActivity.stop(context, owner)
         }
     }

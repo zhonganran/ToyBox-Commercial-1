@@ -1,9 +1,11 @@
 package com.byd.wjx.desktopcard
 
+import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.graphics.PixelFormat
 import android.graphics.Point
 import android.os.Handler
@@ -23,6 +25,7 @@ import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.byd.wjx.audio.ExteriorHailingSettings
 import com.byd.wjx.audio.WjxOutsidePlayService
+import com.byd.wjx.audio.WjxRealtimeHailingService
 import com.byd.wjx.data.automation.ActionDispatcher
 import com.byd.wjx.data.local.entity.ActionDef
 import com.byd.wjx.data.repository.VehicleStateRepository
@@ -65,6 +68,8 @@ class DesktopQuickCardController @Inject constructor(
     private var layoutParams: WindowManager.LayoutParams? = null
     private var commandSequence = 0L
     private var receiverRegistered = false
+    private var hailingReceiverRegistered = false
+    private var hailingStartedByCard = false
     private var dragStartRawX = 0f
     private var dragStartRawY = 0f
     private var dragStartWindowX = 0
@@ -92,6 +97,43 @@ class DesktopQuickCardController @Inject constructor(
         }
     }
 
+    private val hailingReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != WjxRealtimeHailingService.ACTION_HAILING_STATE) return
+            val state = intent.getStringExtra(WjxRealtimeHailingService.EXTRA_STATE).orEmpty()
+            val message = intent.getStringExtra(WjxRealtimeHailingService.EXTRA_MESSAGE).orEmpty()
+            WjxFileLogger.i(TAG, "hailing state=$state message=$message")
+            when (state) {
+                WjxRealtimeHailingService.STATE_STARTED -> renderState.update {
+                    it.copy(
+                        realtimeHailingRunning = true,
+                        realtimeHailingBusy = false,
+                        activeSoundPath = null,
+                    )
+                }
+
+                WjxRealtimeHailingService.STATE_STOPPED,
+                WjxRealtimeHailingService.STATE_ERROR,
+                -> {
+                    hailingStartedByCard = false
+                    renderState.update {
+                        it.copy(
+                            realtimeHailingRunning = false,
+                            realtimeHailingBusy = false,
+                        )
+                    }
+                    if (state == WjxRealtimeHailingService.STATE_ERROR) {
+                        Toast.makeText(
+                            appContext,
+                            message.ifBlank { "实时喊话启动失败" },
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                }
+            }
+        }
+    }
+
     fun start(scope: CoroutineScope) {
         if (this.scope != null) return
         this.scope = scope
@@ -102,6 +144,16 @@ class DesktopQuickCardController @Inject constructor(
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         receiverRegistered = true
+        ContextCompat.registerReceiver(
+            appContext,
+            hailingReceiver,
+            IntentFilter(WjxRealtimeHailingService.ACTION_HAILING_STATE),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        hailingReceiverRegistered = true
+        renderState.update {
+            it.copy(realtimeHailingRunning = WjxRealtimeHailingService.isActive())
+        }
     }
 
     fun render(config: DesktopQuickCardConfig, theme: ThemeMode) {
@@ -110,6 +162,16 @@ class DesktopQuickCardController @Inject constructor(
             if (shouldStopDesktopQuickCardSound(previous.activeSoundPath, config.soundPaths, config.enabled)) {
                 WjxFileLogger.i(TAG, "stopping removed/disabled sound path=${previous.activeSoundPath}")
                 WjxOutsidePlayService.stop(appContext, owner = OWNER)
+            }
+            if (
+                hailingStartedByCard &&
+                (!config.enabled || DESKTOP_QUICK_CARD_REALTIME_HAILING !in config.functionCommands)
+            ) {
+                WjxFileLogger.i(TAG, "stopping removed/disabled realtime hailing")
+                renderState.update { it.copy(realtimeHailingBusy = true) }
+                if (requestRealtimeHailingStop(notifyIfIdle = true, showFailure = true)) {
+                    hailingStartedByCard = false
+                }
             }
             renderState.update {
                 it.copy(
@@ -138,16 +200,29 @@ class DesktopQuickCardController @Inject constructor(
         if (renderState.value.activeSoundPath != null) {
             WjxOutsidePlayService.stop(appContext, owner = OWNER)
         }
+        if (hailingStartedByCard && WjxRealtimeHailingService.isActive()) {
+            runCatching { WjxRealtimeHailingService.stop(appContext, notifyIfIdle = false) }
+                .onFailure { error ->
+                    WjxFileLogger.e(TAG, "realtime hailing cleanup failed: ${error.message}", error)
+                }
+        }
+        hailingStartedByCard = false
         renderState.update {
             it.copy(
                 expanded = false,
                 activeCommand = null,
                 activeSoundPath = null,
+                realtimeHailingRunning = false,
+                realtimeHailingBusy = false,
             )
         }
         if (receiverRegistered) {
             runCatching { appContext.unregisterReceiver(playbackReceiver) }
             receiverRegistered = false
+        }
+        if (hailingReceiverRegistered) {
+            runCatching { appContext.unregisterReceiver(hailingReceiver) }
+            hailingReceiverRegistered = false
         }
         mainHandler.post { removeView() }
         scope = null
@@ -257,6 +332,10 @@ class DesktopQuickCardController @Inject constructor(
     private fun executeCommand(command: String) {
         val worker = scope ?: return
         val item = DesktopQuickCardCommandCatalog.byCommand[command] ?: return
+        if (item.kind == DesktopQuickCardCommandKind.REALTIME_HAILING) {
+            toggleRealtimeHailing()
+            return
+        }
         val token = ++commandSequence
         renderState.update { it.copy(activeCommand = command) }
         WjxFileLogger.i(TAG, "command start command=$command label=${item.label}")
@@ -277,6 +356,8 @@ class DesktopQuickCardController @Inject constructor(
                     CommandExecutionResult(doorResult.success, doorResult.message)
                 }
 
+                DesktopQuickCardCommandKind.REALTIME_HAILING -> error("handled before command dispatch")
+
             }
             if (result.success) {
                 WjxFileLogger.i(TAG, "command success command=$command")
@@ -296,6 +377,60 @@ class DesktopQuickCardController @Inject constructor(
             }
         }
     }
+
+    private fun toggleRealtimeHailing() {
+        if (renderState.value.realtimeHailingBusy) return
+        if (renderState.value.realtimeHailingRunning || WjxRealtimeHailingService.isActive()) {
+            WjxFileLogger.i(TAG, "realtime hailing stop requested")
+            renderState.update { it.copy(realtimeHailingBusy = true) }
+            requestRealtimeHailingStop(notifyIfIdle = true, showFailure = true)
+            return
+        }
+        if (
+            ContextCompat.checkSelfPermission(appContext, Manifest.permission.RECORD_AUDIO) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            Toast.makeText(appContext, "请先在应用设置中允许麦克风权限", Toast.LENGTH_SHORT).show()
+            WjxFileLogger.w(TAG, "realtime hailing blocked: RECORD_AUDIO denied")
+            return
+        }
+
+        val channel = exteriorSettings.effectiveChannel(carProfileDetector.detect())
+        WjxFileLogger.i(TAG, "realtime hailing start requested channel=$channel")
+        WjxOutsidePlayService.stop(appContext)
+        renderState.update {
+            it.copy(
+                realtimeHailingBusy = true,
+                activeSoundPath = null,
+            )
+        }
+        hailingStartedByCard = true
+        runCatching { WjxRealtimeHailingService.start(appContext, channel) }
+            .onFailure { error ->
+                hailingStartedByCard = false
+                renderState.update {
+                    it.copy(realtimeHailingRunning = false, realtimeHailingBusy = false)
+                }
+                WjxFileLogger.e(TAG, "realtime hailing start failed: ${error.message}", error)
+                Toast.makeText(appContext, "实时喊话启动失败", Toast.LENGTH_SHORT).show()
+            }
+    }
+
+    private fun requestRealtimeHailingStop(notifyIfIdle: Boolean, showFailure: Boolean): Boolean =
+        runCatching {
+            WjxRealtimeHailingService.stop(appContext, notifyIfIdle)
+        }.onFailure { error ->
+            renderState.update {
+                it.copy(
+                    realtimeHailingRunning = WjxRealtimeHailingService.isActive(),
+                    realtimeHailingBusy = false,
+                )
+            }
+            WjxFileLogger.e(TAG, "realtime hailing stop failed: ${error.message}", error)
+            if (showFailure) {
+                Toast.makeText(appContext, "实时喊话停止失败，请重试", Toast.LENGTH_SHORT).show()
+            }
+        }.isSuccess
 
     private fun expandCard() {
         if (renderState.value.expanded) return

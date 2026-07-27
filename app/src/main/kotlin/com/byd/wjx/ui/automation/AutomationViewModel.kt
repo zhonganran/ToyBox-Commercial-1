@@ -11,6 +11,7 @@ import com.byd.wjx.data.local.dao.RuleLogDao
 import com.byd.wjx.data.local.entity.ActionDef
 import com.byd.wjx.data.local.entity.RuleEntity
 import com.byd.wjx.data.local.entity.TriggerDef
+import com.byd.wjx.data.automation.ActionDispatcher
 import com.byd.wjx.data.repository.PlaceRepository
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.data.vehicle.VehicleApi
@@ -31,6 +32,7 @@ class AutomationViewModel @Inject constructor(
     private val placeRepository: PlaceRepository,
     private val settingsRepository: SettingsRepository,
     private val vehicleApi: VehicleApi,
+    private val actionDispatcher: ActionDispatcher,
     private val activationManager: ActivationManager,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
@@ -83,14 +85,26 @@ class AutomationViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Execute one vehicle command immediately for live testing from the rule editor.
-     */
-    fun executeNow(command: String) {
+    /** Executes the exact editor action so media tests include their selected file and options. */
+    fun executeNow(action: ActionDef) {
         viewModelScope.launch {
-            val result = vehicleApi.dispatch(command)
-            val msg = if (result.isSuccess) "已发送"
-                      else "错误：${result.exceptionOrNull()?.message ?: "不可用"}"
+            val msg = if (action.kind == "param") {
+                val result = vehicleApi.dispatch(action.command)
+                if (result.isSuccess) "已发送"
+                else "错误：${result.exceptionOrNull()?.message ?: "不可用"}"
+            } else {
+                val result = actionDispatcher.dispatch(
+                    action = action,
+                    data = null,
+                    owner = "automation:preview",
+                )
+                if (result.success) result.reason ?: "已执行"
+                else "错误：${result.reason ?: "不可用"}"
+            }
+            WjxFileLogger.i(
+                "AutomationViewModel",
+                "test action kind=${action.kind} command=${action.command} result=$msg",
+            )
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
         }
     }
@@ -189,6 +203,9 @@ class AutomationViewModel @Inject constructor(
                 "outside_sound" -> {
                     if (a.outsideSoundPath().isBlank()) return "动作 #$n：未选择车外音效"
                 }
+                "inside_sound" -> {
+                    if (a.insideSoundPath().isBlank()) return "动作 #$n：未选择车内音效"
+                }
                 "play_music" -> {
                     if (a.automationMediaPath().isBlank()) return "动作 #$n：未选择音乐"
                 }
@@ -243,8 +260,18 @@ class AutomationViewModel @Inject constructor(
                 return@launch
             }
             val entity = e.toRuleEntity(existing)
-            if (e.isNew) ruleDao.insert(entity)
-            else ruleDao.update(entity)
+            val savedId = if (e.isNew) {
+                ruleDao.insert(entity)
+            } else {
+                ruleDao.update(entity)
+                entity.id
+            }
+            WjxFileLogger.i(
+                "AutomationViewModel",
+                "rule saved id=$savedId name='${entity.name}' enabled=${entity.enabled} " +
+                    "enterActions=${e.actions.joinToString { it.kind }} exitActions=${e.exitActions.joinToString { it.kind }}",
+            )
+            Toast.makeText(context, "智能联动已保存", Toast.LENGTH_SHORT).show()
             closeEditor()
         }
     }

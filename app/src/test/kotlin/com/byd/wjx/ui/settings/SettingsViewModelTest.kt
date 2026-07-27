@@ -20,6 +20,11 @@ import com.byd.wjx.data.local.entity.TripPointEntity
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.data.repository.TripRepository
 import com.byd.wjx.data.settings.ServiceQrCache
+import com.byd.wjx.data.vehicle.HeadlightController
+import com.byd.wjx.data.vehicle.HeadlightAvailability
+import com.byd.wjx.data.vehicle.HeadlightControlResult
+import com.byd.wjx.data.vehicle.HeadlightControlSnapshot
+import com.byd.wjx.data.vehicle.HeadlightMode
 import com.byd.wjx.service.UpdateChecker
 import com.byd.wjx.vehicle.MiniappBindingCode
 import com.byd.wjx.vehicle.MiniappBindingCodeManager
@@ -138,6 +143,7 @@ class SettingsViewModelTest {
         settingsDao: FakeSettingsDao = FakeSettingsDao(),
         logUploader: SettingsLogUploader = mockk(relaxed = true),
         miniappBindingCodeManager: MiniappBindingCodeManager = mockk(relaxed = true),
+        headlightController: HeadlightController = mockk(relaxed = true),
     ): SettingsViewModel {
         val ctx: Context = ApplicationProvider.getApplicationContext()
 
@@ -173,6 +179,7 @@ class SettingsViewModelTest {
             serviceQrCache = ServiceQrCache(ctx),
             logUploader = logUploader,
             miniappBindingCodeManager = miniappBindingCodeManager,
+            headlightController = headlightController,
         )
     }
 
@@ -184,6 +191,49 @@ class SettingsViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(SettingsRepository.DEFAULT_BATTERY_CAPACITY, vm.uiState.value.batteryCapacity)
+    }
+
+    @Test
+    fun `headlight refresh exposes supported mode and message`() = runTest {
+        val controller = mockk<HeadlightController>()
+        coEvery { controller.refresh() } returns HeadlightControlSnapshot(
+            availability = HeadlightAvailability.SUPPORTED,
+            mode = HeadlightMode.AUTO,
+            message = "当前模式：自动",
+        )
+        val vm = buildViewModel(headlightController = controller)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        vm.refreshHeadlightControl()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(HeadlightAvailability.SUPPORTED, vm.uiState.value.headlightAvailability)
+        assertEquals(HeadlightMode.AUTO, vm.uiState.value.headlightMode)
+        assertEquals("当前模式：自动", vm.uiState.value.headlightMessage)
+        assertEquals(false, vm.uiState.value.headlightLoading)
+        coVerify(exactly = 1) { controller.refresh() }
+    }
+
+    @Test
+    fun `headlight set keeps vehicle readback instead of requested mode`() = runTest {
+        val controller = mockk<HeadlightController>()
+        coEvery { controller.setMode(HeadlightMode.HIGH_BEAM) } returns HeadlightControlResult(
+            success = false,
+            snapshot = HeadlightControlSnapshot(
+                availability = HeadlightAvailability.SUPPORTED,
+                mode = HeadlightMode.AUTO,
+                message = "车辆未切换到远光，当前仍为自动",
+            ),
+        )
+        val vm = buildViewModel(headlightController = controller)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        vm.setHeadlightMode(HeadlightMode.HIGH_BEAM)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(HeadlightMode.AUTO, vm.uiState.value.headlightMode)
+        assertEquals("车辆未切换到远光，当前仍为自动", vm.uiState.value.headlightMessage)
+        assertEquals(false, vm.uiState.value.headlightLoading)
     }
 
     @Test

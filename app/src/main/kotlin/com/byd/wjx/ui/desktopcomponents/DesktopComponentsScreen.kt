@@ -21,9 +21,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.DirectionsCar
 import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.material.icons.outlined.ToggleOn
 import androidx.compose.material3.Icon
@@ -49,6 +51,8 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.byd.wjx.clustercard.ClusterCardSettingsContent
+import com.byd.wjx.clustercard.ClusterCardSettingsViewModel
 import com.byd.wjx.desktopcard.DesktopQuickCardSettingsContent
 import com.byd.wjx.desktopcard.DesktopQuickCardSettingsViewModel
 import com.byd.wjx.lyrics.LyricSettings
@@ -78,14 +82,22 @@ private enum class DesktopComponentPage(
         icon = Icons.Outlined.Apps,
         colors = listOf(Color(0xFF1A5960), Color(0xFF0C3138)),
     ),
+    ClusterCard(
+        label = "仪表卡片",
+        description = "自定义转速、温度与车辆数据",
+        icon = Icons.Outlined.Speed,
+        colors = listOf(Color(0xFF8A4B24), Color(0xFF183F58)),
+    ),
 }
 
 @Composable
 fun DesktopComponentsScreen(
     quickCardViewModel: DesktopQuickCardSettingsViewModel = hiltViewModel(),
+    clusterCardViewModel: ClusterCardSettingsViewModel = hiltViewModel(),
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val quickCardState by quickCardViewModel.uiState.collectAsStateWithLifecycle()
+    val clusterCardState by clusterCardViewModel.uiState.collectAsStateWithLifecycle()
     val lyricSettings = remember(context.applicationContext) { LyricSettings(context.applicationContext) }
     var selectedPage by rememberSaveable { mutableStateOf(DesktopComponentPage.Lyrics) }
     var lyricsEnabled by remember {
@@ -95,12 +107,14 @@ fun DesktopComponentsScreen(
     LifecycleResumeEffect(Unit) {
         lyricsEnabled = lyricSettings.desktopEnabled || lyricSettings.clusterEnabled
         quickCardViewModel.refresh()
+        clusterCardViewModel.refresh()
         onPauseOrDispose { }
     }
 
     val enabledMap = mapOf(
         DesktopComponentPage.Lyrics to lyricsEnabled,
         DesktopComponentPage.QuickCard to quickCardState.config.enabled,
+        DesktopComponentPage.ClusterCard to clusterCardState.config.enabled,
     )
 
     Column(
@@ -155,6 +169,15 @@ fun DesktopComponentsScreen(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 DesktopQuickCardSettingsContent(quickCardViewModel)
+            }
+
+            DesktopComponentPage.ClusterCard -> Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 58.dp, vertical = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                ClusterCardSettingsContent(clusterCardViewModel)
             }
 
         }
@@ -290,6 +313,7 @@ private fun DesktopComponentPreviewCard(
                 when (page) {
                     DesktopComponentPage.Lyrics -> CombinedLyricPreview(selected)
                     DesktopComponentPage.QuickCard -> QuickCardPreview(selected)
+                    DesktopComponentPage.ClusterCard -> ClusterCardPreview(selected)
                 }
             }
             Text(
@@ -330,6 +354,48 @@ private fun QuickCardPreview(selected: Boolean) {
         QuickCardGlassPreviewTile(Icons.Outlined.ToggleOn, "车辆控制", "已开启", AccentGreen, selected)
         QuickCardGlassPreviewTile(Icons.Outlined.DirectionsCar, "左右滑门", "点击控制", Color.White, selected)
         QuickCardGlassPreviewTile(Icons.Outlined.MusicNote, "车外音效", "点击播放", AccentOrange, selected)
+    }
+}
+
+@Composable
+private fun ClusterCardPreview(selected: Boolean) {
+    Column(
+        modifier = Modifier
+            .width(if (selected) 230.dp else 170.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xC80A151E))
+            .border(0.8.dp, Color(0x7893C5E0), RoundedCornerShape(10.dp))
+            .padding(if (selected) 12.dp else 9.dp),
+        verticalArrangement = Arrangement.spacedBy(if (selected) 8.dp else 5.dp),
+    ) {
+        repeat(2) {
+            Row(horizontalArrangement = Arrangement.spacedBy(if (selected) 8.dp else 5.dp)) {
+                repeat(2) {
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(if (selected) 38.dp else 28.dp)
+                            .background(Color.White.copy(alpha = 0.055f), RoundedCornerShape(6.dp)),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        Icon(
+                            Icons.Outlined.Add,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.62f),
+                            modifier = Modifier.size(if (selected) 17.dp else 13.dp),
+                        )
+                        Spacer(Modifier.width(3.dp))
+                        Text(
+                            "自定义",
+                            color = Color.White.copy(alpha = 0.72f),
+                            fontSize = if (selected) 9.sp else 7.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

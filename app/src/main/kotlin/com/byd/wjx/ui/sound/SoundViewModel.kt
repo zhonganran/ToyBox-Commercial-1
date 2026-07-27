@@ -24,10 +24,15 @@ import com.byd.wjx.data.sound.RemoteSoundCategory
 import com.byd.wjx.data.sound.SoundDownloadRecord
 import com.byd.wjx.data.sound.SoundDownloadStore
 import com.byd.wjx.data.sound.SoundLibraryRemoteRepository
+import com.byd.wjx.data.tts.VoxCpmDemoRepository
 import com.byd.wjx.storage.SoundLibrary
 import com.byd.wjx.vehicle.CarProfileDetector
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -65,11 +70,17 @@ data class SoundUiState(
     val realtimeVolumePercent: Int = ExteriorHailingSettings.DEFAULT_REALTIME_VOLUME_PERCENT,
     val realtimeMicGainPercent: Int = ExteriorHailingSettings.DEFAULT_REALTIME_MIC_GAIN_PERCENT,
     val realtimeNoiseSuppressionPercent: Int = ExteriorHailingSettings.DEFAULT_REALTIME_NOISE_SUPPRESSION_PERCENT,
+    val ttsText: String = "",
+    val ttsVoiceInstruction: String = SoundViewModel.DEFAULT_TTS_VOICE_INSTRUCTION,
+    val ttsGenerating: Boolean = false,
+    val ttsGeneratedPath: String? = null,
+    val ttsPreviewing: Boolean = false,
 )
 
 enum class SoundTab(val title: String) {
     Local("我的音效"),
     Online("在线音效库"),
+    AiVoice("AI语音"),
 }
 
 @HiltViewModel
@@ -79,6 +90,7 @@ class SoundViewModel @Inject constructor(
     private val remoteRepository: SoundLibraryRemoteRepository,
     private val downloadStore: SoundDownloadStore,
     private val lockSoundConfigSync: LockSoundConfigSync,
+    private val voxCpmDemoRepository: VoxCpmDemoRepository,
     private val profileDetector: CarProfileDetector = CarProfileDetector(),
 ) : ViewModel() {
     private val hailingSettings = ExteriorHailingSettings(appContext)
@@ -241,6 +253,195 @@ class SoundViewModel @Inject constructor(
         }
     }
 
+    fun updateTtsText(value: String) {
+        val next = value.take(VoxCpmDemoRepository.MAX_TEXT_LENGTH)
+        if (next == _uiState.value.ttsText) return
+        invalidateGeneratedTts()
+        _uiState.update { it.copy(ttsText = next) }
+    }
+
+    fun updateTtsVoiceInstruction(value: String) {
+        val next = value.take(VoxCpmDemoRepository.MAX_INSTRUCTION_LENGTH)
+        if (next == _uiState.value.ttsVoiceInstruction) return
+        invalidateGeneratedTts()
+        _uiState.update {
+            it.copy(ttsVoiceInstruction = next)
+        }
+    }
+
+    private fun invalidateGeneratedTts() {
+        val current = _uiState.value
+        val generatedPath = current.ttsGeneratedPath ?: return
+        previewSeq++
+        stopInCarPreview()
+        if (current.playingPath == generatedPath) WjxOutsidePlayService.stop(appContext)
+        _uiState.update {
+            it.copy(ttsGeneratedPath = null, ttsPreviewing = false, playingPath = null)
+        }
+    }
+
+    fun generateTts() {
+        val state = _uiState.value
+        if (state.ttsGenerating) return
+        val text = state.ttsText.trim()
+        if (text.isBlank()) {
+            _uiState.update { it.copy(message = "请输入需要合成的文字") }
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            previewSeq++
+            stopInCarPreview()
+            _uiState.update {
+                it.copy(
+                    ttsGenerating = true,
+                    ttsPreviewing = false,
+                    message = "正在等待 VoxCPM 公开演示服务生成",
+                )
+            }
+            runCatching {
+                voxCpmDemoRepository.generate(text, state.ttsVoiceInstruction)
+            }.onSuccess { file ->
+                _uiState.update {
+                    it.copy(
+                        ttsGenerating = false,
+                        ttsGeneratedPath = file.absolutePath,
+                        message = "AI语音生成完成 · ${SoundLibrary.formatSize(file.length())}",
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        ttsGenerating = false,
+                        message = error.message ?: "AI语音生成失败",
+                    )
+                }
+            }
+        }
+    }
+
+    fun previewGeneratedTts() {
+        val file = generatedTtsFile() ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            if (_uiState.value.ttsPreviewing) {
+                previewSeq++
+                stopInCarPreview()
+                _uiState.update {
+                    it.copy(ttsPreviewing = false, playingPath = null, message = "已停止 AI语音试听")
+                }
+                return@launch
+            }
+            val requestSeq = ++previewSeq
+            WjxOutsidePlayService.stop(appContext)
+            stopInCarPreview()
+            _uiState.update {
+                it.copy(
+                    ttsPreviewing = true,
+                    previewingRemoteId = null,
+                    playingPath = file.absolutePath,
+                    message = "正在车内试听 AI语音",
+                )
+            }
+            val player = MediaPlayer()
+            try {
+                player.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+                player.setDataSource(file.absolutePath)
+                player.setOnCompletionListener { completedPlayer ->
+                    releaseInCarPreview(completedPlayer)
+                    if (requestSeq == previewSeq) {
+                        _uiState.update {
+                            it.copy(ttsPreviewing = false, playingPath = null, message = "AI语音试听完成")
+                        }
+                    }
+                }
+                player.setOnErrorListener { errorPlayer, _, _ ->
+                    releaseInCarPreview(errorPlayer)
+                    if (requestSeq == previewSeq) {
+                        _uiState.update {
+                            it.copy(ttsPreviewing = false, playingPath = null, message = "AI语音试听失败")
+                        }
+                    }
+                    true
+                }
+                player.prepare()
+                previewPlayer = player
+                player.start()
+            } catch (error: Exception) {
+                releaseInCarPreview(player)
+                _uiState.update {
+                    it.copy(
+                        ttsPreviewing = false,
+                        playingPath = null,
+                        message = error.message ?: "AI语音试听失败",
+                    )
+                }
+            }
+        }
+    }
+
+    fun playGeneratedTtsOutside() {
+        val file = generatedTtsFile() ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            previewSeq++
+            stopInCarPreview()
+            val profile = profileDetector.detect()
+            val channel = hailingSettings.effectiveChannel(profile)
+            WjxOutsidePlayService.play(appContext, file, channel)
+            _uiState.update {
+                it.copy(
+                    ttsPreviewing = false,
+                    playingPath = file.absolutePath,
+                    previewingRemoteId = null,
+                    controllerLabel = profile.seriesLabel,
+                    channelLabel = hailingSettings.channelModeLabel(profile),
+                    channelMode = hailingSettings.channelMode,
+                    message = "正在准备车外播放 AI语音 · ${channel.shortLabel}",
+                )
+            }
+        }
+    }
+
+    fun saveGeneratedTts() {
+        val file = generatedTtsFile() ?: return
+        val sourceText = _uiState.value.ttsText.trim()
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val timestamp = SimpleDateFormat("MMdd-HHmmss", Locale.CHINA).format(Date())
+                val textLabel = sourceText.replace(Regex("\\s+"), " ").take(16).ifBlank { "AI语音" }
+                file.inputStream().use { input ->
+                    soundLibrary.saveSound(
+                        name = "AI语音-$textLabel-$timestamp",
+                        extension = file.extension.ifBlank { "mp3" },
+                        input = input,
+                    )
+                }
+            }.onSuccess { saved ->
+                _uiState.update {
+                    it.copy(
+                        sounds = soundLibrary.listSounds(),
+                        message = "已保存到 WJX 音效库：${saved.name}",
+                    )
+                }
+            }.onFailure { error ->
+                _uiState.update { it.copy(message = error.message ?: "AI语音保存失败") }
+            }
+        }
+    }
+
+    private fun generatedTtsFile(): File? {
+        val file = _uiState.value.ttsGeneratedPath?.let(::File)?.takeIf(File::isFile)
+        if (file == null) {
+            _uiState.update {
+                it.copy(ttsGeneratedPath = null, ttsPreviewing = false, message = "请先生成 AI语音")
+            }
+        }
+        return file
+    }
+
     fun updateRemoteQuery(query: String) {
         _uiState.update { it.copy(remoteQuery = query) }
     }
@@ -313,6 +514,7 @@ class SoundViewModel @Inject constructor(
                     it.copy(
                         previewingRemoteId = null,
                         playingPath = null,
+                        ttsPreviewing = false,
                         message = "已停止试听：${sound.name}",
                     )
                 }
@@ -322,6 +524,7 @@ class SoundViewModel @Inject constructor(
             _uiState.update {
                 it.copy(
                     previewLoadingIds = it.previewLoadingIds + sound.id,
+                    ttsPreviewing = false,
                     message = "正在加载试听：${sound.name}",
                 )
             }
@@ -338,6 +541,7 @@ class SoundViewModel @Inject constructor(
                         previewLoadingIds = it.previewLoadingIds - sound.id,
                         previewingRemoteId = sound.id,
                         playingPath = file.absolutePath,
+                        ttsPreviewing = false,
                         message = "正在试听：${sound.name}",
                     )
                 }
@@ -451,6 +655,7 @@ class SoundViewModel @Inject constructor(
                     it.copy(
                         playingPath = null,
                         previewingRemoteId = null,
+                        ttsPreviewing = false,
                         message = "已停止：${sound.name}",
                     )
                 }
@@ -463,6 +668,7 @@ class SoundViewModel @Inject constructor(
                 it.copy(
                     playingPath = soundPath,
                     previewingRemoteId = null,
+                    ttsPreviewing = false,
                     controllerLabel = profile.seriesLabel,
                     channelLabel = hailingSettings.channelModeLabel(profile),
                     channelMode = hailingSettings.channelMode,
@@ -496,6 +702,7 @@ class SoundViewModel @Inject constructor(
                     channelMode = hailingSettings.channelMode,
                     playingPath = null,
                     previewingRemoteId = null,
+                    ttsPreviewing = false,
                     message = "正在准备实时喊话：${channel.shortLabel}",
                 )
             }
@@ -596,7 +803,14 @@ class SoundViewModel @Inject constructor(
         previewSeq++
         stopInCarPreview()
         WjxOutsidePlayService.stop(appContext)
-        _uiState.update { it.copy(playingPath = null, previewingRemoteId = null, message = "已停止车外播放") }
+        _uiState.update {
+            it.copy(
+                playingPath = null,
+                previewingRemoteId = null,
+                ttsPreviewing = false,
+                message = "已停止车外播放",
+            )
+        }
     }
 
     fun consumeMessage() {
@@ -622,5 +836,9 @@ class SoundViewModel @Inject constructor(
         runCatching { appContext.unregisterReceiver(playbackReceiver) }
         runCatching { appContext.unregisterReceiver(hailingReceiver) }
         super.onCleared()
+    }
+
+    companion object {
+        const val DEFAULT_TTS_VOICE_INSTRUCTION = "自然、清晰、温暖的普通话年轻女声，语速适中"
     }
 }

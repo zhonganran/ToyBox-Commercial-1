@@ -9,6 +9,7 @@ import com.byd.wjx.data.automation.AutomationEngine
 import com.byd.wjx.data.charging.ChargingCatchUpCoordinator
 import com.byd.wjx.data.repository.TrackingStateStore
 import com.byd.wjx.data.repository.VehicleStateRepository
+import com.byd.wjx.clustercard.ClusterCardRuntime
 import com.byd.wjx.domain.calculator.DrivingMetricsCoordinator
 import com.byd.wjx.domain.tracker.DriveSessionCoordinator
 import com.byd.wjx.domain.tracker.TripTracker
@@ -53,6 +54,7 @@ class TrackingService : Service() {
     @Inject lateinit var notificationController: TrackingNotificationController
     @Inject lateinit var ledRuntimeCoordinator: com.byd.wjx.led.LedRuntimeCoordinator
     @Inject lateinit var desktopQuickCardRuntime: DesktopQuickCardRuntime
+    @Inject lateinit var clusterCardRuntime: ClusterCardRuntime
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val helperReadiness = CompletableDeferred<Boolean>()
@@ -130,6 +132,7 @@ class TrackingService : Service() {
         startPolling()
         cameraRuntimeCoordinator.start(serviceScope)
         desktopQuickCardRuntime.start(serviceScope)
+        clusterCardRuntime.start(serviceScope)
         lyricRuntime.start(cameraRuntimeCoordinator.active)
         ledRuntimeCoordinator.start(serviceScope)
         publishRunning(true)
@@ -178,6 +181,7 @@ class TrackingService : Service() {
         }
 
         lyricRuntime.stop()
+        clusterCardRuntime.stop()
         desktopQuickCardRuntime.stop()
         ledRuntimeCoordinator.stop()
         cameraRuntimeCoordinator.stop()

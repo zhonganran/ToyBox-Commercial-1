@@ -30,6 +30,15 @@ class DesktopQuickCardModelsTest {
     }
 
     @Test
+    fun `realtime hailing is a dedicated vehicle control command`() {
+        val item = DesktopQuickCardCommandCatalog.byCommand.getValue(DESKTOP_QUICK_CARD_REALTIME_HAILING)
+
+        assertEquals("实时喊话", item.label)
+        assertEquals("实时喊话", item.category)
+        assertEquals(DesktopQuickCardCommandKind.REALTIME_HAILING, item.kind)
+    }
+
+    @Test
     fun `sanitize removes duplicates and invalid entries without limiting item count`() {
         val raw = DesktopQuickCardConfig(
             functionCommands = listOf("a", "a", "bad", "b", "c", "d", "e", "f", "g", "h", "i"),

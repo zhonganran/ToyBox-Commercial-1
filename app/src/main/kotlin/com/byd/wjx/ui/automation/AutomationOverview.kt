@@ -460,7 +460,7 @@ private fun triggerIcon(trigger: TriggerDef?): androidx.compose.ui.graphics.vect
 }
 
 private fun actionIcon(action: ActionDef?): androidx.compose.ui.graphics.vector.ImageVector = when (action?.kind) {
-    "outside_sound" -> Icons.AutoMirrored.Outlined.VolumeUp
+    "inside_sound", "outside_sound" -> Icons.AutoMirrored.Outlined.VolumeUp
     "notification_silent", "notification_sound" -> Icons.Outlined.Notifications
     "app_launch" -> Icons.Outlined.Apps
     "navigate" -> Icons.Outlined.Navigation

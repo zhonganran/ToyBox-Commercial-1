@@ -66,9 +66,9 @@ function getLatestUpdate() {
     () => request({ path: '/api/v1/update/latest' }),
     {
       enabled: true,
-      version: '1.9.8',
-      versionCode: 27,
-      releaseNotes: '新增增强LED屏适配，支持自动识别、稳定初始化、心跳保活及联动画面映射。',
+      version: '1.9.13',
+      versionCode: 32,
+      releaseNotes: '智能联动新增车内播放音效，支持 WJX 音效库选择、循环播放和规则退出自动停止。',
       forceUpdate: false
     }
   )

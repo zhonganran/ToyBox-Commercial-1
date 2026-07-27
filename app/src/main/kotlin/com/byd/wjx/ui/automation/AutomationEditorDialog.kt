@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.byd.wjx.R
+import com.byd.wjx.data.local.entity.ActionDef
 import com.byd.wjx.data.local.entity.PlaceEntity
 import com.byd.wjx.data.local.entity.TriggerDef
 import com.byd.wjx.ui.components.bydSwitchColors
@@ -69,7 +70,7 @@ internal fun EditorDialog(
     editorError: String?,
     onUpdate: (EditingRule.() -> EditingRule) -> Unit,
     onSave: () -> Unit,
-    onTestAction: (String) -> Unit,
+    onTestAction: (ActionDef) -> Unit,
     onDismiss: () -> Unit
 ) {
     var repeatIntervalInput by rememberSaveable(editing.id, editing.isNew) {

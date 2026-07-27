@@ -43,6 +43,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.DragIndicator
@@ -233,6 +234,15 @@ fun SoundScreen(
                 onDownload = viewModel::download,
                 onLoadMore = viewModel::loadMoreOnline,
                 onRefresh = { viewModel.refreshOnline() },
+            )
+            SoundTab.AiVoice -> VoxCpmTtsContent(
+                state = state,
+                onTextChanged = viewModel::updateTtsText,
+                onInstructionChanged = viewModel::updateTtsVoiceInstruction,
+                onGenerate = viewModel::generateTts,
+                onPreview = viewModel::previewGeneratedTts,
+                onPlayOutside = viewModel::playGeneratedTtsOutside,
+                onSave = viewModel::saveGeneratedTts,
             )
         }
     }
@@ -478,9 +488,18 @@ private fun SoundSceneHeader(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Icon(Icons.Outlined.Folder, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(19.dp))
+            Icon(
+                if (selectedTab == SoundTab.AiVoice) Icons.Outlined.AutoAwesome else Icons.Outlined.Folder,
+                contentDescription = null,
+                tint = if (selectedTab == SoundTab.AiVoice) SceneCoral else TextPrimary,
+                modifier = Modifier.size(19.dp),
+            )
             Text(
-                text = if (selectedTab == SoundTab.Local) "我的音效" else "在线音效库",
+                text = when (selectedTab) {
+                    SoundTab.Local -> "我的音效"
+                    SoundTab.Online -> "在线音效库"
+                    SoundTab.AiVoice -> "AI语音"
+                },
                 color = TextPrimary.copy(alpha = 0.82f),
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
@@ -533,14 +552,16 @@ private fun SoundSceneHeader(
                     )
                 }
             }
-            IconButton(
-                onClick = onRefresh,
-                modifier = Modifier
-                    .size(42.dp)
-                    .clip(CircleShape)
-                    .background(CardSurface.copy(alpha = 0.68f)),
-            ) {
-                Icon(Icons.Outlined.Refresh, contentDescription = "刷新", tint = TextPrimary, modifier = Modifier.size(21.dp))
+            if (selectedTab != SoundTab.AiVoice) {
+                IconButton(
+                    onClick = onRefresh,
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(CircleShape)
+                        .background(CardSurface.copy(alpha = 0.68f)),
+                ) {
+                    Icon(Icons.Outlined.Refresh, contentDescription = "刷新", tint = TextPrimary, modifier = Modifier.size(21.dp))
+                }
             }
         }
     }

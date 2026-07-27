@@ -10,4 +10,7 @@ interface OnDemandVehicleTelemetryReader {
     suspend fun readTireTelemetry(): DiParsData?
 
     suspend fun readPowertrainTelemetry(): DiParsData?
+
+    /** Reads only the requested powertrain fields for lightweight always-on surfaces. */
+    suspend fun readPowertrainTelemetry(fields: Set<String>): DiParsData? = readPowertrainTelemetry()
 }

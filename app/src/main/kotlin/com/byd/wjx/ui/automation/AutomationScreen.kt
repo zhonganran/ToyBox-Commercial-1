@@ -117,7 +117,7 @@ fun AutomationScreen(
             editorError = state.editorError,
             onUpdate = { viewModel.updateEditing(it) },
             onSave = { viewModel.saveRule() },
-            onTestAction = { viewModel.executeNow(it) },
+            onTestAction = viewModel::executeNow,
             onDismiss = { viewModel.closeEditor() }
         )
     }

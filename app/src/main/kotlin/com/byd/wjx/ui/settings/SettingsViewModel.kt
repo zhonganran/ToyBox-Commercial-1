@@ -15,6 +15,8 @@ import com.byd.wjx.data.local.HistoryImporter
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.data.repository.TripRepository
 import com.byd.wjx.data.settings.ServiceQrCache
+import com.byd.wjx.data.vehicle.HeadlightController
+import com.byd.wjx.data.vehicle.HeadlightMode
 import com.byd.wjx.service.UpdateChecker
 import com.byd.wjx.R
 import com.byd.wjx.audio.LockSoundConfig
@@ -65,6 +67,7 @@ class SettingsViewModel @Inject constructor(
     private val serviceQrCache: ServiceQrCache,
     private val logUploader: SettingsLogUploader,
     private val miniappBindingCodeManager: MiniappBindingCodeManager,
+    private val headlightController: HeadlightController,
     private val carProfileDetector: CarProfileDetector = CarProfileDetector(),
 ) : ViewModel() {
     private val lockSoundSettings = LockSoundSettings(appContext)
@@ -181,6 +184,38 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             refreshLockSoundState(status = null)
             syncLockSoundConfig(reason)
+        }
+    }
+
+    fun refreshHeadlightControl() {
+        if (_uiState.value.headlightLoading) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(headlightLoading = true, headlightMessage = "正在检测车辆灯光服务") }
+            val snapshot = headlightController.refresh()
+            _uiState.update {
+                it.copy(
+                    headlightAvailability = snapshot.availability,
+                    headlightMode = snapshot.mode,
+                    headlightLoading = false,
+                    headlightMessage = snapshot.message,
+                )
+            }
+        }
+    }
+
+    fun setHeadlightMode(mode: HeadlightMode) {
+        if (_uiState.value.headlightLoading) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(headlightLoading = true, headlightMessage = "正在切换为${mode.label}") }
+            val result = headlightController.setMode(mode)
+            _uiState.update {
+                it.copy(
+                    headlightAvailability = result.snapshot.availability,
+                    headlightMode = result.snapshot.mode,
+                    headlightLoading = false,
+                    headlightMessage = result.snapshot.message,
+                )
+            }
         }
     }
 
