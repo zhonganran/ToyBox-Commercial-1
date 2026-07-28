@@ -52,6 +52,12 @@ val vehicleHistorySyncApiUrl: String =
 val miniappBindingCodeApiUrl: String =
     providers.gradleProperty("superToyBoxMiniappBindingCodeApiUrl").orNull
         ?: "https://api.689588.xyz/api/v1/miniapp/vehicles/binding-code"
+val remoteCommandPollApiUrl: String =
+    providers.gradleProperty("superToyBoxRemoteCommandPollApiUrl").orNull
+        ?: "https://api.689588.xyz/api/v1/vehicles/commands/poll"
+val remoteCommandResultApiBaseUrl: String =
+    providers.gradleProperty("superToyBoxRemoteCommandResultApiBaseUrl").orNull
+        ?: "https://api.689588.xyz/api/v1/vehicles/commands"
 android {
     namespace = "com.byd.wjx"
     compileSdk = 34
@@ -63,8 +69,8 @@ android {
         // on DiLink Android 12 (requestLegacyExternalStorage works).
         // targetSdk 30+ would break listFiles() on /storage/emulated/0/energydata/
         targetSdk = 29
-        versionCode = 32
-        versionName = "1.9.13"
+        versionCode = 35
+        versionName = "1.9.16"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "UPDATE_API_URL", "\"$updateApiUrl\"")
@@ -75,6 +81,8 @@ android {
         buildConfigField("String", "VEHICLE_INFO_API_URL", "\"$vehicleInfoApiUrl\"")
         buildConfigField("String", "VEHICLE_HISTORY_SYNC_API_URL", "\"$vehicleHistorySyncApiUrl\"")
         buildConfigField("String", "MINIAPP_BINDING_CODE_API_URL", "\"$miniappBindingCodeApiUrl\"")
+        buildConfigField("String", "REMOTE_COMMAND_POLL_API_URL", "\"$remoteCommandPollApiUrl\"")
+        buildConfigField("String", "REMOTE_COMMAND_RESULT_API_BASE_URL", "\"$remoteCommandResultApiBaseUrl\"")
     }
 
     signingConfigs {

@@ -303,7 +303,7 @@ internal fun readVehicleVinFromBodywork(systemContext: Context?): String {
     return out.toString().take(4000)
 }
 
-private fun buildBodyworkContextCandidates(systemContext: Context): List<Context> {
+internal fun buildBodyworkContextCandidates(systemContext: Context): List<Context> {
     val baseContexts = mutableListOf<Context>()
     baseContexts += systemContext
     BYD_CONTEXT_PACKAGES.forEach { pkg ->
@@ -330,7 +330,7 @@ private fun buildBodyworkContextCandidates(systemContext: Context): List<Context
 private fun Context.baseContextKey(): String =
     (this as? ContextWrapper)?.baseContext?.let { "${it.javaClass.name}:${it.packageName}" }.orEmpty()
 
-private class PermissionBypassContext(base: Context) : ContextWrapper(base) {
+internal class PermissionBypassContext(base: Context) : ContextWrapper(base) {
     override fun checkCallingOrSelfPermission(permission: String): Int = PackageManager.PERMISSION_GRANTED
 
     override fun checkCallingPermission(permission: String): Int = PackageManager.PERMISSION_GRANTED

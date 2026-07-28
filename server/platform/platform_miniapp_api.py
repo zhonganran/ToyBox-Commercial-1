@@ -1,3 +1,4 @@
+import json
 import math
 import re
 from datetime import datetime, timedelta
@@ -72,6 +73,93 @@ def create_miniapp_blueprint(
         if device is None:
             return None, None
         return device, None
+
+    def expire_remote_commands(conn):
+        now = utc_now()
+        conn.execute(
+            """
+            UPDATE miniapp_remote_commands
+            SET status = 'expired', message = '车机未在有效时间内处理', completed_at = ?
+            WHERE status IN ('pending', 'delivered') AND expires_at <= ?
+            """,
+            (now, now),
+        )
+
+    def remote_command_payload(row):
+        if row is None:
+            return None
+        try:
+            payload = json.loads(row["payload_json"] or "{}")
+        except (TypeError, ValueError):
+            payload = {}
+        try:
+            result = json.loads(row["result_json"] or "{}")
+        except (TypeError, ValueError):
+            result = {}
+        return {
+            "id": row["id"],
+            "type": row["command_type"],
+            "payload": payload,
+            "status": row["status"],
+            "message": row["message"],
+            "requestedAt": row["requested_at"],
+            "deliveredAt": row["delivered_at"],
+            "completedAt": row["completed_at"],
+            "expiresAt": row["expires_at"],
+            "result": result,
+        }
+
+    def local_sound_payload(row):
+        return {
+            "id": row["sound_key"],
+            "soundKey": row["sound_key"],
+            "name": row["display_name"],
+            "fileName": row["file_name"],
+            "fileSize": row["file_size"],
+            "modifiedAt": row["modified_at"],
+            "syncedAt": row["synced_at"],
+        }
+
+    def sync_local_sounds(conn, device_id, raw_items):
+        if not isinstance(raw_items, list):
+            return False
+        normalized = []
+        seen = set()
+        for item in raw_items[:200]:
+            if not isinstance(item, dict):
+                continue
+            sound_key = str(item.get("soundKey", "")).strip().lower()
+            file_name = str(item.get("fileName", "")).strip()[:180]
+            display_name = str(item.get("displayName", "")).strip()[:160]
+            if not re.fullmatch(r"[a-f0-9]{64}", sound_key) or sound_key in seen:
+                continue
+            if not file_name or file_name != file_name.rsplit("/", 1)[-1] or "\\" in file_name:
+                continue
+            suffix = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+            if suffix not in {"mp3", "wav", "aac", "m4a", "ogg", "flac"}:
+                continue
+            try:
+                file_size = max(0, min(int(item.get("fileSize", 0)), 1024 * 1024 * 1024))
+                modified_at = max(0, int(item.get("modifiedAt", 0)))
+            except (TypeError, ValueError):
+                continue
+            normalized.append((sound_key, file_name, display_name or file_name.rsplit(".", 1)[0], file_size, modified_at))
+            seen.add(sound_key)
+
+        now = utc_now()
+        conn.execute("DELETE FROM vehicle_local_sounds WHERE device_id = ?", (device_id,))
+        conn.executemany(
+            """
+            INSERT INTO vehicle_local_sounds
+                (device_id, sound_key, file_name, display_name, file_size, modified_at, synced_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [(device_id, *item, now) for item in normalized],
+        )
+        return True
+
+    def command_expiry():
+        return (datetime.utcnow() + timedelta(minutes=10)).replace(microsecond=0).isoformat() + "Z"
 
     def request_device(conn):
         payload = request.get_json(silent=True) or {}
@@ -471,7 +559,7 @@ def create_miniapp_blueprint(
                     "description": "车辆在线，配置与记录已同步" if state == "online" else f"车辆{presence[1]}，显示最后一次同步数据",
                 }
         items = [
-            {"id": "sounds", "title": "音效库", "subtitle": "管理系统音效与自定义音效", "icon": "volume-2", "tone": "coral", "route": "/pages/web-content/index?type=sounds"},
+            {"id": "sounds", "title": "远程播放音效", "subtitle": "播放车机 WJX 文件夹中的音效", "icon": "volume-2", "tone": "coral", "route": "/pages/web-content/index?type=sounds"},
             {"id": "automation", "title": "自动化", "subtitle": "查看规则与最近执行记录", "icon": "workflow", "tone": "green", "route": "/pages/web-content/index?type=automation"},
             {"id": "diagnostics", "title": "车机诊断", "subtitle": "上传日志并查看处理状态", "icon": "file-up", "tone": "blue", "route": "/pages/web-content/index?type=diagnostics"},
             {"id": "updates", "title": "版本更新", "subtitle": "查看新版功能与安装状态", "icon": "download", "tone": "yellow", "route": "/pages/web-content/index?type=updates"},
@@ -479,6 +567,273 @@ def create_miniapp_blueprint(
             {"id": "service", "title": "联系客服", "subtitle": "授权、安装和问题咨询", "icon": "headphones", "tone": "violet", "route": "/pages/web-content/index?type=service"},
         ]
         return jsonify({"sync": sync, "items": items})
+
+    @blueprint.get("/api/v1/miniapp/remote-audio")
+    def remote_audio():
+        with db() as conn:
+            user = miniapp_user(conn)
+            if user is None:
+                return unauthorized()
+            device, _ = bound_vehicle_or_response(conn, user)
+            if device is None:
+                return jsonify({"success": False, "message": "尚未绑定车辆"}), 400
+            expire_remote_commands(conn)
+            authorization = device_authorization(conn, device)
+            presence = vehicle_presence(device)
+            state = "sleeping" if presence[0] == "sleep" else presence[0]
+            sounds = conn.execute(
+                """
+                SELECT * FROM vehicle_local_sounds
+                WHERE device_id = ?
+                ORDER BY display_name COLLATE NOCASE, file_name COLLATE NOCASE LIMIT 200
+                """,
+                (device["id"],),
+            ).fetchall()
+            active = conn.execute(
+                """
+                SELECT * FROM miniapp_remote_commands
+                WHERE device_id = ? AND requested_by_user_id = ?
+                  AND status IN ('pending', 'delivered')
+                ORDER BY requested_at DESC LIMIT 1
+                """,
+                (device["id"], user["id"]),
+            ).fetchone()
+            latest = active or conn.execute(
+                """
+                SELECT * FROM miniapp_remote_commands
+                WHERE device_id = ? AND requested_by_user_id = ?
+                ORDER BY requested_at DESC LIMIT 1
+                """,
+                (device["id"], user["id"]),
+            ).fetchone()
+            return jsonify(
+                {
+                    "success": True,
+                    "vehicle": {
+                        "displayName": vehicle_display_label(device) or "未识别车型",
+                        "onlineState": state,
+                        "onlineLabel": presence[1],
+                        "updatedLabel": relative_sync_label(device["last_seen_at"]),
+                    },
+                    "authorization": authorization_payload(conn, device),
+                    "canControl": bool(authorization["activated"] or authorization["trial_active"]),
+                    "sounds": [local_sound_payload(row) for row in sounds],
+                    "command": remote_command_payload(latest),
+                }
+            )
+
+    @blueprint.post("/api/v1/miniapp/remote-audio/play")
+    def remote_audio_play():
+        payload = request.get_json(silent=True) or {}
+        sound_key = str(payload.get("soundKey", "")).strip().lower()
+        if not re.fullmatch(r"[a-f0-9]{64}", sound_key):
+            return jsonify({"success": False, "message": "请选择有效音效"}), 400
+        with db() as conn:
+            user = miniapp_user(conn)
+            if user is None:
+                return unauthorized()
+            device, _ = bound_vehicle_or_response(conn, user)
+            if device is None:
+                return jsonify({"success": False, "message": "尚未绑定车辆"}), 400
+            authorization = device_authorization(conn, device)
+            if not authorization["activated"] and not authorization["trial_active"]:
+                return jsonify({"success": False, "message": "车辆授权已到期，无法远程播放"}), 403
+            sound = conn.execute(
+                "SELECT * FROM vehicle_local_sounds WHERE device_id = ? AND sound_key = ?",
+                (device["id"], sound_key),
+            ).fetchone()
+            if sound is None:
+                return jsonify({"success": False, "message": "该音效已不在车机 WJX 文件夹，请刷新列表"}), 404
+            expire_remote_commands(conn)
+            active = conn.execute(
+                """
+                SELECT * FROM miniapp_remote_commands
+                WHERE device_id = ? AND status IN ('pending', 'delivered')
+                ORDER BY requested_at DESC LIMIT 1
+                """,
+                (device["id"],),
+            ).fetchone()
+            if active is not None:
+                return jsonify(
+                    {
+                        "success": False,
+                        "message": "上一条远程指令仍在处理中，请稍后重试",
+                        "command": remote_command_payload(active),
+                    }
+                ), 409
+            now = utc_now()
+            command_payload = local_sound_payload(sound)
+            cursor = conn.execute(
+                """
+                INSERT INTO miniapp_remote_commands
+                    (device_id, requested_by_user_id, command_type, payload_json,
+                     status, message, requested_at, expires_at)
+                VALUES (?, ?, 'play_outside_sound', ?, 'pending', ?, ?, ?)
+                """,
+                (
+                    device["id"],
+                    user["id"],
+                    json.dumps(command_payload, ensure_ascii=False, separators=(",", ":")),
+                    "正在等待车机",
+                    now,
+                    command_expiry(),
+                ),
+            )
+            row = conn.execute(
+                "SELECT * FROM miniapp_remote_commands WHERE id = ?",
+                (cursor.lastrowid,),
+            ).fetchone()
+        return jsonify({"success": True, "command": remote_command_payload(row)})
+
+    @blueprint.post("/api/v1/miniapp/remote-audio/stop")
+    def remote_audio_stop():
+        with db() as conn:
+            user = miniapp_user(conn)
+            if user is None:
+                return unauthorized()
+            device, _ = bound_vehicle_or_response(conn, user)
+            if device is None:
+                return jsonify({"success": False, "message": "尚未绑定车辆"}), 400
+            now = utc_now()
+            expire_remote_commands(conn)
+            existing_stop = conn.execute(
+                """
+                SELECT * FROM miniapp_remote_commands
+                WHERE device_id = ? AND status IN ('pending', 'delivered')
+                  AND command_type = 'stop_outside_sound'
+                ORDER BY requested_at DESC LIMIT 1
+                """,
+                (device["id"],),
+            ).fetchone()
+            if existing_stop is not None:
+                return jsonify({"success": True, "command": remote_command_payload(existing_stop)})
+            conn.execute(
+                """
+                UPDATE miniapp_remote_commands
+                SET status = 'cancelled', message = '已被停止指令取代', completed_at = ?
+                WHERE device_id = ? AND status IN ('pending', 'delivered')
+                  AND command_type = 'play_outside_sound'
+                """,
+                (now, device["id"]),
+            )
+            cursor = conn.execute(
+                """
+                INSERT INTO miniapp_remote_commands
+                    (device_id, requested_by_user_id, command_type, payload_json,
+                     status, message, requested_at, expires_at)
+                VALUES (?, ?, 'stop_outside_sound', '{}', 'pending', ?, ?, ?)
+                """,
+                (device["id"], user["id"], "正在等待车机停止播放", now, command_expiry()),
+            )
+            row = conn.execute(
+                "SELECT * FROM miniapp_remote_commands WHERE id = ?",
+                (cursor.lastrowid,),
+            ).fetchone()
+        return jsonify({"success": True, "command": remote_command_payload(row)})
+
+    @blueprint.get("/api/v1/miniapp/remote-audio/commands/<int:command_id>")
+    def remote_audio_command(command_id):
+        with db() as conn:
+            user = miniapp_user(conn)
+            if user is None:
+                return unauthorized()
+            device, _ = bound_vehicle_or_response(conn, user)
+            if device is None:
+                return jsonify({"success": False, "message": "尚未绑定车辆"}), 400
+            expire_remote_commands(conn)
+            row = conn.execute(
+                """
+                SELECT * FROM miniapp_remote_commands
+                WHERE id = ? AND device_id = ? AND requested_by_user_id = ?
+                """,
+                (command_id, device["id"], user["id"]),
+            ).fetchone()
+            if row is None:
+                return jsonify({"success": False, "message": "远程指令不存在"}), 404
+        return jsonify({"success": True, "command": remote_command_payload(row)})
+
+    @blueprint.post("/api/v1/vehicles/commands/poll")
+    def vehicle_command_poll():
+        payload = request.get_json(silent=True) or {}
+        with db() as conn:
+            device, error_response = request_device(conn)
+            if error_response:
+                return error_response
+            now = utc_now()
+            expire_remote_commands(conn)
+            if "localSounds" in payload:
+                sync_local_sounds(conn, device["id"], payload.get("localSounds"))
+            conn.execute(
+                "UPDATE devices SET last_seen_at = ?, remote_addr = ? WHERE id = ?",
+                (now, request.remote_addr or "", device["id"]),
+            )
+            row = conn.execute(
+                """
+                SELECT * FROM miniapp_remote_commands
+                WHERE device_id = ? AND status IN ('pending', 'delivered')
+                ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END,
+                         requested_at ASC LIMIT 1
+                """,
+                (device["id"],),
+            ).fetchone()
+            if row is not None and row["status"] == "pending":
+                conn.execute(
+                    """
+                    UPDATE miniapp_remote_commands
+                    SET status = 'delivered', message = '车机已接收', delivered_at = ?
+                    WHERE id = ? AND status = 'pending'
+                    """,
+                    (now, row["id"]),
+                )
+                row = conn.execute(
+                    "SELECT * FROM miniapp_remote_commands WHERE id = ?",
+                    (row["id"],),
+                ).fetchone()
+        return jsonify({"success": True, "command": remote_command_payload(row)})
+
+    @blueprint.post("/api/v1/vehicles/commands/<int:command_id>/complete")
+    def vehicle_command_complete(command_id):
+        payload = request.get_json(silent=True) or {}
+        reported_status = str(payload.get("status", "")).strip().lower()
+        if reported_status not in {"delivered", "completed", "failed"}:
+            return jsonify({"success": False, "message": "指令状态无效"}), 400
+        message = str(payload.get("message", "")).strip()[:500]
+        result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+        with db() as conn:
+            device, error_response = request_device(conn)
+            if error_response:
+                return error_response
+            row = conn.execute(
+                "SELECT * FROM miniapp_remote_commands WHERE id = ? AND device_id = ?",
+                (command_id, device["id"]),
+            ).fetchone()
+            if row is None:
+                return jsonify({"success": False, "message": "远程指令不存在"}), 404
+            if row["status"] in {"completed", "failed", "cancelled", "expired"}:
+                return jsonify({"success": True, "command": remote_command_payload(row)})
+            now = utc_now()
+            completed_at = now if reported_status in {"completed", "failed"} else None
+            conn.execute(
+                """
+                UPDATE miniapp_remote_commands
+                SET status = ?, message = ?, result_json = ?,
+                    delivered_at = COALESCE(delivered_at, ?), completed_at = ?
+                WHERE id = ?
+                """,
+                (
+                    reported_status,
+                    message or ("车机已接收" if reported_status == "delivered" else "执行完成"),
+                    json.dumps(result, ensure_ascii=False, separators=(",", ":")),
+                    now,
+                    completed_at,
+                    command_id,
+                ),
+            )
+            updated = conn.execute(
+                "SELECT * FROM miniapp_remote_commands WHERE id = ?",
+                (command_id,),
+            ).fetchone()
+        return jsonify({"success": True, "command": remote_command_payload(updated)})
 
     @blueprint.get("/api/v1/miniapp/profile")
     def profile():

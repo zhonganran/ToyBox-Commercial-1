@@ -17,6 +17,11 @@ class BootReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "BootReceiver"
+        private val POWER_EVENTS = setOf(
+            "com.byd.action.ACC_ON",
+            "com.byd.action.ACC_OFF",
+            "com.byd.action.IGN_ON",
+        )
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -40,6 +45,7 @@ class BootReceiver : BroadcastReceiver() {
 
         WjxFileLogger.i(TAG, "Boot/user event: ${intent.action}")
         ChainLog.append(context, "BootReceiver: ${intent.action}")
+        RemoteAudioStandbyState.recordPowerEvent(context, intent.action)
 
         logBootEvent(context, intent.action ?: "unknown")
         ProcessRevivalReceiver.schedule(context.applicationContext)
@@ -48,6 +54,14 @@ class BootReceiver : BroadcastReceiver() {
             ChainLog.append(context, "DirectBoot deferred until USER_UNLOCKED")
             WjxFileLogger.i(TAG, "DirectBoot deferred until USER_UNLOCKED action=${intent.action}")
             return
+        }
+
+        if (intent.action in POWER_EVENTS) {
+            runCatching {
+                KeepAliveService.start(context.applicationContext, "power_event:${intent.action}")
+            }.onFailure {
+                WjxFileLogger.w(TAG, "immediate power-event start failed: ${it.message}", it)
+            }
         }
 
         if (!StartupThrottle.shouldStart()) {

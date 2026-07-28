@@ -3,7 +3,7 @@ const api = require('../../services/api')
 const quickActions = [
   { id: 'trips', title: '行程记录', icon: 'route', tone: 'blue' },
   { id: 'charges', title: '充电记录', icon: 'zap', tone: 'green' },
-  { id: 'sounds', title: '音效库', icon: 'volume-2', tone: 'coral' },
+  { id: 'sounds', title: '远程播放音效', icon: 'volume-2', tone: 'coral' },
   { id: 'automation', title: '自动化', icon: 'workflow', tone: 'yellow' }
 ]
 

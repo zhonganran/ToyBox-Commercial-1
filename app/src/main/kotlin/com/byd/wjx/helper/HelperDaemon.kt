@@ -225,6 +225,7 @@ fun main(args: Array<String>) {
     val virtualDisplays = ConcurrentHashMap<Int, VirtualDisplay>()
     val lockSoundRuntime = WjxLockSoundRuntime(svc, autoIface, systemContext)
     val headlightClient = BydHeadlightBinderClient(systemContext)
+    val remoteStandbyPowerController = RemoteStandbyPowerController(systemContext).also { it.start() }
 
     // Step 3: build our stub Binder.
     val helperBinder = object : Binder() {
@@ -521,6 +522,27 @@ fun main(args: Array<String>) {
                 }.getOrElse {
                     helperLog("ExteriorAudio", "lock sound playback state failed: ${throwableSummary(it)}")
                     reply?.writeInt(-1); reply?.writeInt(0); true
+                }
+
+                HelperBinderProtocol.TX_SET_REMOTE_STANDBY_POWER -> runCatching {
+                    val enabledValue = data.readInt()
+                    require(enabledValue == 0 || enabledValue == 1) { "invalid enabled=$enabledValue" }
+                    val result = remoteStandbyPowerController.setEnabled(
+                        enabled = enabledValue == 1,
+                        source = "binder",
+                    )
+                    reply?.writeInt(0)
+                    reply?.writeInt(if (result.applied) 1 else 0)
+                    reply?.writeInt(result.mcuStatus)
+                    reply?.writeString(result.summary)
+                    true
+                }.getOrElse {
+                    helperLog("RemoteStandbyPower", "binder failed: ${throwableSummary(it)}")
+                    reply?.writeInt(-1)
+                    reply?.writeInt(0)
+                    reply?.writeInt(-1)
+                    reply?.writeString(throwableSummary(it))
+                    true
                 }
 
                 else -> super.onTransact(code, data, reply, flags)

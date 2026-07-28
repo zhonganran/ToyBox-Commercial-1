@@ -148,7 +148,8 @@ internal object WjxRuntimeWatchdog {
                 kill -9 "${'$'}PID" 2>/dev/null
               done
               rm -f "${'$'}PID_FILE" "$SCRIPT_PATH" "$VERSION_PATH" \
-                /data/local/tmp/wjx_helper.lock /data/local/tmp/wjx_helper_start.sh 2>/dev/null
+                /data/local/tmp/wjx_helper.lock /data/local/tmp/wjx_helper_start.sh \
+                /data/local/tmp/wjx_remote_standby.enabled 2>/dev/null
               exit 0
             fi
             LAST_PACKAGE_CHECK=${'$'}NOW
@@ -200,6 +201,6 @@ internal object WjxRuntimeWatchdog {
     private const val LEGACY_PID_PATH = "/data/local/tmp/wjx_lock_watch.pid"
     private const val LEGACY_VERSION_PATH = "/data/local/tmp/wjx_lock_watch.version"
     private const val LEGACY_DISABLED_PATH = "/data/local/tmp/wjx_lock_watch.disabled"
-    private const val VERSION = 1
+    private const val VERSION = 2
     private val PID_REGEX = Regex("""\d+""")
 }

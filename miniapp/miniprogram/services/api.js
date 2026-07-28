@@ -66,9 +66,9 @@ function getLatestUpdate() {
     () => request({ path: '/api/v1/update/latest' }),
     {
       enabled: true,
-      version: '1.9.13',
-      versionCode: 32,
-      releaseNotes: '智能联动新增车内播放音效，支持 WJX 音效库选择、循环播放和规则退出自动停止。',
+      version: '1.9.14',
+      versionCode: 33,
+      releaseNotes: '新增仪表卡片、实时喊话、VoxCPM AI 音效、自动化车内播放音效和比亚迪官方前照灯模式控制。',
       forceUpdate: false
     }
   )
@@ -81,6 +81,45 @@ function getServiceQRCodes() {
   )
 }
 
+function getRemoteAudio() {
+  return source(
+    () => request({ path: '/api/v1/miniapp/remote-audio' }),
+    {
+      success: true,
+      vehicle: { displayName: '2025款 宋 Pro DM-i', onlineState: 'online', onlineLabel: '在线', updatedLabel: '刚刚同步' },
+      authorization: { status: 'activated', label: '已激活', expiresAt: '永久' },
+      canControl: true,
+      sounds: [
+        { id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', soundKey: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', name: '欢迎上车', fileName: '欢迎上车.mp3', fileSize: 420000 },
+        { id: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', soundKey: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', name: '请注意安全', fileName: '请注意安全.wav', fileSize: 360000 },
+        { id: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', soundKey: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', name: '科技启动音', fileName: '科技启动音.m4a', fileSize: 760000 }
+      ],
+      command: null
+    }
+  )
+}
+
+function playRemoteSound(soundKey) {
+  if (config.demoMode) {
+    return delayed({ success: true, command: { id: Date.now(), status: 'pending', message: '正在等待车机', payload: { soundKey: soundKey } } })
+  }
+  return request({ path: '/api/v1/miniapp/remote-audio/play', method: 'POST', data: { soundKey: soundKey } })
+}
+
+function stopRemoteSound() {
+  if (config.demoMode) {
+    return delayed({ success: true, command: { id: Date.now(), status: 'completed', message: '车外播放已停止' } })
+  }
+  return request({ path: '/api/v1/miniapp/remote-audio/stop', method: 'POST' })
+}
+
+function getRemoteAudioCommand(commandId) {
+  if (config.demoMode) {
+    return delayed({ success: true, command: { id: commandId, status: 'completed', message: '已开始车外播放' } })
+  }
+  return request({ path: '/api/v1/miniapp/remote-audio/commands/' + encodeURIComponent(commandId) })
+}
+
 module.exports = {
   getHomeDashboard,
   getTrips,
@@ -90,5 +129,9 @@ module.exports = {
   getTripDetail,
   uploadDiagnosticLog,
   getLatestUpdate,
-  getServiceQRCodes
+  getServiceQRCodes,
+  getRemoteAudio,
+  playRemoteSound,
+  stopRemoteSound,
+  getRemoteAudioCommand
 }

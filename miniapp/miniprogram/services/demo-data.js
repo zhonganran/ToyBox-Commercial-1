@@ -62,7 +62,7 @@ const trips = {
 }
 
 const tools = [
-  { id: 'sounds', title: '音效库', subtitle: '管理系统音效与自定义音效', icon: 'volume-2', tone: 'coral', route: '/pages/web-content/index?type=sounds' },
+  { id: 'sounds', title: '远程播放音效', subtitle: '播放车机 WJX 文件夹中的音效', icon: 'volume-2', tone: 'coral', route: '/pages/web-content/index?type=sounds' },
   { id: 'automation', title: '自动化', subtitle: '查看规则与最近执行记录', icon: 'workflow', tone: 'green', route: '/pages/web-content/index?type=automation' },
   { id: 'diagnostics', title: '车机诊断', subtitle: '上传日志并查看处理状态', icon: 'file-up', tone: 'blue', route: '/pages/web-content/index?type=diagnostics' },
   { id: 'updates', title: '版本更新', subtitle: '查看新版功能与安装状态', icon: 'download', tone: 'yellow', route: '/pages/web-content/index?type=updates' },

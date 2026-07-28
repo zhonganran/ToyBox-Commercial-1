@@ -1,19 +1,86 @@
 <view class="content-page" wx:if="{{content}}">
-  <view class="detail-header"><view class="back-button pressable" bindtap="goBack"><image src="/assets/icons/chevron-left.png" /></view><view><view class="detail-title">{{content.title}}</view><view class="detail-caption">{{content.caption}}</view></view><view class="wechat-capsule-space"></view></view>
-  <view class="content-hero hero-{{content.tone}}">
-    <view class="content-icon"><image src="/assets/icons/{{content.icon}}-white.png" /></view>
-    <view class="content-title">{{content.title}}</view>
-    <view class="content-description">{{content.description}}</view>
+  <view class="detail-header">
+    <view class="back-button pressable" bindtap="goBack"><image src="/assets/icons/chevron-left.png" /></view>
+    <view><view class="detail-title">{{content.title}}</view><view class="detail-caption">{{content.caption}}</view></view>
+    <view class="wechat-capsule-space"></view>
   </view>
-  <view class="section-heading"><view class="section-title">功能内容</view><view class="section-action">车机数据</view></view>
-  <view class="content-list surface">
-    <view wx:for="{{content.rows}}" wx:key="*this" class="content-row"><view class="row-dot dot-{{content.tone}}"></view><text>{{item}}</text><image src="/assets/icons/chevron-right.png" /></view>
-  </view>
-  <view wx:if="{{type === 'updates' && update}}" class="update-panel surface">
-    <view><text>服务器最新版本</text><view>v{{update.version}}</view></view>
-    <text>{{update.releaseNotes}}</text>
-  </view>
-  <button wx:if="{{content.action}}" class="primary-button action-button" loading="{{actionLoading}}" bindtap="runAction">{{content.action}}</button>
-  <view wx:if="{{actionStatus}}" class="action-status">{{actionStatus}}</view>
-  <view class="safety-panel surface"><image src="/assets/icons/shield-check-blue.png" /><view><view>执行结果必须由车机回执</view><text>小程序只显示服务器确认过的状态，不把“请求已发送”当成“车辆已执行”。</text></view></view>
+
+  <block wx:if="{{type === 'sounds'}}">
+    <view class="remote-audio-hero">
+      <view class="remote-hero-top">
+        <view class="content-icon"><image src="/assets/icons/volume-2-white.png" /></view>
+        <view wx:if="{{remoteAudio && remoteAudio.vehicle}}" class="remote-vehicle-chip">
+          <view class="status-dot {{remoteAudio.vehicle.onlineState}}"></view>{{remoteAudio.vehicle.onlineLabel}}
+        </view>
+      </view>
+      <view class="content-title">远程播放音效</view>
+      <view class="content-description">显示车机 WJX 文件夹中的本地音效，点击即可让车辆进行车外播放。</view>
+      <view wx:if="{{remoteAudio && remoteAudio.vehicle}}" class="remote-vehicle-line">
+        <text>{{remoteAudio.vehicle.displayName}}</text><text>{{remoteAudio.vehicle.updatedLabel}}</text>
+      </view>
+    </view>
+
+    <view wx:if="{{remoteAudioLoading}}" class="remote-loading">
+      <view class="surface skeleton"></view><view class="surface skeleton"></view><view class="surface skeleton"></view>
+    </view>
+
+    <block wx:elif="{{remoteAudio}}">
+      <view wx:if="{{remoteAudio.command}}" class="command-panel command-{{remoteAudio.command.status}}">
+        <view class="command-pulse"></view>
+        <view><view>{{remoteAudio.command.message}}</view><text>指令 #{{remoteAudio.command.id}}</text></view>
+      </view>
+
+      <view class="section-heading">
+        <view class="section-title">我的音效</view>
+        <view class="section-action">WJX · {{remoteAudio.sounds.length}} 个</view>
+      </view>
+
+      <view wx:if="{{!remoteAudio.canControl}}" class="authorization-warning surface">
+        <image src="/assets/icons/key-white.png" /><view><view>车辆授权已到期</view><text>恢复激活或有效试用后才能远程播放。</text></view>
+      </view>
+
+      <view wx:if="{{remoteAudio.sounds.length}}" class="sound-list">
+        <view wx:for="{{remoteAudio.sounds}}" wx:key="id" class="sound-card surface">
+          <view class="sound-accent accent-{{index % 4}}"></view>
+          <view class="sound-main">
+            <view class="sound-category">车机本地音效</view>
+            <view class="sound-name">{{item.name}}</view>
+            <view class="sound-description">{{item.fileName}}</view>
+            <view class="sound-meta"><text>WJX 文件夹</text><text>{{item.sizeLabel}}</text></view>
+          </view>
+          <button class="sound-play-button pressable" data-id="{{item.id}}" bindtap="playSound" loading="{{actionLoading && activeSoundId === item.id}}" disabled="{{actionLoading || remoteAudio.commandBusy || !remoteAudio.canControl}}">
+            <image src="/assets/icons/volume-2-white.png" />
+          </button>
+        </view>
+      </view>
+      <view wx:else class="surface empty-state compact-empty">
+        <view class="empty-title">WJX 文件夹里还没有音效</view>
+        <view class="empty-copy">把 mp3、wav、m4a 等音频放进车机 WJX 文件夹，等待车机同步后下拉刷新。</view>
+      </view>
+
+      <button class="stop-button" loading="{{actionLoading && !activeSoundId}}" disabled="{{actionLoading}}" bindtap="stopRemoteSound">
+        <view class="stop-symbol"></view>停止车外播放
+      </button>
+      <view wx:if="{{actionStatus}}" class="action-status">{{actionStatus}}</view>
+      <view class="safety-panel surface"><image src="/assets/icons/shield-check-blue.png" /><view><view>以车机真实回执为准</view><text>“等待车机”和“车机已接收”都不代表已经播放，只有外放路由确认并启动后才显示成功。</text></view></view>
+    </block>
+  </block>
+
+  <block wx:else>
+    <view class="content-hero hero-{{content.tone}}">
+      <view class="content-icon"><image src="/assets/icons/{{content.icon}}-white.png" /></view>
+      <view class="content-title">{{content.title}}</view>
+      <view class="content-description">{{content.description}}</view>
+    </view>
+    <view class="section-heading"><view class="section-title">功能内容</view><view class="section-action">车机数据</view></view>
+    <view class="content-list surface">
+      <view wx:for="{{content.rows}}" wx:key="*this" class="content-row"><view class="row-dot dot-{{content.tone}}"></view><text>{{item}}</text><image src="/assets/icons/chevron-right.png" /></view>
+    </view>
+    <view wx:if="{{type === 'updates' && update}}" class="update-panel surface">
+      <view><text>服务器最新版本</text><view>v{{update.version}}</view></view><text>{{update.releaseNotes}}</text>
+    </view>
+    <button wx:if="{{content.action}}" class="primary-button action-button" loading="{{actionLoading}}" bindtap="runAction">{{content.action}}</button>
+    <view wx:if="{{actionStatus}}" class="action-status">{{actionStatus}}</view>
+    <view class="safety-panel surface"><image src="/assets/icons/shield-check-blue.png" /><view><view>执行结果必须由车机回执</view><text>小程序只显示服务器确认过的状态，不把“请求已发送”当成“车辆已执行”。</text></view></view>
+  </block>
 </view>

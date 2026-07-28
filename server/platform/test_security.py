@@ -210,6 +210,8 @@ class PlatformWorkflowTest(unittest.TestCase):
     def reset_platform_state(self):
         with platform_app.db() as conn:
             for table in (
+                "miniapp_remote_commands",
+                "vehicle_local_sounds",
                 "miniapp_log_requests",
                 "vehicle_trip_points",
                 "vehicle_trips",
@@ -1078,6 +1080,144 @@ class PlatformWorkflowTest(unittest.TestCase):
             headers={"Authorization": f"Bearer {miniapp_token}"},
         )
         self.assertEqual("最近上传成功", profile.json["diagnostic"]["lastUploadLabel"])
+
+    def test_remote_audio_command_requires_binding_and_real_vehicle_receipt(self):
+        vin = self.register_device("LC0FD4C42S7184345")
+        miniapp_token = self.miniapp_login()
+        sound_key = "a" * 64
+        unbound = self.client.post(
+            "/api/v1/miniapp/remote-audio/play",
+            json={"soundKey": sound_key},
+            headers={"Authorization": f"Bearer {miniapp_token}"},
+        )
+        self.assertEqual(400, unbound.status_code)
+
+        binding_code = self.generate_miniapp_binding_code(vin)
+        self.assertEqual(200, self.bind_miniapp_vehicle(miniapp_token, binding_code).status_code)
+
+        synced = self.client.post(
+            "/api/v1/vehicles/commands/poll",
+            json={
+                "deviceCode": vin,
+                "localSounds": [
+                    {
+                        "soundKey": sound_key,
+                        "fileName": "远程欢迎音.wav",
+                        "displayName": "远程欢迎音",
+                        "fileSize": 4096,
+                        "modifiedAt": 1_721_234_567_000,
+                    }
+                ],
+            },
+            headers={"Authorization": f"Bearer {self.device_tokens[vin]}"},
+        )
+        self.assertEqual(200, synced.status_code)
+        self.assertIsNone(synced.json["command"])
+
+        listing = self.client.get(
+            "/api/v1/miniapp/remote-audio",
+            headers={"Authorization": f"Bearer {miniapp_token}"},
+        )
+        self.assertEqual(200, listing.status_code)
+        self.assertEqual(sound_key, listing.json["sounds"][0]["id"])
+        self.assertEqual("远程欢迎音.wav", listing.json["sounds"][0]["fileName"])
+
+        queued = self.client.post(
+            "/api/v1/miniapp/remote-audio/play",
+            json={"soundKey": sound_key},
+            headers={"Authorization": f"Bearer {miniapp_token}"},
+        )
+        self.assertEqual(200, queued.status_code)
+        command_id = queued.json["command"]["id"]
+        self.assertEqual("pending", queued.json["command"]["status"])
+
+        unauthorized_poll = self.client.post(
+            "/api/v1/vehicles/commands/poll",
+            json={"deviceCode": vin},
+        )
+        self.assertEqual(401, unauthorized_poll.status_code)
+
+        polled = self.client.post(
+            "/api/v1/vehicles/commands/poll",
+            json={"deviceCode": vin},
+            headers={"Authorization": f"Bearer {self.device_tokens[vin]}"},
+        )
+        self.assertEqual(200, polled.status_code)
+        self.assertEqual(command_id, polled.json["command"]["id"])
+        self.assertEqual("delivered", polled.json["command"]["status"])
+        self.assertEqual(sound_key, polled.json["command"]["payload"]["soundKey"])
+
+        before_receipt = self.client.get(
+            f"/api/v1/miniapp/remote-audio/commands/{command_id}",
+            headers={"Authorization": f"Bearer {miniapp_token}"},
+        )
+        self.assertEqual("delivered", before_receipt.json["command"]["status"])
+
+        completed = self.client.post(
+            f"/api/v1/vehicles/commands/{command_id}/complete",
+            json={
+                "deviceCode": vin,
+                "status": "completed",
+                "message": "已开始车外播放",
+                "result": {"soundKey": sound_key},
+            },
+            headers={"Authorization": f"Bearer {self.device_tokens[vin]}"},
+        )
+        self.assertEqual(200, completed.status_code)
+        self.assertEqual("completed", completed.json["command"]["status"])
+
+        final = self.client.get(
+            f"/api/v1/miniapp/remote-audio/commands/{command_id}",
+            headers={"Authorization": f"Bearer {miniapp_token}"},
+        )
+        self.assertEqual("completed", final.json["command"]["status"])
+        self.assertEqual("已开始车外播放", final.json["command"]["message"])
+
+        cleared = self.client.post(
+            "/api/v1/vehicles/commands/poll",
+            json={"deviceCode": vin, "localSounds": []},
+            headers={"Authorization": f"Bearer {self.device_tokens[vin]}"},
+        )
+        self.assertEqual(200, cleared.status_code)
+        missing = self.client.post(
+            "/api/v1/miniapp/remote-audio/play",
+            json={"soundKey": sound_key},
+            headers={"Authorization": f"Bearer {miniapp_token}"},
+        )
+        self.assertEqual(404, missing.status_code)
+
+    def test_remote_audio_expired_command_is_not_delivered(self):
+        vin = self.register_device("LC0FD4C42S7184345")
+        miniapp_token = self.miniapp_login()
+        binding_code = self.generate_miniapp_binding_code(vin)
+        self.assertEqual(200, self.bind_miniapp_vehicle(miniapp_token, binding_code).status_code)
+        with platform_app.db() as conn:
+            user_id = conn.execute("SELECT id FROM miniapp_users LIMIT 1").fetchone()["id"]
+            device_id = conn.execute("SELECT id FROM devices WHERE device_code = ?", (vin,)).fetchone()["id"]
+            cursor = conn.execute(
+                """
+                INSERT INTO miniapp_remote_commands
+                    (device_id, requested_by_user_id, command_type, payload_json,
+                     status, message, requested_at, expires_at)
+                VALUES (?, ?, 'stop_outside_sound', '{}', 'pending', '', ?, ?)
+                """,
+                (device_id, user_id, "2020-01-01T00:00:00Z", "2020-01-01T00:01:00Z"),
+            )
+            command_id = cursor.lastrowid
+
+        polled = self.client.post(
+            "/api/v1/vehicles/commands/poll",
+            json={"deviceCode": vin},
+            headers={"Authorization": f"Bearer {self.device_tokens[vin]}"},
+        )
+        self.assertEqual(200, polled.status_code)
+        self.assertIsNone(polled.json["command"])
+        with platform_app.db() as conn:
+            status = conn.execute(
+                "SELECT status FROM miniapp_remote_commands WHERE id = ?",
+                (command_id,),
+            ).fetchone()["status"]
+        self.assertEqual("expired", status)
 
 
 if __name__ == "__main__":

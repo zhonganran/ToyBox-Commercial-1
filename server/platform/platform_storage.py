@@ -408,6 +408,37 @@ def init_db(force=False):
                 );
                 CREATE INDEX IF NOT EXISTS idx_miniapp_log_requests_device_status
                     ON miniapp_log_requests(device_id, status, requested_at DESC);
+                CREATE TABLE IF NOT EXISTS vehicle_local_sounds (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    device_id INTEGER NOT NULL,
+                    sound_key TEXT NOT NULL,
+                    file_name TEXT NOT NULL,
+                    display_name TEXT NOT NULL,
+                    file_size INTEGER NOT NULL DEFAULT 0,
+                    modified_at INTEGER NOT NULL DEFAULT 0,
+                    synced_at TEXT NOT NULL,
+                    UNIQUE(device_id, sound_key)
+                );
+                CREATE INDEX IF NOT EXISTS idx_vehicle_local_sounds_device_name
+                    ON vehicle_local_sounds(device_id, display_name);
+                CREATE TABLE IF NOT EXISTS miniapp_remote_commands (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    device_id INTEGER NOT NULL,
+                    requested_by_user_id INTEGER NOT NULL,
+                    command_type TEXT NOT NULL,
+                    payload_json TEXT NOT NULL DEFAULT '{}',
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    message TEXT NOT NULL DEFAULT '',
+                    requested_at TEXT NOT NULL,
+                    delivered_at TEXT,
+                    completed_at TEXT,
+                    expires_at TEXT NOT NULL,
+                    result_json TEXT NOT NULL DEFAULT '{}'
+                );
+                CREATE INDEX IF NOT EXISTS idx_miniapp_remote_commands_device_status
+                    ON miniapp_remote_commands(device_id, status, requested_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_miniapp_remote_commands_user_requested
+                    ON miniapp_remote_commands(requested_by_user_id, requested_at DESC);
                 """
             )
             ensure_column(conn, "devices", "trial_started_at", "TEXT")
