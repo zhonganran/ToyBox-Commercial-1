@@ -58,7 +58,7 @@ class LedBleClient @Inject constructor(
     @Volatile private var notifyCharacteristic: BluetoothGattCharacteristic? = null
     @Volatile private var pendingWriteAck: CompletableDeferred<Int>? = null
     @Volatile private var manualDisconnect = false
-    @Volatile private var activeDeviceKind = LedDeviceKind.UNKNOWN
+    @Volatile private var activeProtocolSpec: LedGattProtocol? = null
     @Volatile private var negotiatedMtu = DEFAULT_MTU
     @Volatile private var protocolSetupStarted = false
     @Volatile private var protocolInitializationStarted = false
@@ -87,15 +87,25 @@ class LedBleClient @Inject constructor(
         shutdownJob = null
         manualDisconnect = false
         val prefs = preferences.state.value
-        if (!prefs.enabled) {
-            _connection.value = LedConnectionState(phase = LedConnectionPhase.DISABLED, message = "LED联动未开启")
+        val protocol = prefs.selectedProtocol
+        val profile = prefs.activeProtocol
+        if (!profile.enabled) {
+            _connection.value = LedConnectionState(
+                phase = LedConnectionPhase.DISABLED,
+                protocol = protocol,
+                message = "${protocol.title}未开启",
+            )
             return
         }
-        if (prefs.deviceAddress.isBlank()) {
-            _connection.value = LedConnectionState(phase = LedConnectionPhase.IDLE, message = "请先绑定LED设备")
+        if (profile.deviceAddress.isBlank()) {
+            _connection.value = LedConnectionState(
+                phase = LedConnectionPhase.IDLE,
+                protocol = protocol,
+                message = "请先绑定${protocol.title}设备",
+            )
             return
         }
-        connect(prefs.deviceAddress, prefs.deviceName, prefs.deviceKind)
+        connect(profile.deviceAddress, profile.deviceName, protocol)
     }
 
     @SuppressLint("MissingPermission")
@@ -112,7 +122,10 @@ class LedBleClient @Inject constructor(
         stopScan()
         foundDevices.clear()
         _devices.value = emptyList()
-        _connection.value = LedConnectionState(phase = LedConnectionPhase.SCANNING, message = "正在扫描LED设备")
+        _connection.value = LedConnectionState(
+            phase = LedConnectionPhase.SCANNING,
+            message = "正在自动识别LED设备",
+        )
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
@@ -137,6 +150,7 @@ class LedBleClient @Inject constructor(
         if (_connection.value.phase == LedConnectionPhase.SCANNING) {
             _connection.value = LedConnectionState(
                 phase = LedConnectionPhase.IDLE,
+                protocol = preferences.state.value.selectedProtocol,
                 message = if (_devices.value.isEmpty()) "未发现LED设备" else "请选择LED设备",
             )
         }
@@ -146,13 +160,16 @@ class LedBleClient @Inject constructor(
     fun connect(
         address: String,
         name: String = "",
-        kind: LedDeviceKind = LedDeviceKind.UNKNOWN,
+        protocol: LedProtocolKind? = null,
     ) {
         shutdownJob?.cancel()
         shutdownJob = null
         manualDisconnect = false
         val current = _connection.value
-        if (current.address == address && current.phase in setOf(
+        if (
+            current.address.equals(address, ignoreCase = true) &&
+            (protocol == null || current.protocol == protocol) &&
+            current.phase in setOf(
                 LedConnectionPhase.CONNECTING,
                 LedConnectionPhase.DISCOVERING,
                 LedConnectionPhase.READY,
@@ -160,7 +177,7 @@ class LedBleClient @Inject constructor(
         ) return
         reconnectJob?.cancel()
         reconnectJob = null
-        connectInternal(address, name, kind)
+        connectInternal(address, name, protocol)
     }
 
     @SuppressLint("MissingPermission")
@@ -168,14 +185,26 @@ class LedBleClient @Inject constructor(
     private fun connectInternal(
         address: String,
         name: String = "",
-        kind: LedDeviceKind = LedDeviceKind.UNKNOWN,
+        protocol: LedProtocolKind?,
     ) {
         if (!hasRuntimePermission()) {
-            _connection.value = LedConnectionState(phase = LedConnectionPhase.ERROR, message = "缺少蓝牙权限")
+            _connection.value = LedConnectionState(
+                phase = LedConnectionPhase.ERROR,
+                address = address,
+                name = name,
+                protocol = protocol,
+                message = "缺少蓝牙权限",
+            )
             return
         }
         if (adapter?.isEnabled != true) {
-            _connection.value = LedConnectionState(phase = LedConnectionPhase.ERROR, message = "蓝牙未开启")
+            _connection.value = LedConnectionState(
+                phase = LedConnectionPhase.ERROR,
+                address = address,
+                name = name,
+                protocol = protocol,
+                message = "蓝牙未开启",
+            )
             scheduleReconnect()
             return
         }
@@ -185,17 +214,23 @@ class LedBleClient @Inject constructor(
 
         val device = runCatching { adapter?.getRemoteDevice(address) }.getOrNull()
         if (device == null) {
-            _connection.value = LedConnectionState(phase = LedConnectionPhase.ERROR, message = "LED设备地址无效")
+            _connection.value = LedConnectionState(
+                phase = LedConnectionPhase.ERROR,
+                address = address,
+                name = name,
+                protocol = protocol,
+                message = "LED设备地址无效",
+            )
             return
         }
         _connection.value = LedConnectionState(
             phase = LedConnectionPhase.CONNECTING,
             address = address,
             name = name,
-            deviceKind = kind,
+            protocol = protocol,
             message = "正在连接 ${name.ifBlank { address }}",
         )
-        WjxFileLogger.i(TAG, "connect address=$address name=$name expectedKind=$kind")
+        WjxFileLogger.i(TAG, "connect address=$address name=$name expectedProtocol=$protocol")
         bluetoothGatt = device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
     }
 
@@ -226,28 +261,19 @@ class LedBleClient @Inject constructor(
     }
 
     suspend fun play(scene: LedScene): Boolean {
-        val kind = activeDeviceKind
-        val packet = when (kind) {
-            LedDeviceKind.IPIXEL_FA -> LedProtocol.playScene(scene)
-            LedDeviceKind.A950 -> A950LedProtocol.playScene(scene)
-            LedDeviceKind.UNKNOWN -> return false
-        }
-        val presetId = when (kind) {
-            LedDeviceKind.IPIXEL_FA -> LedProtocol.presetId(scene)
-            LedDeviceKind.A950 -> A950LedProtocol.presetId(scene)
-            LedDeviceKind.UNKNOWN -> return false
-        }
-        return write(packet, "scene=${scene.name} kind=$kind preset=$presetId")
+        val protocol = activeProtocolSpec ?: return false
+        return write(
+            protocol.playScene(scene),
+            "scene=${scene.name} protocol=${protocol.kind} preset=${protocol.presetId(scene)}",
+        )
     }
 
     suspend fun setBrightness(percent: Int): Boolean {
-        val kind = activeDeviceKind
-        val packet = when (kind) {
-            LedDeviceKind.IPIXEL_FA -> LedProtocol.brightness(percent)
-            LedDeviceKind.A950 -> A950LedProtocol.brightness(percent)
-            LedDeviceKind.UNKNOWN -> return false
-        }
-        return write(packet, "brightness=${percent.coerceIn(0, 100)} kind=$kind")
+        val protocol = activeProtocolSpec ?: return false
+        return write(
+            protocol.brightness(percent),
+            "brightness=${percent.coerceIn(0, 100)} protocol=${protocol.kind}",
+        )
     }
 
     @SuppressLint("MissingPermission")
@@ -262,7 +288,8 @@ class LedBleClient @Inject constructor(
             WjxFileLogger.w(TAG, "write skipped not ready description=$description")
             return@withLock false
         }
-        val writeWithResponse = activeDeviceKind != LedDeviceKind.A950 &&
+        val protocol = activeProtocolSpec ?: return@withLock false
+        val writeWithResponse = !protocol.forceWriteWithoutResponse &&
             characteristic.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0
         characteristic.writeType = if (writeWithResponse) {
             BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
@@ -313,7 +340,7 @@ class LedBleClient @Inject constructor(
             true
         }
         if (succeeded) {
-            delay(if (activeDeviceKind == LedDeviceKind.A950) A950_WRITE_GAP_MS else WRITE_GAP_MS)
+            delay(protocol.writeGapMs)
         }
         succeeded
     }
@@ -322,7 +349,7 @@ class LedBleClient @Inject constructor(
         val current = _connection.value
         WjxFileLogger.w(TAG, "resetting GATT after write failure description=$description")
         closeGatt()
-        if (!manualDisconnect && preferences.state.value.enabled) {
+        if (!manualDisconnect && preferences.state.value.activeProtocol.enabled) {
             _connection.value = current.copy(
                 phase = LedConnectionPhase.RETRYING,
                 message = "LED写入失败，正在重新连接",
@@ -335,44 +362,33 @@ class LedBleClient @Inject constructor(
     private fun markReady(gatt: BluetoothGatt) {
         if (gatt !== bluetoothGatt) return
         val current = _connection.value
-        val kind = activeDeviceKind
+        val protocol = activeProtocolSpec ?: return
         _connection.value = current.copy(
             phase = LedConnectionPhase.READY,
-            deviceKind = kind,
-            message = "${kind.title}已连接",
+            protocol = protocol.kind,
+            message = "${protocol.kind.title}已连接",
             retryInSeconds = null,
         )
-        if (kind != LedDeviceKind.UNKNOWN && preferences.state.value.deviceKind != kind) {
-            preferences.setDeviceKind(kind)
-        }
         reconnectJob?.cancel()
         reconnectJob = null
-        if (kind == LedDeviceKind.A950) startA950Keepalive(gatt)
-        WjxFileLogger.i(TAG, "BLE ready address=${current.address} kind=$kind mtu=$negotiatedMtu")
+        startProtocolKeepalive(gatt, protocol)
+        WjxFileLogger.i(TAG, "BLE ready address=${current.address} protocol=${protocol.kind} mtu=$negotiatedMtu")
     }
 
-    private fun startA950Initialization(gatt: BluetoothGatt) {
+    private fun startProtocolInitialization(gatt: BluetoothGatt, protocol: LedGattProtocol) {
         protocolInitJob?.cancel()
         val job = scope.launch {
-            delay(A950_INITIAL_DELAY_MS)
-            repeat(A950_PREPARE_COUNT) { index ->
-                if (gatt !== bluetoothGatt || activeDeviceKind != LedDeviceKind.A950) return@launch
+            protocol.initializationSteps.forEach { step ->
+                delay(step.delayBeforeMs)
+                if (gatt !== bluetoothGatt || activeProtocolSpec !== protocol) return@launch
                 if (!write(
-                        A950LedProtocol.prepareUploadPacket,
-                        "A950 prepare ${index + 1}/$A950_PREPARE_COUNT",
+                        step.packet,
+                        "${protocol.kind} ${step.label}",
                         requireReady = false,
                     )
                 ) return@launch
-                delay(A950_PREPARE_GAP_MS)
             }
-            delay(A950_INIT_DELAY_MS)
-            if (!write(
-                    A950LedProtocol.initializePacket,
-                    "A950 initialize",
-                    requireReady = false,
-                )
-            ) return@launch
-            delay(A950_READY_DELAY_MS)
+            delay(protocol.readyDelayMs)
             markReady(gatt)
         }
         protocolInitJob = job
@@ -381,18 +397,20 @@ class LedBleClient @Inject constructor(
         }
     }
 
-    private fun startA950Keepalive(gatt: BluetoothGatt) {
+    private fun startProtocolKeepalive(gatt: BluetoothGatt, protocol: LedGattProtocol) {
+        val packet = protocol.keepalivePacket ?: return
+        val intervalMs = protocol.keepaliveIntervalMs ?: return
         keepaliveJob?.cancel()
         val job = scope.launch {
             while (
                 isActive &&
                 gatt === bluetoothGatt &&
-                activeDeviceKind == LedDeviceKind.A950 &&
+                activeProtocolSpec === protocol &&
                 _connection.value.ready
             ) {
-                delay(A950LedProtocol.KEEPALIVE_INTERVAL_MS)
+                delay(intervalMs)
                 if (!isActive || gatt !== bluetoothGatt || !_connection.value.ready) return@launch
-                if (!write(A950LedProtocol.keepalivePacket, "A950 keepalive")) return@launch
+                if (!write(packet, "${protocol.kind} keepalive")) return@launch
             }
         }
         keepaliveJob = job
@@ -417,7 +435,7 @@ class LedBleClient @Inject constructor(
         val notificationEnabled = runCatching {
             gatt.setCharacteristicNotification(notify, true)
         }.getOrDefault(false)
-        val descriptor = notify.getDescriptor(LedProtocol.CCCD_UUID)
+        val descriptor = notify.getDescriptor(activeProtocolSpec?.cccdUuid ?: return)
         if (!notificationEnabled || descriptor == null) {
             completeProtocolInitialization(gatt)
             return
@@ -449,10 +467,11 @@ class LedBleClient @Inject constructor(
         protocolInitializationStarted = true
         notifyFallbackJob?.cancel()
         notifyFallbackJob = null
-        when (activeDeviceKind) {
-            LedDeviceKind.IPIXEL_FA -> markReady(gatt)
-            LedDeviceKind.A950 -> startA950Initialization(gatt)
-            LedDeviceKind.UNKNOWN -> Unit
+        val protocol = activeProtocolSpec ?: return
+        if (protocol.initializationSteps.isEmpty()) {
+            markReady(gatt)
+        } else {
+            startProtocolInitialization(gatt, protocol)
         }
     }
 
@@ -472,7 +491,7 @@ class LedBleClient @Inject constructor(
         bluetoothGatt = null
         writeCharacteristic = null
         notifyCharacteristic = null
-        activeDeviceKind = LedDeviceKind.UNKNOWN
+        activeProtocolSpec = null
         negotiatedMtu = DEFAULT_MTU
         protocolSetupStarted = false
         protocolInitializationStarted = false
@@ -481,26 +500,48 @@ class LedBleClient @Inject constructor(
     }
 
     private fun scheduleReconnect() {
-        if (manualDisconnect || !preferences.state.value.enabled) return
+        val disconnected = _connection.value
+        val protocol = disconnected.protocol ?: return
+        val initialPreferences = preferences.state.value
+        val initialProfile = initialPreferences.protocol(protocol)
+        if (
+            manualDisconnect ||
+            initialPreferences.selectedProtocol != protocol ||
+            !initialProfile.enabled ||
+            !initialProfile.deviceAddress.equals(disconnected.address, ignoreCase = true)
+        ) return
         if (reconnectJob?.isActive == true) return
         val job = scope.launch {
             var attempt = 0
             while (isActive) {
-                if (!isActive || manualDisconnect || !preferences.state.value.enabled) return@launch
                 val prefs = preferences.state.value
-                if (prefs.deviceAddress.isBlank()) return@launch
+                val profile = prefs.protocol(protocol)
+                if (
+                    !isActive ||
+                    manualDisconnect ||
+                    prefs.selectedProtocol != protocol ||
+                    !profile.enabled ||
+                    profile.deviceAddress.isBlank()
+                ) return@launch
                 val delayMs = RECONNECT_DELAYS_MS[attempt.coerceAtMost(RECONNECT_DELAYS_MS.lastIndex)]
                 _connection.value = LedConnectionState(
                     phase = LedConnectionPhase.RETRYING,
-                    address = prefs.deviceAddress,
-                    name = prefs.deviceName,
-                    deviceKind = prefs.deviceKind,
-                    message = "LED连接已断开，${delayMs / 1_000}秒后重连",
+                    address = profile.deviceAddress,
+                    name = profile.deviceName,
+                    protocol = protocol,
+                    message = "${protocol.title}连接已断开，${delayMs / 1_000}秒后重连",
                     retryInSeconds = (delayMs / 1_000).toInt(),
                 )
                 delay(delayMs)
                 if (_connection.value.ready) return@launch
-                connectInternal(prefs.deviceAddress, prefs.deviceName, prefs.deviceKind)
+                val latest = preferences.state.value
+                val latestProfile = latest.protocol(protocol)
+                if (
+                    latest.selectedProtocol != protocol ||
+                    !latestProfile.enabled ||
+                    !latestProfile.deviceAddress.equals(profile.deviceAddress, ignoreCase = true)
+                ) return@launch
+                connectInternal(profile.deviceAddress, profile.deviceName, protocol)
                 delay(CONNECT_SETTLE_MS)
                 if (_connection.value.ready) return@launch
                 attempt++
@@ -515,39 +556,27 @@ class LedBleClient @Inject constructor(
     private val scanCallback = object : ScanCallback() {
         @SuppressLint("MissingPermission")
         override fun onScanResult(callbackType: Int, result: ScanResult) {
-            val name = runCatching { result.device.name }.getOrNull().orEmpty()
+            val name = runCatching { result.device.name }.getOrNull()
+                .orEmpty()
+                .ifBlank { result.scanRecord?.deviceName.orEmpty() }
             val services = result.scanRecord?.serviceUuids.orEmpty().map { it.uuid }
-            val kind = when {
-                LedProtocol.SERVICE_UUID in services -> LedDeviceKind.IPIXEL_FA
-                A950LedProtocol.SERVICE_UUID in services -> LedDeviceKind.A950
-                else -> LedDeviceKind.UNKNOWN
-            }
+            val advertisedProtocols = LedProtocolKind.entries
+                .filterTo(linkedSetOf()) { LedProtocols.forKind(it).serviceUuid in services }
+            val advertisedProtocol = detectLedProtocol(expected = null, available = advertisedProtocols)
             val nameLooksLikeLed = name.contains("LED", ignoreCase = true) ||
                 name.contains("PIXEL", ignoreCase = true) ||
                 name.contains("A950", ignoreCase = true)
             val previous = foundDevices[result.device.address]
-            val resolvedKind = kind.takeUnless { it == LedDeviceKind.UNKNOWN }
-                ?: previous?.kind
-                ?: LedDeviceKind.UNKNOWN
-            if (kind == LedDeviceKind.UNKNOWN && name.isBlank()) return
-            if (
-                kind == LedDeviceKind.UNKNOWN &&
-                !nameLooksLikeLed &&
-                !foundDevices.containsKey(result.device.address)
-            ) {
-                WjxFileLogger.i(TAG, "scan candidate awaiting service probe name=$name address=${result.device.address}")
-            }
+            val resolvedProtocol = advertisedProtocol ?: previous?.protocol
+            if (resolvedProtocol == null && advertisedProtocols.isEmpty() && !nameLooksLikeLed) return
             val item = LedDevice(
                 address = result.device.address,
                 name = name.ifBlank { "LED设备" },
                 rssi = result.rssi,
-                kind = resolvedKind,
+                protocol = resolvedProtocol,
             )
             foundDevices[item.address] = item
-            _devices.value = foundDevices.values.sortedWith(
-                compareByDescending<LedDevice> { it.kind != LedDeviceKind.UNKNOWN }
-                    .thenByDescending { it.rssi },
-            )
+            _devices.value = foundDevices.values.sortedByDescending { it.rssi }
         }
 
         override fun onScanFailed(errorCode: Int) {
@@ -590,67 +619,78 @@ class LedBleClient @Inject constructor(
                 scheduleReconnect()
                 return
             }
-            val faService = gatt.getService(LedProtocol.SERVICE_UUID)
-            val faWrite = faService?.getCharacteristic(LedProtocol.WRITE_UUID)
-            val a950Service = gatt.getService(A950LedProtocol.SERVICE_UUID)
-            val a950Write = a950Service?.getCharacteristic(A950LedProtocol.WRITE_UUID)
-            val preferredKind = _connection.value.deviceKind
-            val detectedKind = when {
-                preferredKind == LedDeviceKind.A950 && a950Write != null -> LedDeviceKind.A950
-                preferredKind == LedDeviceKind.IPIXEL_FA && faWrite != null -> LedDeviceKind.IPIXEL_FA
-                faWrite != null -> LedDeviceKind.IPIXEL_FA
-                a950Write != null -> LedDeviceKind.A950
-                else -> LedDeviceKind.UNKNOWN
-            }
-            if (detectedKind == LedDeviceKind.UNKNOWN) {
-                _connection.value = _connection.value.copy(phase = LedConnectionPhase.ERROR, message = "设备不是受支持的LED屏")
+            val expectedProtocol = _connection.value.protocol
+            val availableProtocols = LedProtocolKind.entries.mapNotNull { kind ->
+                val protocol = LedProtocols.forKind(kind)
+                val service = gatt.getService(protocol.serviceUuid) ?: return@mapNotNull null
+                val write = service.getCharacteristic(protocol.writeUuid) ?: return@mapNotNull null
+                kind to Triple(protocol, write, service.getCharacteristic(protocol.notifyUuid))
+            }.toMap()
+            val detectedKind = detectLedProtocol(expectedProtocol, availableProtocols.keys)
+            if (detectedKind == null) {
+                val message = if (availableProtocols.isEmpty()) {
+                    "设备未发现支持的LED协议"
+                } else {
+                    "设备协议无法唯一识别，请重新扫描"
+                }
+                _connection.value = _connection.value.copy(
+                    phase = LedConnectionPhase.ERROR,
+                    message = message,
+                )
                 closeGatt()
                 return
             }
-            activeDeviceKind = detectedKind
+            val (protocol, write, notify) = checkNotNull(availableProtocols[detectedKind])
+            activeProtocolSpec = protocol
             _connection.value = _connection.value.copy(
-                deviceKind = detectedKind,
+                protocol = detectedKind,
                 message = "已识别${detectedKind.title}，正在初始化",
             )
-            WjxFileLogger.i(TAG, "services detected kind=$detectedKind")
-            when (detectedKind) {
-                LedDeviceKind.IPIXEL_FA -> {
-                    writeCharacteristic = faWrite
-                    notifyCharacteristic = faService?.getCharacteristic(LedProtocol.NOTIFY_UUID)
+            val current = _connection.value
+            preferences.bindDetectedDevice(
+                protocol = detectedKind,
+                address = current.address,
+                name = current.name.ifBlank { "LED设备" },
+            )
+            foundDevices[current.address]?.let { detected ->
+                foundDevices[current.address] = detected.copy(protocol = detectedKind)
+                _devices.value = foundDevices.values.sortedByDescending { it.rssi }
+            }
+            WjxFileLogger.i(
+                TAG,
+                "services detected expected=$expectedProtocol actual=$detectedKind available=${availableProtocols.keys}",
+            )
+            writeCharacteristic = write
+            notifyCharacteristic = notify
+            val requestedMtu = protocol.requestedMtu
+            if (requestedMtu == null) {
+                completeProtocolSetup(gatt)
+                return
+            }
+            runCatching { gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH) }
+            val mtuRequested = runCatching { gatt.requestMtu(requestedMtu) }.getOrDefault(false)
+            if (mtuRequested) {
+                mtuFallbackJob?.cancel()
+                mtuFallbackJob = scope.launch {
+                    delay(MTU_CALLBACK_TIMEOUT_MS)
+                    WjxFileLogger.w(TAG, "$detectedKind MTU callback timeout; continuing with mtu=$negotiatedMtu")
                     completeProtocolSetup(gatt)
                 }
-                LedDeviceKind.A950 -> {
-                    writeCharacteristic = a950Write
-                    notifyCharacteristic = a950Service?.getCharacteristic(A950LedProtocol.NOTIFY_UUID)
-                    runCatching { gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH) }
-                    val mtuRequested = runCatching {
-                        gatt.requestMtu(A950LedProtocol.REQUESTED_MTU)
-                    }.getOrDefault(false)
-                    if (mtuRequested) {
-                        mtuFallbackJob?.cancel()
-                        mtuFallbackJob = scope.launch {
-                            delay(MTU_CALLBACK_TIMEOUT_MS)
-                            WjxFileLogger.w(TAG, "A950 MTU callback timeout; continuing with mtu=$negotiatedMtu")
-                            completeProtocolSetup(gatt)
-                        }
-                    } else {
-                        WjxFileLogger.w(TAG, "A950 MTU request rejected; continuing with mtu=$negotiatedMtu")
-                        completeProtocolSetup(gatt)
-                    }
-                }
-                LedDeviceKind.UNKNOWN -> Unit
+            } else {
+                WjxFileLogger.w(TAG, "$detectedKind MTU request rejected; continuing with mtu=$negotiatedMtu")
+                completeProtocolSetup(gatt)
             }
         }
 
         override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
-            if (gatt !== bluetoothGatt || activeDeviceKind != LedDeviceKind.A950) return
+            if (gatt !== bluetoothGatt || activeProtocolSpec?.requestedMtu == null) return
             negotiatedMtu = if (status == BluetoothGatt.GATT_SUCCESS) mtu else DEFAULT_MTU
-            WjxFileLogger.i(TAG, "A950 MTU status=$status mtu=$negotiatedMtu")
+            WjxFileLogger.i(TAG, "${activeProtocolSpec?.kind} MTU status=$status mtu=$negotiatedMtu")
             completeProtocolSetup(gatt)
         }
 
         override fun onDescriptorWrite(gatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
-            if (gatt !== bluetoothGatt || descriptor.uuid != LedProtocol.CCCD_UUID) return
+            if (gatt !== bluetoothGatt || descriptor.uuid != activeProtocolSpec?.cccdUuid) return
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 WjxFileLogger.w(TAG, "notify descriptor failed status=$status; continuing without ACK notifications")
             }
@@ -691,17 +731,10 @@ class LedBleClient @Inject constructor(
         private const val TAG = "LedBleClient"
         private const val DEFAULT_MTU = 23
         private const val SCAN_WINDOW_MS = 10_000L
-        private const val WRITE_GAP_MS = 70L
-        private const val A950_WRITE_GAP_MS = 90L
         private const val WRITE_ACK_TIMEOUT_MS = 1_500L
         private const val CONNECT_SETTLE_MS = 5_000L
         private const val MTU_CALLBACK_TIMEOUT_MS = 2_500L
         private const val NOTIFY_CALLBACK_TIMEOUT_MS = 3_000L
-        private const val A950_INITIAL_DELAY_MS = 200L
-        private const val A950_PREPARE_COUNT = 3
-        private const val A950_PREPARE_GAP_MS = 500L
-        private const val A950_INIT_DELAY_MS = 300L
-        private const val A950_READY_DELAY_MS = 200L
         private val RECONNECT_DELAYS_MS = longArrayOf(1_000L, 2_000L, 5_000L, 10_000L, 30_000L)
     }
 }

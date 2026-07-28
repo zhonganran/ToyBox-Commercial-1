@@ -16,10 +16,12 @@ enum class LedScene(
     BRAKE_WARNING("刹车提醒", 55),
 }
 
-enum class LedDeviceKind(val title: String) {
-    UNKNOWN("连接后自动识别"),
-    IPIXEL_FA("标准LED屏"),
-    A950("增强LED屏"),
+enum class LedProtocolKind(
+    val title: String,
+    val description: String,
+) {
+    IPIXEL_FA("标准 FA 协议", "FA 服务与遥控预设指令"),
+    A950("A950 协议", "A950 服务、初始化与周期保活"),
 }
 
 enum class LedConnectionPhase {
@@ -37,28 +39,40 @@ data class LedDevice(
     val address: String,
     val name: String,
     val rssi: Int,
-    val kind: LedDeviceKind = LedDeviceKind.UNKNOWN,
+    val protocol: LedProtocolKind? = null,
 )
 
 data class LedConnectionState(
     val phase: LedConnectionPhase = LedConnectionPhase.IDLE,
     val address: String = "",
     val name: String = "",
-    val deviceKind: LedDeviceKind = LedDeviceKind.UNKNOWN,
+    val protocol: LedProtocolKind? = null,
     val message: String = "未连接",
     val retryInSeconds: Int? = null,
 ) {
     val ready: Boolean get() = phase == LedConnectionPhase.READY
 }
 
-data class LedPreferenceSnapshot(
+data class LedProtocolPreference(
     val enabled: Boolean = false,
     val deviceAddress: String = "",
     val deviceName: String = "",
-    val deviceKind: LedDeviceKind = LedDeviceKind.UNKNOWN,
     val brightness: Int = 70,
-    val rules: List<LedLinkageRule> = LedLinkageDefaults.rules,
 )
+
+data class LedPreferenceSnapshot(
+    val selectedProtocol: LedProtocolKind = LedProtocolKind.IPIXEL_FA,
+    val ipixelFa: LedProtocolPreference = LedProtocolPreference(),
+    val a950: LedProtocolPreference = LedProtocolPreference(),
+    val rules: List<LedLinkageRule> = LedLinkageDefaults.rules,
+) {
+    fun protocol(kind: LedProtocolKind): LedProtocolPreference = when (kind) {
+        LedProtocolKind.IPIXEL_FA -> ipixelFa
+        LedProtocolKind.A950 -> a950
+    }
+
+    val activeProtocol: LedProtocolPreference get() = protocol(selectedProtocol)
+}
 
 data class LedVehicleSignals(
     val speed: Int? = null,

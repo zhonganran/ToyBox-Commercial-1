@@ -67,23 +67,47 @@ class LedPreferencesTest {
     }
 
     @Test
-    fun `legacy bound devices migrate to automatic protocol detection`() {
+    fun `legacy binding migrates into its detected protocol profile`() {
         context.getSharedPreferences(LedPreferences.PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString("device_address", "AA:BB:CC:DD:EE:FF")
             .putString("device_name", "LED")
+            .putString("device_kind", LedProtocolKind.A950.name)
+            .putBoolean("enabled", true)
+            .putInt("brightness", 63)
             .commit()
 
-        assertEquals(LedDeviceKind.UNKNOWN, LedPreferences(context).state.value.deviceKind)
+        val snapshot = LedPreferences(context).state.value
+        assertEquals(LedProtocolKind.A950, snapshot.selectedProtocol)
+        assertEquals(
+            LedProtocolPreference(
+                enabled = true,
+                deviceAddress = "AA:BB:CC:DD:EE:FF",
+                deviceName = "LED",
+                brightness = 63,
+            ),
+            snapshot.a950,
+        )
+        assertTrue(snapshot.ipixelFa.deviceAddress.isBlank())
     }
 
     @Test
-    fun `detected device kind persists with the binding`() {
+    fun `detected protocol bindings keep independent devices and brightness`() {
         val preferences = LedPreferences(context)
-        preferences.setDevice("AA:BB:CC:DD:EE:FF", "LED", LedDeviceKind.A950)
+        preferences.bindDetectedDevice(LedProtocolKind.IPIXEL_FA, "FA:00", "FA LED")
+        preferences.setBrightness(LedProtocolKind.IPIXEL_FA, 35)
+        preferences.bindDetectedDevice(LedProtocolKind.A950, "A9:50", "A950 LED")
+        preferences.setBrightness(LedProtocolKind.A950, 85)
 
-        assertEquals(LedDeviceKind.A950, LedPreferences(context).state.value.deviceKind)
-        preferences.clearDevice()
-        assertEquals(LedDeviceKind.UNKNOWN, preferences.state.value.deviceKind)
+        val snapshot = LedPreferences(context).state.value
+        assertEquals(LedProtocolKind.A950, snapshot.selectedProtocol)
+        assertEquals("FA:00", snapshot.ipixelFa.deviceAddress)
+        assertEquals(35, snapshot.ipixelFa.brightness)
+        assertEquals("A9:50", snapshot.a950.deviceAddress)
+        assertEquals(85, snapshot.a950.brightness)
+
+        preferences.clearDevice(LedProtocolKind.A950)
+        assertTrue(preferences.state.value.a950.deviceAddress.isBlank())
+        assertEquals("FA:00", preferences.state.value.ipixelFa.deviceAddress)
     }
 }

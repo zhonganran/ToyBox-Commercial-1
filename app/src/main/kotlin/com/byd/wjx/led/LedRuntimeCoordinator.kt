@@ -49,24 +49,43 @@ class LedRuntimeCoordinator @Inject constructor(
         runtimeJob = scope.launch {
             coroutineScope {
                 launch {
+                    var previousBinding: ActiveLedBinding? = null
                     preferences.state
-                        .map { Triple(it.enabled, it.deviceAddress, it.deviceName) }
+                        .map {
+                            ActiveLedBinding(
+                                protocol = it.selectedProtocol,
+                                enabled = it.activeProtocol.enabled,
+                                deviceAddress = it.activeProtocol.deviceAddress,
+                            )
+                        }
                         .distinctUntilChanged()
-                        .collect { (enabled, _, _) ->
-                            if (enabled) {
-                                bleClient.startAutoConnect()
-                            } else {
-                                if (bleClient.connection.value.ready) {
-                                    bleClient.play(LedScene.DEFAULT)
-                                }
+                        .collect { binding ->
+                            val connection = bleClient.connection.value
+                            val connectionIsActive = connection.phase in setOf(
+                                LedConnectionPhase.CONNECTING,
+                                LedConnectionPhase.DISCOVERING,
+                                LedConnectionPhase.READY,
+                                LedConnectionPhase.RETRYING,
+                            )
+                            val connectionMatches =
+                                connection.protocol == binding.protocol &&
+                                    connection.address.equals(binding.deviceAddress, ignoreCase = true)
+                            if (connectionIsActive && (!binding.enabled || !connectionMatches)) {
+                                if (connection.ready) bleClient.play(LedScene.DEFAULT)
                                 bleClient.disconnect()
+                            }
+                            if ((previousBinding != null && previousBinding != binding) || !binding.enabled) {
                                 decisionMutex.withLock {
+                                    testRestoreJob?.cancel()
+                                    testRestoreJob = null
                                     ruleEngine.reset()
                                     connectionInitialized = false
                                     resetSignalCaches()
                                     _runtime.value = LedRuntimeState(currentScene = LedScene.DEFAULT)
                                 }
                             }
+                            previousBinding = binding
+                            bleClient.startAutoConnect()
                         }
                 }
                 launch {
@@ -104,13 +123,16 @@ class LedRuntimeCoordinator @Inject constructor(
                         if (connection.ready && !wasReady) {
                             connectionInitialized = false
                             val prefs = preferences.state.value
+                            val profile = connection.protocol
+                                ?.let(prefs::protocol)
+                                ?: prefs.activeProtocol
                             decisionMutex.withLock {
                                 testRestoreJob?.cancel()
                                 testRestoreJob = null
                                 ruleEngine.reset()
                                 resetSignalCaches()
                                 _runtime.value = LedRuntimeState(currentScene = LedScene.DEFAULT)
-                                bleClient.setBrightness(prefs.brightness)
+                                bleClient.setBrightness(profile.brightness)
                                 val sent = bleClient.play(LedScene.DEFAULT)
                                 _runtime.value = if (sent) {
                                     _runtime.value.copy(
@@ -162,7 +184,7 @@ class LedRuntimeCoordinator @Inject constructor(
                     while (kotlin.coroutines.coroutineContext.isActive) {
                         delay(ENGINE_TICK_MS)
                         if (
-                            preferences.state.value.enabled &&
+                            preferences.state.value.activeProtocol.enabled &&
                             bleClient.connection.value.ready &&
                             connectionInitialized
                         ) {
@@ -208,7 +230,12 @@ class LedRuntimeCoordinator @Inject constructor(
         return sent
     }
 
-    suspend fun applyBrightness(percent: Int): Boolean = bleClient.setBrightness(percent)
+    suspend fun applyBrightness(percent: Int): Boolean {
+        val prefs = preferences.state.value
+        val connection = bleClient.connection.value
+        if (!connection.ready || connection.protocol != prefs.selectedProtocol) return false
+        return bleClient.setBrightness(percent)
+    }
 
     private suspend fun runSignalLoop(
         label: String,
@@ -218,7 +245,7 @@ class LedRuntimeCoordinator @Inject constructor(
     ) {
         while (kotlin.coroutines.coroutineContext.isActive) {
             if (
-                !preferences.state.value.enabled ||
+                !preferences.state.value.activeProtocol.enabled ||
                 !bleClient.connection.value.ready ||
                 !connectionInitialized
             ) {
@@ -244,7 +271,7 @@ class LedRuntimeCoordinator @Inject constructor(
     }
 
     private suspend fun evaluateAndDispatch(now: Long) = decisionMutex.withLock {
-        if (!preferences.state.value.enabled || !connectionInitialized) return@withLock
+        if (!preferences.state.value.activeProtocol.enabled || !connectionInitialized) return@withLock
         val motion = freshSignals(now, latestMotionSignalsAt, MOTION_FRESH_MS, latestMotionSignals)
         val brake = freshSignals(now, latestBrakeSignalsAt, BRAKE_FRESH_MS, latestBrakeSignals)
         val body = freshSignals(now, latestBodySignalsAt, BODY_FRESH_MS, latestBodySignals)
@@ -387,5 +414,11 @@ class LedRuntimeCoordinator @Inject constructor(
         val reverseLight: Int?,
         val doors: List<Int?>,
         val trunk: Int?,
+    )
+
+    private data class ActiveLedBinding(
+        val protocol: LedProtocolKind,
+        val enabled: Boolean,
+        val deviceAddress: String,
     )
 }

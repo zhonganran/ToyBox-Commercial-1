@@ -8,6 +8,7 @@ import com.byd.wjx.led.LedDevice
 import com.byd.wjx.led.LedLinkageRule
 import com.byd.wjx.led.LedPreferenceSnapshot
 import com.byd.wjx.led.LedPreferences
+import com.byd.wjx.led.LedProtocolKind
 import com.byd.wjx.led.LedRuntimeCoordinator
 import com.byd.wjx.led.LedRuntimeState
 import com.byd.wjx.led.LedScene
@@ -57,13 +58,22 @@ class LedSettingsViewModel @Inject constructor(
     }
 
     fun setEnabled(enabled: Boolean) {
+        bleClient.stopScan()
+        val protocol = preferences.state.value.selectedProtocol
         if (enabled) {
-            preferences.setEnabled(true)
-            showMessage("LED联动已开启")
+            preferences.setEnabled(protocol, true)
+            showMessage("${protocol.title}联动已开启")
         } else {
-            preferences.setEnabled(false)
-            showMessage("LED联动已关闭")
+            preferences.setEnabled(protocol, false)
+            showMessage("${protocol.title}联动已关闭")
         }
+    }
+
+    fun selectProtocol(protocol: LedProtocolKind) {
+        if (preferences.state.value.selectedProtocol == protocol) return
+        bleClient.stopScan()
+        preferences.setSelectedProtocol(protocol)
+        showMessage("已切换到${protocol.title}")
     }
 
     fun scan() {
@@ -74,9 +84,16 @@ class LedSettingsViewModel @Inject constructor(
     fun stopScan() = bleClient.stopScan()
 
     fun bind(device: LedDevice) {
-        preferences.setDevice(device.address, device.name, device.kind)
-        preferences.setEnabled(true)
-        showMessage("正在绑定 ${device.name}")
+        bleClient.stopScan()
+        val protocol = device.protocol
+        if (protocol != null) {
+            preferences.bindDetectedDevice(protocol, device.address, device.name)
+            bleClient.connect(device.address, device.name, protocol)
+            showMessage("已识别${protocol.title}，正在绑定 ${device.name}")
+        } else {
+            bleClient.connect(device.address, device.name)
+            showMessage("正在连接并自动识别 ${device.name}")
+        }
     }
 
     fun reconnect() {
@@ -86,20 +103,30 @@ class LedSettingsViewModel @Inject constructor(
 
     fun unbind() {
         viewModelScope.launch {
-            if (bleClient.connection.value.ready) runtimeCoordinator.testScene(LedScene.DEFAULT)
-            bleClient.disconnect()
-            preferences.setEnabled(false)
-            preferences.clearDevice()
-            showMessage("LED设备已解绑")
+            val snapshot = preferences.state.value
+            val protocol = snapshot.selectedProtocol
+            val profile = snapshot.activeProtocol
+            val connection = bleClient.connection.value
+            val isCurrentConnection = connection.protocol == protocol &&
+                connection.address.equals(profile.deviceAddress, ignoreCase = true)
+            if (isCurrentConnection) {
+                if (connection.ready) runtimeCoordinator.testScene(LedScene.DEFAULT)
+                bleClient.disconnect()
+            }
+            preferences.setEnabled(protocol, false)
+            preferences.clearDevice(protocol)
+            showMessage("${protocol.title}设备已解绑")
         }
     }
 
     fun setBrightness(percent: Int) {
-        preferences.setBrightness(percent)
+        val protocol = preferences.state.value.selectedProtocol
+        preferences.setBrightness(protocol, percent)
     }
 
     fun applyBrightness(percent: Int) {
-        preferences.setBrightness(percent)
+        val protocol = preferences.state.value.selectedProtocol
+        preferences.setBrightness(protocol, percent)
         viewModelScope.launch {
             val ok = runtimeCoordinator.applyBrightness(percent)
             showMessage(if (ok) "亮度已调至 $percent%" else "LED未连接，亮度将在重连后应用")

@@ -2,11 +2,38 @@ package com.byd.wjx.led
 
 import java.util.UUID
 
-object LedProtocol {
-    val SERVICE_UUID: UUID = UUID.fromString("000000fa-0000-1000-8000-00805f9b34fb")
-    val WRITE_UUID: UUID = UUID.fromString("0000fa02-0000-1000-8000-00805f9b34fb")
-    val NOTIFY_UUID: UUID = UUID.fromString("0000fa03-0000-1000-8000-00805f9b34fb")
-    val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+internal data class LedProtocolInitializationStep(
+    val packet: ByteArray,
+    val label: String,
+    val delayBeforeMs: Long,
+)
+
+internal interface LedGattProtocol {
+    val kind: LedProtocolKind
+    val serviceUuid: UUID
+    val writeUuid: UUID
+    val notifyUuid: UUID
+    val cccdUuid: UUID
+    val requestedMtu: Int? get() = null
+    val forceWriteWithoutResponse: Boolean get() = false
+    val writeGapMs: Long
+    val initializationSteps: List<LedProtocolInitializationStep> get() = emptyList()
+    val readyDelayMs: Long get() = 0L
+    val keepalivePacket: ByteArray? get() = null
+    val keepaliveIntervalMs: Long? get() = null
+
+    fun playScene(scene: LedScene): ByteArray
+    fun presetId(scene: LedScene): Int
+    fun brightness(percent: Int): ByteArray
+}
+
+internal object IPixelFaLedProtocol : LedGattProtocol {
+    override val kind = LedProtocolKind.IPIXEL_FA
+    override val serviceUuid: UUID = UUID.fromString("000000fa-0000-1000-8000-00805f9b34fb")
+    override val writeUuid: UUID = UUID.fromString("0000fa02-0000-1000-8000-00805f9b34fb")
+    override val notifyUuid: UUID = UUID.fromString("0000fa03-0000-1000-8000-00805f9b34fb")
+    override val cccdUuid: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+    override val writeGapMs = 70L
 
     /** Selects one of the 20 firmware-resident iPixel remote-control presets. */
     fun playRemotePreset(presetId: Int, language: Int = LANGUAGE_CHINESE): ByteArray {
@@ -24,9 +51,9 @@ object LedProtocol {
         )
     }
 
-    fun playScene(scene: LedScene): ByteArray = playRemotePreset(presetId(scene))
+    override fun playScene(scene: LedScene): ByteArray = playRemotePreset(presetId(scene))
 
-    fun presetId(scene: LedScene): Int = when (scene) {
+    override fun presetId(scene: LedScene): Int = when (scene) {
         LedScene.DEFAULT -> 6
         LedScene.LEFT_TURN -> 3
         LedScene.RIGHT_TURN -> 5
@@ -38,7 +65,7 @@ object LedProtocol {
         LedScene.BRAKE_WARNING -> 8
     }
 
-    fun brightness(percent: Int): ByteArray = byteArrayOf(
+    override fun brightness(percent: Int): ByteArray = byteArrayOf(
         0x05,
         0x00,
         0x04,
@@ -48,4 +75,20 @@ object LedProtocol {
 
     private const val LANGUAGE_ENGLISH = 0
     private const val LANGUAGE_CHINESE = 1
+}
+
+internal object LedProtocols {
+    fun forKind(kind: LedProtocolKind): LedGattProtocol = when (kind) {
+        LedProtocolKind.IPIXEL_FA -> IPixelFaLedProtocol
+        LedProtocolKind.A950 -> A950LedProtocol
+    }
+}
+
+internal fun detectLedProtocol(
+    expected: LedProtocolKind?,
+    available: Set<LedProtocolKind>,
+): LedProtocolKind? = when {
+    expected != null && expected in available -> expected
+    available.size == 1 -> available.first()
+    else -> null
 }

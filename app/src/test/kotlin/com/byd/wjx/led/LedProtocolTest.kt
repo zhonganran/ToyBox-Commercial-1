@@ -2,6 +2,7 @@ package com.byd.wjx.led
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class LedProtocolTest {
@@ -9,7 +10,7 @@ class LedProtocolTest {
     fun `firmware preset command uses official Chinese remote-control packet`() {
         assertArrayEquals(
             byteArrayOf(0x06, 0x00, 0x07, 0x80.toByte(), 0x03, 0x01),
-            LedProtocol.playScene(LedScene.LEFT_TURN),
+            IPixelFaLedProtocol.playScene(LedScene.LEFT_TURN),
         )
     }
 
@@ -28,7 +29,7 @@ class LedProtocolTest {
         )
 
         expected.forEach { (scene, presetId) ->
-            assertEquals(scene.name, presetId, LedProtocol.presetId(scene))
+            assertEquals(scene.name, presetId, IPixelFaLedProtocol.presetId(scene))
         }
     }
 
@@ -36,7 +37,7 @@ class LedProtocolTest {
     fun `brightness packet clamps to protocol range`() {
         assertArrayEquals(
             byteArrayOf(0x05, 0x00, 0x04, 0x80.toByte(), 0x64),
-            LedProtocol.brightness(120),
+            IPixelFaLedProtocol.brightness(120),
         )
     }
 
@@ -77,5 +78,30 @@ class LedProtocolTest {
             byteArrayOf(0x4E, 0x52, 0x04, 0x81.toByte(), 0x01, 0x01, 0x27),
             A950LedProtocol.keepalivePacket,
         )
+    }
+
+    @Test
+    fun `protocol detection prefers an expected protocol that is actually available`() {
+        assertEquals(
+            LedProtocolKind.A950,
+            detectLedProtocol(
+                expected = LedProtocolKind.A950,
+                available = LedProtocolKind.entries.toSet(),
+            ),
+        )
+    }
+
+    @Test
+    fun `protocol detection automatically accepts one available protocol`() {
+        assertEquals(
+            LedProtocolKind.IPIXEL_FA,
+            detectLedProtocol(expected = null, available = setOf(LedProtocolKind.IPIXEL_FA)),
+        )
+    }
+
+    @Test
+    fun `protocol detection rejects missing or ambiguous services`() {
+        assertNull(detectLedProtocol(expected = null, available = emptySet()))
+        assertNull(detectLedProtocol(expected = null, available = LedProtocolKind.entries.toSet()))
     }
 }

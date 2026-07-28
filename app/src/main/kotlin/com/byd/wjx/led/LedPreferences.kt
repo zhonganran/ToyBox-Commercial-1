@@ -13,35 +13,41 @@ class LedPreferences @Inject constructor(
     @ApplicationContext context: Context,
 ) {
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    init {
+        migrateLegacyBinding()
+    }
+
     private val _state = MutableStateFlow(readSnapshot())
     val state: StateFlow<LedPreferenceSnapshot> = _state.asStateFlow()
 
-    fun setEnabled(enabled: Boolean) = update {
-        putBoolean(KEY_ENABLED, enabled)
+    fun setSelectedProtocol(protocol: LedProtocolKind) = update {
+        putString(KEY_SELECTED_PROTOCOL, protocol.name)
     }
 
-    fun setDevice(
+    fun setEnabled(protocol: LedProtocolKind, enabled: Boolean) = update {
+        putBoolean(key(protocol, FIELD_ENABLED), enabled)
+    }
+
+    fun bindDetectedDevice(
+        protocol: LedProtocolKind,
         address: String,
         name: String,
-        kind: LedDeviceKind = LedDeviceKind.UNKNOWN,
+        enable: Boolean = true,
     ) = update {
-        putString(KEY_DEVICE_ADDRESS, address)
-        putString(KEY_DEVICE_NAME, name)
-        putString(KEY_DEVICE_KIND, kind.name)
+        putString(KEY_SELECTED_PROTOCOL, protocol.name)
+        putString(key(protocol, FIELD_DEVICE_ADDRESS), address)
+        putString(key(protocol, FIELD_DEVICE_NAME), name)
+        putBoolean(key(protocol, FIELD_ENABLED), enable)
     }
 
-    fun setDeviceKind(kind: LedDeviceKind) = update {
-        putString(KEY_DEVICE_KIND, kind.name)
+    fun clearDevice(protocol: LedProtocolKind) = update {
+        remove(key(protocol, FIELD_DEVICE_ADDRESS))
+        remove(key(protocol, FIELD_DEVICE_NAME))
     }
 
-    fun clearDevice() = update {
-        remove(KEY_DEVICE_ADDRESS)
-        remove(KEY_DEVICE_NAME)
-        remove(KEY_DEVICE_KIND)
-    }
-
-    fun setBrightness(percent: Int) = update {
-        putInt(KEY_BRIGHTNESS, percent.coerceIn(0, 100))
+    fun setBrightness(protocol: LedProtocolKind, percent: Int) = update {
+        putInt(key(protocol, FIELD_BRIGHTNESS), percent.coerceIn(0, 100))
     }
 
     fun saveRule(rule: LedLinkageRule): Boolean {
@@ -91,25 +97,72 @@ class LedPreferences @Inject constructor(
     }
 
     private fun readSnapshot(): LedPreferenceSnapshot = LedPreferenceSnapshot(
-        enabled = prefs.getBoolean(KEY_ENABLED, false),
-        deviceAddress = prefs.getString(KEY_DEVICE_ADDRESS, "").orEmpty(),
-        deviceName = prefs.getString(KEY_DEVICE_NAME, "").orEmpty(),
-        deviceKind = prefs.getString(KEY_DEVICE_KIND, null)
-            ?.let { stored -> LedDeviceKind.entries.firstOrNull { it.name == stored } }
-            ?: LedDeviceKind.UNKNOWN,
-        brightness = prefs.getInt(KEY_BRIGHTNESS, 70).coerceIn(0, 100),
+        selectedProtocol = prefs.getString(KEY_SELECTED_PROTOCOL, null)
+            ?.let { stored -> LedProtocolKind.entries.firstOrNull { it.name == stored } }
+            ?: LedProtocolKind.IPIXEL_FA,
+        ipixelFa = readProtocol(LedProtocolKind.IPIXEL_FA),
+        a950 = readProtocol(LedProtocolKind.A950),
         rules = prefs.getString(KEY_RULES_V2, null)
             ?.let(LedLinkageRuleCodec::decode)
             ?: LedLinkageDefaults.rules,
     )
 
+    private fun readProtocol(protocol: LedProtocolKind): LedProtocolPreference = LedProtocolPreference(
+        enabled = prefs.getBoolean(key(protocol, FIELD_ENABLED), false),
+        deviceAddress = prefs.getString(key(protocol, FIELD_DEVICE_ADDRESS), "").orEmpty(),
+        deviceName = prefs.getString(key(protocol, FIELD_DEVICE_NAME), "").orEmpty(),
+        brightness = prefs.getInt(key(protocol, FIELD_BRIGHTNESS), 70).coerceIn(0, 100),
+    )
+
+    private fun migrateLegacyBinding() {
+        if (prefs.getBoolean(KEY_PROTOCOL_SPLIT_MIGRATED, false)) return
+        val storedKind = prefs.getString(LEGACY_DEVICE_KIND, null)
+        val protocol = if (storedKind == LedProtocolKind.A950.name) {
+            LedProtocolKind.A950
+        } else {
+            LedProtocolKind.IPIXEL_FA
+        }
+        val editor = prefs.edit()
+            .putString(KEY_SELECTED_PROTOCOL, protocol.name)
+            .putBoolean(key(protocol, FIELD_ENABLED), prefs.getBoolean(LEGACY_ENABLED, false))
+            .putString(
+                key(protocol, FIELD_DEVICE_ADDRESS),
+                prefs.getString(LEGACY_DEVICE_ADDRESS, "").orEmpty(),
+            )
+            .putString(
+                key(protocol, FIELD_DEVICE_NAME),
+                prefs.getString(LEGACY_DEVICE_NAME, "").orEmpty(),
+            )
+            .putInt(key(protocol, FIELD_BRIGHTNESS), prefs.getInt(LEGACY_BRIGHTNESS, 70))
+            .putBoolean(KEY_PROTOCOL_SPLIT_MIGRATED, true)
+        listOf(
+            LEGACY_ENABLED,
+            LEGACY_DEVICE_ADDRESS,
+            LEGACY_DEVICE_NAME,
+            LEGACY_DEVICE_KIND,
+            LEGACY_BRIGHTNESS,
+        ).forEach(editor::remove)
+        editor.commit()
+    }
+
+    private fun key(protocol: LedProtocolKind, field: String): String =
+        "${protocol.name.lowercase()}_$field"
+
     companion object {
         const val PREFS_NAME = "wjx_led_link"
-        private const val KEY_ENABLED = "enabled"
-        private const val KEY_DEVICE_ADDRESS = "device_address"
-        private const val KEY_DEVICE_NAME = "device_name"
-        internal const val KEY_DEVICE_KIND = "device_kind"
-        private const val KEY_BRIGHTNESS = "brightness"
+        internal const val KEY_SELECTED_PROTOCOL = "selected_protocol"
+        internal const val KEY_PROTOCOL_SPLIT_MIGRATED = "protocol_split_migrated"
         internal const val KEY_RULES_V2 = "rules_v2"
+
+        private const val FIELD_ENABLED = "enabled"
+        private const val FIELD_DEVICE_ADDRESS = "device_address"
+        private const val FIELD_DEVICE_NAME = "device_name"
+        private const val FIELD_BRIGHTNESS = "brightness"
+
+        private const val LEGACY_ENABLED = "enabled"
+        private const val LEGACY_DEVICE_ADDRESS = "device_address"
+        private const val LEGACY_DEVICE_NAME = "device_name"
+        private const val LEGACY_DEVICE_KIND = "device_kind"
+        private const val LEGACY_BRIGHTNESS = "brightness"
     }
 }

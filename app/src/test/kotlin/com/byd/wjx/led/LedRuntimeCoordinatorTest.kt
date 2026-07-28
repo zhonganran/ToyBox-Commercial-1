@@ -20,10 +20,13 @@ class LedRuntimeCoordinatorTest {
     fun `reconnect clears the previous scene and sends default smile first`() = runTest {
         val preferenceState = MutableStateFlow(
             LedPreferenceSnapshot(
-                enabled = true,
-                deviceAddress = "AA:BB:CC:DD:EE:FF",
-                deviceName = "LED",
-                brightness = 63,
+                selectedProtocol = LedProtocolKind.IPIXEL_FA,
+                ipixelFa = LedProtocolPreference(
+                    enabled = true,
+                    deviceAddress = "AA:BB:CC:DD:EE:FF",
+                    deviceName = "LED",
+                    brightness = 63,
+                ),
             )
         )
         val preferences = mockk<LedPreferences>()
@@ -45,7 +48,11 @@ class LedRuntimeCoordinatorTest {
         runCurrent()
         verify(exactly = 1) { bleClient.startAutoConnect() }
 
-        connectionState.value = LedConnectionState(phase = LedConnectionPhase.READY)
+        connectionState.value = LedConnectionState(
+            phase = LedConnectionPhase.READY,
+            address = "AA:BB:CC:DD:EE:FF",
+            protocol = LedProtocolKind.IPIXEL_FA,
+        )
         runCurrent()
         assertEquals(LedScene.DEFAULT, coordinator.runtime.value.currentScene)
 
@@ -56,7 +63,11 @@ class LedRuntimeCoordinatorTest {
 
         connectionState.value = LedConnectionState(phase = LedConnectionPhase.IDLE)
         runCurrent()
-        connectionState.value = LedConnectionState(phase = LedConnectionPhase.READY)
+        connectionState.value = LedConnectionState(
+            phase = LedConnectionPhase.READY,
+            address = "AA:BB:CC:DD:EE:FF",
+            protocol = LedProtocolKind.IPIXEL_FA,
+        )
         runCurrent()
 
         assertEquals(LedScene.DEFAULT, coordinator.runtime.value.currentScene)

@@ -52,6 +52,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.byd.wjx.led.LedConnectionPhase
 import com.byd.wjx.led.LedDevice
+import com.byd.wjx.led.LedProtocolKind
 import com.byd.wjx.led.LedScene
 import com.byd.wjx.ui.components.bydSwitchColors
 import com.byd.wjx.ui.theme.AccentBlue
@@ -70,9 +71,14 @@ fun LedLinkSettingsSection(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val selectedProtocol = state.preferences.selectedProtocol
+    val activeProfile = state.preferences.activeProtocol
+    val selectedConnected = state.connection.ready &&
+        state.connection.protocol == selectedProtocol &&
+        state.connection.address.equals(activeProfile.deviceAddress, ignoreCase = true)
     var pendingScan by remember { mutableStateOf(false) }
-    var brightness by remember(state.preferences.brightness) {
-        mutableFloatStateOf(state.preferences.brightness.toFloat())
+    var brightness by remember(selectedProtocol, activeProfile.brightness) {
+        mutableFloatStateOf(activeProfile.brightness.toFloat())
     }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -108,6 +114,13 @@ fun LedLinkSettingsSection(
                 modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
+                Text("设备协议", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                LedProtocolSelector(
+                    selected = selectedProtocol,
+                    preferences = state.preferences,
+                    onSelected = viewModel::selectProtocol,
+                )
+
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
@@ -116,54 +129,64 @@ fun LedLinkSettingsSection(
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
-                            if (state.connection.ready) Icons.Outlined.BluetoothConnected else Icons.Outlined.Bluetooth,
+                            if (selectedConnected) Icons.Outlined.BluetoothConnected else Icons.Outlined.Bluetooth,
                             contentDescription = null,
-                            tint = if (state.connection.ready) AccentGreen else AccentBlue,
+                            tint = if (selectedConnected) AccentGreen else AccentBlue,
                         )
                     }
                     Spacer(Modifier.size(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("LED联动", color = TextPrimary, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
+                        Text(selectedProtocol.title, color = TextPrimary, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
                         Text(
-                            state.connection.message,
-                            color = if (state.connection.ready) AccentGreen else TextSecondary,
+                            when {
+                                state.connection.phase == LedConnectionPhase.SCANNING -> state.connection.message
+                                state.connection.protocol == selectedProtocol -> state.connection.message
+                                !activeProfile.enabled -> "当前协议未开启"
+                                activeProfile.deviceAddress.isBlank() -> "请自动识别并绑定设备"
+                                else -> "等待连接当前协议设备"
+                            },
+                            color = if (selectedConnected) AccentGreen else TextSecondary,
                             fontSize = 12.sp,
                         )
                     }
                     Switch(
-                        checked = state.preferences.enabled,
+                        checked = activeProfile.enabled,
                         onCheckedChange = viewModel::setEnabled,
                         colors = bydSwitchColors(),
                     )
                 }
 
-                if (state.preferences.deviceAddress.isNotBlank()) {
+                if (activeProfile.deviceAddress.isNotBlank()) {
                     LedBoundDeviceRow(
-                        name = state.preferences.deviceName.ifBlank { "LED设备" },
-                        address = state.preferences.deviceAddress,
-                        kindTitle = state.preferences.deviceKind.title,
-                        connected = state.connection.ready,
+                        name = activeProfile.deviceName.ifBlank { "LED设备" },
+                        address = activeProfile.deviceAddress,
+                        kindTitle = selectedProtocol.title,
+                        connected = selectedConnected,
                         onReconnect = viewModel::reconnect,
                         onUnbind = viewModel::unbind,
                     )
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
                     Button(
                         onClick = ::startScanWithPermission,
-                        enabled = state.preferences.deviceAddress.isBlank(),
                         colors = ButtonDefaults.buttonColors(containerColor = AccentBlue),
                         shape = RoundedCornerShape(9.dp),
+                        modifier = Modifier.weight(1f),
                     ) {
                         Icon(Icons.Outlined.Search, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.size(7.dp))
-                        Text(if (state.connection.phase == LedConnectionPhase.SCANNING) "重新扫描" else "扫描设备")
+                        Text(if (state.connection.phase == LedConnectionPhase.SCANNING) "重新识别" else "自动识别设备")
                     }
                     Button(
                         onClick = { viewModel.testScene(LedScene.DEFAULT) },
-                        enabled = state.connection.ready,
+                        enabled = selectedConnected,
                         colors = ButtonDefaults.buttonColors(containerColor = CardSurface, contentColor = TextPrimary),
                         shape = RoundedCornerShape(9.dp),
+                        modifier = Modifier.weight(1f),
                     ) {
                         Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.size(7.dp))
@@ -251,7 +274,7 @@ fun LedLinkSettingsSection(
                         rowScenes.forEach { scene ->
                             Button(
                                 onClick = { viewModel.testScene(scene) },
-                                enabled = state.connection.ready,
+                                enabled = selectedConnected,
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = if (state.runtime.currentScene == scene) AccentGreen else CardSurface,
                                     contentColor = if (state.runtime.currentScene == scene) Color.White else TextPrimary,
@@ -265,6 +288,48 @@ fun LedLinkSettingsSection(
                         repeat(4 - rowScenes.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LedProtocolSelector(
+    selected: LedProtocolKind,
+    preferences: com.byd.wjx.led.LedPreferenceSnapshot,
+    onSelected: (LedProtocolKind) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(CardSurface.copy(alpha = 0.78f), RoundedCornerShape(10.dp))
+            .padding(3.dp),
+    ) {
+        LedProtocolKind.entries.forEach { protocol ->
+            val profile = preferences.protocol(protocol)
+            val isSelected = protocol == selected
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .background(
+                        if (isSelected) AccentBlue else Color.Transparent,
+                        RoundedCornerShape(8.dp),
+                    )
+                    .clickable { onSelected(protocol) }
+                    .padding(horizontal = 10.dp, vertical = 9.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = if (protocol == LedProtocolKind.IPIXEL_FA) "FA 标准" else "A950",
+                    color = if (isSelected) Color.White else TextPrimary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = if (profile.deviceAddress.isBlank()) "未绑定" else "已绑定",
+                    color = if (isSelected) Color.White.copy(alpha = 0.78f) else TextMuted,
+                    fontSize = 10.sp,
+                )
             }
         }
     }
@@ -322,7 +387,7 @@ private fun LedDeviceRow(device: LedDevice, onClick: () -> Unit) {
         Column(modifier = Modifier.weight(1f)) {
             Text(device.name, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             Text(
-                "${device.kind.title}  ·  ${device.address}",
+                "${device.protocol?.title ?: "连接后识别"}  ·  ${device.address}",
                 color = TextMuted,
                 fontSize = 10.sp,
                 maxLines = 1,
