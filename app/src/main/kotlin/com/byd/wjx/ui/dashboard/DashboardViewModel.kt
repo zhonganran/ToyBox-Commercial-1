@@ -27,7 +27,6 @@ import com.byd.wjx.domain.insight.LocalInsightStatsAggregator
 import com.byd.wjx.domain.energy.EnergyFlowCategory
 import com.byd.wjx.domain.energy.EnergyFlowStats
 import com.byd.wjx.domain.energy.EnergyFlowTotals
-import com.byd.wjx.vehicle.VehicleInfoSyncManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -50,7 +49,6 @@ import javax.inject.Inject
 enum class DashboardPeriod { TODAY, WEEK, MONTH, YEAR, ALL }
 
 data class DashboardUiState(
-    val vehicleDisplayLabel: String? = null,
     val soc: Int? = null,
     val odometer: Double? = null,
     val speed: Int? = null,
@@ -210,7 +208,6 @@ class DashboardViewModel @Inject constructor(
     private val onDemandTelemetryReader: OnDemandVehicleTelemetryReader,
     private val energyFlowStatsRepository: EnergyFlowStatsRepository,
     private val systemMetricsReader: SystemMetricsReader,
-    private val vehicleInfoSyncManager: VehicleInfoSyncManager,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardUiState())
@@ -220,23 +217,12 @@ class DashboardViewModel @Inject constructor(
     private var systemMetricsJob: Job? = null
 
     init {
-        observeVehicleInfo()
         observeLiveData()
         observeLastTrip()
         observeRecentTrips()
         observeLatestCharge()
         loadPeriodSummary()
         loadLocalInsight()
-    }
-
-    private fun observeVehicleInfo() {
-        viewModelScope.launch {
-            vehicleInfoSyncManager.vehicleInfo.collect { info ->
-                _uiState.update { current ->
-                    current.copy(vehicleDisplayLabel = info?.displayLabel)
-                }
-            }
-        }
     }
 
     fun setPeriod(period: DashboardPeriod) {

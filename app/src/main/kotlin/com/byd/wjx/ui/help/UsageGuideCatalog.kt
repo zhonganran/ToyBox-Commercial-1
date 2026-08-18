@@ -167,23 +167,6 @@ internal val usageGuideSections = listOf(
         keywords = listOf("在线音效", "下载", "喊话", "麦克风", "降噪"),
     ),
     UsageGuideSection(
-        id = "ai_voice",
-        category = UsageGuideCategory.Sound,
-        title = "VoxCPM AI语音",
-        summary = "通过公开演示服务生成个性语音，并在车内、车外或音效库中使用。",
-        steps = listOf(
-            "进入个性音效 → AI语音，输入需要生成的播报文字，单次最多 240 个字符。",
-            "选择清晰女声、沉稳男声、活力播报或轻柔提示，也可以直接修改音色描述。",
-            "点击生成语音并等待公开演示服务完成。生成后可在车内试听，或通过当前车外音频通道播放。",
-            "确认效果后点击保存到音效库，文件会进入我的音效和 /sdcard/WJX，之后可继续用于桌面卡片和智能联动。",
-        ),
-        notes = listOf(
-            "AI语音依赖 OpenBMB VoxCPM 公开演示服务；服务休眠、排队、限流或接口调整时可能暂时生成失败。",
-            "公开演示接口只用于体验，不保证长期可用；重要联动建议先生成并保存为本地音效。",
-        ),
-        keywords = listOf("AI语音", "VoxCPM", "TTS", "音色", "语音合成", "车外播报"),
-    ),
-    UsageGuideSection(
         id = "lyrics",
         category = UsageGuideCategory.Components,
         title = "桌面歌词与仪表盘歌词",
@@ -351,20 +334,16 @@ internal val usageGuideSections = listOf(
     UsageGuideSection(
         id = "status_troubleshooting",
         category = UsageGuideCategory.Troubleshooting,
-        title = "状态含义与通用排查",
-        summary = "理解在线、休眠、离线和常见功能异常的处理顺序。",
+        title = "通用故障排查",
+        summary = "按顺序检查常见功能异常并上传诊断日志。",
         steps = listOf(
-            "服务器显示在线：最近 2 分钟内收到车辆上报，且最后电源状态不是 OFF。",
-            "显示休眠：最后上报 powerState=0，代表车辆熄火/下电。熄火后最多保留休眠标记 10 分钟。",
-            "显示离线：超过 10 分钟没有新上报，或应用、网络、自启动服务没有运行。",
-            "车辆一直显示离线：先打开应用停留一分钟，确认车机能上网、VIN 已读取、授权状态已刷新，再检查 ADB/自启动。",
-            "车辆已启动却仍长时间休眠：说明 powerState 还是旧值或心跳没更新，点击上传日志后记录当时的车辆状态。",
+            "后台功能中断：先打开应用确认授权有效，再检查 ADB、自启动、后台运行和电池优化白名单。",
             "悬浮窗不显示：检查悬浮窗权限、对应功能开关和授权状态，然后重新开关一次。",
             "歌词有歌名但不滚动：确认音乐应用的播放通知正常、通知访问权限未被关闭，并检查歌词同步微调。",
             "仍无法解决时，在问题发生后尽快进入设置 → 数据与更新 → 上传日志，并将 VIN、车型、操作时间和现象发给客服。",
         ),
         notes = listOf("上传日志不会开始录制，它直接上传 WJX 目录中现有的 wjx.log。"),
-        keywords = listOf("在线", "休眠", "离线", "无画面", "不滚动", "故障"),
+        keywords = listOf("后台", "自启动", "无画面", "不滚动", "故障", "日志"),
     ),
 )
 

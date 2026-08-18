@@ -204,37 +204,6 @@ class HelperClientBinderTest {
     }
 
     @Test
-    fun `remote standby power preserves structured helper result`() = runBlocking {
-        val binder = object : FakeIBinder() {
-            override fun transact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
-                assertEquals(HelperBinderProtocol.TX_SET_REMOTE_STANDBY_POWER, code)
-                data.setDataPosition(0)
-                data.enforceInterface(HelperBinderProtocol.DESCRIPTOR)
-                assertEquals(1, data.readInt())
-                reply!!.writeInt(0)
-                reply.writeInt(1)
-                reply.writeInt(10)
-                reply.writeString("enabled=true remoteMode=true dataModule=true")
-                reply.setDataPosition(0)
-                return true
-            }
-        }
-
-        val result = clientWith(binder).setRemoteStandbyPower(true)
-
-        assertEquals(
-            RemoteStandbyPowerReply(
-                transportStatus = 0,
-                applied = true,
-                mcuStatus = 10,
-                summary = "enabled=true remoteMode=true dataModule=true",
-            ),
-            result,
-        )
-        assertTrue(result!!.ok)
-    }
-
-    @Test
     fun `headlight capability and mode replies preserve service diagnostics`() = runBlocking {
         val binder = object : FakeIBinder() {
             override fun transact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {

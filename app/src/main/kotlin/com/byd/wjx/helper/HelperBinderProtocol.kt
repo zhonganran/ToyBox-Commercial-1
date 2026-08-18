@@ -42,8 +42,6 @@ import android.os.IBinder
  *   TX_PLAY_SENTRY_EVENT : writeString(source)              -> reply: writeInt(status), writeInt(played)
  *   TX_HEADLIGHT_SET_MODE : writeInt(mode)                  -> reply: writeInt(transportStatus), writeInt(serviceCode), writeInt(actualMode)
  *   TX_SET_LOCK_SOUND_PLAYBACK_STATE : writeInt(enabled)    -> reply: writeInt(status), writeInt(0)
- *   TX_SET_REMOTE_STANDBY_POWER : writeInt(enabled)
- *       -> reply: writeInt(status), writeInt(applied), writeInt(mcuStatus), writeString(summary)
  * Projection status: 0 = success, <0 = error/unavailable. Surface is written LAST so a
  * marshalling test can assert the scalar args without round-tripping the Surface.
  *
@@ -55,7 +53,7 @@ object HelperBinderProtocol {
     const val DESCRIPTOR = "com.byd.wjx.helper.IHelper"
     // Increment whenever the wire contract or helper-resident behavior changes. The helper process
     // can outlive an APK replacement, so the client verifies this marker before using it.
-    const val CURRENT_VERSION = 27
+    const val CURRENT_VERSION = 28
 
     const val TX_PING = IBinder.FIRST_CALL_TRANSACTION       // 1
     const val TX_READ = IBinder.FIRST_CALL_TRANSACTION + 1   // 2
@@ -82,7 +80,6 @@ object HelperBinderProtocol {
     const val TX_HEADLIGHT_GET_MODE = IBinder.FIRST_CALL_TRANSACTION + 22       // 23
     const val TX_PLAY_SENTRY_EVENT = IBinder.FIRST_CALL_TRANSACTION + 23        // 24
     const val TX_HEADLIGHT_SET_MODE = IBinder.FIRST_CALL_TRANSACTION + 24       // 25
-    const val TX_SET_REMOTE_STANDBY_POWER = IBinder.FIRST_CALL_TRANSACTION + 25 // 26
     const val TX_SET_LOCK_SOUND_PLAYBACK_STATE = IBinder.FIRST_CALL_TRANSACTION + 28 // 29
 
     /** Hard upper bound keeps a malformed caller from creating an oversized Binder reply. */

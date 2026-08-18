@@ -33,9 +33,6 @@ import com.byd.wjx.domain.calculator.ConsumptionAggregator
 import com.byd.wjx.domain.insight.LocalInsightEngine
 import com.byd.wjx.domain.insight.LocalInsightStatsAggregator
 import com.byd.wjx.domain.energy.EnergyFlowStats
-import com.byd.wjx.vehicle.VehicleInfo
-import com.byd.wjx.vehicle.VehicleInfoSyncManager
-import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -224,7 +221,6 @@ class DashboardViewModelTest {
         settingsDao: FakeSettingsDao = FakeSettingsDao(),
         vehicleStateRepository: FakeVehicleStateRepository = FakeVehicleStateRepository(),
         latestCharge: ChargeEntity? = null,
-        vehicleInfo: VehicleInfo? = null,
     ): DashboardViewModel {
         settingsDao.map.putAll(initialSettings)
         val settingsRepo = SettingsRepository(settingsDao)
@@ -247,9 +243,6 @@ class DashboardViewModelTest {
             vehicleApi = fakeAutoservice,
             vehicleStateRepository = vehicleStateRepository,
         )
-        val vehicleInfoSyncManager = mockk<VehicleInfoSyncManager>()
-        every { vehicleInfoSyncManager.vehicleInfo } returns MutableStateFlow(vehicleInfo)
-
         return DashboardViewModel(
             tripRepository = tripRepo,
             chargeRepository = chargeRepo,
@@ -263,32 +256,10 @@ class DashboardViewModelTest {
             onDemandTelemetryReader = onDemandTelemetryReader,
             energyFlowStatsRepository = FakeEnergyFlowStatsRepository(),
             systemMetricsReader = SystemMetricsReader(HelperClientImpl()),
-            vehicleInfoSyncManager = vehicleInfoSyncManager,
         )
     }
 
     // --- Tests ---
-
-    @Test
-    fun `home title uses the real reported model and VIN year`() = runTest {
-        val vm = buildViewModel(
-            fakeAutoservice = FakeAutoservice(sampleReading),
-            vehicleInfo = VehicleInfo(
-                vin = "LC0FD4C42S7184345",
-                vinYear = 2025,
-                displayName = "宋 PLUS DM-i",
-                modelVariant = "SA3HEV",
-                carSeries = "SONG_PLUS",
-                vehicleType = "PHEV",
-                controllerVersion = "57.1.3.2501010.1",
-                controllerSeries = 57,
-            ),
-        )
-
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        assertEquals("2025款 宋 PLUS DM-i", vm.uiState.value.vehicleDisplayLabel)
-    }
 
     @Test
     fun `remaining energy uses configured capacities without extra vehicle reads`() = runTest {

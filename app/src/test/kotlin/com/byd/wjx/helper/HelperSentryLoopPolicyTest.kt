@@ -120,6 +120,45 @@ class HelperSentryLoopPolicyTest {
     }
 
     @Test
+    fun externalSentryTrigger_requiresIndependentVehicleEvidence() {
+        assertFalse(
+            shouldAcceptExternalSentryTrigger(
+                warningLevel = null,
+                alarmTimestampChanged = false,
+                highRiskLogSeen = false,
+            ),
+        )
+        assertFalse(
+            shouldAcceptExternalSentryTrigger(
+                warningLevel = 1,
+                alarmTimestampChanged = false,
+                highRiskLogSeen = false,
+            ),
+        )
+        assertTrue(
+            shouldAcceptExternalSentryTrigger(
+                warningLevel = SENTRY_WARN_ALARM,
+                alarmTimestampChanged = false,
+                highRiskLogSeen = false,
+            ),
+        )
+        assertTrue(
+            shouldAcceptExternalSentryTrigger(
+                warningLevel = null,
+                alarmTimestampChanged = true,
+                highRiskLogSeen = false,
+            ),
+        )
+        assertTrue(
+            shouldAcceptExternalSentryTrigger(
+                warningLevel = null,
+                alarmTimestampChanged = false,
+                highRiskLogSeen = true,
+            ),
+        )
+    }
+
+    @Test
     fun sentryFlashFallback_requiresLockedPowerOffFallingEdge() {
         assertTrue(
             shouldTriggerSentryFlashFallback(

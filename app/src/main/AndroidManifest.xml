@@ -227,6 +227,8 @@
             android:exported="true"
             android:permission="android.permission.DUMP" />
 
+        <!-- BYD sends this from another package. The receiver payload is only a wake-up hint;
+             the shell helper independently verifies live sentry evidence before playback. -->
         <receiver
             android:name=".audio.SentryInformReceiver"
             android:enabled="true"

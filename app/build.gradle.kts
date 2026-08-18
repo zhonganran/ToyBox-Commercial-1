@@ -43,21 +43,6 @@ val serviceQrApiUrl: String =
 val logUploadApiUrl: String =
     providers.gradleProperty("superToyBoxLogUploadApiUrl").orNull
         ?: "https://api.689588.xyz/api/v1/logs/upload"
-val vehicleInfoApiUrl: String =
-    providers.gradleProperty("superToyBoxVehicleInfoApiUrl").orNull
-        ?: "https://api.689588.xyz/api/v1/vehicles/heartbeat"
-val vehicleHistorySyncApiUrl: String =
-    providers.gradleProperty("superToyBoxVehicleHistorySyncApiUrl").orNull
-        ?: "https://api.689588.xyz/api/v1/vehicles/history-sync"
-val miniappBindingCodeApiUrl: String =
-    providers.gradleProperty("superToyBoxMiniappBindingCodeApiUrl").orNull
-        ?: "https://api.689588.xyz/api/v1/miniapp/vehicles/binding-code"
-val remoteCommandPollApiUrl: String =
-    providers.gradleProperty("superToyBoxRemoteCommandPollApiUrl").orNull
-        ?: "https://api.689588.xyz/api/v1/vehicles/commands/poll"
-val remoteCommandResultApiBaseUrl: String =
-    providers.gradleProperty("superToyBoxRemoteCommandResultApiBaseUrl").orNull
-        ?: "https://api.689588.xyz/api/v1/vehicles/commands"
 android {
     namespace = "com.byd.wjx"
     compileSdk = 34
@@ -78,11 +63,6 @@ android {
         buildConfigField("String", "ACTIVATION_API_URL", "\"$activationApiUrl\"")
         buildConfigField("String", "SERVICE_QR_API_URL", "\"$serviceQrApiUrl\"")
         buildConfigField("String", "LOG_UPLOAD_API_URL", "\"$logUploadApiUrl\"")
-        buildConfigField("String", "VEHICLE_INFO_API_URL", "\"$vehicleInfoApiUrl\"")
-        buildConfigField("String", "VEHICLE_HISTORY_SYNC_API_URL", "\"$vehicleHistorySyncApiUrl\"")
-        buildConfigField("String", "MINIAPP_BINDING_CODE_API_URL", "\"$miniappBindingCodeApiUrl\"")
-        buildConfigField("String", "REMOTE_COMMAND_POLL_API_URL", "\"$remoteCommandPollApiUrl\"")
-        buildConfigField("String", "REMOTE_COMMAND_RESULT_API_BASE_URL", "\"$remoteCommandResultApiBaseUrl\"")
     }
 
     signingConfigs {

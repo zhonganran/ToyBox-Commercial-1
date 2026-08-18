@@ -1,8 +1,6 @@
 import os
 import hashlib
 import json
-import math
-import re
 import secrets
 import time
 import wave
@@ -54,7 +52,7 @@ from platform_config import (
     SOUND_DIR,
     TRUSTED_PROXY_COUNT,
 )
-from platform_identity import extract_valid_vin, normalize_device_code, vin_year
+from platform_identity import extract_valid_vin, normalize_device_code
 from platform_license import (
     add_days_from_iso,
     add_days_iso,
@@ -317,81 +315,6 @@ def estimate_duration_ms(path):
         return 0
 
 
-def controller_series_from_version(value):
-    raw = str(value or "").strip()
-    try:
-        leading = int(raw.split(".", 1)[0])
-    except ValueError:
-        leading = 0
-    if leading in {23, 34, 57}:
-        return leading
-    match = re.match(r"^(23|34|57)(?:\s*控|controller|[_\-.]|$)", raw, re.IGNORECASE)
-    return int(match.group(1)) if match else 0
-
-
-def clean_vehicle_payload(value):
-    vehicle = value if isinstance(value, dict) else {}
-    controller_version = str(vehicle.get("controllerVersion", "")).strip()[:240]
-    return {
-        "vehicle_name": str(vehicle.get("displayName", "")).strip()[:160],
-        "model_variant": str(vehicle.get("modelVariant", "")).strip()[:160],
-        "car_series": str(vehicle.get("carSeries", "")).strip()[:160],
-        "vehicle_type": str(vehicle.get("vehicleType", "")).strip()[:160],
-        "controller_version": controller_version,
-        "controller_series": controller_series_from_version(controller_version),
-    }
-
-
-def optional_int(value, minimum=None, maximum=None):
-    if value is None or isinstance(value, bool):
-        return None
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return None
-    if minimum is not None and parsed < minimum:
-        return None
-    if maximum is not None and parsed > maximum:
-        return None
-    return parsed
-
-
-def optional_float(value, minimum=None, maximum=None):
-    if value is None or isinstance(value, bool):
-        return None
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError):
-        return None
-    if not math.isfinite(parsed):
-        return None
-    if minimum is not None and parsed < minimum:
-        return None
-    if maximum is not None and parsed > maximum:
-        return None
-    return parsed
-
-
-def clean_runtime_payload(value):
-    runtime = value if isinstance(value, dict) else {}
-    power_state = optional_int(runtime.get("powerState"), 0, 20)
-    connected = runtime.get("connected") is True
-    return {
-        "power_state": power_state,
-        "runtime_state": "sleep" if power_state == 0 else "active" if connected else "disconnected",
-        "soc": optional_int(runtime.get("soc"), 0, 100),
-        "electric_range_km": optional_int(runtime.get("electricRangeKm"), 0, 5000),
-        "fuel_range_km": optional_int(runtime.get("fuelRangeKm"), 0, 5000),
-        "gear": optional_int(runtime.get("gear"), 1, 4),
-        "lock_state": optional_int(runtime.get("lockState"), 1, 2),
-        "inside_temp": optional_int(runtime.get("insideTemp"), -60, 100),
-        "outside_temp": optional_int(runtime.get("outsideTemp"), -60, 100),
-        "mileage_km": optional_float(runtime.get("mileageKm"), 0, 10_000_000),
-        "voltage_12v": optional_float(runtime.get("voltage12v"), 0, 40),
-        "charging_status": optional_int(runtime.get("chargingStatus"), 0, 100),
-    }
-
-
 def collect_device_codes(payload):
     values = []
     for key in ("deviceCode", "rawDeviceCode"):
@@ -554,20 +477,6 @@ def is_recent_online(value, minutes=15):
     return parsed >= datetime.utcnow() - timedelta(minutes=minutes)
 
 
-def vehicle_presence(device):
-    last_seen = parse_utc(device["last_seen_at"])
-    if last_seen is None:
-        return "offline", "离线", "gray"
-    age_seconds = max(0, int((datetime.utcnow() - last_seen).total_seconds()))
-    if age_seconds <= 120:
-        if device["power_state"] == 0:
-            return "sleep", "休眠", "blue"
-        return "online", "在线", "green"
-    if device["power_state"] == 0 and age_seconds <= 600:
-        return "sleep", "休眠", "blue"
-    return "offline", "离线", "gray"
-
-
 def device_authorization(conn, device):
     license_row = conn.execute(
         """
@@ -609,15 +518,6 @@ def authorization_category(authorization):
     if authorization["trial_active"]:
         return "trial", "试用", "orange"
     return "expired", "已到期", "gray"
-
-
-def vehicle_display_label(device):
-    name = str(device["vehicle_name"] or "").strip()
-    if not name:
-        return ""
-    year = device["vin_year"]
-    prefix = f"{year}款"
-    return name if year and name.startswith(prefix) else f"{prefix} {name}" if year else name
 
 
 def status_badge(text, tone="neutral"):
@@ -1315,11 +1215,8 @@ def vehicles():
     params = []
     if keyword:
         like = f"%{keyword}%"
-        conditions.append(
-            "(device_code LIKE ? OR vehicle_name LIKE ? OR model_variant LIKE ? OR "
-            "car_series LIKE ? OR app_version LIKE ? OR controller_version LIKE ?)"
-        )
-        params += [like, like, like, like, like, like]
+        conditions.append("(device_code LIKE ? OR app_version LIKE ?)")
+        params += [like, like]
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     with db() as conn:
         matched = conn.execute(
@@ -1341,9 +1238,8 @@ def vehicles():
     vehicle_rows = "".join(
         f"""
 <div class="data-row vehicle-row">
-  <span><a href="{h(url_for("vehicle_detail", device_id=item["id"]))}"><b>{h(vehicle_display_label(item) or "未识别车型")}</b></a><small class="mono">{h(item["device_code"])}</small></span>
+  <span><a class="mono" href="{h(url_for("vehicle_detail", device_id=item["id"]))}"><b>{h(item["device_code"])}</b></a></span>
   <span>{status_badge(category[1], category[2])}</span>
-  <span>{status_badge(vehicle_presence(item)[1], vehicle_presence(item)[2])}<small>{h(item["runtime_state"] or "-")}</small></span>
   <span>{h(item["app_version"] or "-")}</span>
   <span>{h(item["last_seen_at"])}</span>
 </div>"""
@@ -1359,12 +1255,12 @@ def vehicles():
     )
     body = f"""
 <section class="panel">
-  <div class="panel-title"><div><h2>车辆列表</h2><p>按授权状态分类，只显示车型、连接和版本等必要信息。</p></div><div class="chip-list">{category_tabs}</div></div>
-  <form method="get" class="toolbar"><input type="hidden" name="status" value="{h(selected_category)}"><input name="q" value="{h(keyword)}" placeholder="搜索车型、VIN、车型代号、车系、控制器或版本"><button>搜索</button></form>
-  <div class="data-table vehicles-table detailed"><div class="data-row table-head"><span>车型 / VIN</span><span>授权</span><span>连接</span><span>版本</span><span>最近心跳</span></div>{vehicle_rows}</div>
+  <div class="panel-title"><div><h2>车辆列表</h2><p>按授权状态查看已登记的车辆设备。</p></div><div class="chip-list">{category_tabs}</div></div>
+  <form method="get" class="toolbar"><input type="hidden" name="status" value="{h(selected_category)}"><input name="q" value="{h(keyword)}" placeholder="搜索 VIN 或应用版本"><button>搜索</button></form>
+  <div class="data-table vehicles-table detailed"><div class="data-row table-head"><span>VIN</span><span>授权</span><span>版本</span><span>最近连接</span></div>{vehicle_rows}</div>
 </section>
 """
-    return page("车辆在线", "vehicles", body)
+    return page("车辆设备", "vehicles", body)
 
 
 @app.get("/vehicles/<int:device_id>")
@@ -1381,7 +1277,6 @@ def vehicle_detail(device_id):
             "SELECT * FROM diagnostic_logs WHERE device_code = ? ORDER BY id DESC LIMIT 20",
             (device["device_code"],),
         ).fetchall()
-    presence = vehicle_presence(device)
     auth_category = authorization_category(authorization)
     license_row = authorization["license"]
     log_rows = "".join(
@@ -1391,21 +1286,17 @@ def vehicle_detail(device_id):
     ) or '<p class="empty">该车暂无上传日志</p>'
     body = f"""
 <section class="metric-grid">
-  <article class="metric"><span>车辆状态</span><b>{h(presence[1])}</b><small>{h(device["runtime_state"] or "-")}</small></article>
   <article class="metric"><span>授权</span><b>{h(auth_category[1])}</b><small>{h((license_row["code"] + " · " + (license_row["activated_at"] or "未记录激活时间")) if license_row else (device["trial_ends_at"] or "无激活码"))}</small></article>
-  <article class="metric"><span>VIN 年份</span><b>{h(device["vin_year"] or "-")}</b><small>由 VIN 第 10 位解析</small></article>
   <article class="metric"><span>应用版本</span><b>{h(device["app_version"] or "-")}</b><small>{h(device["last_seen_at"])}</small></article>
+  <article class="metric"><span>应用包名</span><b>{h(device["package_name"] or "-")}</b><small>车辆端身份</small></article>
 </section>
 <section class="panel">
-  <div class="panel-title"><div><h2>{h(vehicle_display_label(device) or "未识别车型")}</h2><p class="mono">VIN {h(device["device_code"])}</p></div></div>
+  <div class="panel-title"><div><h2>车辆身份</h2><p class="mono">VIN {h(device["device_code"])}</p></div></div>
   <div class="detail-grid">
-    <span><small>VIN 年份</small><b>{h(device["vin_year"] or "-")}</b></span>
-    <span><small>车型代号</small><b>{h(device["model_variant"] or "-")}</b></span>
-    <span><small>车系</small><b>{h(device["car_series"] or "-")}</b></span>
-    <span><small>车辆类型</small><b>{h(device["vehicle_type"] or "-")}</b></span>
-    <span><small>控制器</small><b>{h(str(device["controller_series"]) + " 控制器" if device["controller_series"] else "-")}</b></span>
-    <span><small>系统版本</small><b>{h(device["controller_version"] or "-")}</b></span>
-    <span><small>最近 IP</small><b>{h(device["remote_addr"] or "-")}</b></span>
+    <span><small>首次登记</small><b>{h(device["first_seen_at"])}</b></span>
+    <span><small>最近连接</small><b>{h(device["last_seen_at"])}</b></span>
+    <span><small>应用版本</small><b>{h(device["app_version"] or "-")}</b></span>
+    <span><small>应用包名</small><b>{h(device["package_name"] or "-")}</b></span>
   </div>
 </section>
 <section class="panel">
@@ -1651,192 +1542,6 @@ def api_latest_update():
     )
 
 
-@app.post("/api/v1/vehicles/heartbeat")
-def api_vehicle_heartbeat():
-    payload = request.get_json(silent=True) or {}
-    device_code = extract_valid_vin(payload.get("deviceCode", ""))
-    if not device_code:
-        return jsonify({"success": False, "message": "车架号格式不正确"}), 400
-
-    raw_vehicle = payload.get("vehicle") if isinstance(payload.get("vehicle"), dict) else {}
-    parsed_vin_year = vin_year(device_code)
-    submitted_year = raw_vehicle.get("vinYear")
-    if submitted_year is not None:
-        try:
-            submitted_year = int(submitted_year)
-        except (TypeError, ValueError):
-            return jsonify({"success": False, "message": "VIN 年份格式不正确"}), 400
-        if submitted_year != parsed_vin_year:
-            return jsonify({"success": False, "message": "VIN 年份与车架号不一致"}), 400
-
-    vehicle = clean_vehicle_payload(raw_vehicle)
-    runtime = clean_runtime_payload(payload.get("runtime"))
-    telemetry_updated_at = utc_now() if any(
-        runtime[key] is not None
-        for key in (
-            "soc",
-            "electric_range_km",
-            "fuel_range_km",
-            "gear",
-            "lock_state",
-            "inside_temp",
-            "outside_temp",
-            "mileage_km",
-            "voltage_12v",
-            "charging_status",
-        )
-    ) else None
-    app_version = str(payload.get("appVersion", "")).strip()[:64]
-    package_name = str(payload.get("packageName", "")).strip()[:160]
-    with db() as conn:
-        registered_device = conn.execute(
-            "SELECT * FROM devices WHERE device_code = ?",
-            (device_code,),
-        ).fetchone()
-        if not device_token_matches(registered_device, request_device_token()):
-            return jsonify({"success": False, "message": "设备凭证无效，请刷新授权状态"}), 401
-        license_row = license_for_device_codes(conn, [device_code])
-        upsert_device(
-            conn,
-            device_code,
-            device_code,
-            app_version,
-            package_name,
-            license_row is not None,
-        )
-        conn.execute(
-            """
-            UPDATE devices SET
-                vehicle_name = COALESCE(NULLIF(?, ''), vehicle_name),
-                vin_year = ?,
-                model_variant = COALESCE(NULLIF(?, ''), model_variant),
-                car_series = COALESCE(NULLIF(?, ''), car_series),
-                vehicle_type = COALESCE(NULLIF(?, ''), vehicle_type),
-                controller_version = COALESCE(NULLIF(?, ''), controller_version),
-                controller_series = CASE WHEN ? > 0 THEN ? ELSE controller_series END,
-                power_state = ?, runtime_state = ?, remote_addr = ?,
-                soc = COALESCE(?, soc),
-                electric_range_km = COALESCE(?, electric_range_km),
-                fuel_range_km = COALESCE(?, fuel_range_km),
-                gear = COALESCE(?, gear),
-                lock_state = COALESCE(?, lock_state),
-                inside_temp = COALESCE(?, inside_temp),
-                outside_temp = COALESCE(?, outside_temp),
-                mileage_km = COALESCE(?, mileage_km),
-                voltage_12v = COALESCE(?, voltage_12v),
-                charging_status = COALESCE(?, charging_status),
-                telemetry_updated_at = COALESCE(?, telemetry_updated_at)
-            WHERE device_code = ?
-            """,
-            (
-                vehicle["vehicle_name"],
-                parsed_vin_year,
-                vehicle["model_variant"],
-                vehicle["car_series"],
-                vehicle["vehicle_type"],
-                vehicle["controller_version"],
-                vehicle["controller_series"],
-                vehicle["controller_series"],
-                runtime["power_state"],
-                runtime["runtime_state"],
-                request.remote_addr or "",
-                runtime["soc"],
-                runtime["electric_range_km"],
-                runtime["fuel_range_km"],
-                runtime["gear"],
-                runtime["lock_state"],
-                runtime["inside_temp"],
-                runtime["outside_temp"],
-                runtime["mileage_km"],
-                runtime["voltage_12v"],
-                runtime["charging_status"],
-                telemetry_updated_at,
-                device_code,
-            ),
-        )
-        device = conn.execute(
-            "SELECT * FROM devices WHERE device_code = ?",
-            (device_code,),
-        ).fetchone()
-        category = authorization_category(device_authorization(conn, device))
-        log_request = conn.execute(
-            """
-            SELECT * FROM miniapp_log_requests
-            WHERE device_id = ? AND status IN ('pending', 'acknowledged')
-            ORDER BY requested_at ASC LIMIT 1
-            """,
-            (device["id"],),
-        ).fetchone()
-        if log_request is not None and log_request["status"] == "pending":
-            conn.execute(
-                """
-                UPDATE miniapp_log_requests
-                SET status = 'acknowledged', message = ?, acknowledged_at = ?
-                WHERE id = ?
-                """,
-                ("车机已接收请求", utc_now(), log_request["id"]),
-            )
-    return jsonify(
-        {
-            "success": True,
-            "vinYear": parsed_vin_year,
-            "authorizationStatus": category[0],
-            "authorizationLabel": category[1],
-            "logUploadRequest": (
-                {"id": log_request["id"], "type": "upload_log"}
-                if log_request is not None
-                else None
-            ),
-        }
-    )
-
-
-@app.post("/api/v1/vehicle-profiles/resolve")
-def api_legacy_vehicle_profile_heartbeat():
-    """Keep pre-credential clients visible without accepting legacy model/configuration writes."""
-    payload = request.get_json(silent=True) or {}
-    device_code = extract_valid_vin(payload.get("deviceCode", ""))
-    if not device_code:
-        return jsonify({"success": False, "message": "车架号格式不正确"}), 400
-    package_name = str(payload.get("packageName", "")).strip()[:160]
-    if package_name != "com.byd.wjx":
-        return jsonify({"success": False, "message": "旧版兼容请求无效"}), 403
-    runtime = clean_runtime_payload(payload.get("runtime"))
-    app_version = str(payload.get("appVersion", "")).strip()[:64]
-    with db() as conn:
-        device = conn.execute(
-            "SELECT * FROM devices WHERE device_code = ?",
-            (device_code,),
-        ).fetchone()
-        if device is None:
-            return jsonify({"success": False, "message": "车辆尚未在平台登记"}), 403
-        if str(device["api_token_hash"] or ""):
-            return jsonify({"success": False, "message": "请使用新版设备心跳接口"}), 401
-        now = utc_now()
-        conn.execute(
-            """
-            UPDATE devices SET app_version = ?, package_name = ?, last_seen_at = ?,
-                power_state = COALESCE(?, power_state), runtime_state = ?, remote_addr = ?
-            WHERE device_code = ?
-            """,
-            (
-                app_version or device["app_version"],
-                package_name,
-                now,
-                runtime["power_state"],
-                runtime["runtime_state"],
-                request.remote_addr or "",
-                device_code,
-            ),
-        )
-    return jsonify({
-        "success": True,
-        "profileStatus": "upgrade_required",
-        "message": "已保留旧版心跳，请尽快升级应用",
-        "profile": None,
-    })
-
-
 @app.post("/api/v1/logs/upload")
 def api_upload_log():
     device_code = extract_valid_vin(request.form.get("deviceCode", ""))
@@ -1913,23 +1618,6 @@ def api_upload_log():
                 ),
             )
             log_id = cursor.lastrowid
-            pending_request = conn.execute(
-                """
-                SELECT * FROM miniapp_log_requests
-                WHERE device_id = ? AND status IN ('pending', 'acknowledged')
-                ORDER BY requested_at ASC LIMIT 1
-                """,
-                (device["id"],),
-            ).fetchone()
-            if pending_request is not None:
-                conn.execute(
-                    """
-                    UPDATE miniapp_log_requests
-                    SET status = 'completed', message = ?, diagnostic_log_id = ?, completed_at = ?
-                    WHERE id = ?
-                    """,
-                    ("诊断日志已上传", log_id, now, pending_request["id"]),
-                )
             conn.execute(
                 "UPDATE devices SET app_version = ?, package_name = ?, last_seen_at = ? WHERE device_code = ?",
                 (app_version or device["app_version"], package_name or device["package_name"], now, device_code),
@@ -2347,25 +2035,6 @@ def api_license_activate():
         if offline_license is not None:
             result["offlineLicense"] = offline_license
     return jsonify(result)
-
-
-from platform_miniapp_api import create_miniapp_blueprint
-
-
-app.register_blueprint(
-    create_miniapp_blueprint(
-        device_token_matches=device_token_matches,
-        device_authorization=device_authorization,
-        authorization_category=authorization_category,
-        vehicle_presence=vehicle_presence,
-        vehicle_display_label=vehicle_display_label,
-        latest_release=latest_release,
-        api_lock_remaining=api_lock_remaining,
-        record_api_success=record_api_success,
-        record_api_failure=record_api_failure,
-        client_key=client_key,
-    )
-)
 
 
 if __name__ == "__main__":

@@ -67,8 +67,42 @@ internal class WjxLockSoundRuntime(
         return playEventBlocking(event, reason)
     }
 
-    fun playSentryEventForBinder(reason: String): Boolean =
-        playRealSentryEvent(reason, blocking = true)
+    fun playSentryEventForBinder(reason: String): Boolean {
+        if (!signals.isSentryGuarding()) {
+            helperLog(TAG, "suppress external sentry not_guarding reason=$reason")
+            return false
+        }
+        val warning = signals.readSentryWarning()
+        val alarmTimestamp = signals.readSentryAlarmTimestamp()
+        val alarmTimestampChanged = signals.consumeSentryAlarmTimestamp(
+            alarmTimestamp,
+            allowTrigger = true,
+        )
+        val highRiskLogMarker = signals.readFreshSentryLogMarker(allowTrigger = true)
+        if (!shouldAcceptExternalSentryTrigger(
+                warningLevel = warning.level,
+                alarmTimestampChanged = alarmTimestampChanged,
+                highRiskLogSeen = highRiskLogMarker.isNotBlank(),
+            )
+        ) {
+            helperLog(
+                TAG,
+                "suppress external sentry unconfirmed warning=${warning.level} " +
+                    "source=${warning.source} propChanged=$alarmTimestampChanged " +
+                    "highRiskLog=${highRiskLogMarker.isNotBlank()} reason=$reason",
+            )
+            return false
+        }
+        val evidence = buildList {
+            add("warning=${warning.level} source=${warning.source}")
+            if (alarmTimestampChanged) add("prop_ts=$alarmTimestamp")
+            if (highRiskLogMarker.isNotBlank()) add("logcat=${highRiskLogMarker.take(80)}")
+        }
+        return playRealSentryEvent(
+            "$reason verified ${evidence.joinToString(" | ")}",
+            blocking = true,
+        )
+    }
 
     fun stopEventForBinder(kind: Int, reason: String): Boolean {
         val event = LockEvent.fromKind(kind) ?: return false

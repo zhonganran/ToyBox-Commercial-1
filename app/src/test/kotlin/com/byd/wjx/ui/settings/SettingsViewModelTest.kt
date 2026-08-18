@@ -26,8 +26,6 @@ import com.byd.wjx.data.vehicle.HeadlightControlResult
 import com.byd.wjx.data.vehicle.HeadlightControlSnapshot
 import com.byd.wjx.data.vehicle.HeadlightMode
 import com.byd.wjx.service.UpdateChecker
-import com.byd.wjx.vehicle.MiniappBindingCode
-import com.byd.wjx.vehicle.MiniappBindingCodeManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -142,7 +140,6 @@ class SettingsViewModelTest {
         updateChecker: UpdateChecker? = null,
         settingsDao: FakeSettingsDao = FakeSettingsDao(),
         logUploader: SettingsLogUploader = mockk(relaxed = true),
-        miniappBindingCodeManager: MiniappBindingCodeManager = mockk(relaxed = true),
         headlightController: HeadlightController = mockk(relaxed = true),
     ): SettingsViewModel {
         val ctx: Context = ApplicationProvider.getApplicationContext()
@@ -178,7 +175,6 @@ class SettingsViewModelTest {
             okHttpClient = httpClient,
             serviceQrCache = ServiceQrCache(ctx),
             logUploader = logUploader,
-            miniappBindingCodeManager = miniappBindingCodeManager,
             headlightController = headlightController,
         )
     }
@@ -263,25 +259,6 @@ class SettingsViewModelTest {
 
         assertEquals(false, vm.uiState.value.isUploadingLogs)
         assertEquals("日志上传失败：车辆尚未登记", vm.uiState.value.logUploadStatus)
-    }
-
-    @Test
-    fun `miniapp binding code is exposed with one-time expiry message`() = runTest {
-        val manager = mockk<MiniappBindingCodeManager>()
-        coEvery { manager.generate() } returns MiniappBindingCode(
-            code = "12345678",
-            expiresAt = System.currentTimeMillis() + 10 * 60_000L,
-        )
-        val vm = buildViewModel(miniappBindingCodeManager = manager)
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        vm.generateMiniappBindingCode()
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        assertEquals(false, vm.uiState.value.miniappBindingLoading)
-        assertEquals("12345678", vm.uiState.value.miniappBindingCode)
-        assertEquals(true, vm.uiState.value.miniappBindingMessage?.contains("使用一次后立即作废"))
-        coVerify(exactly = 1) { manager.generate() }
     }
 
     @Test

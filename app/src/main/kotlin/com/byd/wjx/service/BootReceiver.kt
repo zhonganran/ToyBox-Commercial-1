@@ -45,8 +45,6 @@ class BootReceiver : BroadcastReceiver() {
 
         WjxFileLogger.i(TAG, "Boot/user event: ${intent.action}")
         ChainLog.append(context, "BootReceiver: ${intent.action}")
-        RemoteAudioStandbyState.recordPowerEvent(context, intent.action)
-
         logBootEvent(context, intent.action ?: "unknown")
         ProcessRevivalReceiver.schedule(context.applicationContext)
         if (!BootState.isUserUnlocked(context)) {

@@ -46,15 +46,6 @@ data class HelperHeadlightReply(
     val serviceOk: Boolean get() = serviceCode == 0
 }
 
-data class RemoteStandbyPowerReply(
-    val transportStatus: Int,
-    val applied: Boolean,
-    val mcuStatus: Int,
-    val summary: String,
-) {
-    val ok: Boolean get() = transportStatus == 0 && applied
-}
-
 /**
  * Client for the in-vehicle helper daemon registered as the `wjx_helper`
  * binder service (ServiceManager.getService + IBinder.transact).
@@ -131,8 +122,6 @@ interface HelperClient {
     suspend fun setHeadlightMode(mode: HeadlightMode): HelperHeadlightReply? = null
     /** Applies BYD's privileged lock-sound playback route state in the helper process. */
     suspend fun setLockSoundPlaybackState(enabled: Boolean): Boolean = false
-    /** Keeps only the BYD remote/data rails needed for parked remote audio. */
-    suspend fun setRemoteStandbyPower(enabled: Boolean): RemoteStandbyPowerReply? = null
 }
 
 @Singleton
@@ -351,18 +340,6 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
     override suspend fun setLockSoundPlaybackState(enabled: Boolean): Boolean =
         statusOk(HelperBinderProtocol.TX_SET_LOCK_SOUND_PLAYBACK_STATE) { data ->
             data.writeInt(if (enabled) 1 else 0)
-        }
-
-    override suspend fun setRemoteStandbyPower(enabled: Boolean): RemoteStandbyPowerReply? =
-        transactParsed(HelperBinderProtocol.TX_SET_REMOTE_STANDBY_POWER, { data ->
-            data.writeInt(if (enabled) 1 else 0)
-        }, timeoutMs = FORCE_TIMEOUT_MS) { reply ->
-            if (reply.dataAvail() < 12) return@transactParsed null
-            val transportStatus = reply.readInt()
-            val applied = reply.readInt() == 1
-            val mcuStatus = reply.readInt()
-            val summary = if (reply.dataAvail() > 0) reply.readString().orEmpty() else ""
-            RemoteStandbyPowerReply(transportStatus, applied, mcuStatus, summary)
         }
 
     private suspend fun transactHeadlight(

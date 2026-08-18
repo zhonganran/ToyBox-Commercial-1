@@ -363,11 +363,6 @@
     <string name="settings_error_with_message">错误：%1$s</string>
     <string name="settings_error_prefix">错误</string>
     <string name="settings_diagnostic_log_header">问题诊断</string>
-    <string name="settings_miniapp_header">微信小程序</string>
-    <string name="settings_miniapp_title">绑定车辆</string>
-    <string name="settings_miniapp_description">生成一次性绑定码后，在超级玩具箱小程序中输入。无需填写完整车架号。</string>
-    <string name="settings_miniapp_generate_button">生成绑定码</string>
-    <string name="settings_miniapp_generating">正在生成…</string>
     <string name="settings_diagnostic_log_title">诊断日志</string>
     <string name="settings_diagnostic_log_description">直接上传 WJX 文件夹中的 wjx.log，后台会按车架号和版本保存。</string>
     <string name="settings_log_upload_button">上传日志</string>

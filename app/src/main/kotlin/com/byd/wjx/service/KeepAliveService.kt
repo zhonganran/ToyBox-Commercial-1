@@ -47,7 +47,6 @@ class KeepAliveService : Service() {
     @Inject lateinit var activationManager: com.byd.wjx.activation.ActivationManager
     @Inject lateinit var trackingStateRepository: TrackingStateRepository
     @Inject lateinit var lockSoundConfigSync: LockSoundConfigSync
-    @Inject lateinit var remoteAudioStandbyCoordinator: RemoteAudioStandbyCoordinator
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val healthHandler = Handler(Looper.getMainLooper())
@@ -99,8 +98,6 @@ class KeepAliveService : Service() {
                 .onFailure { WjxFileLogger.w(TAG, "activation refresh failed: ${it.message}") }
             runCatching { syncLockSoundRuntime("start:$reason") }
                 .onFailure { WjxFileLogger.w(TAG, "lock sound sync failed: ${it.message}", it) }
-            runCatching { remoteAudioStandbyCoordinator.refresh("start:$reason") }
-                .onFailure { WjxFileLogger.w(TAG, "remote standby refresh failed: ${it.message}", it) }
         }
         startHealthCheck(manager)
         return START_STICKY
@@ -230,8 +227,6 @@ class KeepAliveService : Service() {
                     serviceScope.launch {
                         runCatching { refreshActivationState("health") }
                             .onFailure { WjxFileLogger.w(TAG, "activation health refresh failed: ${it.message}") }
-                        runCatching { remoteAudioStandbyCoordinator.refresh("health") }
-                            .onFailure { WjxFileLogger.w(TAG, "remote standby health failed: ${it.message}", it) }
                         val now = System.currentTimeMillis()
                         if (now - lastLockSoundSyncAtMs >= LOCK_SOUND_SYNC_INTERVAL_MS) {
                             runCatching { syncLockSoundRuntime("health") }

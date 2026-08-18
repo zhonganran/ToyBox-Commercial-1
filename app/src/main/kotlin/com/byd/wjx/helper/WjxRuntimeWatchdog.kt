@@ -148,8 +148,7 @@ internal object WjxRuntimeWatchdog {
                 kill -9 "${'$'}PID" 2>/dev/null
               done
               rm -f "${'$'}PID_FILE" "$SCRIPT_PATH" "$VERSION_PATH" \
-                /data/local/tmp/wjx_helper.lock /data/local/tmp/wjx_helper_start.sh \
-                /data/local/tmp/wjx_remote_standby.enabled 2>/dev/null
+                /data/local/tmp/wjx_helper.lock /data/local/tmp/wjx_helper_start.sh 2>/dev/null
               exit 0
             fi
             LAST_PACKAGE_CHECK=${'$'}NOW

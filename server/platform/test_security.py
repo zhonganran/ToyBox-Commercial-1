@@ -19,8 +19,6 @@ os.environ["WJX_PLATFORM_TRUSTED_PROXY_COUNT"] = "0"
 
 import app as platform_app
 import platform_license
-import platform_miniapp
-import platform_miniapp_api
 import platform_storage
 
 
@@ -64,7 +62,45 @@ class AdminBootstrapSecurityTest(unittest.TestCase):
 
 
 class PlatformStorageMigrationTest(unittest.TestCase):
-    def test_legacy_vehicle_configuration_cleanup_preserves_identity_and_credentials(self):
+    def test_removed_remote_tables_are_not_created(self):
+        platform_storage.init_db(force=True)
+        with platform_storage.db() as conn:
+            tables = {
+                row["name"]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                ).fetchall()
+            }
+        self.assertTrue({
+            "miniapp_users",
+            "miniapp_sessions",
+            "miniapp_vehicle_bindings",
+            "miniapp_binding_codes",
+            "miniapp_log_requests",
+            "miniapp_remote_commands",
+            "vehicle_local_sounds",
+            "vehicle_trips",
+            "vehicle_trip_points",
+            "vehicle_charges",
+        }.isdisjoint(tables))
+
+    def test_database_context_commits_closes_and_enables_connection_guards(self):
+        with platform_storage.db() as conn:
+            busy_timeout = conn.execute("PRAGMA busy_timeout").fetchone()[0]
+            foreign_keys = conn.execute("PRAGMA foreign_keys").fetchone()[0]
+            conn.execute("CREATE TABLE IF NOT EXISTS connection_guard_test (value TEXT)")
+            conn.execute("DELETE FROM connection_guard_test")
+            conn.execute("INSERT INTO connection_guard_test (value) VALUES ('committed')")
+
+        self.assertGreaterEqual(busy_timeout, platform_storage.DB_BUSY_TIMEOUT_MS)
+        self.assertEqual(1, foreign_keys)
+        with self.assertRaises(sqlite3.ProgrammingError):
+            conn.execute("SELECT 1")
+        with platform_storage.db() as reopened:
+            value = reopened.execute("SELECT value FROM connection_guard_test").fetchone()[0]
+        self.assertEqual("committed", value)
+
+    def test_deprecated_device_cleanup_preserves_identity_and_credentials(self):
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
         definitions = []
@@ -73,10 +109,8 @@ class PlatformStorageMigrationTest(unittest.TestCase):
                 definition = "id INTEGER PRIMARY KEY AUTOINCREMENT"
             elif column == "device_code":
                 definition = "device_code TEXT NOT NULL UNIQUE"
-            elif column in {"activated", "controller_series"}:
+            elif column == "activated":
                 definition = f"{column} INTEGER NOT NULL DEFAULT 0"
-            elif column in {"vin_year", "power_state"}:
-                definition = f"{column} INTEGER"
             elif column in {"trial_started_at", "trial_ends_at", "api_token_issued_at"}:
                 definition = f"{column} TEXT"
             else:
@@ -89,13 +123,13 @@ class PlatformStorageMigrationTest(unittest.TestCase):
         conn.execute(
             """
             INSERT INTO devices
-                (device_code, first_seen_at, last_seen_at, vehicle_name, api_token_hash)
-            VALUES (?, ?, ?, ?, ?)
+                (device_code, first_seen_at, last_seen_at, api_token_hash)
+            VALUES (?, ?, ?, ?)
             """,
-            ("LC0FD4C42S7184345", "2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z", "宋 PLUS DM-i", "hash"),
+            ("LC0FD4C42S7184345", "2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z", "hash"),
         )
 
-        platform_storage.remove_legacy_vehicle_configuration(conn)
+        platform_storage.remove_deprecated_device_columns(conn)
 
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(devices)")}
         device = conn.execute("SELECT * FROM devices").fetchone()
@@ -106,7 +140,6 @@ class PlatformStorageMigrationTest(unittest.TestCase):
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'vehicle_models'"
         ).fetchone()
         self.assertEqual(set(platform_storage.DEVICE_SCHEMA_COLUMNS), columns)
-        self.assertEqual("宋 PLUS DM-i", device["vehicle_name"])
         self.assertEqual("hash", device["api_token_hash"])
         self.assertIsNone(profile_table)
         self.assertIsNone(model_table)
@@ -185,12 +218,15 @@ class PlatformRequestSecurityTest(unittest.TestCase):
         self.assertEqual(1, response.json["page"])
         self.assertEqual(50, response.json["pageSize"])
 
-    def test_miniapp_version_comparison_uses_numeric_order(self):
-        self.assertTrue(platform_miniapp_api.version_is_newer("1.9.9", "1.10.0"))
-        self.assertTrue(platform_miniapp_api.version_is_newer("v1.9.7", "2.0"))
-        self.assertFalse(platform_miniapp_api.version_is_newer("1.10.0", "1.9.9"))
-        self.assertFalse(platform_miniapp_api.version_is_newer("1.9.7", "v1.9.7.0"))
-        self.assertFalse(platform_miniapp_api.version_is_newer("--", "1.9.8"))
+    def test_removed_remote_routes_are_not_registered(self):
+        rules = {rule.rule for rule in platform_app.app.url_map.iter_rules()}
+        self.assertNotIn("/api/v1/vehicles/heartbeat", rules)
+        self.assertNotIn("/api/v1/vehicle-profiles/resolve", rules)
+        self.assertFalse(any(rule.startswith("/api/v1/miniapp/") for rule in rules))
+        self.assertFalse(any(rule.startswith("/api/v1/vehicles/commands") for rule in rules))
+        self.assertNotIn("/api/v1/vehicles/history-sync", rules)
+        self.assertIn("/api/v1/logs/upload", rules)
+
 
 
 class PlatformWorkflowTest(unittest.TestCase):
@@ -210,16 +246,6 @@ class PlatformWorkflowTest(unittest.TestCase):
     def reset_platform_state(self):
         with platform_app.db() as conn:
             for table in (
-                "miniapp_remote_commands",
-                "vehicle_local_sounds",
-                "miniapp_log_requests",
-                "vehicle_trip_points",
-                "vehicle_trips",
-                "vehicle_charges",
-                "miniapp_binding_codes",
-                "miniapp_vehicle_bindings",
-                "miniapp_sessions",
-                "miniapp_users",
                 "releases",
                 "sounds",
                 "license_codes",
@@ -487,127 +513,12 @@ class PlatformWorkflowTest(unittest.TestCase):
             headers=headers,
         )
 
-    def miniapp_login(self, openid="openid-test-user"):
-        with patch.object(
-            platform_miniapp,
-            "exchange_wechat_code",
-            return_value={"openid": openid, "unionid": ""},
-        ):
-            response = self.client.post(
-                "/api/v1/miniapp/login",
-                json={"code": "temporary-wechat-code"},
-            )
-        self.assertEqual(200, response.status_code)
-        self.assertTrue(response.json["token"])
-        self.assertGreater(response.json["expiresAt"], 0)
-        return response.json["token"]
 
-    def generate_miniapp_binding_code(self, vin):
-        response = self.client.post(
-            "/api/v1/miniapp/vehicles/binding-code",
-            json={"deviceCode": vin},
-            headers={"Authorization": f"Bearer {self.device_tokens[vin]}"},
-        )
-        self.assertEqual(200, response.status_code)
-        self.assertRegex(response.json["bindingCode"], r"^\d{8}$")
-        return response.json["bindingCode"]
 
-    def bind_miniapp_vehicle(self, miniapp_token, binding_code):
-        return self.client.post(
-            "/api/v1/miniapp/vehicles/bind",
-            json={"bindingCode": binding_code},
-            headers={"Authorization": f"Bearer {miniapp_token}"},
-        )
 
-    def vehicle_heartbeat_payload(self, vin="LC0FD4C42S7184345"):
-        return {
-            "deviceCode": vin,
-            "appVersion": "1.9.2",
-            "packageName": "com.byd.wjx",
-            "vehicle": {
-                "vinYear": 2025,
-                "displayName": "宋 PLUS DM-i",
-                "modelVariant": "SA3HEV",
-                "carSeries": "SONG_PLUS",
-                "vehicleType": "PHEV",
-                "controllerVersion": "57.1.3.2501010.1",
-                "controllerSeries": 57,
-            },
-            "runtime": {
-                "connected": True,
-                "powerState": 1,
-            },
-        }
 
-    def test_vehicle_heartbeat_records_only_real_vehicle_information(self):
-        payload = self.vehicle_heartbeat_payload()
-        self.register_device(payload["deviceCode"])
 
-        response = self.client.post(
-            "/api/v1/vehicles/heartbeat",
-            json=payload,
-            headers={"Authorization": f"Bearer {self.device_tokens[payload['deviceCode']]}"},
-        )
 
-        self.assertEqual(200, response.status_code)
-        self.assertTrue(response.json["success"])
-        self.assertEqual(2025, response.json["vinYear"])
-        self.assertEqual("trial", response.json["authorizationStatus"])
-        with platform_app.db() as conn:
-            device = conn.execute(
-                "SELECT * FROM devices WHERE device_code = ?",
-                (payload["deviceCode"],),
-            ).fetchone()
-            columns = {
-                row["name"] for row in conn.execute("PRAGMA table_info(devices)").fetchall()
-            }
-        self.assertEqual("宋 PLUS DM-i", device["vehicle_name"])
-        self.assertEqual(2025, device["vin_year"])
-        self.assertEqual("SA3HEV", device["model_variant"])
-        self.assertEqual("SONG_PLUS", device["car_series"])
-        self.assertEqual("PHEV", device["vehicle_type"])
-        self.assertEqual(57, device["controller_series"])
-        self.assertEqual("127.0.0.1", device["remote_addr"])
-        self.assertFalse(
-            {
-                "sales_model",
-                "compatibility_key",
-                "camera_id",
-                "surface_index",
-                "current_profile_id",
-                "profile_status",
-            }
-            & columns
-        )
-
-    def test_vehicle_heartbeat_requires_the_issued_device_credential(self):
-        payload = self.vehicle_heartbeat_payload()
-
-        response = self.client.post("/api/v1/vehicles/heartbeat", json=payload)
-
-        self.assertEqual(401, response.status_code)
-        self.assertFalse(response.json["success"])
-        with platform_app.db() as conn:
-            count = conn.execute("SELECT COUNT(*) AS c FROM devices").fetchone()["c"]
-        self.assertEqual(0, count)
-
-    def test_wrong_device_credential_cannot_overwrite_a_registered_vehicle(self):
-        payload = self.vehicle_heartbeat_payload()
-        vin = self.register_device(payload["deviceCode"])
-
-        response = self.client.post(
-            "/api/v1/vehicles/heartbeat",
-            json=payload,
-            headers={"Authorization": "Bearer wrong-device-token"},
-        )
-
-        self.assertEqual(401, response.status_code)
-        with platform_app.db() as conn:
-            device = conn.execute(
-                "SELECT * FROM devices WHERE device_code = ?",
-                (vin,),
-            ).fetchone()
-        self.assertEqual("", device["vehicle_name"])
 
     def test_signed_offline_license_can_recover_a_lost_device_credential(self):
         vin = self.register_device("LC0FD4C42S7184345")
@@ -642,87 +553,10 @@ class PlatformWorkflowTest(unittest.TestCase):
         self.assertTrue(recovered.json["deviceToken"])
         self.assertNotEqual(original_token, recovered.json["deviceToken"])
 
-    def test_vehicle_heartbeat_preserves_last_non_empty_identity(self):
-        payload = self.vehicle_heartbeat_payload()
-        vin = self.register_device(payload["deviceCode"])
-        headers = {"Authorization": f"Bearer {self.device_tokens[vin]}"}
-        first = self.client.post("/api/v1/vehicles/heartbeat", json=payload, headers=headers)
-        self.assertEqual(200, first.status_code)
 
-        blank = self.vehicle_heartbeat_payload(vin)
-        blank["vehicle"].update({
-            "displayName": "",
-            "modelVariant": "",
-            "carSeries": "",
-            "vehicleType": "",
-            "controllerVersion": "",
-            "controllerSeries": 0,
-        })
-        second = self.client.post("/api/v1/vehicles/heartbeat", json=blank, headers=headers)
 
-        self.assertEqual(200, second.status_code)
-        with platform_app.db() as conn:
-            device = conn.execute(
-                "SELECT * FROM devices WHERE device_code = ?",
-                (vin,),
-            ).fetchone()
-        self.assertEqual("宋 PLUS DM-i", device["vehicle_name"])
-        self.assertEqual("SA3HEV", device["model_variant"])
-        self.assertEqual(57, device["controller_series"])
 
-    def test_vehicle_heartbeat_rejects_forged_vin_year(self):
-        payload = self.vehicle_heartbeat_payload()
-        payload["vehicle"]["vinYear"] = 2026
-
-        response = self.client.post("/api/v1/vehicles/heartbeat", json=payload)
-
-        self.assertEqual(400, response.status_code)
-        self.assertFalse(response.json["success"])
-        with platform_app.db() as conn:
-            count = conn.execute("SELECT COUNT(*) AS c FROM devices").fetchone()["c"]
-        self.assertEqual(0, count)
-
-    def test_legacy_vehicle_profile_route_only_keeps_unupgraded_clients_online(self):
-        vin = "LC0FD4C42S7184345"
-        old_status = self.client.post(
-            "/api/v1/license/status",
-            json={"deviceCode": vin, "appVersion": "1.9.1", "packageName": "com.byd.wjx"},
-        )
-        self.assertEqual(200, old_status.status_code)
-        self.assertNotIn("deviceToken", old_status.json)
-
-        legacy_payload = self.vehicle_heartbeat_payload(vin)
-        legacy_payload["appVersion"] = "1.9.1"
-        legacy = self.client.post(
-            "/api/v1/vehicle-profiles/resolve",
-            json=legacy_payload,
-        )
-        self.assertEqual(200, legacy.status_code)
-        self.assertEqual("upgrade_required", legacy.json["profileStatus"])
-
-        upgraded = self.client.post(
-            "/api/v1/license/status",
-            json={
-                "deviceCode": vin,
-                "appVersion": "1.9.2",
-                "packageName": "com.byd.wjx",
-                "credentialVersion": 1,
-            },
-        )
-        self.assertEqual(200, upgraded.status_code)
-        self.assertTrue(upgraded.json["deviceToken"])
-
-        rejected_legacy = self.client.post(
-            "/api/v1/vehicle-profiles/resolve",
-            json=legacy_payload,
-        )
-        self.assertEqual(401, rejected_legacy.status_code)
-
-        self.login_and_get_csrf()
-        page = self.client.get("/vehicle-profiles")
-        self.assertEqual(404, page.status_code)
-
-    def test_vehicle_pages_use_real_model_and_exact_authorization_categories(self):
+    def test_vehicle_pages_use_exact_authorization_categories(self):
         vins = (
             "LC0FD4C42S7184345",
             "LC0FD4C42S7184346",
@@ -730,12 +564,6 @@ class PlatformWorkflowTest(unittest.TestCase):
         )
         for vin in vins:
             self.register_device(vin)
-            response = self.client.post(
-                "/api/v1/vehicles/heartbeat",
-                json=self.vehicle_heartbeat_payload(vin),
-                headers={"Authorization": f"Bearer {self.device_tokens[vin]}"},
-            )
-            self.assertEqual(200, response.status_code)
         with platform_app.db() as conn:
             now = platform_app.utc_now()
             conn.execute(
@@ -773,8 +601,8 @@ class PlatformWorkflowTest(unittest.TestCase):
         self.assertIn("已激活".encode(), activated.data)
         self.assertIn("试用".encode(), activated.data)
         self.assertIn("已到期".encode(), activated.data)
-        self.assertIn("2025款 宋 PLUS DM-i".encode(), detail.data)
-        self.assertIn("VIN 年份".encode(), detail.data)
+        self.assertIn(vins[0].encode(), detail.data)
+        self.assertIn("最近诊断日志".encode(), detail.data)
         self.assertNotIn("销售款型".encode(), detail.data)
         self.assertNotIn("车型配置".encode(), detail.data)
 
@@ -894,330 +722,12 @@ class PlatformWorkflowTest(unittest.TestCase):
         self.assertEqual(413, oversize.status_code)
         self.assertEqual(1, len(list(platform_app.LOG_DIR.iterdir())))
 
-    def test_miniapp_login_requires_wechat_configuration_without_test_exchange(self):
-        with patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("WJX_MINIAPP_APP_ID", None)
-            os.environ.pop("WJX_MINIAPP_APP_SECRET", None)
-            response = self.client.post(
-                "/api/v1/miniapp/login",
-                json={"code": "temporary-wechat-code"},
-            )
 
-        self.assertEqual(503, response.status_code)
-        self.assertFalse(response.json["success"])
 
-    def test_miniapp_binding_is_one_time_and_dashboard_uses_real_telemetry(self):
-        vin = self.register_device("LC0FD4C42S7184345")
-        payload = self.vehicle_heartbeat_payload(vin)
-        payload["runtime"].update(
-            {
-                "soc": 76,
-                "electricRangeKm": 118,
-                "fuelRangeKm": 506,
-                "gear": 1,
-                "lockState": 2,
-                "insideTemp": 24,
-                "outsideTemp": 33,
-                "mileageKm": 18426.4,
-                "voltage12v": 14.1,
-                "chargingStatus": 0,
-            }
-        )
-        heartbeat = self.client.post(
-            "/api/v1/vehicles/heartbeat",
-            json=payload,
-            headers={"Authorization": f"Bearer {self.device_tokens[vin]}"},
-        )
-        self.assertEqual(200, heartbeat.status_code)
 
-        miniapp_token = self.miniapp_login()
-        binding_code = self.generate_miniapp_binding_code(vin)
-        bound = self.bind_miniapp_vehicle(miniapp_token, binding_code)
-        self.assertEqual(200, bound.status_code)
-        self.assertEqual("2025款 宋 PLUS DM-i", bound.json["vehicle"]["displayName"])
 
-        dashboard = self.client.get(
-            "/api/v1/miniapp/dashboard",
-            headers={"Authorization": f"Bearer {miniapp_token}"},
-        )
-        self.assertEqual(200, dashboard.status_code)
-        vehicle = dashboard.json["vehicle"]
-        self.assertEqual(76, vehicle["soc"])
-        self.assertEqual(624, vehicle["rangeKm"])
-        self.assertEqual("P 挡", vehicle["gearLabel"])
-        self.assertEqual("已锁车", vehicle["lockLabel"])
-        self.assertEqual(24, vehicle["insideTemp"])
-        self.assertEqual(33, vehicle["outsideTemp"])
-        self.assertEqual(18426.4, vehicle["mileageKm"])
-        self.assertEqual(14.1, vehicle["voltage12v"])
-        self.assertNotIn(vin, vehicle["vinMasked"])
 
-        second_user_token = self.miniapp_login("openid-second-user")
-        reused = self.bind_miniapp_vehicle(second_user_token, binding_code)
-        self.assertEqual(400, reused.status_code)
-        self.assertEqual(401, self.client.get("/api/v1/miniapp/dashboard").status_code)
 
-    def test_miniapp_history_sync_returns_trip_route_and_charge_records(self):
-        vin = self.register_device("LC0FD4C42S7184345")
-        miniapp_token = self.miniapp_login()
-        binding_code = self.generate_miniapp_binding_code(vin)
-        self.assertEqual(200, self.bind_miniapp_vehicle(miniapp_token, binding_code).status_code)
-        start_ts = platform_miniapp.epoch_millis(platform_app.utc_now()) - 60 * 60 * 1000
-        end_ts = start_ts + 32 * 60 * 1000
-        sync = self.client.post(
-            "/api/v1/vehicles/history-sync",
-            json={
-                "deviceCode": vin,
-                "trips": [
-                    {
-                        "sourceId": "trip-41",
-                        "startTs": start_ts,
-                        "endTs": end_ts,
-                        "distanceKm": 18.4,
-                        "kwhConsumed": 2.54,
-                        "kwhPer100km": 13.8,
-                        "avgSpeedKmh": 34.5,
-                        "socStart": 82,
-                        "socEnd": 76,
-                        "cost": 1.45,
-                    }
-                ],
-                "tripPoints": [
-                    {
-                        "sourceId": "point-1",
-                        "tripSourceId": "trip-41",
-                        "timestamp": start_ts,
-                        "lat": 30.641,
-                        "lon": 104.043,
-                        "speedKmh": 0,
-                    },
-                    {
-                        "sourceId": "point-2",
-                        "tripSourceId": "trip-41",
-                        "timestamp": end_ts,
-                        "lat": 30.677,
-                        "lon": 104.092,
-                        "speedKmh": 0,
-                    },
-                ],
-                "charges": [
-                    {
-                        "sourceId": "charge-12",
-                        "startTs": start_ts - 24 * 60 * 60 * 1000,
-                        "endTs": start_ts - 24 * 60 * 60 * 1000 + 46 * 60 * 1000,
-                        "socStart": 28,
-                        "socEnd": 82,
-                        "kwhCharged": 31.8,
-                        "type": "DC",
-                        "cost": 38.4,
-                        "status": "COMPLETED",
-                    }
-                ],
-            },
-            headers={"Authorization": f"Bearer {self.device_tokens[vin]}"},
-        )
-        self.assertEqual(200, sync.status_code)
-        self.assertEqual(1, sync.json["trips"])
-        self.assertEqual(2, sync.json["tripPoints"])
-        self.assertEqual(1, sync.json["charges"])
-
-        listing = self.client.get(
-            "/api/v1/miniapp/trips",
-            headers={"Authorization": f"Bearer {miniapp_token}"},
-        )
-        self.assertEqual(200, listing.status_code)
-        self.assertEqual(1, listing.json["summary"]["tripCount"])
-        self.assertEqual(18.4, listing.json["summary"]["distanceKm"])
-        self.assertEqual(2, len(listing.json["latestRoute"]["markers"]))
-        self.assertEqual("直流快充", listing.json["charges"][0]["type"])
-
-        trip_id = listing.json["items"][0]["id"]
-        detail = self.client.get(
-            f"/api/v1/miniapp/trips/{trip_id}",
-            headers={"Authorization": f"Bearer {miniapp_token}"},
-        )
-        self.assertEqual(200, detail.status_code)
-        self.assertEqual(2, len(detail.json["route"]["polyline"][0]["points"]))
-
-        unauthorized_sync = self.client.post(
-            "/api/v1/vehicles/history-sync",
-            json={"deviceCode": vin},
-        )
-        self.assertEqual(401, unauthorized_sync.status_code)
-
-    def test_miniapp_log_request_is_completed_by_the_next_vehicle_upload(self):
-        vin = self.register_device("LC0FD4C42S7184345")
-        miniapp_token = self.miniapp_login()
-        binding_code = self.generate_miniapp_binding_code(vin)
-        self.assertEqual(200, self.bind_miniapp_vehicle(miniapp_token, binding_code).status_code)
-
-        requested = self.client.post(
-            "/api/v1/miniapp/logs/request-upload",
-            headers={"Authorization": f"Bearer {miniapp_token}"},
-        )
-        self.assertEqual(200, requested.status_code)
-        request_id = requested.json["requestId"]
-
-        heartbeat = self.client.post(
-            "/api/v1/vehicles/heartbeat",
-            json=self.vehicle_heartbeat_payload(vin),
-            headers={"Authorization": f"Bearer {self.device_tokens[vin]}"},
-        )
-        self.assertEqual(request_id, heartbeat.json["logUploadRequest"]["id"])
-
-        uploaded = self.upload_log(vin)
-        self.assertEqual(200, uploaded.status_code)
-        with platform_app.db() as conn:
-            log_request = conn.execute(
-                "SELECT * FROM miniapp_log_requests WHERE id = ?",
-                (request_id,),
-            ).fetchone()
-        self.assertEqual("completed", log_request["status"])
-        self.assertEqual(uploaded.json["logId"], log_request["diagnostic_log_id"])
-
-        profile = self.client.get(
-            "/api/v1/miniapp/profile",
-            headers={"Authorization": f"Bearer {miniapp_token}"},
-        )
-        self.assertEqual("最近上传成功", profile.json["diagnostic"]["lastUploadLabel"])
-
-    def test_remote_audio_command_requires_binding_and_real_vehicle_receipt(self):
-        vin = self.register_device("LC0FD4C42S7184345")
-        miniapp_token = self.miniapp_login()
-        sound_key = "a" * 64
-        unbound = self.client.post(
-            "/api/v1/miniapp/remote-audio/play",
-            json={"soundKey": sound_key},
-            headers={"Authorization": f"Bearer {miniapp_token}"},
-        )
-        self.assertEqual(400, unbound.status_code)
-
-        binding_code = self.generate_miniapp_binding_code(vin)
-        self.assertEqual(200, self.bind_miniapp_vehicle(miniapp_token, binding_code).status_code)
-
-        synced = self.client.post(
-            "/api/v1/vehicles/commands/poll",
-            json={
-                "deviceCode": vin,
-                "localSounds": [
-                    {
-                        "soundKey": sound_key,
-                        "fileName": "远程欢迎音.wav",
-                        "displayName": "远程欢迎音",
-                        "fileSize": 4096,
-                        "modifiedAt": 1_721_234_567_000,
-                    }
-                ],
-            },
-            headers={"Authorization": f"Bearer {self.device_tokens[vin]}"},
-        )
-        self.assertEqual(200, synced.status_code)
-        self.assertIsNone(synced.json["command"])
-
-        listing = self.client.get(
-            "/api/v1/miniapp/remote-audio",
-            headers={"Authorization": f"Bearer {miniapp_token}"},
-        )
-        self.assertEqual(200, listing.status_code)
-        self.assertEqual(sound_key, listing.json["sounds"][0]["id"])
-        self.assertEqual("远程欢迎音.wav", listing.json["sounds"][0]["fileName"])
-
-        queued = self.client.post(
-            "/api/v1/miniapp/remote-audio/play",
-            json={"soundKey": sound_key},
-            headers={"Authorization": f"Bearer {miniapp_token}"},
-        )
-        self.assertEqual(200, queued.status_code)
-        command_id = queued.json["command"]["id"]
-        self.assertEqual("pending", queued.json["command"]["status"])
-
-        unauthorized_poll = self.client.post(
-            "/api/v1/vehicles/commands/poll",
-            json={"deviceCode": vin},
-        )
-        self.assertEqual(401, unauthorized_poll.status_code)
-
-        polled = self.client.post(
-            "/api/v1/vehicles/commands/poll",
-            json={"deviceCode": vin},
-            headers={"Authorization": f"Bearer {self.device_tokens[vin]}"},
-        )
-        self.assertEqual(200, polled.status_code)
-        self.assertEqual(command_id, polled.json["command"]["id"])
-        self.assertEqual("delivered", polled.json["command"]["status"])
-        self.assertEqual(sound_key, polled.json["command"]["payload"]["soundKey"])
-
-        before_receipt = self.client.get(
-            f"/api/v1/miniapp/remote-audio/commands/{command_id}",
-            headers={"Authorization": f"Bearer {miniapp_token}"},
-        )
-        self.assertEqual("delivered", before_receipt.json["command"]["status"])
-
-        completed = self.client.post(
-            f"/api/v1/vehicles/commands/{command_id}/complete",
-            json={
-                "deviceCode": vin,
-                "status": "completed",
-                "message": "已开始车外播放",
-                "result": {"soundKey": sound_key},
-            },
-            headers={"Authorization": f"Bearer {self.device_tokens[vin]}"},
-        )
-        self.assertEqual(200, completed.status_code)
-        self.assertEqual("completed", completed.json["command"]["status"])
-
-        final = self.client.get(
-            f"/api/v1/miniapp/remote-audio/commands/{command_id}",
-            headers={"Authorization": f"Bearer {miniapp_token}"},
-        )
-        self.assertEqual("completed", final.json["command"]["status"])
-        self.assertEqual("已开始车外播放", final.json["command"]["message"])
-
-        cleared = self.client.post(
-            "/api/v1/vehicles/commands/poll",
-            json={"deviceCode": vin, "localSounds": []},
-            headers={"Authorization": f"Bearer {self.device_tokens[vin]}"},
-        )
-        self.assertEqual(200, cleared.status_code)
-        missing = self.client.post(
-            "/api/v1/miniapp/remote-audio/play",
-            json={"soundKey": sound_key},
-            headers={"Authorization": f"Bearer {miniapp_token}"},
-        )
-        self.assertEqual(404, missing.status_code)
-
-    def test_remote_audio_expired_command_is_not_delivered(self):
-        vin = self.register_device("LC0FD4C42S7184345")
-        miniapp_token = self.miniapp_login()
-        binding_code = self.generate_miniapp_binding_code(vin)
-        self.assertEqual(200, self.bind_miniapp_vehicle(miniapp_token, binding_code).status_code)
-        with platform_app.db() as conn:
-            user_id = conn.execute("SELECT id FROM miniapp_users LIMIT 1").fetchone()["id"]
-            device_id = conn.execute("SELECT id FROM devices WHERE device_code = ?", (vin,)).fetchone()["id"]
-            cursor = conn.execute(
-                """
-                INSERT INTO miniapp_remote_commands
-                    (device_id, requested_by_user_id, command_type, payload_json,
-                     status, message, requested_at, expires_at)
-                VALUES (?, ?, 'stop_outside_sound', '{}', 'pending', '', ?, ?)
-                """,
-                (device_id, user_id, "2020-01-01T00:00:00Z", "2020-01-01T00:01:00Z"),
-            )
-            command_id = cursor.lastrowid
-
-        polled = self.client.post(
-            "/api/v1/vehicles/commands/poll",
-            json={"deviceCode": vin},
-            headers={"Authorization": f"Bearer {self.device_tokens[vin]}"},
-        )
-        self.assertEqual(200, polled.status_code)
-        self.assertIsNone(polled.json["command"])
-        with platform_app.db() as conn:
-            status = conn.execute(
-                "SELECT status FROM miniapp_remote_commands WHERE id = ?",
-                (command_id,),
-            ).fetchone()["status"]
-        self.assertEqual("expired", status)
 
 
 if __name__ == "__main__":

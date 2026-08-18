@@ -23,7 +23,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CloudUpload
-import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -239,82 +238,6 @@ internal fun AppSection(state: SettingsUiState, viewModel: SettingsViewModel) {
                     state.configStatus!!,
                     color = if (state.configStatus!!.startsWith(errorPrefix)) SocRed else PrimaryColor,
                     fontSize = 12.sp,
-                )
-            }
-        }
-    }
-
-    SectionHeader(text = stringResource(R.string.settings_miniapp_header))
-    Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = CardSurfaceElevated),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text(
-                stringResource(R.string.settings_miniapp_title),
-                color = TextPrimary,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                stringResource(R.string.settings_miniapp_description),
-                color = TextSecondary,
-                fontSize = 12.sp,
-            )
-            state.miniappBindingCode?.let { code ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(AccentBlue.copy(alpha = 0.10f))
-                        .border(1.dp, AccentBlue.copy(alpha = 0.24f), RoundedCornerShape(8.dp))
-                        .padding(vertical = 15.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = code,
-                        color = AccentBlue,
-                        fontSize = 26.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-            }
-            Button(
-                onClick = viewModel::generateMiniappBindingCode,
-                enabled = !state.miniappBindingLoading,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = AccentBlue,
-                    contentColor = AccentContent,
-                ),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Link,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Text(
-                    if (state.miniappBindingLoading) {
-                        stringResource(R.string.settings_miniapp_generating)
-                    } else {
-                        stringResource(R.string.settings_miniapp_generate_button)
-                    },
-                    modifier = Modifier.padding(start = 7.dp),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                )
-            }
-            state.miniappBindingMessage?.let { message ->
-                Text(
-                    message,
-                    color = if (message.startsWith("生成失败")) SocRed else AccentGreen,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
                 )
             }
         }
