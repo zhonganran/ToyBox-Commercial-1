@@ -50,6 +50,7 @@ class LyricOverlayView constructor(
     private var animationDirection = 0
     private var textSizeSp: Float = 18f
     private var visibleLineCount: Int = DEFAULT_VISIBLE_LINE_COUNT
+    private var horizontalPositionPct: Float = 50f
     private var style: LyricDisplayStyle = LyricDisplayStyle(
         font = LyricStylePresets.font("soft"),
         motion = LyricStylePresets.motion("soft"),
@@ -98,6 +99,14 @@ class LyricOverlayView constructor(
         if (visibleLineCount == next) return
         visibleLineCount = next
         requestLayout()
+        invalidate()
+    }
+
+    /** Positions each lyric line's visible bounds from the left edge (0%) to the right edge (100%). */
+    fun setHorizontalPositionPct(value: Float) {
+        val next = value.coerceIn(0f, 100f)
+        if (horizontalPositionPct == next) return
+        horizontalPositionPct = next
         invalidate()
     }
 
@@ -176,7 +185,6 @@ class LyricOverlayView constructor(
         val lines = listOf(value.previous2, value.previous, value.current, value.next, value.next2)
         if (lines.all { it.isBlank() }) return
 
-        val centerX = width / 2f
         val baseCenterY = focusCenterY + verticalOffset
         val allowedOffsets = transitionOffsets()
         lines.forEachIndexed { index, text ->
@@ -186,7 +194,6 @@ class LyricOverlayView constructor(
             drawLine(
                 canvas = canvas,
                 text = text,
-                centerX = centerX,
                 lineCenterY = baseCenterY + offset * lineHeight,
                 focusCenterY = focusCenterY,
                 lineHeight = lineHeight,
@@ -227,7 +234,6 @@ class LyricOverlayView constructor(
         drawLine(
             canvas = canvas,
             text = text,
-            centerX = width / 2f,
             lineCenterY = lineCenterY,
             focusCenterY = focusCenterY,
             lineHeight = lineHeight,
@@ -239,7 +245,6 @@ class LyricOverlayView constructor(
     private fun drawLine(
         canvas: Canvas,
         text: String,
-        centerX: Float,
         lineCenterY: Float,
         focusCenterY: Float,
         lineHeight: Float,
@@ -269,9 +274,21 @@ class LyricOverlayView constructor(
         val fittedSize = fittedTextSize(text, baseSize * scale, maxWidth)
         val signedOffset = relativeIndex.coerceIn(-1, 1).toFloat()
         val sideWeight = 1f - focus
-        val x = centerX +
+        val textWidth = textPaint.measureText(text)
+        val baseCenterX = horizontalCenterFor(
+            containerWidth = width,
+            paddingLeft = paddingLeft,
+            paddingRight = paddingRight,
+            textWidth = textWidth,
+            positionPct = horizontalPositionPct,
+        )
+        val x = (baseCenterX +
             dp(style.motion.currentOffsetDp) * focus +
-            dp(style.motion.sideOffsetDp) * signedOffset * sideWeight
+            dp(style.motion.sideOffsetDp) * signedOffset * sideWeight)
+            .coerceIn(
+                paddingLeft + textWidth / 2f,
+                width - paddingRight - textWidth / 2f,
+            )
         textPaint.textSize = fittedSize
         textPaint.color = color
         textPaint.alpha = (255f * alphaFactor).toInt().coerceIn(0, 255)
@@ -405,6 +422,18 @@ class LyricOverlayView constructor(
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value, resources.displayMetrics)
 
     companion object {
+        internal fun horizontalCenterFor(
+            containerWidth: Int,
+            paddingLeft: Int,
+            paddingRight: Int,
+            textWidth: Float,
+            positionPct: Float,
+        ): Float {
+            val safeWidth = (containerWidth - paddingLeft - paddingRight - textWidth).coerceAtLeast(0f)
+            val pct = (positionPct / 100f).coerceIn(0f, 1f)
+            return paddingLeft + safeWidth * pct + textWidth / 2f
+        }
+
         fun desiredHeightPx(
             textSizeSp: Float,
             style: LyricDisplayStyle,

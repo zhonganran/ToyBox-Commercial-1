@@ -1,0 +1,228 @@
+{
+  "schemaVersion": 1,
+  "publishedAt": "2026-08-19T00:00:00Z",
+  "viewerUrl": "https://cdn.689588.xyz/creative-workshop/viewer/index.html",
+  "vehicles": [
+    {
+      "id": "byd_dolphin",
+      "brand": "BYD",
+      "name": "海豚",
+      "aliases": ["海豚", "dolphin", "ea1"],
+      "modelUrl": "https://cdn.689588.xyz/creative-workshop/models/byd_dolphin.glb",
+      "size": 3230848,
+      "version": 1,
+      "sha256": "2231640b8b425ddf329374ba225185ba8dd10bfec1fbc3107506d77ea482f451"
+    },
+    {
+      "id": "byd_han",
+      "brand": "BYD",
+      "name": "汉",
+      "aliases": ["汉", "汉ev", "han", "han ev"],
+      "modelUrl": "https://cdn.689588.xyz/creative-workshop/models/byd_han.glb",
+      "size": 5294816,
+      "version": 1,
+      "sha256": "b1db504330279268d022eeb28f1d78a915667cf538d425a314f9cf8356578940"
+    },
+    {
+      "id": "byd_song_plus_dmi",
+      "brand": "BYD",
+      "name": "宋 PLUS DM-i",
+      "aliases": ["宋plus dmi", "宋 plus dm-i", "song plus dmi", "songplus"],
+      "modelUrl": "https://cdn.689588.xyz/creative-workshop/models/byd_song_plus_dmi.glb",
+      "size": 1711372,
+      "version": 1,
+      "sha256": "62b2d9afcb775ae7eeb97493ce487091da64081c9276cd9640f018e63dc849ce"
+    },
+    {
+      "id": "byd_seal",
+      "brand": "BYD",
+      "name": "海豹",
+      "aliases": ["海豹", "seal", "seal ev"],
+      "modelUrl": "https://cdn.689588.xyz/creative-workshop/models/byd_seal.glb",
+      "size": 2264880,
+      "version": 1,
+      "sha256": "06282d71e1235dbe94bc4cb9f50d99a2b436128a01becec6d1cb84dfa59b3ee5"
+    },
+    {
+      "id": "byd_han_dmi",
+      "brand": "BYD",
+      "name": "汉 DM-i",
+      "aliases": ["汉dmi", "汉 dm-i", "han dmi"],
+      "modelUrl": "https://cdn.689588.xyz/creative-workshop/models/byd_han_dmi.glb",
+      "size": 1726056,
+      "version": 1,
+      "sha256": "94e285029d84f677b8d20e1887fefca601711f5f094a98cdeff53917baa297cf"
+    },
+    {
+      "id": "yangwang_u8",
+      "brand": "仰望",
+      "name": "U8",
+      "aliases": ["仰望u8", "u8", "yangwang u8"],
+      "modelUrl": "https://cdn.689588.xyz/creative-workshop/models/yangwang_u8.glb",
+      "size": 2070556,
+      "version": 1,
+      "sha256": "6a786abe5d7fbd8692c7d59b4d0dbb50d664022b6aa860a1084d478ab76671c6"
+    },
+    {
+      "id": "byd_seagull",
+      "brand": "BYD",
+      "name": "海鸥",
+      "aliases": ["海鸥", "seagull"],
+      "modelUrl": "https://cdn.689588.xyz/creative-workshop/models/byd_seagull.glb",
+      "size": 3057356,
+      "version": 1,
+      "sha256": "66bcb98af56b631647a005823ac45ddcafb369fce9d54cfff728f734650bde53"
+    },
+    {
+      "id": "byd_tang_dm",
+      "brand": "BYD",
+      "name": "唐 DM",
+      "aliases": ["唐dm", "唐 dmi", "唐 dm-i", "tang dm", "tang dmi"],
+      "modelUrl": "https://cdn.689588.xyz/creative-workshop/models/byd_tang_dm.glb",
+      "size": 4329316,
+      "version": 1,
+      "sha256": "72e13a0fd99ce7b0c0d8136342fb8bfa5b95df0ebf2d135adf3d4a35cc819985"
+    },
+    {
+      "id": "byd_destroyer_05",
+      "brand": "BYD",
+      "name": "驱逐舰 05",
+      "aliases": ["驱逐舰05", "驱逐舰 05", "destroyer 05"],
+      "modelUrl": "https://cdn.689588.xyz/creative-workshop/models/byd_destroyer_05.glb",
+      "size": 2131624,
+      "version": 1,
+      "sha256": "9c51d4f8eeca3005323e445efbf7e3b4e44e9c8cb05a03562ae4e55c0b15114e"
+    },
+    {
+      "id": "byd_sealion_2024",
+      "brand": "BYD",
+      "name": "海狮",
+      "aliases": ["海狮", "海狮07", "sealion", "sealion 07"],
+      "modelUrl": "https://cdn.689588.xyz/creative-workshop/models/byd_sealion_2024.glb",
+      "size": 1906980,
+      "version": 1,
+      "sha256": "492eb28af84004aaa2258315ec63a377f2f2dfd697b3694dc093c2db596cea1d"
+    },
+    {
+      "id": "byd_song_2024",
+      "brand": "BYD",
+      "name": "宋",
+      "aliases": ["宋pro", "宋 pro", "song pro", "宋"],
+      "modelUrl": "https://cdn.689588.xyz/creative-workshop/models/byd_song_2024.glb",
+      "size": 1604848,
+      "version": 1,
+      "sha256": "908677516cd317fbb231e36fd26a975e8a12303849b94f361d22d6f554de65f6"
+    },
+    {
+      "id": "byd_qin_plus",
+      "brand": "BYD",
+      "name": "秦 PLUS",
+      "aliases": ["秦plus", "秦 plus", "qin plus"],
+      "modelUrl": "https://cdn.689588.xyz/creative-workshop/models/byd_qin_plus.glb",
+      "size": 2559016,
+      "version": 1,
+      "sha256": "17d5ef65244a2715b726c1ea7db2f0cc91f0c41b987052980329a11a4cad32a3"
+    },
+    {
+      "id": "yangwang_u9",
+      "brand": "仰望",
+      "name": "U9",
+      "aliases": ["仰望u9", "u9", "yangwang u9"],
+      "modelUrl": "https://cdn.689588.xyz/creative-workshop/models/yangwang_u9.glb",
+      "size": 4114704,
+      "version": 1,
+      "sha256": "5d84c79d78021c536abd195bf5f877fa3373386168165b981b083e8dde34fcca"
+    },
+    {
+      "id": "byd_song_plus_2023",
+      "brand": "BYD",
+      "name": "宋 PLUS 2023",
+      "aliases": ["宋plus 2023", "宋 plus 2023", "song plus 2023"],
+      "modelUrl": "https://cdn.689588.xyz/creative-workshop/models/byd_song_plus_2023.glb",
+      "size": 1424856,
+      "version": 1,
+      "sha256": "91a432316caf3574fed3783d8a212292379939668ee1d527e73d69e60ddcba54"
+    },
+    {
+      "id": "byd_xia_2025",
+      "brand": "BYD",
+      "name": "夏",
+      "aliases": ["夏", "byd xia", "xia"],
+      "modelUrl": "https://cdn.689588.xyz/creative-workshop/models/byd_xia_2025.glb",
+      "size": 1144880,
+      "version": 1,
+      "sha256": "f6a5109423185c56030408a160d6605a7572d249a9633cfcda3e58f202568990"
+    },
+    {
+      "id": "yangwang_u7",
+      "brand": "仰望",
+      "name": "U7",
+      "aliases": ["仰望u7", "u7", "yangwang u7"],
+      "modelUrl": "https://cdn.689588.xyz/creative-workshop/models/yangwang_u7.glb",
+      "size": 752384,
+      "version": 1,
+      "sha256": "eec27feecc78917a19e84777a0c2e042bcbaf459ff89fbf6bd3bd780da70003c"
+    },
+    {
+      "id": "byd_seal_06gt",
+      "brand": "BYD",
+      "name": "海豹 06GT",
+      "aliases": ["海豹06gt", "海豹 06gt", "seal 06gt"],
+      "modelUrl": "https://cdn.689588.xyz/creative-workshop/models/byd_seal_06gt.glb",
+      "size": 776412,
+      "version": 1,
+      "sha256": "b4dece4555bd6cc85cdcc132913428c8149125bdb981d5b527db9bf82c7cf97c"
+    },
+    {
+      "id": "byd_tang_l",
+      "brand": "BYD",
+      "name": "唐 L",
+      "aliases": ["唐l", "唐 l", "tang l"],
+      "modelUrl": "https://cdn.689588.xyz/creative-workshop/models/byd_tang_l.glb",
+      "size": 1101656,
+      "version": 1,
+      "sha256": "2b5ac7d42bb180515c7fb99555c5fba2331b57c7ee4da43e9cc9d677208a6bee"
+    },
+    {
+      "id": "byd_yuan_atto2",
+      "brand": "BYD",
+      "name": "元 / ATTO 2",
+      "aliases": ["元up", "元 up", "atto2", "atto 2", "元"],
+      "modelUrl": "https://cdn.689588.xyz/creative-workshop/models/byd_yuan_atto2.glb",
+      "size": 1576940,
+      "version": 1,
+      "sha256": "31250c5f7f272e5b1329382435d95b38576b44ca971a6d075ec17398fe27def0"
+    },
+    {
+      "id": "fangchengbao_5",
+      "brand": "方程豹",
+      "name": "豹 5",
+      "aliases": ["方程豹5", "豹5", "豹 5", "fangchengbao 5", "bao 5"],
+      "modelUrl": "https://cdn.689588.xyz/creative-workshop/models/fangchengbao_5.glb",
+      "size": 7139100,
+      "version": 1,
+      "sha256": "53b963885a983a23f8b8465eb3834be7360efc22fd3ecfd45aa7977f2bdfd877"
+    },
+    {
+      "id": "fangchengbao_custom",
+      "brand": "方程豹",
+      "name": "豹 5 改装款",
+      "aliases": ["方程豹改装", "豹5改装", "豹 5 改装", "fangchengbao custom"],
+      "modelUrl": "https://cdn.689588.xyz/creative-workshop/models/fangchengbao_custom.glb",
+      "size": 7291152,
+      "version": 1,
+      "sha256": "a0ee56cf543aa07aa0fdb749b22f75046223da750e91a55b7386b67e1823c6c6"
+    }
+  ],
+  "wraps": [
+    {
+      "id": "kitty",
+      "name": "甜心派对",
+      "textureUrl": "https://cdn.689588.xyz/creative-workshop/wraps/kitty.png",
+      "previewColor": "#F58DB2",
+      "size": 32645,
+      "version": 1,
+      "sha256": "2932eb8b660364bc3ee55714cfb850026ce34489a1c217bc26b44bd6d647649b"
+    }
+  ]
+}

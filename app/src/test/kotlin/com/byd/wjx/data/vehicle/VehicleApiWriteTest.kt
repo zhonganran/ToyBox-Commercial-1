@@ -194,6 +194,14 @@ class VehicleApiWriteTest {
         coVerify(exactly = 0) { gateway.writeStatus(any(), any(), any()) }
     }
 
+    @Test fun `dispatch hazard on writes the dedicated switch without readback`() = runTest {
+        coEvery { gateway.writeStatus(1004, 871366669, 1) } returns 0
+
+        assertTrue(api.dispatch("双闪打开").isSuccess)
+        coVerify(exactly = 1) { gateway.writeStatus(1004, 871366669, 1) }
+        coVerify(exactly = 0) { gateway.readRaw(any()) }
+    }
+
     // ── C.5: DAO receives audit entry on write ────────────────────────────────
 
     @Test fun `writeAcOn updates one durable audit row with outcome`() = runTest {

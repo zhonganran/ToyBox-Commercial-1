@@ -57,6 +57,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
     initialCategory: String? = null,
     onNavigateToPlaces: () -> Unit = {},
+    onNavigateToCreativeWorkshop: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val categories = SettingsCategory.entries
@@ -212,6 +213,7 @@ fun SettingsScreen(
                             state = state,
                             viewModel = viewModel,
                             onNavigateToPlaces = onNavigateToPlaces,
+                            onNavigateToCreativeWorkshop = onNavigateToCreativeWorkshop,
                         )
                     }
                 }
@@ -250,6 +252,7 @@ fun SettingsScreen(
                             state = state,
                             viewModel = viewModel,
                             onNavigateToPlaces = onNavigateToPlaces,
+                            onNavigateToCreativeWorkshop = onNavigateToCreativeWorkshop,
                         )
                     }
                 }

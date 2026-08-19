@@ -198,6 +198,7 @@ class WriteAllowlistTest {
             "interior_light_on", "interior_light_off",
             "ambient_light_on", "ambient_light_off",
             "drl_on", "drl_off",
+            "hazard_on", "hazard_off",
             "defrost_rear_on", "defrost_rear_off",
         )
         for (name in names) {
@@ -233,6 +234,25 @@ class WriteAllowlistTest {
         assertEquals(1004, on!!.dev)
         assertEquals(1, on.valueMin)
         assertEquals(2, al.find("drl_off")!!.valueMin)
+    }
+
+    @Test fun `hazard switch is allowed only on its dedicated fid`() {
+        assertTrue(1004 to 871366669 in WriteAllowlist.BANNED_DEV_FID_EXCEPTIONS)
+
+        val allowlist = WriteAllowlist.loadProduction { "{}" }
+        val on = allowlist.find("hazard_on")
+        val off = allowlist.find("hazard_off")
+
+        assertNotNull(on)
+        assertNotNull(off)
+        assertEquals(1004, on!!.dev)
+        assertEquals(871366669, on.writeFid)
+        assertEquals(1, on.valueMin)
+        assertEquals(1, on.valueMax)
+        assertNull(on.readbackFid)
+        assertEquals(0, off!!.valueMin)
+        assertEquals(0, off.valueMax)
+        assertNull(off.readbackFid)
     }
 
     @Test fun `official optional comfort actions keep safe ranges and readbacks`() {

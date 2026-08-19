@@ -35,6 +35,7 @@ class ClusterLyricOverlayController(
             setTextSizeSp(18f * settings.clusterFontScale)
             setVisibleLineCount(settings.clusterLineCount)
             setDisplayStyle(settings.clusterDisplayStyle())
+            setHorizontalPositionPct(settings.clusterXPct.toFloat())
             setFrame(frame, animate)
         }
         val lp = params ?: return
@@ -85,6 +86,7 @@ class ClusterLyricOverlayController(
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
         }
         val lyric = LyricOverlayView(ctx)
+        lyric.setHorizontalPositionPct(settings.clusterXPct.toFloat())
         view.addView(
             lyric,
             FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT, Gravity.CENTER),

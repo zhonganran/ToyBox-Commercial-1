@@ -17,8 +17,11 @@ import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.VerifiedUser
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -50,6 +53,7 @@ internal enum class SettingsCategory {
     Control,
     Led,
     EventSound,
+    Creative,
     Data,
 }
 
@@ -131,6 +135,7 @@ internal fun SettingsCategoryContent(
     state: SettingsUiState,
     viewModel: SettingsViewModel,
     onNavigateToPlaces: () -> Unit,
+    onNavigateToCreativeWorkshop: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         if (category != SettingsCategory.Auth) {
@@ -149,6 +154,7 @@ internal fun SettingsCategoryContent(
             SettingsCategory.Control -> DisplaySection(state, viewModel)
             SettingsCategory.Led -> LedLinkSettingsSection()
             SettingsCategory.EventSound -> VehicleEventSoundSection(state, viewModel)
+            SettingsCategory.Creative -> CreativeWorkshopSettingsSection(onNavigateToCreativeWorkshop)
             SettingsCategory.Data -> AppSection(state, viewModel)
         }
     }
@@ -162,7 +168,8 @@ private val SettingsCategory.indexLabel: String
         SettingsCategory.Control -> "04"
         SettingsCategory.Led -> "05"
         SettingsCategory.EventSound -> "06"
-        SettingsCategory.Data -> "07"
+        SettingsCategory.Creative -> "07"
+        SettingsCategory.Data -> "08"
     }
 
 private val SettingsCategory.icon: ImageVector
@@ -173,6 +180,7 @@ private val SettingsCategory.icon: ImageVector
         SettingsCategory.Control -> Icons.Outlined.Key
         SettingsCategory.Led -> Icons.Outlined.BluetoothConnected
         SettingsCategory.EventSound -> Icons.Outlined.MusicNote
+        SettingsCategory.Creative -> Icons.Outlined.Palette
         SettingsCategory.Data -> Icons.Outlined.CloudUpload
     }
 
@@ -184,6 +192,7 @@ private val SettingsCategory.title: String
         SettingsCategory.Control -> "按键 / 显示 / 车外通道"
         SettingsCategory.Led -> "LED联动"
         SettingsCategory.EventSound -> "车辆事件音效"
+        SettingsCategory.Creative -> "创意工坊"
         SettingsCategory.Data -> "数据与更新"
     }
 
@@ -195,6 +204,7 @@ private val SettingsCategory.subtitle: String
         SettingsCategory.Control -> "车外音效通道、方向盘快捷键、仪表盘投射"
         SettingsCategory.Led -> "蓝牙屏幕、车辆事件联动和内置画面测试"
         SettingsCategory.EventSound -> "锁车、解锁和哨兵的后台车外音效"
+        SettingsCategory.Creative -> "在线 3D 车型、车漆、彩绘和车窗膜"
         SettingsCategory.Data -> "界面主题、行程轨迹、备份恢复、更新和关于"
     }
 
@@ -209,6 +219,7 @@ private fun SettingsCategory.status(state: SettingsUiState): String =
             val count = LockSoundEvent.entries.count { state.lockSound.enabled(it) }
             if (count > 0) "${count} 项开启" else "未开启"
         }
+        SettingsCategory.Creative -> "在线资源"
         SettingsCategory.Data -> when (state.themeMode) {
             "light" -> "白天主题"
             "dark" -> "黑暗主题"
@@ -224,6 +235,7 @@ private fun SettingsCategory.accent(state: SettingsUiState): Color =
         SettingsCategory.Control -> AccentGreen
         SettingsCategory.Led -> AccentBlue
         SettingsCategory.EventSound -> AccentOrange
+        SettingsCategory.Creative -> AccentPurple
         SettingsCategory.Data -> AccentPurple
     }
 
@@ -262,6 +274,47 @@ private fun SettingsCategoryHero(category: SettingsCategory, state: SettingsUiSt
                     .background(accent.copy(alpha = 0.10f), RoundedCornerShape(999.dp))
                     .padding(horizontal = 11.dp, vertical = 6.dp),
             )
+        }
+    }
+}
+
+@Composable
+private fun CreativeWorkshopSettingsSection(onOpen: () -> Unit) {
+    Card(
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = CardSurface.copy(alpha = 0.90f)),
+        border = BorderStroke(1.dp, AccentPurple.copy(alpha = 0.30f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(54.dp)
+                    .background(AccentPurple.copy(alpha = 0.14f), RoundedCornerShape(8.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Outlined.Palette,
+                    contentDescription = null,
+                    tint = AccentPurple,
+                    modifier = Modifier.size(28.dp),
+                )
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("我的车辆设计", color = TextPrimary, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
+                Text("车型和彩绘按需从服务器加载", color = TextSecondary, fontSize = 12.sp)
+            }
+            Button(
+                onClick = onOpen,
+                shape = RoundedCornerShape(7.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = AccentPurple, contentColor = Color.White),
+            ) {
+                Text("进入创意工坊", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }

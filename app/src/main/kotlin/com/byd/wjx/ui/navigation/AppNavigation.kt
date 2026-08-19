@@ -37,6 +37,7 @@ import com.byd.wjx.data.system.AutostartSettingsLauncher
 import com.byd.wjx.service.UpdateChecker
 import com.byd.wjx.ui.automation.AutomationScreen
 import com.byd.wjx.ui.charges.ChargesScreen
+import com.byd.wjx.ui.creative.CreativeWorkshopScreen
 import com.byd.wjx.ui.places.PlacesScreen
 import com.byd.wjx.ui.desktopcomponents.DesktopComponentsScreen
 import com.byd.wjx.ui.home.BatteryHealthScreen
@@ -85,6 +86,7 @@ fun AppNavigation(
     var showVehicleSystem by rememberSaveable { mutableStateOf(false) }
     var showBatteryHealth by rememberSaveable { mutableStateOf(false) }
     var showVehicleEnvironment by rememberSaveable { mutableStateOf(false) }
+    var showCreativeWorkshop by rememberSaveable { mutableStateOf(false) }
     var settingsInitialCategory by rememberSaveable { mutableStateOf<String?>(null) }
     val screenStateHolder = rememberSaveableStateHolder()
 
@@ -195,7 +197,13 @@ fun AppNavigation(
     BackHandler(enabled = disclaimerAccepted && showVehicleEnvironment) {
         showVehicleEnvironment = false
     }
-    ProAppScaffold(
+    BackHandler(enabled = disclaimerAccepted && showCreativeWorkshop) {
+        showCreativeWorkshop = false
+    }
+    if (disclaimerAccepted && showCreativeWorkshop) {
+        CreativeWorkshopScreen(onBack = { showCreativeWorkshop = false })
+    } else {
+        ProAppScaffold(
             navItems = navItems,
             selectedRoute = scaffoldRoute,
             animateBackground = selectedRoute == Screen.Home.route &&
@@ -332,12 +340,17 @@ fun AppNavigation(
                                     selectedRoute = Screen.Settings.route
                                     showPlaces = true
                                 },
+                                onNavigateToCreativeWorkshop = {
+                                    selectedRoute = Screen.Settings.route
+                                    showCreativeWorkshop = true
+                                },
                             )
                         }
                     }
                 }
             }
         }
+    }
     if (!disclaimerAccepted) {
         DisclaimerScreen(
             onAccept = {

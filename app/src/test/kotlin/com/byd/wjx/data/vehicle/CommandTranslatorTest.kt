@@ -194,6 +194,11 @@ class CommandTranslatorTest {
         assertEquals(2, r?.value)
     }
 
+    @Test fun `hazard commands map to the write-only switch values`() {
+        assertEquals("hazard_on" to 1, one("双闪打开")?.let { it.actionName to it.value })
+        assertEquals("hazard_off" to 0, one("双闪关闭")?.let { it.actionName to it.value })
+    }
+
     // ── Mirror heat = rear defrost (one button on Leopard 3), validated 2026-05-29 ──
     @Test fun `mirror heat on maps to defrost_rear_on val 1`() {
         val r = one("后视镜加热")

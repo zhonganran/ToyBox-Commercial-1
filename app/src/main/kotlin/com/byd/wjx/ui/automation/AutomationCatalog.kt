@@ -300,6 +300,8 @@ val ACTION_COMMANDS = listOf(
     ActionOption("氛围灯亮度2档", "氛围灯亮度", "灯光"),
     ActionOption("打开日行灯", "日行灯开", "灯光"),
     ActionOption("关闭日行灯", "日行灯关", "灯光"),
+    ActionOption("双闪打开", "打开双闪", "灯光"),
+    ActionOption("双闪关闭", "关闭双闪", "灯光"),
     ActionOption("打开车内灯", "车内灯开", "灯光"),
     ActionOption("关闭车内灯", "车内灯关", "灯光"),
     ActionOption("车门上锁", "车门上锁", "门锁"),

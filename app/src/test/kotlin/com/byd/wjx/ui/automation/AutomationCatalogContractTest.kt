@@ -2,6 +2,7 @@ package com.byd.wjx.ui.automation
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AutomationCatalogContractTest {
@@ -29,5 +30,12 @@ class AutomationCatalogContractTest {
         val option = TRIGGER_PARAMS.firstOrNull { it.param == "SteeringHeat" }
         assertNotNull(option)
         assertEquals(listOf("1" to "关闭", "2" to "开启"), option!!.enumValues)
+    }
+
+    @Test
+    fun `hazard on and off are available as light actions`() {
+        val hazardActions = ACTION_COMMANDS.filter { it.command.startsWith("双闪") }
+        assertEquals(listOf("双闪打开", "双闪关闭"), hazardActions.map { it.command })
+        assertTrue(hazardActions.all { it.category == "灯光" })
     }
 }

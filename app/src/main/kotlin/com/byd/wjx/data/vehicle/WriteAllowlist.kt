@@ -61,10 +61,9 @@ class WriteAllowlist(private val map: Map<String, WriteEntry>) {
          * Per-(dev,fid) carve-outs from [BANNED_DEVS]. dev=1023 (global powerState)
          * and dev=1004 (light enums) are blanket-banned, but BYD's own system app
          * (BYDAutoSettingDevice and validated vehicle diagnostics) drives the cabin/ambient
-         * lights and the DRL through these specific comfort fids via autoservice
+         * lights, DRL and hazard switch through these specific comfort fids via autoservice
          * setInt — the same channel D+ used. Only these exact pairs are exempt; the
-         * rest of dev=1023/1004 stays banned. All three live-validated on Fangchengbao Bao 3
-         * 2026-05-29 (write+readback snap).
+         * rest of dev=1023/1004 stays banned. Each entry records its own validation source.
          */
         val BANNED_DEV_FID_EXCEPTIONS: Set<Pair<Int, Int>> = setOf(
             1023 to 1330643002,  // SET_INSIDE_LIGHT_STATE_SET (interior light on/off)
@@ -74,6 +73,7 @@ class WriteAllowlist(private val map: Map<String, WriteEntry>) {
             1023 to 1276190739,  // co-driver massage intensity
             1023 to 1276190756,  // co-driver massage mode
             1004 to 1125122118,  // DRL (daytime running lights) on/off
+            1004 to 871366669,   // hazard lights on/off
         )
 
         /** Official Settings feature-catalog readbacks for optional comfort writes. */
@@ -171,6 +171,9 @@ class WriteAllowlist(private val map: Map<String, WriteEntry>) {
             // DRL (daytime running lights) — 1=on, 2=off (0 invalid), dev=1004 carve-out
             WriteEntry("drl_on",  1004, 1125122118, null, 1, 1, "lights", true, "wjx-live-2026-05-29"),
             WriteEntry("drl_off", 1004, 1125122118, null, 2, 2, "lights", true, "wjx-live-2026-05-29"),
+            // Hazard switch is write-only on this channel: 1=on, 0=off.
+            WriteEntry("hazard_on",  1004, 871366669, null, 1, 1, "lights", true, "bydmate-field-2026-07-31"),
+            WriteEntry("hazard_off", 1004, 871366669, null, 0, 0, "lights", true, "bydmate-field-2026-07-31"),
             // mirror heat = rear-window defrost (single button on Fangchengbao Bao 3) — 1=on, 0=off, dev=1000
             WriteEntry("defrost_rear_on",  1000, 501219357, null, 1, 1, "climate", true, "wjx-live-2026-05-29"),
             WriteEntry("defrost_rear_off", 1000, 501219357, null, 0, 0, "climate", true, "wjx-live-2026-05-29"),

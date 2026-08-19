@@ -44,6 +44,9 @@ val serviceQrApiUrl: String =
 val logUploadApiUrl: String =
     providers.gradleProperty("superToyBoxLogUploadApiUrl").orNull
         ?: "https://api.689588.xyz/api/v1/logs/upload"
+val creativeWorkshopCatalogUrl: String =
+    providers.gradleProperty("superToyBoxCreativeWorkshopCatalogUrl").orNull
+        ?: "https://cdn.689588.xyz/creative-workshop/catalog.json"
 android {
     namespace = "com.byd.wjx"
     compileSdk = 34
@@ -55,8 +58,8 @@ android {
         // on DiLink Android 12 through requestLegacyExternalStorage.
         // targetSdk 30+ would break listFiles() on /storage/emulated/0/energydata/
         targetSdk = 29
-        versionCode = 39
-        versionName = "2.0"
+        versionCode = 40
+        versionName = "2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "UPDATE_API_URL", "\"$updateApiUrl\"")
@@ -64,6 +67,7 @@ android {
         buildConfigField("String", "ACTIVATION_API_URL", "\"$activationApiUrl\"")
         buildConfigField("String", "SERVICE_QR_API_URL", "\"$serviceQrApiUrl\"")
         buildConfigField("String", "LOG_UPLOAD_API_URL", "\"$logUploadApiUrl\"")
+        buildConfigField("String", "CREATIVE_WORKSHOP_CATALOG_URL", "\"$creativeWorkshopCatalogUrl\"")
     }
 
     signingConfigs {
