@@ -15,7 +15,7 @@ from platform_config import (
     OFFLINE_LICENSE_PRIVATE_KEY_PEM,
 )
 from platform_identity import extract_valid_vin, normalize_device_code
-from platform_storage import utc_now
+from platform_storage import utc_datetime, utc_now
 
 
 LOGGER = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ def normalize_license_code(value):
 
 
 def add_days_iso(days):
-    return (datetime.utcnow() + timedelta(days=max(0, days))).replace(microsecond=0).isoformat() + "Z"
+    return (utc_datetime() + timedelta(days=max(0, days))).replace(microsecond=0).isoformat() + "Z"
 
 
 def add_days_from_iso(value, days):

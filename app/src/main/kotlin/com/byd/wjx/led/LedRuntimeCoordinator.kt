@@ -284,11 +284,15 @@ class LedRuntimeCoordinator @Inject constructor(
             ?: return@withLock
         val current = _runtime.value.currentScene
 
-        _runtime.value = _runtime.value.copy(currentScene = next, lastSceneChangedAt = now)
         if (!bleClient.connection.value.ready) return@withLock
         val sent = bleClient.play(next)
         _runtime.value = if (sent) {
-            _runtime.value.copy(lastCommandAt = System.currentTimeMillis(), lastError = null)
+            _runtime.value.copy(
+                currentScene = next,
+                lastSceneChangedAt = now,
+                lastCommandAt = System.currentTimeMillis(),
+                lastError = null,
+            )
         } else {
             _runtime.value.copy(lastError = "LED命令发送失败")
         }

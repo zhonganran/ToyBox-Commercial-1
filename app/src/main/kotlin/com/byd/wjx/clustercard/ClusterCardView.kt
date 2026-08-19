@@ -37,6 +37,8 @@ internal class ClusterCardView(context: Context) : View(context) {
         color = Color.WHITE
         typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
     }
+    private val outerRect = RectF()
+    private val accentRect = RectF()
 
     private var metrics: List<ClusterCardMetric> = emptyList()
     private var baseData: DiParsData? = null
@@ -60,12 +62,13 @@ internal class ClusterCardView(context: Context) : View(context) {
         super.onDraw(canvas)
         if (metrics.isEmpty() || width <= 0 || height <= 0) return
 
-        val outer = RectF(1f, 1f, width - 1f, height - 1f)
+        outerRect.set(1f, 1f, width - 1f, height - 1f)
         val radius = min(width, height) * 0.075f
-        canvas.drawRoundRect(outer, radius, radius, backgroundPaint)
-        canvas.drawRoundRect(outer, radius, radius, borderPaint)
+        canvas.drawRoundRect(outerRect, radius, radius, backgroundPaint)
+        canvas.drawRoundRect(outerRect, radius, radius, borderPaint)
+        accentRect.set(density * 8f, density * 7f, density * 11f, height - density * 7f)
         canvas.drawRoundRect(
-            RectF(density * 8f, density * 7f, density * 11f, height - density * 7f),
+            accentRect,
             density * 1.5f,
             density * 1.5f,
             accentPaint,

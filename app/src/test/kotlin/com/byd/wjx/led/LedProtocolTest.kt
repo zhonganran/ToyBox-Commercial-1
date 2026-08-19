@@ -3,6 +3,7 @@ package com.byd.wjx.led
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LedProtocolTest {
@@ -81,6 +82,53 @@ class LedProtocolTest {
     }
 
     @Test
+    fun `Dudu FFF0 UUID directions match the device protocol`() {
+        assertEquals("0000fff0-0000-1000-8000-00805f9b34fb", DuduFff0LedProtocol.serviceUuid.toString())
+        assertEquals("0000fff1-0000-1000-8000-00805f9b34fb", DuduFff0LedProtocol.notifyUuid.toString())
+        assertEquals("0000fff2-0000-1000-8000-00805f9b34fb", DuduFff0LedProtocol.writeUuid.toString())
+    }
+
+    @Test
+    fun `Dudu FFF0 power and brightness frames match the reverse engineered protocol`() {
+        assertArrayEquals(
+            hex("10 00 AA 55 FF FF 0A 00 0B 00 C1 02 04 02 00 01 DC 03"),
+            DuduFff0LedProtocol.power(enabled = true),
+        )
+        assertArrayEquals(
+            hex("10 00 AA 55 FF FF 0A 00 0C 00 C1 02 06 02 00 0F ED 03"),
+            DuduFff0LedProtocol.brightness(100),
+        )
+    }
+
+    @Test
+    fun `Dudu FFF0 scene frame is split into legacy 20 byte BLE writes`() {
+        val frame = DuduFff0LedProtocol.playPreset(3)
+
+        assertArrayEquals(
+            hex("14 00 AA 55 FF FF 0E 00 0A 00 C1 02 18 06 02 03 00 01 F0 00 EC 04"),
+            frame,
+        )
+        val chunks = DuduFff0LedProtocol.splitForWrite(frame)
+        assertEquals(listOf(20, 2), chunks.map(ByteArray::size))
+        assertArrayEquals(frame, chunks.fold(byteArrayOf(), ByteArray::plus))
+    }
+
+    @Test
+    fun `Dudu FFF0 scene query converts one based slots to protocol indexes`() {
+        val query = DuduFff0LedProtocol.querySceneSlots((1..8).toList())
+        assertArrayEquals(
+            hex("16 00 AA 55 FF FF 10 00 0C 00 C1 03 35 08 00 01 02 03 04 05 06 07 36 04"),
+            query,
+        )
+        assertNull(DuduFff0LedProtocol.deviceAcknowledgementCommand(query))
+        assertEquals(
+            DuduFff0LedProtocol.COMMAND_BRIGHTNESS,
+            DuduFff0LedProtocol.deviceAcknowledgementCommand(DuduFff0LedProtocol.brightness(50)),
+        )
+        assertTrue(DuduFff0LedProtocol.sceneRefreshIntervalMs == 60_000L)
+    }
+
+    @Test
     fun `protocol detection prefers an expected protocol that is actually available`() {
         assertEquals(
             LedProtocolKind.A950,
@@ -104,4 +152,10 @@ class LedProtocolTest {
         assertNull(detectLedProtocol(expected = null, available = emptySet()))
         assertNull(detectLedProtocol(expected = null, available = LedProtocolKind.entries.toSet()))
     }
+
+    private fun hex(value: String): ByteArray = value
+        .trim()
+        .split(Regex("\\s+"))
+        .map { it.toInt(16).toByte() }
+        .toByteArray()
 }

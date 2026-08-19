@@ -53,10 +53,17 @@ class LedBleClient @Inject constructor(
     private val _devices = MutableStateFlow<List<LedDevice>>(emptyList())
     val devices: StateFlow<List<LedDevice>> = _devices.asStateFlow()
 
+    private val _duduSceneCatalog = MutableStateFlow(DuduFff0SceneCatalogState())
+    val duduSceneCatalog: StateFlow<DuduFff0SceneCatalogState> = _duduSceneCatalog.asStateFlow()
+
+    private val duduNotificationDecoder = DuduFff0NotificationDecoder()
+
     @Volatile private var bluetoothGatt: BluetoothGatt? = null
     @Volatile private var writeCharacteristic: BluetoothGattCharacteristic? = null
     @Volatile private var notifyCharacteristic: BluetoothGattCharacteristic? = null
     @Volatile private var pendingWriteAck: CompletableDeferred<Int>? = null
+    @Volatile private var pendingDuduDeviceAck: PendingDuduDeviceAck? = null
+    @Volatile private var pendingDuduSceneQuery: PendingDuduSceneQuery? = null
     @Volatile private var manualDisconnect = false
     @Volatile private var activeProtocolSpec: LedGattProtocol? = null
     @Volatile private var negotiatedMtu = DEFAULT_MTU
@@ -67,6 +74,8 @@ class LedBleClient @Inject constructor(
     private var shutdownJob: Job? = null
     private var protocolInitJob: Job? = null
     private var keepaliveJob: Job? = null
+    private var sceneRefreshJob: Job? = null
+    private var duduSceneScanJob: Job? = null
     private var mtuFallbackJob: Job? = null
     private var notifyFallbackJob: Job? = null
 
@@ -262,10 +271,27 @@ class LedBleClient @Inject constructor(
 
     suspend fun play(scene: LedScene): Boolean {
         val protocol = activeProtocolSpec ?: return false
-        return write(
-            protocol.playScene(scene),
-            "scene=${scene.name} protocol=${protocol.kind} preset=${protocol.presetId(scene)}",
-        )
+        val presetId = if (protocol.kind == LedProtocolKind.DUDU_FFF0) {
+            preferences.state.value.duduFff0.sceneSlots[scene]
+                ?: DuduFff0LedProtocol.DEFAULT_SCENE_SLOT
+        } else {
+            protocol.presetId(scene)
+        }
+        if (
+            protocol.kind == LedProtocolKind.DUDU_FFF0 &&
+            _duduSceneCatalog.value.scanComplete &&
+            presetId !in _duduSceneCatalog.value.availableSlots
+        ) {
+            WjxFileLogger.w(TAG, "scene skipped unavailable FFF0 slot=$presetId scene=${scene.name}")
+            return false
+        }
+        val packet = protocol.playScene(scene, presetId)
+        val description = "scene=${scene.name} protocol=${protocol.kind} preset=$presetId"
+        val sent = write(packet, description)
+        if (sent) {
+            startSceneRefresh(protocol, packet, description)
+        }
+        return sent
     }
 
     suspend fun setBrightness(percent: Int): Boolean {
@@ -274,6 +300,12 @@ class LedBleClient @Inject constructor(
             protocol.brightness(percent),
             "brightness=${percent.coerceIn(0, 100)} protocol=${protocol.kind}",
         )
+    }
+
+    fun refreshDuduSceneSlots() {
+        val gatt = bluetoothGatt ?: return
+        if (activeProtocolSpec?.kind != LedProtocolKind.DUDU_FFF0 || !_connection.value.ready) return
+        startDuduSceneScan(gatt)
     }
 
     @SuppressLint("MissingPermission")
@@ -289,6 +321,14 @@ class LedBleClient @Inject constructor(
             return@withLock false
         }
         val protocol = activeProtocolSpec ?: return@withLock false
+        val deviceAckCommand = if (protocol.kind == LedProtocolKind.DUDU_FFF0) {
+            DuduFff0LedProtocol.deviceAcknowledgementCommand(packet)
+        } else {
+            null
+        }
+        val deviceAck = deviceAckCommand?.let { command ->
+            PendingDuduDeviceAck(command, CompletableDeferred()).also { pendingDuduDeviceAck = it }
+        }
         val writeWithResponse = !protocol.forceWriteWithoutResponse &&
             characteristic.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0
         characteristic.writeType = if (writeWithResponse) {
@@ -296,66 +336,104 @@ class LedBleClient @Inject constructor(
         } else {
             BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
         }
-        val ack = if (writeWithResponse) CompletableDeferred<Int>() else null
-        pendingWriteAck = ack
-        val accepted = runCatching {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                gatt.writeCharacteristic(characteristic, packet, characteristic.writeType) ==
-                    BluetoothStatusCodes.SUCCESS
-            } else {
-                @Suppress("DEPRECATION")
-                characteristic.value = packet
-                @Suppress("DEPRECATION")
-                gatt.writeCharacteristic(characteristic)
+        val chunks = protocol.splitForWrite(packet)
+        chunks.forEachIndexed { index, chunk ->
+            val ack = if (writeWithResponse) CompletableDeferred<Int>() else null
+            pendingWriteAck = ack
+            val accepted = runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    gatt.writeCharacteristic(characteristic, chunk, characteristic.writeType) ==
+                        BluetoothStatusCodes.SUCCESS
+                } else {
+                    @Suppress("DEPRECATION")
+                    characteristic.value = chunk
+                    @Suppress("DEPRECATION")
+                    gatt.writeCharacteristic(characteristic)
+                }
+            }.getOrDefault(false)
+            if (!accepted) {
+                if (pendingWriteAck === ack) pendingWriteAck = null
+                clearPendingDuduDeviceAck(deviceAck)
+                WjxFileLogger.w(TAG, "write rejected description=$description chunk=${index + 1}/${chunks.size}")
+                recoverFromWriteFailure(description)
+                return@withLock false
             }
-        }.getOrDefault(false)
-        if (!accepted) {
-            if (pendingWriteAck === ack) pendingWriteAck = null
-            WjxFileLogger.w(TAG, "write rejected description=$description")
-            recoverFromWriteFailure(description)
-            return@withLock false
-        }
-        WjxFileLogger.i(
-            TAG,
-            "write queued $description type=${if (writeWithResponse) "DEFAULT" else "NO_RESPONSE"} bytes=${packet.toHex()}",
-        )
+            WjxFileLogger.i(
+                TAG,
+                "write queued $description chunk=${index + 1}/${chunks.size} " +
+                    "type=${if (writeWithResponse) "DEFAULT" else "NO_RESPONSE"} bytes=${chunk.toHex()}",
+            )
 
-        val succeeded = if (ack != null) {
-            val status = withTimeoutOrNull(WRITE_ACK_TIMEOUT_MS) { ack.await() }
-            if (pendingWriteAck === ack) pendingWriteAck = null
-            when {
-                status == null -> {
-                    WjxFileLogger.w(TAG, "write timeout description=$description")
-                    recoverFromWriteFailure(description)
-                    false
+            val chunkSucceeded = if (ack != null) {
+                val status = withTimeoutOrNull(WRITE_ACK_TIMEOUT_MS) { ack.await() }
+                if (pendingWriteAck === ack) pendingWriteAck = null
+                when {
+                    status == null -> {
+                        WjxFileLogger.w(TAG, "write timeout description=$description chunk=${index + 1}/${chunks.size}")
+                        recoverFromWriteFailure(description)
+                        false
+                    }
+                    status != BluetoothGatt.GATT_SUCCESS -> {
+                        WjxFileLogger.w(
+                            TAG,
+                            "write failed status=$status description=$description chunk=${index + 1}/${chunks.size}",
+                        )
+                        recoverFromWriteFailure(description)
+                        false
+                    }
+                    else -> true
                 }
-                status != BluetoothGatt.GATT_SUCCESS -> {
-                    WjxFileLogger.w(TAG, "write failed status=$status description=$description")
-                    recoverFromWriteFailure(description)
-                    false
-                }
-                else -> true
+            } else {
+                true
             }
-        } else {
-            true
-        }
-        if (succeeded) {
+            if (!chunkSucceeded) {
+                clearPendingDuduDeviceAck(deviceAck)
+                return@withLock false
+            }
             delay(protocol.writeGapMs)
         }
-        succeeded
+        if (deviceAck == null) return@withLock true
+
+        val acknowledged = withTimeoutOrNull(DEVICE_ACK_TIMEOUT_MS) { deviceAck.response.await() } == true
+        clearPendingDuduDeviceAck(deviceAck)
+        if (!acknowledged) {
+            WjxFileLogger.w(TAG, "device ACK timeout command=${deviceAck.command} description=$description")
+            recoverFromWriteFailure("$description device ACK")
+            return@withLock false
+        }
+        WjxFileLogger.i(TAG, "device ACK success command=${deviceAck.command} description=$description")
+        true
+    }
+
+    private fun clearPendingDuduDeviceAck(expected: PendingDuduDeviceAck?) {
+        if (expected != null && pendingDuduDeviceAck === expected) pendingDuduDeviceAck = null
     }
 
     private fun recoverFromWriteFailure(description: String) {
         val current = _connection.value
         WjxFileLogger.w(TAG, "resetting GATT after write failure description=$description")
         closeGatt()
-        if (!manualDisconnect && preferences.state.value.activeProtocol.enabled) {
+        val snapshot = preferences.state.value
+        val protocol = current.protocol
+        val profile = protocol?.let(snapshot::protocol)
+        val canReconnect = !manualDisconnect &&
+            protocol != null &&
+            snapshot.selectedProtocol == protocol &&
+            profile?.enabled == true &&
+            profile.deviceAddress.equals(current.address, ignoreCase = true)
+        if (canReconnect) {
             _connection.value = current.copy(
                 phase = LedConnectionPhase.RETRYING,
                 message = "LED写入失败，正在重新连接",
                 retryInSeconds = 1,
             )
             scheduleReconnect()
+        } else {
+            _connection.value = current.copy(
+                phase = LedConnectionPhase.ERROR,
+                message = "LED设备未返回有效应答",
+                retryInSeconds = null,
+            )
         }
     }
 
@@ -371,7 +449,17 @@ class LedBleClient @Inject constructor(
         )
         reconnectJob?.cancel()
         reconnectJob = null
+        preferences.bindDetectedDevice(
+            protocol = protocol.kind,
+            address = current.address,
+            name = current.name.ifBlank { "LED设备" },
+        )
+        foundDevices[current.address]?.let { detected ->
+            foundDevices[current.address] = detected.copy(protocol = protocol.kind)
+            _devices.value = foundDevices.values.sortedByDescending { it.rssi }
+        }
         startProtocolKeepalive(gatt, protocol)
+        if (protocol.kind == LedProtocolKind.DUDU_FFF0) startDuduSceneScan(gatt)
         WjxFileLogger.i(TAG, "BLE ready address=${current.address} protocol=${protocol.kind} mtu=$negotiatedMtu")
     }
 
@@ -419,6 +507,103 @@ class LedBleClient @Inject constructor(
         }
     }
 
+    private fun startSceneRefresh(
+        protocol: LedGattProtocol,
+        packet: ByteArray,
+        description: String,
+    ) {
+        sceneRefreshJob?.cancel()
+        val intervalMs = protocol.sceneRefreshIntervalMs ?: return
+        val gatt = bluetoothGatt ?: return
+        val job = scope.launch {
+            while (
+                isActive &&
+                gatt === bluetoothGatt &&
+                activeProtocolSpec === protocol &&
+                _connection.value.ready
+            ) {
+                delay(intervalMs)
+                if (!isActive || gatt !== bluetoothGatt || !_connection.value.ready) return@launch
+                if (!write(packet, "$description refresh")) return@launch
+            }
+        }
+        sceneRefreshJob = job
+        job.invokeOnCompletion {
+            if (sceneRefreshJob === job) sceneRefreshJob = null
+        }
+    }
+
+    private fun startDuduSceneScan(gatt: BluetoothGatt) {
+        duduSceneScanJob?.cancel()
+        pendingDuduSceneQuery?.response?.cancel()
+        pendingDuduSceneQuery = null
+        _duduSceneCatalog.value = DuduFff0SceneCatalogState(scanning = true)
+
+        val job = scope.launch {
+            val remaining = DuduFff0LedProtocol.SCENE_SLOT_RANGE.toMutableSet()
+            val available = linkedSetOf<Int>()
+            var attempts = 0
+
+            while (
+                isActive &&
+                remaining.isNotEmpty() &&
+                attempts < MAX_SCENE_QUERY_ATTEMPTS &&
+                gatt === bluetoothGatt &&
+                activeProtocolSpec?.kind == LedProtocolKind.DUDU_FFF0 &&
+                _connection.value.ready
+            ) {
+                attempts++
+                val requestedSlots = remaining.take(MAX_SCENE_QUERY_SLOTS).toSet()
+                val pending = PendingDuduSceneQuery(
+                    requestedSlots = requestedSlots,
+                    response = CompletableDeferred(),
+                )
+                pendingDuduSceneQuery = pending
+                val sent = write(
+                    DuduFff0LedProtocol.querySceneSlots(requestedSlots.toList()),
+                    "DUDU_FFF0 query slots=${requestedSlots.joinToString()}",
+                )
+                if (!sent) {
+                    if (pendingDuduSceneQuery === pending) pendingDuduSceneQuery = null
+                    if (gatt === bluetoothGatt) {
+                        _duduSceneCatalog.value = _duduSceneCatalog.value.copy(
+                            scanning = false,
+                            error = "场景读取失败",
+                        )
+                    }
+                    return@launch
+                }
+
+                val response = withTimeoutOrNull(SCENE_QUERY_TIMEOUT_MS) { pending.response.await() }
+                if (pendingDuduSceneQuery === pending) pendingDuduSceneQuery = null
+                val inspected = response.orEmpty().filterKeys { it in requestedSlots }
+                if (inspected.isEmpty()) continue
+
+                remaining.removeAll(inspected.keys)
+                available += inspected.filterValues { it }.keys
+                _duduSceneCatalog.value = DuduFff0SceneCatalogState(
+                    scanning = true,
+                    scannedSlots = DuduFff0LedProtocol.SCENE_SLOT_RANGE.count() - remaining.size,
+                    availableSlots = available.toSet(),
+                )
+            }
+
+            if (gatt !== bluetoothGatt || activeProtocolSpec?.kind != LedProtocolKind.DUDU_FFF0) return@launch
+            val completed = remaining.isEmpty()
+            _duduSceneCatalog.value = DuduFff0SceneCatalogState(
+                scanning = false,
+                scannedSlots = DuduFff0LedProtocol.SCENE_SLOT_RANGE.count() - remaining.size,
+                availableSlots = available.toSet(),
+                scanComplete = completed,
+                error = if (completed) null else "场景读取不完整，请重新读取",
+            )
+        }
+        duduSceneScanJob = job
+        job.invokeOnCompletion {
+            if (duduSceneScanJob === job) duduSceneScanJob = null
+        }
+    }
+
     @SuppressLint("MissingPermission")
     @Synchronized
     private fun completeProtocolSetup(gatt: BluetoothGatt) {
@@ -429,36 +614,79 @@ class LedBleClient @Inject constructor(
 
         val notify = notifyCharacteristic
         if (notify == null) {
+            if (activeProtocolSpec?.requiresNotifications == true) {
+                failProtocolSetup(gatt, "FFF0通知通道不可用")
+                return
+            }
             completeProtocolInitialization(gatt)
             return
         }
         val notificationEnabled = runCatching {
             gatt.setCharacteristicNotification(notify, true)
         }.getOrDefault(false)
-        val descriptor = notify.getDescriptor(activeProtocolSpec?.cccdUuid ?: return)
+        val protocol = activeProtocolSpec ?: return
+        val descriptor = notify.getDescriptor(protocol.cccdUuid)
         if (!notificationEnabled || descriptor == null) {
+            if (protocol.requiresNotifications) {
+                failProtocolSetup(gatt, "FFF0通知订阅失败")
+                return
+            }
             completeProtocolInitialization(gatt)
             return
         }
+        val notificationValue = when {
+            notify.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0 ->
+                BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+            notify.properties and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0 ->
+                BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
+            else -> null
+        }
+        if (notificationValue == null) {
+            if (protocol.requiresNotifications) {
+                failProtocolSetup(gatt, "FFF0特征不支持通知")
+            } else {
+                completeProtocolInitialization(gatt)
+            }
+            return
+        }
         val descriptorAccepted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            gatt.writeDescriptor(descriptor, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) ==
+            gatt.writeDescriptor(descriptor, notificationValue) ==
                 BluetoothStatusCodes.SUCCESS
         } else {
             @Suppress("DEPRECATION")
-            descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+            descriptor.value = notificationValue
             @Suppress("DEPRECATION")
             gatt.writeDescriptor(descriptor)
         }
         if (!descriptorAccepted) {
-            completeProtocolInitialization(gatt)
+            if (protocol.requiresNotifications) {
+                failProtocolSetup(gatt, "FFF0通知描述符写入失败")
+            } else {
+                completeProtocolInitialization(gatt)
+            }
         } else {
             notifyFallbackJob?.cancel()
             notifyFallbackJob = scope.launch {
                 delay(NOTIFY_CALLBACK_TIMEOUT_MS)
-                WjxFileLogger.w(TAG, "notify descriptor callback timeout; continuing initialization")
-                completeProtocolInitialization(gatt)
+                if (protocol.requiresNotifications) {
+                    failProtocolSetup(gatt, "FFF0通知订阅超时")
+                } else {
+                    WjxFileLogger.w(TAG, "notify descriptor callback timeout; continuing initialization")
+                    completeProtocolInitialization(gatt)
+                }
             }
         }
+    }
+
+    @Synchronized
+    private fun failProtocolSetup(gatt: BluetoothGatt, message: String) {
+        if (gatt !== bluetoothGatt) return
+        WjxFileLogger.w(TAG, message)
+        _connection.value = _connection.value.copy(
+            phase = LedConnectionPhase.ERROR,
+            message = message,
+        )
+        closeGatt()
     }
 
     @Synchronized
@@ -482,12 +710,22 @@ class LedBleClient @Inject constructor(
         protocolInitJob = null
         keepaliveJob?.cancel()
         keepaliveJob = null
+        sceneRefreshJob?.cancel()
+        sceneRefreshJob = null
+        duduSceneScanJob?.cancel()
+        duduSceneScanJob = null
         mtuFallbackJob?.cancel()
         mtuFallbackJob = null
         notifyFallbackJob?.cancel()
         notifyFallbackJob = null
         pendingWriteAck?.complete(BluetoothGatt.GATT_FAILURE)
         pendingWriteAck = null
+        pendingDuduDeviceAck?.response?.complete(false)
+        pendingDuduDeviceAck = null
+        pendingDuduSceneQuery?.response?.cancel()
+        pendingDuduSceneQuery = null
+        duduNotificationDecoder.reset()
+        _duduSceneCatalog.value = DuduFff0SceneCatalogState()
         bluetoothGatt = null
         writeCharacteristic = null
         notifyCharacteristic = null
@@ -565,7 +803,10 @@ class LedBleClient @Inject constructor(
             val advertisedProtocol = detectLedProtocol(expected = null, available = advertisedProtocols)
             val nameLooksLikeLed = name.contains("LED", ignoreCase = true) ||
                 name.contains("PIXEL", ignoreCase = true) ||
-                name.contains("A950", ignoreCase = true)
+                name.contains("A950", ignoreCase = true) ||
+                name.contains("DUDU", ignoreCase = true) ||
+                name.contains("HAPPY", ignoreCase = true) ||
+                name.contains("马夫", ignoreCase = true)
             val previous = foundDevices[result.device.address]
             val resolvedProtocol = advertisedProtocol ?: previous?.protocol
             if (resolvedProtocol == null && advertisedProtocols.isEmpty() && !nameLooksLikeLed) return
@@ -602,8 +843,16 @@ class LedBleClient @Inject constructor(
                     scheduleReconnect()
                 }
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED || status != BluetoothGatt.GATT_SUCCESS) {
+                val disconnected = _connection.value
                 closeGatt()
                 scheduleReconnect()
+                if (reconnectJob?.isActive != true) {
+                    _connection.value = disconnected.copy(
+                        phase = LedConnectionPhase.ERROR,
+                        message = "LED连接失败，请重新选择设备",
+                        retryInSeconds = null,
+                    )
+                }
             }
         }
 
@@ -624,7 +873,17 @@ class LedBleClient @Inject constructor(
                 val protocol = LedProtocols.forKind(kind)
                 val service = gatt.getService(protocol.serviceUuid) ?: return@mapNotNull null
                 val write = service.getCharacteristic(protocol.writeUuid) ?: return@mapNotNull null
-                kind to Triple(protocol, write, service.getCharacteristic(protocol.notifyUuid))
+                val notify = service.getCharacteristic(protocol.notifyUuid)
+                if (protocol.requiresNotifications) {
+                    val supportsNotification = notify != null &&
+                        notify.getDescriptor(protocol.cccdUuid) != null &&
+                        notify.properties and (
+                            BluetoothGattCharacteristic.PROPERTY_NOTIFY or
+                                BluetoothGattCharacteristic.PROPERTY_INDICATE
+                            ) != 0
+                    if (!supportsNotification) return@mapNotNull null
+                }
+                kind to Triple(protocol, write, notify)
             }.toMap()
             val detectedKind = detectLedProtocol(expectedProtocol, availableProtocols.keys)
             if (detectedKind == null) {
@@ -646,16 +905,6 @@ class LedBleClient @Inject constructor(
                 protocol = detectedKind,
                 message = "已识别${detectedKind.title}，正在初始化",
             )
-            val current = _connection.value
-            preferences.bindDetectedDevice(
-                protocol = detectedKind,
-                address = current.address,
-                name = current.name.ifBlank { "LED设备" },
-            )
-            foundDevices[current.address]?.let { detected ->
-                foundDevices[current.address] = detected.copy(protocol = detectedKind)
-                _devices.value = foundDevices.values.sortedByDescending { it.rssi }
-            }
             WjxFileLogger.i(
                 TAG,
                 "services detected expected=$expectedProtocol actual=$detectedKind available=${availableProtocols.keys}",
@@ -692,7 +941,11 @@ class LedBleClient @Inject constructor(
         override fun onDescriptorWrite(gatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
             if (gatt !== bluetoothGatt || descriptor.uuid != activeProtocolSpec?.cccdUuid) return
             if (status != BluetoothGatt.GATT_SUCCESS) {
-                WjxFileLogger.w(TAG, "notify descriptor failed status=$status; continuing without ACK notifications")
+                if (activeProtocolSpec?.requiresNotifications == true) {
+                    failProtocolSetup(gatt, "FFF0通知订阅失败：$status")
+                    return
+                }
+                WjxFileLogger.w(TAG, "notify descriptor failed status=$status; continuing without notifications")
             }
             completeProtocolInitialization(gatt)
         }
@@ -712,7 +965,7 @@ class LedBleClient @Inject constructor(
             if (gatt !== bluetoothGatt || characteristic.uuid != notifyCharacteristic?.uuid) return
             @Suppress("DEPRECATION")
             val bytes = characteristic.value ?: return
-            WjxFileLogger.i(TAG, "notify bytes=${bytes.toHex()}")
+            handleNotification(bytes)
         }
 
         override fun onCharacteristicChanged(
@@ -721,7 +974,32 @@ class LedBleClient @Inject constructor(
             value: ByteArray,
         ) {
             if (gatt !== bluetoothGatt || characteristic.uuid != notifyCharacteristic?.uuid) return
-            WjxFileLogger.i(TAG, "notify bytes=${value.toHex()}")
+            handleNotification(value)
+        }
+    }
+
+    private fun handleNotification(bytes: ByteArray) {
+        WjxFileLogger.i(TAG, "notify bytes=${bytes.toHex()}")
+        if (activeProtocolSpec?.kind != LedProtocolKind.DUDU_FFF0) return
+        duduNotificationDecoder.append(bytes).forEach { response ->
+            WjxFileLogger.i(
+                TAG,
+                "FFF0 response command=${response.command} payload=${response.payload.toHex()}",
+            )
+            val deviceAck = pendingDuduDeviceAck
+            if (
+                response.isSuccessAcknowledgement &&
+                deviceAck != null &&
+                deviceAck.command == response.command
+            ) {
+                deviceAck.response.complete(true)
+            }
+
+            val sceneSlots = response.sceneSlots() ?: return@forEach
+            val sceneQuery = pendingDuduSceneQuery ?: return@forEach
+            if (sceneSlots.keys.any { it in sceneQuery.requestedSlots }) {
+                sceneQuery.response.complete(sceneSlots)
+            }
         }
     }
 
@@ -732,9 +1010,23 @@ class LedBleClient @Inject constructor(
         private const val DEFAULT_MTU = 23
         private const val SCAN_WINDOW_MS = 10_000L
         private const val WRITE_ACK_TIMEOUT_MS = 1_500L
+        private const val DEVICE_ACK_TIMEOUT_MS = 2_000L
+        private const val SCENE_QUERY_TIMEOUT_MS = 2_000L
         private const val CONNECT_SETTLE_MS = 5_000L
         private const val MTU_CALLBACK_TIMEOUT_MS = 2_500L
         private const val NOTIFY_CALLBACK_TIMEOUT_MS = 3_000L
+        private const val MAX_SCENE_QUERY_SLOTS = 8
+        private const val MAX_SCENE_QUERY_ATTEMPTS = 10
         private val RECONNECT_DELAYS_MS = longArrayOf(1_000L, 2_000L, 5_000L, 10_000L, 30_000L)
     }
+
+    private data class PendingDuduDeviceAck(
+        val command: Int,
+        val response: CompletableDeferred<Boolean>,
+    )
+
+    private data class PendingDuduSceneQuery(
+        val requestedSlots: Set<Int>,
+        val response: CompletableDeferred<Map<Int, Boolean>>,
+    )
 }

@@ -131,14 +131,14 @@ class HelperClientBinderTest {
             HelperBinderProtocol.CURRENT_VERSION,
             clientWith(liveFake(0, HelperBinderProtocol.CURRENT_VERSION)).protocolVersion(),
         )
-        val legacyBinder = object : FakeIBinder() {
+        val incompleteBinder = object : FakeIBinder() {
             override fun transact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
                 reply!!.writeInt(0)
                 reply.setDataPosition(0)
                 return true
             }
         }
-        assertNull(clientWith(legacyBinder).protocolVersion())
+        assertNull(clientWith(incompleteBinder).protocolVersion())
     }
 
     @Test

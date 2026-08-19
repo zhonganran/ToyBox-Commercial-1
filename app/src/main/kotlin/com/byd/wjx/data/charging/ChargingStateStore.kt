@@ -9,10 +9,7 @@ import kotlinx.coroutines.sync.withLock
 
 /**
  * Persists the last-known autoservice state snapshot so that runCatchUp can
- * detect SOC / capacity changes across DiLink power-cycles.
- *
- * Replaces ChargingBaselineStore (v2.4.16 and earlier used lifetime_kwh as the
- * baseline signal; v2.4.17 cascade uses SOC + per-session chargingCapacityKwh).
+ * detect SOC and per-session capacity changes across DiLink power cycles.
  */
 @Singleton
 class ChargingStateStore @Inject constructor(

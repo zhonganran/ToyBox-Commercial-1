@@ -60,35 +60,10 @@ class LedPreferencesTest {
     fun `corrupt rule JSON restores defaults`() {
         context.getSharedPreferences(LedPreferences.PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
-            .putString(LedPreferences.KEY_RULES_V2, "broken")
+            .putString(LedPreferences.KEY_RULES, "broken")
             .commit()
 
         assertEquals(LedLinkageDefaults.rules, LedPreferences(context).state.value.rules)
-    }
-
-    @Test
-    fun `legacy binding migrates into its detected protocol profile`() {
-        context.getSharedPreferences(LedPreferences.PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putString("device_address", "AA:BB:CC:DD:EE:FF")
-            .putString("device_name", "LED")
-            .putString("device_kind", LedProtocolKind.A950.name)
-            .putBoolean("enabled", true)
-            .putInt("brightness", 63)
-            .commit()
-
-        val snapshot = LedPreferences(context).state.value
-        assertEquals(LedProtocolKind.A950, snapshot.selectedProtocol)
-        assertEquals(
-            LedProtocolPreference(
-                enabled = true,
-                deviceAddress = "AA:BB:CC:DD:EE:FF",
-                deviceName = "LED",
-                brightness = 63,
-            ),
-            snapshot.a950,
-        )
-        assertTrue(snapshot.ipixelFa.deviceAddress.isBlank())
     }
 
     @Test
@@ -98,16 +73,35 @@ class LedPreferencesTest {
         preferences.setBrightness(LedProtocolKind.IPIXEL_FA, 35)
         preferences.bindDetectedDevice(LedProtocolKind.A950, "A9:50", "A950 LED")
         preferences.setBrightness(LedProtocolKind.A950, 85)
+        preferences.bindDetectedDevice(LedProtocolKind.DUDU_FFF0, "FF:F0", "LedSpace")
+        preferences.setSceneSlot(LedProtocolKind.DUDU_FFF0, LedScene.LEFT_TURN, 17)
 
         val snapshot = LedPreferences(context).state.value
-        assertEquals(LedProtocolKind.A950, snapshot.selectedProtocol)
+        assertEquals(LedProtocolKind.DUDU_FFF0, snapshot.selectedProtocol)
         assertEquals("FA:00", snapshot.ipixelFa.deviceAddress)
         assertEquals(35, snapshot.ipixelFa.brightness)
         assertEquals("A9:50", snapshot.a950.deviceAddress)
         assertEquals(85, snapshot.a950.brightness)
+        assertEquals("FF:F0", snapshot.duduFff0.deviceAddress)
+        assertEquals(100, snapshot.duduFff0.brightness)
+        assertEquals(17, snapshot.duduFff0.sceneSlots[LedScene.LEFT_TURN])
+        assertEquals(1, snapshot.duduFff0.sceneSlots[LedScene.RIGHT_TURN])
 
         preferences.clearDevice(LedProtocolKind.A950)
         assertTrue(preferences.state.value.a950.deviceAddress.isBlank())
         assertEquals("FA:00", preferences.state.value.ipixelFa.deviceAddress)
+        assertEquals("FF:F0", preferences.state.value.duduFff0.deviceAddress)
+    }
+
+    @Test
+    fun `Dudu FFF0 scene slots are clamped to the device range`() {
+        val preferences = LedPreferences(context)
+
+        preferences.setSceneSlot(LedProtocolKind.DUDU_FFF0, LedScene.DEFAULT, 0)
+        preferences.setSceneSlot(LedProtocolKind.DUDU_FFF0, LedScene.HAZARD, 99)
+
+        val profile = LedPreferences(context).state.value.duduFff0
+        assertEquals(1, profile.sceneSlots[LedScene.DEFAULT])
+        assertEquals(60, profile.sceneSlots[LedScene.HAZARD])
     }
 }

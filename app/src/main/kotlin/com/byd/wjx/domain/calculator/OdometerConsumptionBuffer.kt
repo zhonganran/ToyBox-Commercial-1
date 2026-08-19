@@ -44,9 +44,8 @@ class OdometerConsumptionBuffer(
     ): Unit = mutex.withLock {
         // Charging is handled by the built-in delta guards: mileage stays constant
         // during charging, so MIN_MILEAGE_DELTA suppresses inserts and dKm<=0
-        // skips the pair during averaging. An explicit isCharging flag was
-        // dropped in v2.4.7 because chargeGunState semantics differ per model
-        // and the mis-detection silently blocked all driving samples.
+        // skips the pair during averaging. An explicit isCharging flag would be
+        // unsafe because chargeGunState semantics differ per model.
         if (mileage == null) return@withLock
         // DiPlus startup race: occasionally returns Mileage:0 before the CAN
         // bus delivers the real odometer. Persisting that zero would poison
@@ -58,9 +57,8 @@ class OdometerConsumptionBuffer(
         if (prev != null) {
             if (mileage < prev.mileageKm) return@withLock // odometer regression
             if (mileage - prev.mileageKm > 100.0) {
-                // Unrealistic jump: prev row is stale (corrupt baseline from a
-                // legacy startup-race or a DiPars hiccup). Wipe and re-anchor
-                // on the new reading instead of silently rejecting forever.
+                // Unrealistic jump: the persisted baseline is corrupt or came from
+                // a DiPars hiccup. Wipe and re-anchor instead of rejecting forever.
                 dao.clear()
                 lastSampleCache = null
             } else {
@@ -93,28 +91,6 @@ class OdometerConsumptionBuffer(
     suspend fun shortAvgConsumption(): Double? = mutex.withLock {
         refreshAverageCacheIfNeeded()
         cachedShortAverage
-    }
-
-    /**
-     * One-shot cleanup for buffers poisoned by the v2.4.5–v2.4.7 startup race
-     * (DiPars returned `Mileage:0` on first poll and the row stuck around).
-     * Returns the number of rows cleared so the caller can log it. Safe to
-     * call on every service start — no-op when the buffer is already healthy.
-     */
-    suspend fun cleanupCorruptStartupRows(): Int = mutex.withLock {
-        val all = dao.windowFrom(0.0)
-        val oldest = all.firstOrNull() ?: return@withLock 0
-        if (oldest.mileageKm < MIN_VALID_ODOMETER_KM) {
-            val n = all.size
-            dao.clear()
-            lastSampleCache = null
-            averagesDirty = true
-            n
-        } else {
-            lastSampleCache = all.lastOrNull()
-            averagesDirty = true
-            0
-        }
     }
 
     suspend fun status(): BufferStatus = mutex.withLock {

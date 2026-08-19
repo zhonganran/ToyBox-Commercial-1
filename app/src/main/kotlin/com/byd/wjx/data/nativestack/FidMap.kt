@@ -78,7 +78,7 @@ object FidMap {
         FidEntry("drl",                  1004, 1231040528,   5, Decoder.INT_ENUM),
         // Graduated from yaml status=candidate without formal D+ snap validation.
         // Smoke on real DiLink will surface sentinel returns or wrong values.
-        // If a field shows sentinel/garbage in UI after upgrade — pull the fid from FidMap.
+        // If a field shows sentinel or garbage in UI, remove the fid from FidMap.
         // Battery temps carry a -40 CAN offset (raw 51 → 11°C). Validated against
         // D+ 10/11/11 and the vehicle reference offsets {-40} on Fangchengbao Bao 3 2026-05-29.
         FidEntry("maxBatTemp",           1014, 1148190752,   5, Decoder.INT_TEMP_C_OFS40),

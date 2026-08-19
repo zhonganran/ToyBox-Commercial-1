@@ -33,7 +33,7 @@ class ConsumptionAggregator @Inject constructor() {
     /**
      * @param displayValue  Pre-computed value to render in summaries. Comes from
      *                      BigNumberCalculator. Pass null to render prochirk.
-     *                      Aggregator no longer derives display from recentAvg, v2.5.2
+     *                      The aggregator does not derive display from recentAvg.
      *                      splits "what to show" (trip-avg-based) from "trend baseline"
      *                      (25-km window).
      * @param recentAvg     25-km rolling average from OdometerConsumptionBuffer.

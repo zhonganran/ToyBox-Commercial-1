@@ -2,8 +2,6 @@ package com.byd.wjx.data.local.database
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
-import androidx.room.migration.Migration
-import androidx.sqlite.db.SupportSQLiteDatabase
 import com.byd.wjx.data.local.dao.BatterySnapshotDao
 import com.byd.wjx.data.local.dao.ChargeDao
 import com.byd.wjx.data.local.dao.IdleDrainDao
@@ -50,35 +48,8 @@ import com.byd.wjx.data.local.entity.VehicleWriteLogEntity
 abstract class AppDatabase : RoomDatabase() {
 
     companion object {
-        /** First schema shipped by the fresh-install commercial product. */
-        const val COMMERCIAL_BASELINE_SCHEMA_VERSION = 17
-
         /** Current Room schema version. Must match the @Database(version = ...) annotation above. */
         const val SCHEMA_VERSION = 20
-
-        val MIGRATION_17_18 = object : Migration(17, 18) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    "ALTER TABLE automation_rules ADD COLUMN exit_actions TEXT NOT NULL DEFAULT '[]'"
-                )
-                db.execSQL(
-                    "ALTER TABLE automation_rules ADD COLUMN repeat_interval_seconds INTEGER NOT NULL DEFAULT 0"
-                )
-            }
-        }
-
-        val MIGRATION_18_19 = object : Migration(18, 19) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("DROP TABLE IF EXISTS charge_points")
-            }
-        }
-
-        val MIGRATION_19_20 = object : Migration(19, 20) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE trips ADD COLUMN fuel_consumed_l REAL")
-                db.execSQL("ALTER TABLE trips ADD COLUMN fuel_cost REAL")
-            }
-        }
     }
 
     abstract fun tripDao(): TripDao

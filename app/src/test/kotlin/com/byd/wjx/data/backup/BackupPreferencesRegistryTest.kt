@@ -15,17 +15,26 @@ class BackupPreferencesRegistryTest {
     }
 
     @Test
-    fun `backup includes every user-facing audio lyric and shortcut preference`() {
+    fun `backup includes user-facing audio lyric and shortcut preferences`() {
         val files = BackupPreferencesRegistry.USER_CONFIGURATION_FILES
 
         listOf(
             "exterior_hailing",
             "key_shortcuts",
-            "wjx_seat_channel",
             "lyric_display_controls",
             "sound_library",
-            "wjx_sound_downloads",
         ).forEach { expected -> assertTrue("missing $expected", expected in files) }
+    }
+
+    @Test
+    fun `hardware probes and runtime caches remain device local`() {
+        listOf(
+            "wjx_range_prefs",
+            "wjx_seat_channel",
+            "wjx_sound_downloads",
+        ).forEach { expected ->
+            assertTrue("must remain device-local: $expected", expected in BackupPreferencesRegistry.DEVICE_LOCAL_FILES)
+        }
     }
 
     @Test

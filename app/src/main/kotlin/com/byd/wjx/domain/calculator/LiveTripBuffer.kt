@@ -47,7 +47,7 @@ class LiveTripBuffer @Inject constructor() {
         if (last != null) {
             if (mileage < last.mileage) return@withLock // odometer regression
             if (mileage - last.mileage > MAX_VALID_JUMP_KM) {
-                // Stale baseline (legacy startup-race row, DiPars hiccup):
+                // Stale baseline from a DiPars hiccup:
                 // wipe and re-anchor on the new reading instead of letting a
                 // fake huge dKm into the sliding window.
                 samples.clear()

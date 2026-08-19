@@ -16,15 +16,28 @@ internal interface LedGattProtocol {
     val cccdUuid: UUID
     val requestedMtu: Int? get() = null
     val forceWriteWithoutResponse: Boolean get() = false
+    val requiresNotifications: Boolean get() = false
+    val maxWriteChunkSize: Int? get() = null
     val writeGapMs: Long
     val initializationSteps: List<LedProtocolInitializationStep> get() = emptyList()
     val readyDelayMs: Long get() = 0L
     val keepalivePacket: ByteArray? get() = null
     val keepaliveIntervalMs: Long? get() = null
+    val sceneRefreshIntervalMs: Long? get() = null
 
-    fun playScene(scene: LedScene): ByteArray
+    fun playPreset(presetId: Int): ByteArray
+    fun playScene(scene: LedScene, presetIdOverride: Int? = null): ByteArray =
+        playPreset(presetIdOverride ?: presetId(scene))
     fun presetId(scene: LedScene): Int
     fun brightness(percent: Int): ByteArray
+
+    fun splitForWrite(packet: ByteArray): List<ByteArray> {
+        val chunkSize = maxWriteChunkSize ?: return listOf(packet)
+        require(chunkSize > 0) { "LED write chunk size must be positive" }
+        return packet.indices.step(chunkSize).map { offset ->
+            packet.copyOfRange(offset, minOf(offset + chunkSize, packet.size))
+        }
+    }
 }
 
 internal object IPixelFaLedProtocol : LedGattProtocol {
@@ -51,7 +64,7 @@ internal object IPixelFaLedProtocol : LedGattProtocol {
         )
     }
 
-    override fun playScene(scene: LedScene): ByteArray = playRemotePreset(presetId(scene))
+    override fun playPreset(presetId: Int): ByteArray = playRemotePreset(presetId)
 
     override fun presetId(scene: LedScene): Int = when (scene) {
         LedScene.DEFAULT -> 6
@@ -81,6 +94,7 @@ internal object LedProtocols {
     fun forKind(kind: LedProtocolKind): LedGattProtocol = when (kind) {
         LedProtocolKind.IPIXEL_FA -> IPixelFaLedProtocol
         LedProtocolKind.A950 -> A950LedProtocol
+        LedProtocolKind.DUDU_FFF0 -> DuduFff0LedProtocol
     }
 }
 

@@ -36,7 +36,7 @@ object FidRegistry {
     const val FID_BATTERY_MAX_DISCHARGE_POWER = 1145045048
 
     // === Charging fids (dev=1009) ===
-    // Validated against live AC-charging probe. The legacy `-1442840xxx` group
+    // Validated against live AC-charging probes. The discarded `-1442840xxx` group
     // (gun/type/battery_type) returned sentinel 0xffffd8e5 on every call —
     // phantom values the SentinelDecoder collapsed to null. The fids below
     // return real codes during charging.

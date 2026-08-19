@@ -17,7 +17,7 @@ import kotlinx.coroutines.sync.withLock
 enum class TripState { IDLE, DRIVING }
 
 /**
- * v2.0: GPS collector only. Does NOT create TripEntity records.
+ * GPS collector only. Does not create TripEntity records.
  * GPS points are written with tripId=0 and later attached to energydata trips
  * by HistoryImporter.attachGpsPoints().
  */

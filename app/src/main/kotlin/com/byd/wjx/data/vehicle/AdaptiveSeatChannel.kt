@@ -12,10 +12,10 @@ fun interface SeatWriter {
 }
 
 /**
- * Seat heat/vent compatibility layer.
+ * Seat heat/vent channel adapter.
  *
- * Newer cars use dev=1000 switch+level writes. Some models only react to the
- * older dev=1001 single-fid channel. We probe once, remember the working channel,
+ * Most cars use dev=1000 switch+level writes. Some models only react to the
+ * alternate dev=1001 single-fid channel. We probe once, remember the working channel,
  * and avoid retrying a known dead path on every automation action.
  */
 class AdaptiveSeatChannel(

@@ -22,12 +22,14 @@ import java.util.zip.ZipOutputStream
 
 /**
  * Manifest stored inside every backup zip.
- * Contains enough metadata to guard against restoring a newer-schema backup.
+ * Contains enough metadata to reject backups from a different database schema.
  */
 data class BackupManifest(
+    val backupFormatVersion: Int,
     val appVersionCode: Int,
     val dbSchemaVersion: Int,
     val createdAt: Long,
+    val preferenceFiles: List<String>,
 )
 
 /**
@@ -49,6 +51,9 @@ class BackupManager(
 ) {
 
     init {
+        require(prefsFileNames.distinct().size == prefsFileNames.size) {
+            "Preference files must not contain duplicates"
+        }
         require(deviceProtectedPrefsFileNames.all { it in prefsFileNames }) {
             "Device-protected preference files must also be included in prefsFileNames"
         }
@@ -62,6 +67,7 @@ class BackupManager(
         private const val DB_FILE_NAME = "wjx.db"
         private const val ENTRY_PREFS = "prefs.json"
         private const val ENTRY_MANIFEST = "manifest.json"
+        internal const val BACKUP_FORMAT_VERSION = 1
 
         // JSON type-tag constants
         private const val T_STRING = "String"
@@ -107,14 +113,19 @@ class BackupManager(
                             entry.put("v", rawValue)
                         }
                         is Set<*> -> {
+                            require(rawValue.all { it is String }) {
+                                "Unsupported preference StringSet value for $fileName/$key"
+                            }
                             entry.put("t", T_STRING_SET)
                             val arr = JSONArray()
                             for (item in rawValue) {
-                                arr.put(item?.toString() ?: "")
+                                arr.put(item as String)
                             }
                             entry.put("v", arr)
                         }
-                        else -> continue // unknown type, skip
+                        else -> throw IllegalArgumentException(
+                            "Unsupported preference value type for $fileName/$key: ${rawValue::class.java.name}"
+                        )
                     }
                     fileObj.put(key, entry)
                 }
@@ -150,24 +161,22 @@ class BackupManager(
                             }
                             set as Set<String>
                         }
-                        else -> null
+                        else -> throw IllegalArgumentException(
+                            "Unsupported preference type tag for $fileName/$key: $type"
+                        )
                     }
-                    if (value != null) entries[key] = value
+                    entries[key] = value
                 }
                 result[fileName] = entries
             }
             return result
         }
 
-        /**
-         * Returns true when the backup belongs to this commercial product generation and Room
-         * can migrate it forward. Pre-baseline backups and newer-schema backups are rejected.
-         */
+        /** Only backups created with the exact current schema can be restored. */
         fun isRestorable(
             backupSchemaVersion: Int,
             currentSchemaVersion: Int,
-            baselineSchemaVersion: Int = AppDatabase.COMMERCIAL_BASELINE_SCHEMA_VERSION,
-        ): Boolean = backupSchemaVersion in baselineSchemaVersion..currentSchemaVersion
+        ): Boolean = backupSchemaVersion == currentSchemaVersion
     }
 
     // -------------------------------------------------------------------------
@@ -213,14 +222,18 @@ class BackupManager(
             context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode.toInt()
         } catch (_: Exception) { 0 }
         val manifest = BackupManifest(
+            backupFormatVersion = BACKUP_FORMAT_VERSION,
             appVersionCode = versionCode,
             dbSchemaVersion = AppDatabase.SCHEMA_VERSION,
             createdAt = System.currentTimeMillis(),
+            preferenceFiles = prefsFileNames.sorted(),
         )
         val manifestJson = JSONObject().apply {
+            put("backupFormatVersion", manifest.backupFormatVersion)
             put("appVersionCode", manifest.appVersionCode)
             put("dbSchemaVersion", manifest.dbSchemaVersion)
             put("createdAt", manifest.createdAt)
+            put("preferenceFiles", JSONArray(manifest.preferenceFiles))
         }.toString()
 
         // 5. Write zip to Downloads
@@ -300,24 +313,47 @@ class BackupManager(
         // is still intact, never half-applied.
         // ---------------------------------------------------------------------
 
-        // 2a. Manifest schema compatibility
+        // 2a. Manifest format and schema compatibility
         val manifestObj = JSONObject(manifestJson!!)
+        val backupFormat = manifestObj.getInt("backupFormatVersion")
+        if (backupFormat != BACKUP_FORMAT_VERSION) {
+            WjxFileLogger.w(
+                TAG,
+                "restore rejected: backupFormat=$backupFormat current=$BACKUP_FORMAT_VERSION",
+            )
+            throw IllegalStateException(
+                "备份格式版本 $backupFormat 与当前版本 $BACKUP_FORMAT_VERSION 不一致，只能恢复当前格式的备份。"
+            )
+        }
         val backupSchema = manifestObj.getInt("dbSchemaVersion")
         if (!isRestorable(backupSchema, AppDatabase.SCHEMA_VERSION)) {
             WjxFileLogger.w(TAG, "restore rejected: backupSchema=$backupSchema current=${AppDatabase.SCHEMA_VERSION}")
-            val message = if (backupSchema < AppDatabase.COMMERCIAL_BASELINE_SCHEMA_VERSION) {
-                "该备份来自旧版软件（数据库版本 $backupSchema），" +
-                    "当前全新商业版不支持导入。"
-            } else {
-                "该备份来自更新版本的应用 " +
-                    "（备份数据库版本 $backupSchema，当前 ${AppDatabase.SCHEMA_VERSION}）。" +
-                    "请先升级应用后再恢复。"
+            throw IllegalStateException(
+                "备份数据库版本 $backupSchema 与当前版本 ${AppDatabase.SCHEMA_VERSION} 不一致，" +
+                    "只能恢复由当前版本导出的备份。"
+            )
+        }
+        val backupPreferenceFiles = manifestObj.getJSONArray("preferenceFiles").let { array ->
+            buildSet {
+                for (index in 0 until array.length()) add(array.getString(index))
             }
-            throw IllegalStateException(message)
+        }
+        val currentPreferenceFiles = prefsFileNames.toSet()
+        if (backupPreferenceFiles != currentPreferenceFiles) {
+            WjxFileLogger.w(TAG, "restore rejected: preference file inventory mismatch")
+            throw IllegalStateException("备份中的配置文件清单与当前版本不一致")
         }
 
         // 2b. Deserialize prefs now — malformed JSON throws here, before any destructive step.
         val prefsMap = deserializePrefs(prefsJson!!)
+        val unexpectedPreferenceFiles = prefsMap.keys - currentPreferenceFiles
+        if (unexpectedPreferenceFiles.isNotEmpty()) {
+            WjxFileLogger.w(
+                TAG,
+                "restore rejected: unexpected preference files=${unexpectedPreferenceFiles.sorted()}",
+            )
+            throw IllegalStateException("备份包含当前版本不识别的配置文件")
+        }
 
         // 2c. Write the DB bytes to a temp file and verify it is a real, intact SQLite
         //     database. openDatabase rejects a non-SQLite file; quick_check catches
@@ -328,7 +364,11 @@ class BackupManager(
         val tmpDbFile = File(dbDir, "$DB_FILE_NAME.restore.tmp")
         tmpDbFile.delete()
         tmpDbFile.writeBytes(dbBytes!!)
-        validateSqliteFile(tmpDbFile)
+        validateSqliteFile(
+            file = tmpDbFile,
+            expectedSchemaVersion = AppDatabase.SCHEMA_VERSION,
+            expectedRoomIdentityHash = currentRoomIdentityHash(),
+        )
 
         // ---------------------------------------------------------------------
         // DESTRUCTIVE PART — only reached once the backup is fully validated.
@@ -405,10 +445,24 @@ class BackupManager(
     /**
      * Verify [file] is a readable, structurally intact SQLite database.
      * Throws IllegalStateException (and deletes the temp file) if it is not a SQLite file
-     * or fails quick_check. Opened read-only so a backup from an older (but compatible)
-     * schema is not migrated here.
+     * or fails quick_check. Opened read-only so validation never mutates the backup.
      */
-    private fun validateSqliteFile(file: File) {
+    private fun currentRoomIdentityHash(): String =
+        appDatabase.query(
+            "SELECT identity_hash FROM room_master_table WHERE id = 42",
+            null,
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) {
+                throw IllegalStateException("当前数据库缺少 Room 结构标识")
+            }
+            cursor.getString(0)
+        }
+
+    private fun validateSqliteFile(
+        file: File,
+        expectedSchemaVersion: Int,
+        expectedRoomIdentityHash: String,
+    ) {
         val db = try {
             SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READONLY)
         } catch (e: SQLiteException) {
@@ -416,16 +470,43 @@ class BackupManager(
             WjxFileLogger.e(TAG, "backup sqlite validation open failed: ${e.message}", e)
             throw IllegalStateException("备份中的数据库文件损坏，或不是 SQLite 数据库", e)
         }
-        val ok = try {
-            db.rawQuery("PRAGMA quick_check", null).use { c ->
-                c.moveToFirst() && c.getString(0).equals("ok", ignoreCase = true)
+        val validation = try {
+            val schemaVersion = db.rawQuery("PRAGMA user_version", null).use { cursor ->
+                if (cursor.moveToFirst()) cursor.getInt(0) else -1
             }
+            val roomIdentityHash = db.rawQuery(
+                "SELECT identity_hash FROM room_master_table WHERE id = 42",
+                null,
+            ).use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }
+            val quickCheckOk = db.rawQuery("PRAGMA quick_check", null).use { cursor ->
+                cursor.moveToFirst() && cursor.getString(0).equals("ok", ignoreCase = true)
+            }
+            Triple(schemaVersion, roomIdentityHash, quickCheckOk)
         } catch (e: SQLiteException) {
-            false
+            file.delete()
+            WjxFileLogger.e(TAG, "backup sqlite validation query failed: ${e.message}", e)
+            throw IllegalStateException("备份中的数据库不是当前应用的有效数据库", e)
         } finally {
             db.close()
         }
-        if (!ok) {
+        if (validation.first != expectedSchemaVersion) {
+            file.delete()
+            WjxFileLogger.w(
+                TAG,
+                "backup sqlite schema mismatch actual=${validation.first} expected=$expectedSchemaVersion",
+            )
+            throw IllegalStateException(
+                "备份数据库实际版本 ${validation.first} 与当前版本 $expectedSchemaVersion 不一致"
+            )
+        }
+        if (validation.second != expectedRoomIdentityHash) {
+            file.delete()
+            WjxFileLogger.w(TAG, "backup sqlite Room identity mismatch")
+            throw IllegalStateException("备份数据库结构与当前版本不一致")
+        }
+        if (!validation.third) {
             file.delete()
             WjxFileLogger.e(TAG, "backup sqlite quick_check failed")
             throw IllegalStateException("备份中的数据库文件未通过完整性检查")

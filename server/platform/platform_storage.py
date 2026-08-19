@@ -3,17 +3,16 @@ import os
 import sqlite3
 import threading
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 
-from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.security import generate_password_hash
 
 from platform_config import (
     APK_DIR,
     DATA_DIR,
     DB_PATH,
     DEFAULT_CONFIG,
-    DEFAULT_TRIAL_DAYS,
-    LEGACY_DEFAULT_ADMIN_PASSWORD,
+    INSECURE_ADMIN_PASSWORD,
     LOG_DIR,
     MIN_ADMIN_PASSWORD_LENGTH,
     PASSWORD_HASH_METHOD,
@@ -26,10 +25,16 @@ from platform_config import (
 _db_init_lock = threading.Lock()
 _db_initialized = False
 DB_BUSY_TIMEOUT_MS = 10_000
+PLATFORM_SCHEMA_VERSION = 1
+
+
+def utc_datetime():
+    """Return a naive UTC datetime for compatibility with stored ISO timestamps."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def utc_now():
-    return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    return utc_datetime().replace(microsecond=0).isoformat() + "Z"
 
 
 @contextmanager
@@ -52,7 +57,7 @@ def db():
 
 @contextmanager
 def database_init_file_lock():
-    """Serialize schema changes across Gunicorn worker processes."""
+    """Serialize database initialization across Gunicorn worker processes."""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     lock_path = DB_PATH.parent / f"{DB_PATH.name}.init.lock"
     with lock_path.open("a+b") as lock_file:
@@ -63,109 +68,9 @@ def database_init_file_lock():
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
-def ensure_column(conn, table, column, definition):
-    columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
-    if column not in columns:
-        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
-
-
-DEVICE_SCHEMA_COLUMNS = (
-    "id",
-    "device_code",
-    "raw_device_code",
-    "app_version",
-    "package_name",
-    "activated",
-    "trial_started_at",
-    "trial_ends_at",
-    "first_seen_at",
-    "last_seen_at",
-    "api_token_hash",
-    "api_token_issued_at",
-)
-DEPRECATED_DEVICE_COLUMNS = {
-    "vehicle_name",
-    "vin_year",
-    "model_variant",
-    "car_series",
-    "vehicle_type",
-    "controller_version",
-    "controller_series",
-    "power_state",
-    "runtime_state",
-    "remote_addr",
-    "soc",
-    "electric_range_km",
-    "fuel_range_km",
-    "gear",
-    "lock_state",
-    "inside_temp",
-    "outside_temp",
-    "mileage_km",
-    "voltage_12v",
-    "charging_status",
-    "telemetry_updated_at",
-    "sales_model",
-    "vehicle_40d_code",
-    "controller_compat",
-    "compatibility_key",
-    "camera_source_fingerprint",
-    "current_profile_id",
-    "current_profile_version",
-    "manual_override",
-    "camera_id",
-    "surface_index",
-    "left_source",
-    "right_source",
-    "rear_source",
-    "profile_status",
-    "profile_applied_at",
-}
-
-
-def remove_deprecated_device_columns(conn):
-    columns = {row["name"] for row in conn.execute("PRAGMA table_info(devices)").fetchall()}
-    if columns & DEPRECATED_DEVICE_COLUMNS:
-        selected = ", ".join(DEVICE_SCHEMA_COLUMNS)
-        conn.executescript(
-            """
-            DROP TABLE IF EXISTS devices_without_profiles;
-            CREATE TABLE devices_without_profiles (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                device_code TEXT NOT NULL UNIQUE,
-                raw_device_code TEXT NOT NULL DEFAULT '',
-                app_version TEXT NOT NULL DEFAULT '',
-                package_name TEXT NOT NULL DEFAULT '',
-                activated INTEGER NOT NULL DEFAULT 0,
-                trial_started_at TEXT,
-                trial_ends_at TEXT,
-                first_seen_at TEXT NOT NULL,
-                last_seen_at TEXT NOT NULL,
-                api_token_hash TEXT NOT NULL DEFAULT '',
-                api_token_issued_at TEXT
-            );
-            """
-        )
-        conn.execute(
-            f"INSERT INTO devices_without_profiles ({selected}) SELECT {selected} FROM devices"
-        )
-        conn.executescript(
-            """
-            DROP TABLE devices;
-            ALTER TABLE devices_without_profiles RENAME TO devices;
-            """
-        )
-    conn.execute("DROP TABLE IF EXISTS vehicle_profiles")
-    conn.execute("DROP TABLE IF EXISTS vehicle_models")
-
-
 def ensure_config_defaults(conn):
     for key, value in DEFAULT_CONFIG.items():
         conn.execute("INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)", (key, value))
-    conn.execute(
-        "UPDATE config SET value = ? WHERE key = 'license_trial_days' AND value = '3'",
-        (str(DEFAULT_TRIAL_DAYS),),
-    )
 
 
 def configured_admin_credentials():
@@ -175,13 +80,49 @@ def configured_admin_credentials():
         raise RuntimeError(
             "WJX_PLATFORM_ADMIN_PASSWORD must be configured before the first platform startup"
         )
-    if password == LEGACY_DEFAULT_ADMIN_PASSWORD:
-        raise RuntimeError("WJX_PLATFORM_ADMIN_PASSWORD must not use the legacy default password")
+    if password == INSECURE_ADMIN_PASSWORD:
+        raise RuntimeError("WJX_PLATFORM_ADMIN_PASSWORD must not use a known insecure password")
     if len(password) < MIN_ADMIN_PASSWORD_LENGTH:
         raise RuntimeError(
             f"WJX_PLATFORM_ADMIN_PASSWORD must contain at least {MIN_ADMIN_PASSWORD_LENGTH} characters"
         )
     return username, password
+
+
+def validate_existing_schema(conn):
+    tables = {
+        row["name"]
+        for row in conn.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+            """
+        ).fetchall()
+    }
+    if not tables:
+        return False
+    if "platform_schema" not in tables:
+        raise RuntimeError(
+            "Existing platform database has no current schema marker; "
+            "start with an empty database instead of migrating an older database"
+        )
+    try:
+        marker = conn.execute(
+            "SELECT schema_version FROM platform_schema WHERE id = 1"
+        ).fetchone()
+    except sqlite3.DatabaseError as exc:
+        raise RuntimeError(
+            "Existing platform database has an invalid schema marker; "
+            "start with an empty database"
+        ) from exc
+    if marker is None or marker["schema_version"] != PLATFORM_SCHEMA_VERSION:
+        found_version = "missing" if marker is None else marker["schema_version"]
+        raise RuntimeError(
+            f"Unsupported platform database schema version {found_version}; "
+            f"expected {PLATFORM_SCHEMA_VERSION}. Start with an empty database"
+        )
+    return True
 
 
 def init_db(force=False):
@@ -199,8 +140,14 @@ def init_db(force=False):
         with database_init_file_lock(), db() as conn:
             conn.execute("PRAGMA journal_mode = WAL")
             conn.execute("PRAGMA synchronous = NORMAL")
+            existing_schema = validate_existing_schema(conn)
             conn.executescript(
                 """
+                BEGIN IMMEDIATE;
+                CREATE TABLE IF NOT EXISTS platform_schema (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    schema_version INTEGER NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS admins (
                     id INTEGER PRIMARY KEY CHECK (id = 1),
                     username TEXT NOT NULL,
@@ -316,14 +263,11 @@ def init_db(force=False):
                 );
                 """
             )
-            ensure_column(conn, "devices", "trial_started_at", "TEXT")
-            ensure_column(conn, "devices", "trial_ends_at", "TEXT")
-            for column, definition in (
-                ("api_token_hash", "TEXT NOT NULL DEFAULT ''"),
-                ("api_token_issued_at", "TEXT"),
-            ):
-                ensure_column(conn, "devices", column, definition)
-            remove_deprecated_device_columns(conn)
+            if not existing_schema:
+                conn.execute(
+                    "INSERT INTO platform_schema (id, schema_version) VALUES (1, ?)",
+                    (PLATFORM_SCHEMA_VERSION,),
+                )
             now = utc_now()
             ensure_config_defaults(conn)
             for key, (title, subtitle, description) in SERVICE_QR_TYPES.items():
@@ -344,25 +288,14 @@ def init_db(force=False):
                     (title, subtitle, key),
                 )
             admin = conn.execute(
-                "SELECT id, username, password_hash FROM admins WHERE id = 1"
+                "SELECT id FROM admins WHERE id = 1"
             ).fetchone()
-            legacy_default = bool(
-                admin
-                and check_password_hash(
-                    admin["password_hash"],
-                    LEGACY_DEFAULT_ADMIN_PASSWORD,
-                )
-            )
-            if admin is None or legacy_default:
+            if admin is None:
                 username, password = configured_admin_credentials()
                 conn.execute(
                     """
                     INSERT INTO admins (id, username, password_hash, updated_at)
                     VALUES (1, ?, ?, ?)
-                    ON CONFLICT(id) DO UPDATE SET
-                        username = excluded.username,
-                        password_hash = excluded.password_hash,
-                        updated_at = excluded.updated_at
                     """,
                     (username, generate_password_hash(password, method=PASSWORD_HASH_METHOD), utc_now()),
                 )

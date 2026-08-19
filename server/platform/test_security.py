@@ -5,13 +5,21 @@ import sqlite3
 import tempfile
 import unittest
 import wave
+from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import urlsplit
 
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 _TEST_DATA_DIR = tempfile.TemporaryDirectory()
-os.environ["WJX_PLATFORM_DATA_DIR"] = _TEST_DATA_DIR.name
+_TEST_ROOT = Path(_TEST_DATA_DIR.name)
+os.environ["WJX_PLATFORM_DATA_DIR"] = str(_TEST_ROOT)
+os.environ["WJX_PLATFORM_UPLOAD_DIR"] = str(_TEST_ROOT / "uploads")
+os.environ["WJX_PLATFORM_APK_DIR"] = str(_TEST_ROOT / "uploads" / "apk")
+os.environ["WJX_PLATFORM_SOUND_DIR"] = str(_TEST_ROOT / "uploads" / "sounds")
+os.environ["WJX_PLATFORM_SERVICE_QR_DIR"] = str(_TEST_ROOT / "uploads" / "service_qrcodes")
+os.environ["WJX_PLATFORM_LOG_DIR"] = str(_TEST_ROOT / "uploads" / "diagnostic_logs")
+os.environ["WJX_PLATFORM_DB"] = str(_TEST_ROOT / "supertoybox.db")
 os.environ["WJX_PLATFORM_ADMIN_USER"] = "admin"
 os.environ["WJX_PLATFORM_ADMIN_PASSWORD"] = "test-admin-password"
 os.environ["WJX_PLATFORM_SECRET_KEY"] = "test-secret-key"
@@ -39,12 +47,12 @@ class AdminBootstrapSecurityTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "must be configured"):
                 platform_app.configured_admin_credentials()
 
-    def test_legacy_default_password_is_rejected(self):
+    def test_known_insecure_password_is_rejected(self):
         with patch.dict(
             os.environ,
-            {"WJX_PLATFORM_ADMIN_PASSWORD": platform_app.LEGACY_DEFAULT_ADMIN_PASSWORD},
+            {"WJX_PLATFORM_ADMIN_PASSWORD": platform_storage.INSECURE_ADMIN_PASSWORD},
         ):
-            with self.assertRaisesRegex(RuntimeError, "legacy default"):
+            with self.assertRaisesRegex(RuntimeError, "known insecure"):
                 platform_app.configured_admin_credentials()
 
     def test_explicit_credentials_are_accepted(self):
@@ -61,8 +69,12 @@ class AdminBootstrapSecurityTest(unittest.TestCase):
             )
 
 
-class PlatformStorageMigrationTest(unittest.TestCase):
-    def test_removed_remote_tables_are_not_created(self):
+class PlatformStorageTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        platform_storage.init_db(force=True)
+
+    def test_fresh_schema_omits_removed_remote_tables(self):
         platform_storage.init_db(force=True)
         with platform_storage.db() as conn:
             tables = {
@@ -70,6 +82,12 @@ class PlatformStorageMigrationTest(unittest.TestCase):
                 for row in conn.execute(
                     "SELECT name FROM sqlite_master WHERE type = 'table'"
                 ).fetchall()
+            }
+            schema_version = conn.execute(
+                "SELECT schema_version FROM platform_schema WHERE id = 1"
+            ).fetchone()[0]
+            device_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(devices)").fetchall()
             }
         self.assertTrue({
             "miniapp_users",
@@ -83,6 +101,24 @@ class PlatformStorageMigrationTest(unittest.TestCase):
             "vehicle_trip_points",
             "vehicle_charges",
         }.isdisjoint(tables))
+        self.assertEqual(
+            {
+                "id",
+                "device_code",
+                "raw_device_code",
+                "app_version",
+                "package_name",
+                "activated",
+                "trial_started_at",
+                "trial_ends_at",
+                "first_seen_at",
+                "last_seen_at",
+                "api_token_hash",
+                "api_token_issued_at",
+            },
+            device_columns,
+        )
+        self.assertEqual(platform_storage.PLATFORM_SCHEMA_VERSION, schema_version)
 
     def test_database_context_commits_closes_and_enables_connection_guards(self):
         with platform_storage.db() as conn:
@@ -100,51 +136,38 @@ class PlatformStorageMigrationTest(unittest.TestCase):
             value = reopened.execute("SELECT value FROM connection_guard_test").fetchone()[0]
         self.assertEqual("committed", value)
 
-    def test_deprecated_device_cleanup_preserves_identity_and_credentials(self):
-        conn = sqlite3.connect(":memory:")
-        conn.row_factory = sqlite3.Row
-        definitions = []
-        for column in platform_storage.DEVICE_SCHEMA_COLUMNS:
-            if column == "id":
-                definition = "id INTEGER PRIMARY KEY AUTOINCREMENT"
-            elif column == "device_code":
-                definition = "device_code TEXT NOT NULL UNIQUE"
-            elif column == "activated":
-                definition = f"{column} INTEGER NOT NULL DEFAULT 0"
-            elif column in {"trial_started_at", "trial_ends_at", "api_token_issued_at"}:
-                definition = f"{column} TEXT"
-            else:
-                definition = f"{column} TEXT NOT NULL DEFAULT ''"
-            definitions.append(definition)
-        definitions.append("sales_model TEXT NOT NULL DEFAULT ''")
-        conn.execute(f"CREATE TABLE devices ({', '.join(definitions)})")
-        conn.execute("CREATE TABLE vehicle_profiles (id INTEGER PRIMARY KEY)")
-        conn.execute("CREATE TABLE vehicle_models (id INTEGER PRIMARY KEY)")
-        conn.execute(
-            """
-            INSERT INTO devices
-                (device_code, first_seen_at, last_seen_at, api_token_hash)
-            VALUES (?, ?, ?, ?)
-            """,
-            ("LC0FD4C42S7184345", "2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z", "hash"),
-        )
+    def test_unmarked_existing_database_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            legacy_path = os.path.join(directory, "legacy.db")
+            with sqlite3.connect(legacy_path) as conn:
+                conn.execute("CREATE TABLE devices (id INTEGER PRIMARY KEY)")
 
-        platform_storage.remove_deprecated_device_columns(conn)
+            initialized = platform_storage._db_initialized
+            try:
+                platform_storage._db_initialized = False
+                with patch.object(platform_storage, "DB_PATH", Path(legacy_path)):
+                    with self.assertRaisesRegex(RuntimeError, "no current schema marker"):
+                        platform_storage.init_db(force=True)
+            finally:
+                platform_storage._db_initialized = initialized
 
-        columns = {row["name"] for row in conn.execute("PRAGMA table_info(devices)")}
-        device = conn.execute("SELECT * FROM devices").fetchone()
-        profile_table = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'vehicle_profiles'"
-        ).fetchone()
-        model_table = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'vehicle_models'"
-        ).fetchone()
-        self.assertEqual(set(platform_storage.DEVICE_SCHEMA_COLUMNS), columns)
-        self.assertEqual("hash", device["api_token_hash"])
-        self.assertIsNone(profile_table)
-        self.assertIsNone(model_table)
-        conn.close()
+    def test_unsupported_database_schema_version_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            legacy_path = os.path.join(directory, "legacy.db")
+            with sqlite3.connect(legacy_path) as conn:
+                conn.execute(
+                    "CREATE TABLE platform_schema (id INTEGER PRIMARY KEY, schema_version INTEGER)"
+                )
+                conn.execute("INSERT INTO platform_schema VALUES (1, 0)")
 
+            initialized = platform_storage._db_initialized
+            try:
+                platform_storage._db_initialized = False
+                with patch.object(platform_storage, "DB_PATH", Path(legacy_path)):
+                    with self.assertRaisesRegex(RuntimeError, "Unsupported platform database"):
+                        platform_storage.init_db(force=True)
+            finally:
+                platform_storage._db_initialized = initialized
 
 class PlatformRequestSecurityTest(unittest.TestCase):
     @classmethod

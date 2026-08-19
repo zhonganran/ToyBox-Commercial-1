@@ -93,18 +93,6 @@ class TrackingService : Service() {
         val sessionInitialization = driveSessionCoordinator.initialize()
         publishSessionStartedAt(sessionInitialization.sessionStartedAt)
 
-        // v2.4.8: clear odometer buffers poisoned by the startup-race that
-        // shipped in v2.4.5–v2.4.7 (DiPars returned Mileage:0 on first poll
-        // and the zero row stuck around, blocking every later real reading
-        // as a "jump > 100 km"). Safe no-op once buffer is healthy.
-        serviceScope.launch {
-            val cleared = drivingMetricsCoordinator.cleanupCorruptStartupRows()
-            if (cleared > 0) {
-                Log.i(TAG, "Cleared $cleared corrupt odometer-buffer row(s) (legacy startup-race)")
-                WjxFileLogger.i(TAG, "Cleared $cleared corrupt odometer-buffer row(s)")
-            }
-        }
-
         // Bootstrap and protocol-check the native helper before the first vehicle snapshot. The
         // polling coroutine waits on helperReadiness with a timeout, then lets normal backoff
         // retry the Binder-only path until the helper becomes ready.
@@ -139,7 +127,7 @@ class TrackingService : Service() {
         ChainLog.append(this, "TrackingService fully started")
         WjxFileLogger.i(TAG, "fully started")
 
-        // v2.0: event-based sync on service start
+        // Event-based sync on service start.
         serviceScope.launch {
             try {
                 val result = historyImporter.runSync()

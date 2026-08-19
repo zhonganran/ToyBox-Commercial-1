@@ -227,7 +227,7 @@ class NativeParsReaderTest {
     }
 
     @Test
-    fun `legacy disconnected charge gun state zero remains available`() = runTest {
+    fun `charge gun unknown sentinel zero remains available`() = runTest {
         val mileageEntry = FidMap.entries.single { it.field == "mileage" }
         val chargeGunEntry = FidMap.entries.single { it.field == "chargeGunState" }
         val gateway = FakeVehicleGateway().apply {
@@ -244,7 +244,7 @@ class NativeParsReaderTest {
     }
 
     @Test
-    fun `official BYD enum values pass through without legacy remapping`() = runTest {
+    fun `official BYD enum values pass through unchanged`() = runTest {
         fun entry(field: String) = FidMap.entries.single { it.field == field }
         val gateway = FakeVehicleGateway().apply {
             // Liveness gate.

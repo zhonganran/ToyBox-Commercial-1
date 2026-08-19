@@ -8,7 +8,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 internal const val DEFAULT_AUTOMATION_PRESETS_INITIALIZED_KEY =
-    "default_automation_presets_v1_initialized"
+    "default_automation_presets_initialized"
 private val defaultAutomationPresetSeedMutex = Mutex()
 
 internal enum class AutomationPreset(val label: String) {

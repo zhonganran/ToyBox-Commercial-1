@@ -160,7 +160,7 @@ class HistoryImporter @Inject constructor(
                 continue
             }
 
-            // Check duplicate by time overlap (catches v1.x live trips without byd_id)
+            // Check time overlap as a second guard when the source id is unavailable or differs.
             val existingByTime = tripDao.getByStartTsRange(
                 startTsMs - DEDUP_WINDOW_MS,
                 startTsMs + DEDUP_WINDOW_MS

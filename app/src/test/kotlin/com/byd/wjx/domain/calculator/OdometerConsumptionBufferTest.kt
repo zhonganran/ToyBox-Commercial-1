@@ -111,22 +111,17 @@ class OdometerConsumptionBufferTest {
     }
 
     @Test fun `huge forward jump wipes stale baseline and re-anchors`() = runBlocking {
-        // v2.4.8: silent-skip on jump > 100 km used to permanently freeze the
-        // buffer if the very first row was a DiPars startup glitch. Now we
-        // discard the stale baseline and re-anchor on the real reading.
         val dao = FakeOdometerSampleDao()
         val b = newBuffer(fallback = 18.0, dao = dao)
         val s = 1L
-        b.onSample(5.0, 1500.0, 80, s)        // legacy poisoned row (would not pass new guard, simulates pre-v2.4.8 leftover)
-        b.onSample(10500.0, 1600.0, 70, s)    // real odometer arrives
+        b.onSample(5.0, 1500.0, 80, s)
+        b.onSample(10500.0, 1600.0, 70, s)
         assertEquals(1, dao.count())
         assertEquals(10500.0, dao.snapshot().single().mileageKm, 0.001)
     }
 
     @Test fun `mileage below MIN_VALID_ODOMETER_KM rejected at insert`() = runBlocking {
-        // v2.4.8: DiPars startup race returns Mileage:0 (and sometimes small
-        // fractional values) before the CAN bus delivers the real odometer.
-        // No real BYD vehicle reports an odometer below 1 km — drop those.
+        // DiPars can return Mileage:0 before the CAN bus delivers the real odometer.
         val dao = FakeOdometerSampleDao()
         val b = newBuffer(fallback = 18.0, dao = dao)
         val s = 1L
@@ -140,41 +135,8 @@ class OdometerConsumptionBufferTest {
         assertEquals(2075.8, dao.snapshot().single().mileageKm, 0.001)
     }
 
-    @Test fun `cleanupCorruptStartupRows wipes when oldest row is sub-1-km`() = runBlocking {
-        // v2.4.8: one-shot recovery for users upgrading from v2.4.5–v2.4.7
-        // who already have a poisoned buffer on disk. Buffer is wiped so the
-        // next sample anchors freshly.
-        val dao = FakeOdometerSampleDao()
-        val b = newBuffer(fallback = 18.0, dao = dao)
-        // Simulate legacy poisoned state — bypass guard via direct DAO insert.
-        dao.insert(com.byd.wjx.data.local.entity.OdometerSampleEntity(
-            mileageKm = 0.0, totalElecKwh = 1500.0, socPercent = 80, sessionId = 1L,
-            timestamp = System.currentTimeMillis()
-        ))
-        dao.insert(com.byd.wjx.data.local.entity.OdometerSampleEntity(
-            mileageKm = 0.0, totalElecKwh = 1500.05, socPercent = 80, sessionId = 1L,
-            timestamp = System.currentTimeMillis()
-        ))
-        val cleared = b.cleanupCorruptStartupRows()
-        assertEquals(2, cleared)
-        assertEquals(0, dao.count())
-    }
-
-    @Test fun `cleanupCorruptStartupRows is no-op for healthy buffer`() = runBlocking {
-        val dao = FakeOdometerSampleDao()
-        val b = newBuffer(fallback = 18.0, dao = dao)
-        val s = 1L
-        b.onSample(10000.0, 1500.0, 80, s)
-        b.onSample(10001.0, 1500.18, 80, s)
-        val cleared = b.cleanupCorruptStartupRows()
-        assertEquals(0, cleared)
-        assertEquals(2, dao.count())
-    }
-
     @Test fun `startup race - zero mileage rejected then real reading anchors buffer`() = runBlocking {
-        // Full-flow regression for the v2.4.7 trend report: Mileage:0
-        // on first DiPars poll, real odometer ~2076 km on subsequent polls.
-        // Pre-v2.4.8 this would freeze recentAvg on the EMA fallback forever.
+        // Mileage:0 on the first DiPars polls must not block later real readings.
         val dao = FakeOdometerSampleDao()
         val b = newBuffer(fallback = 28.13, dao = dao)
         val s = 1L

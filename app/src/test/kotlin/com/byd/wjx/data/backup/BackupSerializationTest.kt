@@ -2,6 +2,7 @@ package com.byd.wjx.data.backup
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -110,18 +111,35 @@ class BackupSerializationTest {
     }
 
     @Test
-    fun `deserialize skips entries with an unknown type tag`() {
-        // A forward-incompatible backup may carry a type tag this version cannot decode.
-        // Such keys must be dropped, not crash, and known keys in the same file survive.
+    fun `deserialize rejects an unknown type tag`() {
         val json = """
             {"file1":{
                 "good":{"t":"String","v":"ok"},
                 "weird":{"t":"Decimal","v":1.5}
             }}
         """.trimIndent()
-        val result = BackupManager.deserializePrefs(json)
-        assertEquals("ok", result["file1"]!!["good"])
-        assertFalse("unknown type tag must be skipped", result["file1"]!!.containsKey("weird"))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            BackupManager.deserializePrefs(json)
+        }
+    }
+
+    @Test
+    fun `serialize rejects an unsupported value type`() {
+        val input = mapOf("file1" to mapOf<String, Any?>("double" to 1.5))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            BackupManager.serializePrefs(input)
+        }
+    }
+
+    @Test
+    fun `serialize rejects a non-string set`() {
+        val input = mapOf("file1" to mapOf<String, Any?>("set" to setOf(1, 2)))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            BackupManager.serializePrefs(input)
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -130,21 +148,16 @@ class BackupSerializationTest {
 
     @Test
     fun `isRestorable returns true when backup schema equals current`() {
-        assertTrue(BackupManager.isRestorable(backupSchemaVersion = 17, currentSchemaVersion = 17))
+        assertTrue(BackupManager.isRestorable(backupSchemaVersion = 20, currentSchemaVersion = 20))
     }
 
     @Test
-    fun `isRestorable returns true for commercial baseline with forward migration`() {
-        assertTrue(BackupManager.isRestorable(backupSchemaVersion = 17, currentSchemaVersion = 18))
+    fun `isRestorable returns false when backup schema is older than current`() {
+        assertFalse(BackupManager.isRestorable(backupSchemaVersion = 19, currentSchemaVersion = 20))
     }
 
     @Test
     fun `isRestorable returns false when backup schema is newer than current`() {
-        assertFalse(BackupManager.isRestorable(backupSchemaVersion = 19, currentSchemaVersion = 18))
-    }
-
-    @Test
-    fun `isRestorable returns false for pre-commercial backup`() {
-        assertFalse(BackupManager.isRestorable(backupSchemaVersion = 16, currentSchemaVersion = 18))
+        assertFalse(BackupManager.isRestorable(backupSchemaVersion = 21, currentSchemaVersion = 20))
     }
 }

@@ -24,10 +24,10 @@ internal object A950LedProtocol : LedGattProtocol {
     override val keepalivePacket: ByteArray
         get() = command(command = 0x81, parameter1 = 0x01, parameter2 = 0x01)
 
-    override fun playScene(scene: LedScene): ByteArray = command(
+    override fun playPreset(presetId: Int): ByteArray = command(
         command = 0x01,
         parameter1 = 0x05,
-        parameter2 = presetId(scene),
+        parameter2 = presetId,
     )
 
     override fun brightness(percent: Int): ByteArray = command(

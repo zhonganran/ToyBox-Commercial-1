@@ -33,7 +33,6 @@ from platform_config import (
     DB_PATH,
     DEFAULT_CONFIG,
     DEFAULT_TRIAL_DAYS,
-    LEGACY_DEFAULT_ADMIN_PASSWORD,
     LICENSE_LOCK_SECONDS,
     LICENSE_MAX_FAILURES,
     LOGIN_LOCK_SECONDS,
@@ -70,7 +69,7 @@ from platform_license import (
     sign_offline_license,
     verify_offline_license_proof,
 )
-from platform_storage import configured_admin_credentials, db, init_db, utc_now
+from platform_storage import configured_admin_credentials, db, init_db, utc_datetime, utc_now
 
 
 def configured_secret_key():
@@ -474,7 +473,7 @@ def is_recent_online(value, minutes=15):
     parsed = parse_utc(value)
     if parsed is None:
         return False
-    return parsed >= datetime.utcnow() - timedelta(minutes=minutes)
+    return parsed >= utc_datetime() - timedelta(minutes=minutes)
 
 
 def device_authorization(conn, device):
@@ -487,7 +486,7 @@ def device_authorization(conn, device):
         (device["device_code"],),
     ).fetchone()
     trial_end = parse_utc(device["trial_ends_at"])
-    trial_active = bool(trial_end and trial_end > datetime.utcnow())
+    trial_active = bool(trial_end and trial_end > utc_datetime())
     return {
         # The enabled license row is authoritative. The devices.activated column is only a cache
         # refreshed by client traffic and must not keep an offline vehicle activated after an
@@ -715,7 +714,7 @@ def updates():
             flash("请上传 APK 文件", "error")
             return redirect(url_for("updates"))
         safe_name = secure_filename(file.filename) or f"SuperToyBox-{version}.apk"
-        filename = f"SuperToyBox-v{version}-{int(datetime.utcnow().timestamp())}-{safe_name}"
+        filename = f"SuperToyBox-v{version}-{int(utc_datetime().timestamp())}-{safe_name}"
         target = APK_DIR / filename
         file.save(target)
         target.chmod(0o644)
@@ -765,7 +764,7 @@ def updates():
   <article class="panel stat-panel">
     <h2>更新源</h2>
     <p class="endpoint">/api/v1/update/latest</p>
-    <small>旧版更新源已经关闭，新版本不再兼容历史接口。</small>
+    <small>客户端使用这一条统一更新接口。</small>
   </article>
 </section>
 <section class="panel">
@@ -832,7 +831,7 @@ def sounds():
         suffix = safe_name.rsplit(".", 1)[-1].lower()
         if not name:
             name = Path(original).stem
-        filename = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(4)}.{suffix}"
+        filename = f"{utc_datetime().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(4)}.{suffix}"
         target = SOUND_DIR / filename
         file.save(target)
         target.chmod(0o644)
@@ -991,7 +990,7 @@ def service_qrcodes():
             original = file.filename
             safe_name = secure_filename(original) or f"{key}.png"
             suffix = safe_name.rsplit(".", 1)[-1].lower()
-            new_filename = f"{key}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(4)}.{suffix}"
+            new_filename = f"{key}-{utc_datetime().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(4)}.{suffix}"
             target = SERVICE_QR_DIR / new_filename
             file.save(target)
             file_size = target.stat().st_size
@@ -1517,7 +1516,7 @@ def download_backup():
     guard = require_login()
     if guard:
         return guard
-    return send_file(DB_PATH, as_attachment=True, download_name=f"supertoybox-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.db")
+    return send_file(DB_PATH, as_attachment=True, download_name=f"supertoybox-{utc_datetime().strftime('%Y%m%d%H%M%S')}.db")
 
 
 @app.get("/api/v1/update/latest")
@@ -1579,7 +1578,7 @@ def api_upload_log():
         if request.content_length and request.content_length > MAX_LOG_SIZE + 256 * 1024:
             return reject(f"日志不能超过 {MAX_LOG_SIZE // 1024 // 1024} MB", 413)
 
-        window_start = (datetime.utcnow() - timedelta(hours=1)).replace(microsecond=0).isoformat() + "Z"
+        window_start = (utc_datetime() - timedelta(hours=1)).replace(microsecond=0).isoformat() + "Z"
         device_uploads = conn.execute(
             "SELECT COUNT(*) AS c FROM diagnostic_logs WHERE device_code = ? AND created_at >= ?",
             (device_code, window_start),
@@ -1592,7 +1591,7 @@ def api_upload_log():
             return jsonify({"success": False, "message": "上传次数过多，请一小时后再试"}), 429
 
         suffix = upload.filename.rsplit(".", 1)[-1].lower()
-        filename = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(12)}.{suffix}"
+        filename = f"{utc_datetime().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(12)}.{suffix}"
         target = LOG_DIR / filename
         try:
             file_size = save_limited_log(upload, target, MAX_LOG_SIZE)
@@ -1864,7 +1863,7 @@ def device_license_payload(
         device = conn.execute("SELECT * FROM devices WHERE device_code = ?", (device_code,)).fetchone()
     trial_ends_at = device["trial_ends_at"] if device else ""
     trial_end = parse_utc(trial_ends_at)
-    trial_active = bool(trial_end and trial_end > datetime.utcnow())
+    trial_active = bool(trial_end and trial_end > utc_datetime())
     result = {
         "success": True,
         "activated": activated,

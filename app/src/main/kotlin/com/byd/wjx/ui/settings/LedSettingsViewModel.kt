@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.byd.wjx.led.LedBleClient
 import com.byd.wjx.led.LedConnectionState
 import com.byd.wjx.led.LedDevice
+import com.byd.wjx.led.DuduFff0SceneCatalogState
 import com.byd.wjx.led.LedLinkageRule
 import com.byd.wjx.led.LedPreferenceSnapshot
 import com.byd.wjx.led.LedPreferences
@@ -25,6 +26,7 @@ data class LedSettingsUiState(
     val preferences: LedPreferenceSnapshot = LedPreferenceSnapshot(),
     val connection: LedConnectionState = LedConnectionState(),
     val devices: List<LedDevice> = emptyList(),
+    val duduSceneCatalog: DuduFff0SceneCatalogState = DuduFff0SceneCatalogState(),
     val runtime: LedRuntimeState = LedRuntimeState(),
     val actionMessage: String? = null,
 )
@@ -44,12 +46,14 @@ class LedSettingsViewModel @Inject constructor(
                 preferences.state,
                 bleClient.connection,
                 bleClient.devices,
+                bleClient.duduSceneCatalog,
                 runtimeCoordinator.runtime,
-            ) { prefs, connection, devices, runtime ->
+            ) { prefs, connection, devices, duduSceneCatalog, runtime ->
                 LedSettingsUiState(
                     preferences = prefs,
                     connection = connection,
                     devices = devices,
+                    duduSceneCatalog = duduSceneCatalog,
                     runtime = runtime,
                     actionMessage = _uiState.value.actionMessage,
                 )
@@ -87,9 +91,9 @@ class LedSettingsViewModel @Inject constructor(
         bleClient.stopScan()
         val protocol = device.protocol
         if (protocol != null) {
-            preferences.bindDetectedDevice(protocol, device.address, device.name)
+            preferences.setSelectedProtocol(protocol)
             bleClient.connect(device.address, device.name, protocol)
-            showMessage("已识别${protocol.title}，正在绑定 ${device.name}")
+            showMessage("正在验证${protocol.title}设备 ${device.name}")
         } else {
             bleClient.connect(device.address, device.name)
             showMessage("正在连接并自动识别 ${device.name}")
@@ -131,6 +135,28 @@ class LedSettingsViewModel @Inject constructor(
             val ok = runtimeCoordinator.applyBrightness(percent)
             showMessage(if (ok) "亮度已调至 $percent%" else "LED未连接，亮度将在重连后应用")
         }
+    }
+
+    fun setDuduSceneSlot(scene: LedScene, slot: Int) {
+        val catalog = bleClient.duduSceneCatalog.value
+        if (catalog.scanComplete && slot !in catalog.availableSlots) {
+            showMessage("${slot.coerceIn(1, 60)} 号场景未安装")
+            return
+        }
+        preferences.setSceneSlot(LedProtocolKind.DUDU_FFF0, scene, slot)
+        showMessage("${scene.title}已设为 ${slot.coerceIn(1, 60)} 号场景")
+        if (
+            bleClient.connection.value.ready &&
+            bleClient.connection.value.protocol == LedProtocolKind.DUDU_FFF0 &&
+            runtimeCoordinator.runtime.value.currentScene == scene
+        ) {
+            viewModelScope.launch { bleClient.play(scene) }
+        }
+    }
+
+    fun refreshDuduSceneSlots() {
+        bleClient.refreshDuduSceneSlots()
+        showMessage("正在重新读取 FFF0 场景")
     }
 
     fun testScene(scene: LedScene) {

@@ -5,7 +5,7 @@ import com.byd.wjx.data.local.entity.ActionDef
 import com.byd.wjx.storage.SoundLibrary
 import org.json.JSONObject
 
-// --- Action kind helpers (v2.3.0) ---
+// --- Action kind helpers ---
 
 fun newNotificationAction(silent: Boolean, context: Context): ActionDef {
     val name = if (silent)
@@ -35,7 +35,7 @@ fun ActionDef.withNotification(title: String, text: String): ActionDef = copy(
     }.toString()
 )
 
-// --- App launch helpers (v2.3.0) ---
+// --- App launch helpers ---
 
 fun newAppLaunchAction(context: Context): ActionDef = ActionDef(
     command = "",
@@ -64,7 +64,7 @@ fun ActionDef.withAppLaunch(packageName: String, appLabel: String, minimize: Boo
     }.toString()
 )
 
-// --- Call helpers (v2.3.0) ---
+// --- Call helpers ---
 
 fun newCallAction(context: Context): ActionDef = ActionDef(
     command = "",
@@ -93,7 +93,7 @@ fun ActionDef.withCall(phone: String, name: String, autoDial: Boolean): ActionDe
     }.toString()
 )
 
-// --- Navigate helpers (v2.3.0) ---
+// --- Navigate helpers ---
 
 fun newNavigateAction(context: Context): ActionDef = ActionDef(
     command = "",

@@ -35,10 +35,10 @@ superToyBoxUpdateApiUrl=https://api.689588.xyz/api/v1/update/latest
 ```
 
 应用内会读取后台返回的 `versionCode`、`version`、`downloadUrl` 和 `releaseNotes`，并下载后台指定的 APK。
-客户端只使用统一商业平台更新源，不再保留旧版接口或旧兜底源。
+客户端只使用统一商业平台更新源。
 
-当前项目以 Room Schema 17 作为全新安装基线，不读取或迁移旧 APK 的数据库与偏好设置。
-从这个商业基线开始的后续版本，Room 结构变更必须提供显式迁移，不允许破坏性重建用户数据。
+当前项目以 Room Schema 20 直接创建全新数据库，只识别当前偏好键和当前格式的备份，
+不包含旧 APK 数据库、偏好设置、文件路径或后台表结构的迁移逻辑。
 
 ## 商业平台部署
 
@@ -58,5 +58,3 @@ export WJX_PLATFORM_TRUSTED_PROXY_COUNT=1
 ```
 
 不要在 Gunicorn 端口可被公网直接访问时启用该配置。
-
-如果后台平台数据库仍使用历史默认密码，下次启动会要求上述环境变量，并自动替换为新密码。

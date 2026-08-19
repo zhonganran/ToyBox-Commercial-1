@@ -23,7 +23,7 @@ const val MAX_PROJECTION_PCT = 100
 
 /**
  * Window position bounds (% of the free space left by a sub-100% window), shared by the position
- * sliders and [geometryFor]. 0 = pinned to the left/top edge, 50 = centered (legacy behaviour),
+ * sliders and [geometryFor]. 0 = pinned to the left/top edge, 50 = centered,
  * 100 = pinned to the right/bottom edge. Lets the user slide the rendered map into the visible
  * region of the native mini-cluster window (#48).
  */

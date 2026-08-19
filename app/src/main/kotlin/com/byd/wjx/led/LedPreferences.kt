@@ -14,10 +14,6 @@ class LedPreferences @Inject constructor(
 ) {
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    init {
-        migrateLegacyBinding()
-    }
-
     private val _state = MutableStateFlow(readSnapshot())
     val state: StateFlow<LedPreferenceSnapshot> = _state.asStateFlow()
 
@@ -48,6 +44,16 @@ class LedPreferences @Inject constructor(
 
     fun setBrightness(protocol: LedProtocolKind, percent: Int) = update {
         putInt(key(protocol, FIELD_BRIGHTNESS), percent.coerceIn(0, 100))
+    }
+
+    fun setSceneSlot(protocol: LedProtocolKind, scene: LedScene, slot: Int) {
+        if (protocol != LedProtocolKind.DUDU_FFF0) return
+        update {
+            putInt(
+                key(protocol, "$FIELD_SCENE_SLOT_PREFIX${scene.name.lowercase()}"),
+                slot.coerceIn(DuduFff0LedProtocol.SCENE_SLOT_RANGE),
+            )
+        }
     }
 
     fun saveRule(rule: LedLinkageRule): Boolean {
@@ -88,7 +94,7 @@ class LedPreferences @Inject constructor(
     }
 
     private fun setRules(rules: List<LedLinkageRule>) = update {
-        putString(KEY_RULES_V2, LedLinkageRuleCodec.encode(rules))
+        putString(KEY_RULES, LedLinkageRuleCodec.encode(rules))
     }
 
     private fun update(block: android.content.SharedPreferences.Editor.() -> Unit) {
@@ -102,7 +108,8 @@ class LedPreferences @Inject constructor(
             ?: LedProtocolKind.IPIXEL_FA,
         ipixelFa = readProtocol(LedProtocolKind.IPIXEL_FA),
         a950 = readProtocol(LedProtocolKind.A950),
-        rules = prefs.getString(KEY_RULES_V2, null)
+        duduFff0 = readProtocol(LedProtocolKind.DUDU_FFF0),
+        rules = prefs.getString(KEY_RULES, null)
             ?.let(LedLinkageRuleCodec::decode)
             ?: LedLinkageDefaults.rules,
     )
@@ -111,39 +118,21 @@ class LedPreferences @Inject constructor(
         enabled = prefs.getBoolean(key(protocol, FIELD_ENABLED), false),
         deviceAddress = prefs.getString(key(protocol, FIELD_DEVICE_ADDRESS), "").orEmpty(),
         deviceName = prefs.getString(key(protocol, FIELD_DEVICE_NAME), "").orEmpty(),
-        brightness = prefs.getInt(key(protocol, FIELD_BRIGHTNESS), 70).coerceIn(0, 100),
-    )
-
-    private fun migrateLegacyBinding() {
-        if (prefs.getBoolean(KEY_PROTOCOL_SPLIT_MIGRATED, false)) return
-        val storedKind = prefs.getString(LEGACY_DEVICE_KIND, null)
-        val protocol = if (storedKind == LedProtocolKind.A950.name) {
-            LedProtocolKind.A950
+        brightness = prefs.getInt(
+            key(protocol, FIELD_BRIGHTNESS),
+            if (protocol == LedProtocolKind.DUDU_FFF0) 100 else 70,
+        ).coerceIn(0, 100),
+        sceneSlots = if (protocol == LedProtocolKind.DUDU_FFF0) {
+            LedScene.entries.associateWith { scene ->
+                prefs.getInt(
+                    key(protocol, "$FIELD_SCENE_SLOT_PREFIX${scene.name.lowercase()}"),
+                    DuduFff0LedProtocol.DEFAULT_SCENE_SLOT,
+                ).coerceIn(DuduFff0LedProtocol.SCENE_SLOT_RANGE)
+            }
         } else {
-            LedProtocolKind.IPIXEL_FA
-        }
-        val editor = prefs.edit()
-            .putString(KEY_SELECTED_PROTOCOL, protocol.name)
-            .putBoolean(key(protocol, FIELD_ENABLED), prefs.getBoolean(LEGACY_ENABLED, false))
-            .putString(
-                key(protocol, FIELD_DEVICE_ADDRESS),
-                prefs.getString(LEGACY_DEVICE_ADDRESS, "").orEmpty(),
-            )
-            .putString(
-                key(protocol, FIELD_DEVICE_NAME),
-                prefs.getString(LEGACY_DEVICE_NAME, "").orEmpty(),
-            )
-            .putInt(key(protocol, FIELD_BRIGHTNESS), prefs.getInt(LEGACY_BRIGHTNESS, 70))
-            .putBoolean(KEY_PROTOCOL_SPLIT_MIGRATED, true)
-        listOf(
-            LEGACY_ENABLED,
-            LEGACY_DEVICE_ADDRESS,
-            LEGACY_DEVICE_NAME,
-            LEGACY_DEVICE_KIND,
-            LEGACY_BRIGHTNESS,
-        ).forEach(editor::remove)
-        editor.commit()
-    }
+            emptyMap()
+        },
+    )
 
     private fun key(protocol: LedProtocolKind, field: String): String =
         "${protocol.name.lowercase()}_$field"
@@ -151,18 +140,12 @@ class LedPreferences @Inject constructor(
     companion object {
         const val PREFS_NAME = "wjx_led_link"
         internal const val KEY_SELECTED_PROTOCOL = "selected_protocol"
-        internal const val KEY_PROTOCOL_SPLIT_MIGRATED = "protocol_split_migrated"
-        internal const val KEY_RULES_V2 = "rules_v2"
+        internal const val KEY_RULES = "rules"
 
         private const val FIELD_ENABLED = "enabled"
         private const val FIELD_DEVICE_ADDRESS = "device_address"
         private const val FIELD_DEVICE_NAME = "device_name"
         private const val FIELD_BRIGHTNESS = "brightness"
-
-        private const val LEGACY_ENABLED = "enabled"
-        private const val LEGACY_DEVICE_ADDRESS = "device_address"
-        private const val LEGACY_DEVICE_NAME = "device_name"
-        private const val LEGACY_DEVICE_KIND = "device_kind"
-        private const val LEGACY_BRIGHTNESS = "brightness"
+        private const val FIELD_SCENE_SLOT_PREFIX = "scene_slot_"
     }
 }

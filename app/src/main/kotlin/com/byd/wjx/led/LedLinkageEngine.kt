@@ -19,7 +19,22 @@ class LedLinkageEngine(
         now: Long,
     ): LedScene? {
         bindRules(rules)
+        val currentMatches = matchesByRule(signals)
         playback?.let { active ->
+            val activeIndex = boundRules.indexOfFirst { it.id == active.rule.id }
+            val higherPriorityTrigger = boundRules
+                .take(activeIndex.coerceAtLeast(0))
+                .firstOrNull { rule ->
+                    rule.enabled &&
+                        currentMatches[rule.id] == true &&
+                        previousMatches[rule.id] != true
+                }
+            captureMatches(currentMatches)
+            if (higherPriorityTrigger != null) {
+                noConditionSince = null
+                return startPlayback(higherPriorityTrigger, now)
+            }
+
             val elapsed = (now - active.startedAt).coerceAtLeast(0L)
             var stepStart = 0L
             active.rule.steps.forEachIndexed { index, step ->
@@ -35,13 +50,10 @@ class LedLinkageEngine(
             }
 
             playback = null
-            val currentMatches = matchesByRule(signals)
-            captureMatches(currentMatches)
             updateNoConditionTimer(currentMatches.values.any { it }, now)
             return maybeRestoreDefault(now)
         }
 
-        val currentMatches = matchesByRule(signals)
         val triggered = boundRules.firstOrNull { rule ->
             rule.enabled &&
                 currentMatches[rule.id] == true &&
@@ -51,8 +63,7 @@ class LedLinkageEngine(
 
         if (triggered != null) {
             noConditionSince = null
-            playback = Playback(triggered, startedAt = now, stepIndex = 0)
-            return dispatch(triggered.steps.first().scene, force = true)
+            return startPlayback(triggered, now)
         }
 
         updateNoConditionTimer(currentMatches.values.any { it }, now)
@@ -92,6 +103,11 @@ class LedLinkageEngine(
         val inactiveAt = noConditionSince ?: return null
         if (now - inactiveAt < clearDelayMs) return null
         return dispatch(LedScene.DEFAULT)
+    }
+
+    private fun startPlayback(rule: LedLinkageRule, now: Long): LedScene? {
+        playback = Playback(rule, startedAt = now, stepIndex = 0)
+        return dispatch(rule.steps.first().scene, force = true)
     }
 
     private fun dispatch(scene: LedScene, force: Boolean = false): LedScene? {

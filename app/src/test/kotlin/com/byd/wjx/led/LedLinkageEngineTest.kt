@@ -121,6 +121,27 @@ class LedLinkageEngineTest {
     }
 
     @Test
+    fun `a newly active higher priority rule preempts current playback`() {
+        val engine = LedLinkageEngine()
+        val rules = listOf(
+            rule("hazard", LedLinkageTriggerType.LIGHT, "hazard", LedScene.HAZARD),
+            rule("reverse", LedLinkageTriggerType.GEAR, "R", LedScene.REVERSE_PARKING),
+        )
+
+        assertEquals(
+            LedScene.REVERSE_PARKING,
+            engine.evaluate(rules, LedVehicleSignals(gear = 2), 0L),
+        )
+        assertEquals(
+            LedScene.HAZARD,
+            engine.evaluate(rules, LedVehicleSignals(gear = 2, turnSignalFlash = 6), 500L),
+        )
+        assertNull(
+            engine.evaluate(rules, LedVehicleSignals(gear = 2, turnSignalFlash = 6), 600L),
+        )
+    }
+
+    @Test
     fun `default scene returns after every condition stays inactive for five seconds`() {
         val engine = LedLinkageEngine(clearDelayMs = 5_000L)
         val rules = listOf(rule("left", LedLinkageTriggerType.LIGHT, "left_turn"))

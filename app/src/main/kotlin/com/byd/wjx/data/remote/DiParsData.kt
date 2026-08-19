@@ -16,7 +16,7 @@ data class DiParsData(
     val maxCellVoltage: Double?,
     val minCellVoltage: Double?,
     val exteriorTemp: Int?,
-    // Automation params (v2.2.0)
+    // Automation parameters.
     val gear: Int?,               // 1=P, 2=R, 3=N, 4=D
     val powerState: Int?,         // BYD power level: 0=OFF, 1=ACC, 2=ON, 3=OK, 4=FAKE_OK
     val insideTemp: Int?,

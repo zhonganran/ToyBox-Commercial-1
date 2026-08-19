@@ -48,8 +48,7 @@ import javax.inject.Singleton
 
 /**
  * Shows a SYSTEM_ALERT_WINDOW overlay asking the user to confirm execution
- * of an automation rule. Replaces the legacy notification-based confirm flow
- * for rules that have `confirmBeforeExecute = true`.
+ * of an automation rule when confirmation is enabled.
  *
  * Caller passes callbacks; the injected singleton handles timeout auto-cancel, sound,
  * and teardown.

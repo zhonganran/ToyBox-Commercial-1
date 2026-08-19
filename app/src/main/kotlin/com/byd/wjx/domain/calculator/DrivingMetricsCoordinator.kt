@@ -80,9 +80,6 @@ class DrivingMetricsCoordinator @Inject constructor(
         consumptionAggregator.reset()
     }
 
-    suspend fun cleanupCorruptStartupRows(): Int =
-        odometerBuffer.cleanupCorruptStartupRows()
-
     private suspend fun maybeLogSummary(
         nowMs: Long,
         data: DiParsData,

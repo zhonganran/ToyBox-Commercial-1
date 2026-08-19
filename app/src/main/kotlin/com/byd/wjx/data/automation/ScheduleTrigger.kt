@@ -5,8 +5,7 @@ import org.json.JSONObject
 
 /**
  * Schedule spec for the "time_range" trigger kind, stored as JSON in
- * [com.byd.wjx.data.local.entity.TriggerDef.value]. No DB migration:
- * triggers are already persisted as a JSON string.
+ * [com.byd.wjx.data.local.entity.TriggerDef.value].
  *
  * - [fromMinute] == [toMinute] → exact-minute trigger ("11:34").
  * - [fromMinute] <  [toMinute] → window ("08:00-10:00"); "after 8:30" is just 08:30..23:59.

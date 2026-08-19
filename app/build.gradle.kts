@@ -15,6 +15,7 @@ plugins {
 val keystorePropsFile = listOf(
     rootProject.file("keystore.properties"),
     rootProject.file("../keystore.properties"),
+    rootProject.file("../正式/keystore.properties"),
     rootProject.file("../签名密钥/keystore.properties"),
 ).firstOrNull { it.exists() }
 val keystoreProps = Properties().apply {
@@ -50,12 +51,12 @@ android {
     defaultConfig {
         applicationId = "com.byd.wjx"
         minSdk = 29
-        // targetSdk 29 matches TripInfo — grants full legacy file access
-        // on DiLink Android 12 (requestLegacyExternalStorage works).
+        // targetSdk 29 matches TripInfo and preserves direct shared-storage access
+        // on DiLink Android 12 through requestLegacyExternalStorage.
         // targetSdk 30+ would break listFiles() on /storage/emulated/0/energydata/
         targetSdk = 29
-        versionCode = 35
-        versionName = "1.9.16"
+        versionCode = 36
+        versionName = "2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "UPDATE_API_URL", "\"$updateApiUrl\"")

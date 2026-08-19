@@ -60,37 +60,6 @@ class LyricSettingsTest {
     }
 
     @Test
-    fun legacySharedStyleSeedsBothIndependentTargets() {
-        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
-        val green = LyricSolidColorPalette.colors.first { it.id == "green" }.color
-        val yellow = LyricSolidColorPalette.colors.first { it.id == "yellow" }.color
-        context.getSharedPreferences(LyricSettings.PREFS_NAME, android.content.Context.MODE_PRIVATE)
-            .edit()
-            .clear()
-            .putInt("lyric_shared_line_count", 3)
-            .putInt("lyric_shared_text_color", green)
-            .putInt("lyric_shared_highlight_color", yellow)
-            .putString("lyric_shared_font_style_id", "rounded")
-            .putString("lyric_shared_motion_preset_id", "glow")
-            .putInt("lyric_sync_offset_ms", -250)
-            .commit()
-        val settings = LyricSettings(context)
-
-        assertEquals(3, settings.desktopLineCount)
-        assertEquals(3, settings.clusterLineCount)
-        assertEquals(settings.displayStyle(), settings.clusterDisplayStyle())
-        assertEquals(-250, settings.desktopSyncOffsetMs)
-        assertEquals(-250, settings.clusterSyncOffsetMs)
-
-        settings.desktopFontStyleId = "caption"
-        settings.desktopSyncOffsetMs = 100
-        assertEquals("caption", settings.displayStyle().font.id)
-        assertEquals("rounded", settings.clusterDisplayStyle().font.id)
-        assertEquals(100, settings.desktopSyncOffsetMs)
-        assertEquals(-250, settings.clusterSyncOffsetMs)
-    }
-
-    @Test
     fun desktopAndClusterFontScalesSaveIndependently() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val prefs = context.getSharedPreferences(LyricSettings.PREFS_NAME, android.content.Context.MODE_PRIVATE)

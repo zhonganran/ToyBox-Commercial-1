@@ -21,8 +21,6 @@ internal object WjxRuntimeWatchdog {
     }
 
     private fun install() {
-        cleanupLegacyLockSoundWatchdog()
-
         val pidFile = File(PID_PATH)
         val versionFile = File(VERSION_PATH)
         val installedVersion = runCatching { versionFile.readText().trim().toInt() }.getOrNull()
@@ -43,17 +41,6 @@ internal object WjxRuntimeWatchdog {
             arrayOf("sh", "-c", "setsid sh $SCRIPT_PATH </dev/null >/dev/null 2>&1 &"),
         )
         helperLog(TAG, "watchdog installed path=$SCRIPT_PATH version=$VERSION")
-    }
-
-    private fun cleanupLegacyLockSoundWatchdog() {
-        val legacyPid = File(LEGACY_PID_PATH)
-        stopPidFrom(legacyPid)
-        listOf(
-            LEGACY_SCRIPT_PATH,
-            LEGACY_PID_PATH,
-            LEGACY_VERSION_PATH,
-            LEGACY_DISABLED_PATH,
-        ).forEach { runCatching { File(it).delete() } }
     }
 
     private fun stopPidFrom(pidFile: File) {
@@ -196,10 +183,6 @@ internal object WjxRuntimeWatchdog {
     private const val SCRIPT_PATH = "/data/local/tmp/wjx_runtime_watchdog.sh"
     private const val PID_PATH = "/data/local/tmp/wjx_runtime_watchdog.pid"
     private const val VERSION_PATH = "/data/local/tmp/wjx_runtime_watchdog.version"
-    private const val LEGACY_SCRIPT_PATH = "/data/local/tmp/wjx_lock_watch.sh"
-    private const val LEGACY_PID_PATH = "/data/local/tmp/wjx_lock_watch.pid"
-    private const val LEGACY_VERSION_PATH = "/data/local/tmp/wjx_lock_watch.version"
-    private const val LEGACY_DISABLED_PATH = "/data/local/tmp/wjx_lock_watch.disabled"
     private const val VERSION = 2
     private val PID_REGEX = Regex("""\d+""")
 }

@@ -11,7 +11,7 @@ import javax.inject.Singleton
  *
  * In-memory only — intentionally not persisted. Process restart mid-session
  * drops the bookmarks; HistoryImporter falls back to null socStart/socEnd for
- * that trip (same as before the native-stack migration). This is acceptable:
+ * that trip. This is acceptable:
  * the SOC enrichment is best-effort and only benefits the current session.
  *
  * Thread safety: single AtomicReference<Snapshot?> guarantees that snapshot()

@@ -17,11 +17,13 @@ enum class LedScene(
 }
 
 enum class LedProtocolKind(
+    val shortTitle: String,
     val title: String,
     val description: String,
 ) {
-    IPIXEL_FA("标准 FA 协议", "FA 服务与遥控预设指令"),
-    A950("A950 协议", "A950 服务、初始化与周期保活"),
+    IPIXEL_FA("FA 标准", "标准 FA 协议", "FA 服务与遥控预设指令"),
+    A950("A950", "A950 协议", "A950 服务、初始化与周期保活"),
+    DUDU_FFF0("FFF0", "嘟嘟 FFF0 协议", "兼容快乐马夫、LedSpace 场景屏"),
 }
 
 enum class LedConnectionPhase {
@@ -53,22 +55,33 @@ data class LedConnectionState(
     val ready: Boolean get() = phase == LedConnectionPhase.READY
 }
 
+data class DuduFff0SceneCatalogState(
+    val scanning: Boolean = false,
+    val scannedSlots: Int = 0,
+    val availableSlots: Set<Int> = emptySet(),
+    val scanComplete: Boolean = false,
+    val error: String? = null,
+)
+
 data class LedProtocolPreference(
     val enabled: Boolean = false,
     val deviceAddress: String = "",
     val deviceName: String = "",
     val brightness: Int = 70,
+    val sceneSlots: Map<LedScene, Int> = emptyMap(),
 )
 
 data class LedPreferenceSnapshot(
     val selectedProtocol: LedProtocolKind = LedProtocolKind.IPIXEL_FA,
     val ipixelFa: LedProtocolPreference = LedProtocolPreference(),
     val a950: LedProtocolPreference = LedProtocolPreference(),
+    val duduFff0: LedProtocolPreference = LedProtocolPreference(),
     val rules: List<LedLinkageRule> = LedLinkageDefaults.rules,
 ) {
     fun protocol(kind: LedProtocolKind): LedProtocolPreference = when (kind) {
         LedProtocolKind.IPIXEL_FA -> ipixelFa
         LedProtocolKind.A950 -> a950
+        LedProtocolKind.DUDU_FFF0 -> duduFff0
     }
 
     val activeProtocol: LedProtocolPreference get() = protocol(selectedProtocol)

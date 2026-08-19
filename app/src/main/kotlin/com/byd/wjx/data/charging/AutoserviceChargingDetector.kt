@@ -49,9 +49,7 @@ data class CatchUpResult(
  * noise and dropped; the [MIN_SOC_DELTA_FOR_CHARGE, SOC_DELTA_TRUSTED_CHARGE)
  * band (exactly 2%) additionally requires the odometer to be unchanged since the
  * parked anchor; a rise >= SOC_DELTA_TRUSTED_CHARGE (3%) is trusted
- * unconditionally. This prevents phantom rows when SOC barely moved (the
- * regression that produced phantom autoservice_catchup rows in v2.4.15/v2.4.16
- * via the lifetime_kwh driving counter) and stops a drive that happened in the
+ * unconditionally. This prevents phantom rows when SOC barely moved and stops a drive that happened in the
  * sleep gap from smearing into a reconstructed session, while never gating a
  * clearly-real >=3% charge on a possibly-stale odometer.
  */
@@ -70,9 +68,7 @@ class AutoserviceChargingDetector @Inject constructor(
         const val MIN_DELTA_KWH = 0.5
         // Last-resort heuristic duration when prev.ts is unset (cold start).
         // Real elapsed time (now - prev.ts) is preferred and used whenever
-        // available — see runCatchUp Step 7. Was the only path before v2.5.15
-        // and produced false-DC rows for overnight AC sessions (30 kWh / 1h
-        // = 30 kW → DC).
+        // available; a fixed hour can overestimate power for overnight AC sessions.
         const val HEURISTIC_HOURS_FALLBACK = 1.0
         // Floor on elapsed-time heuristic to avoid div-by-near-zero blowing
         // a short live-edge fire into a false DC classification.
@@ -85,9 +81,8 @@ class AutoserviceChargingDetector @Inject constructor(
         // toward AC tariff anyway (cheaper for the user when uncertain).
         const val MAX_ELAPSED_HOURS = 16.0
         // BMS chargingCapacityKwh sanity gate. The per-session counter has been
-        // observed to under-report on overnight AC (counter resets across BMS
-        // pause/resume sub-phases — caught a 51% SOC charge as 21.5 kWh in
-        // v2.5.15). Compare any cap-derived candidate (Gate A delta or Gate B
+        // observed to under-report on overnight AC when the counter resets across BMS
+        // pause/resume sub-phases. Compare any cap-derived candidate (Gate A delta or Gate B
         // session) to socDelta × nominalCapacity. When the ratio falls outside
         // [LOW..HIGH] the BMS counter is treated as broken and we fall back to
         // the SOC estimate. LOW=0.70 tolerates a fresh-battery efficiency tax
@@ -264,7 +259,7 @@ class AutoserviceChargingDetector @Inject constructor(
             // that combination means the gun fid alone glitched, and unblocking
             // would re-open the same phantom-row regression in a different shape.
             // When ALL charging fids are silent, the device is unsupported on this
-            // firmware; we fall back to legacy behavior so charge logging is not
+            // firmware; use the signal-independent path so charge logging is not
             // permanently blocked on other BYD models.
             val gun = charging?.gunConnectState
             // gun=0 is the autoservice "unknown" sentinel — ChargingTypeClassifier
@@ -426,7 +421,7 @@ class AutoserviceChargingDetector @Inject constructor(
             val tariff = if (type == "DC") settings.getDcTariff() else settings.getHomeTariff()
             val cost = delta * tariff
 
-            // Step 9: build ChargeEntity (lifetimeKwhAtStart/Finish null — legacy columns only)
+            // Step 9: build the completed charge record.
             val charge = ChargeEntity(
                 startTs = now,
                 endTs = now,
@@ -437,8 +432,6 @@ class AutoserviceChargingDetector @Inject constructor(
                 type = type,
                 cost = cost,
                 status = "COMPLETED",
-                lifetimeKwhAtStart = null,
-                lifetimeKwhAtFinish = null,
                 gunState = charging?.gunConnectState?.takeIf(ChargeGunState::isConnected),
                 detectionSource = detectionSource
             )

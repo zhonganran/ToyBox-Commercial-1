@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 20,
-    "identityHash": "74ddf8cb06d30c65c572c49886a249c1",
+    "identityHash": "b215c99dc4d74c2634d4a141dd1b597f",
     "entities": [
       {
         "tableName": "trips",
@@ -253,7 +253,7 @@
       },
       {
         "tableName": "charges",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `start_ts` INTEGER NOT NULL, `end_ts` INTEGER, `soc_start` INTEGER, `soc_end` INTEGER, `kwh_charged` REAL, `kwh_charged_soc` REAL, `max_power_kw` REAL, `type` TEXT, `cost` REAL, `lat` REAL, `lon` REAL, `bat_temp_avg` REAL, `bat_temp_max` REAL, `bat_temp_min` REAL, `avg_power_kw` REAL, `status` TEXT NOT NULL, `cell_voltage_min` REAL, `cell_voltage_max` REAL, `voltage_12v` REAL, `exterior_temp` INTEGER, `merged_count` INTEGER NOT NULL, `lifetime_kwh_at_start` REAL, `lifetime_kwh_at_finish` REAL, `gun_state` INTEGER, `detection_source` TEXT)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `start_ts` INTEGER NOT NULL, `end_ts` INTEGER, `soc_start` INTEGER, `soc_end` INTEGER, `kwh_charged` REAL, `kwh_charged_soc` REAL, `max_power_kw` REAL, `type` TEXT, `cost` REAL, `lat` REAL, `lon` REAL, `bat_temp_avg` REAL, `bat_temp_max` REAL, `bat_temp_min` REAL, `avg_power_kw` REAL, `status` TEXT NOT NULL, `cell_voltage_min` REAL, `cell_voltage_max` REAL, `voltage_12v` REAL, `exterior_temp` INTEGER, `merged_count` INTEGER NOT NULL, `gun_state` INTEGER, `detection_source` TEXT)",
         "fields": [
           {
             "fieldPath": "id",
@@ -386,18 +386,6 @@
             "columnName": "merged_count",
             "affinity": "INTEGER",
             "notNull": true
-          },
-          {
-            "fieldPath": "lifetimeKwhAtStart",
-            "columnName": "lifetime_kwh_at_start",
-            "affinity": "REAL",
-            "notNull": false
-          },
-          {
-            "fieldPath": "lifetimeKwhAtFinish",
-            "columnName": "lifetime_kwh_at_finish",
-            "affinity": "REAL",
-            "notNull": false
           },
           {
             "fieldPath": "gunState",
@@ -1072,7 +1060,7 @@
     "views": [],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '74ddf8cb06d30c65c572c49886a249c1')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'b215c99dc4d74c2634d4a141dd1b597f')"
     ]
   }
 }

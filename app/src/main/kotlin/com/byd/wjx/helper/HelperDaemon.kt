@@ -217,7 +217,6 @@ fun main(args: Array<String>) {
     @Suppress("DEPRECATION")
     Looper.prepareMainLooper()
     val systemContext: Context? = acquireSystemContext()
-    clearRemovedPowerVotes(systemContext)
 
     // Step 2: resolve autoservice Binder.
     val smCls = Class.forName("android.os.ServiceManager")

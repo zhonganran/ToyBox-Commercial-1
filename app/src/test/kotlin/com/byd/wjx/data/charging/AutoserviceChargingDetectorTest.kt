@@ -233,8 +233,6 @@ class AutoserviceChargingDetectorTest {
         assertEquals("autoservice_cap_delta", ch.detectionSource)
         assertEquals(80, ch.socStart)
         assertEquals(91, ch.socEnd)
-        assertNull(ch.lifetimeKwhAtStart)
-        assertNull(ch.lifetimeKwhAtFinish)
     }
 
     @Test
@@ -660,7 +658,7 @@ class AutoserviceChargingDetectorTest {
     }
 
     @Test
-    fun `gun 0 unknown with ALL siblings null falls back to legacy behavior`() = runTest {
+    fun `gun 0 unknown with all siblings null uses signal independent path`() = runTest {
         // gun=0 must not permanently block charge logging when the entire
         // charging device is silent on this firmware — same fallback as null gun.
         val setup = build(
@@ -682,7 +680,7 @@ class AutoserviceChargingDetectorTest {
     }
 
     @Test
-    fun `gun null and ALL charging fids null falls back to legacy behavior`() = runTest {
+    fun `gun null and all charging fids null uses signal independent path`() = runTest {
         // Firmware where the entire charging device is unsupported — keep
         // catch-up working so other BYD models don't permanently lose the
         // ability to log charges. cap=8.0 + socDelta=11 → SESSION_CREATED.
@@ -816,7 +814,7 @@ class AutoserviceChargingDetectorTest {
     @Test
     fun `cold start with no prevTs falls back to 1h heuristic`() = runTest {
         // First catch-up after a fresh install or store wipe — prev.ts = 0L.
-        // We can't compute elapsed hours, so the legacy 1h fallback is used.
+        // We can't compute elapsed hours, so the bounded 1h fallback is used.
         // 30 kWh / 1h = 30 kW → DC. Documented edge: this is the only path
         // that can still mis-classify, but it's a one-time first-run case.
         val setup = build(

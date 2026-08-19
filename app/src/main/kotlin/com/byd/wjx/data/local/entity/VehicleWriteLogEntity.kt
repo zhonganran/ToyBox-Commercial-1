@@ -15,7 +15,6 @@ data class VehicleWriteLogEntity(
     val readback: Int?,
     val status: Int,
     val error: String?,
-    // Keep the generated Room schema explicit for fresh installs and future
-    // migrations.
+    // Keep the generated Room schema explicit for fresh installs.
     @ColumnInfo(defaultValue = "0") val validated: Boolean,
 )

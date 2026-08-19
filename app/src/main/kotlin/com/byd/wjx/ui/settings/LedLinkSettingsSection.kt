@@ -17,11 +17,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Bluetooth
 import androidx.compose.material.icons.outlined.BluetoothConnected
 import androidx.compose.material.icons.outlined.LinkOff
+import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Button
@@ -29,6 +32,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
@@ -51,6 +55,7 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.byd.wjx.led.LedConnectionPhase
+import com.byd.wjx.led.DuduFff0SceneCatalogState
 import com.byd.wjx.led.LedDevice
 import com.byd.wjx.led.LedProtocolKind
 import com.byd.wjx.led.LedScene
@@ -253,6 +258,16 @@ fun LedLinkSettingsSection(
             }
         }
 
+        if (selectedProtocol == LedProtocolKind.DUDU_FFF0) {
+            DuduSceneSlotSettings(
+                sceneSlots = activeProfile.sceneSlots,
+                catalog = state.duduSceneCatalog,
+                connected = selectedConnected,
+                onSlotChanged = viewModel::setDuduSceneSlot,
+                onRefresh = viewModel::refreshDuduSceneSlots,
+            )
+        }
+
         Card(
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = CardSurfaceElevated),
@@ -320,7 +335,7 @@ private fun LedProtocolSelector(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    text = if (protocol == LedProtocolKind.IPIXEL_FA) "FA 标准" else "A950",
+                    text = protocol.shortTitle,
                     color = if (isSelected) Color.White else TextPrimary,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
@@ -330,6 +345,95 @@ private fun LedProtocolSelector(
                     color = if (isSelected) Color.White.copy(alpha = 0.78f) else TextMuted,
                     fontSize = 10.sp,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DuduSceneSlotSettings(
+    sceneSlots: Map<LedScene, Int>,
+    catalog: DuduFff0SceneCatalogState,
+    connected: Boolean,
+    onSlotChanged: (LedScene, Int) -> Unit,
+    onRefresh: () -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = CardSurfaceElevated),
+        border = BorderStroke(1.dp, CardBorder),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("FFF0 场景槽位", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = when {
+                            catalog.scanning -> "正在读取 ${catalog.scannedSlots}/60"
+                            catalog.scanComplete -> "已识别 ${catalog.availableSlots.size} 个可用场景"
+                            catalog.error != null -> catalog.error
+                            connected -> "等待读取场景"
+                            else -> "连接设备后自动读取"
+                        },
+                        color = if (catalog.error == null) TextMuted else AccentOrange,
+                        fontSize = 11.sp,
+                    )
+                }
+                IconButton(
+                    onClick = onRefresh,
+                    enabled = connected && !catalog.scanning,
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(Icons.Outlined.Refresh, contentDescription = "重新读取场景")
+                }
+            }
+            val availableSlots = if (catalog.scanComplete) catalog.availableSlots.sorted() else emptyList()
+            LedScene.entries.forEach { scene ->
+                val slot = sceneSlots[scene] ?: 1
+                val previousSlot = availableSlots.lastOrNull { it < slot }
+                val nextSlot = availableSlots.firstOrNull { it > slot }
+                val slotAvailable = !catalog.scanComplete || slot in catalog.availableSlots
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(38.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = scene.title,
+                        color = TextSecondary,
+                        fontSize = 13.sp,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(
+                        onClick = { previousSlot?.let { onSlotChanged(scene, it) } },
+                        enabled = previousSlot != null,
+                        modifier = Modifier.size(34.dp),
+                    ) {
+                        Icon(Icons.Outlined.Remove, contentDescription = "减小${scene.title}场景槽位")
+                    }
+                    Text(
+                        text = slot.toString().padStart(2, '0'),
+                        color = if (slotAvailable) TextPrimary else AccentOrange,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.width(34.dp),
+                    )
+                    IconButton(
+                        onClick = { nextSlot?.let { onSlotChanged(scene, it) } },
+                        enabled = nextSlot != null,
+                        modifier = Modifier.size(34.dp),
+                    ) {
+                        Icon(Icons.Outlined.Add, contentDescription = "增大${scene.title}场景槽位")
+                    }
+                }
             }
         }
     }
