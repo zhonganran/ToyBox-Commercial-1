@@ -30,6 +30,7 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "wjx.db")
+            .addMigrations(AppDatabase.MIGRATION_20_21)
             .build()
 
     @Provides fun provideTripDao(db: AppDatabase): TripDao = db.tripDao()

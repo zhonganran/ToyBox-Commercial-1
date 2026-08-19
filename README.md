@@ -37,8 +37,9 @@ superToyBoxUpdateApiUrl=https://api.689588.xyz/api/v1/update/latest
 应用内会读取后台返回的 `versionCode`、`version`、`downloadUrl` 和 `releaseNotes`，并下载后台指定的 APK。
 客户端只使用统一商业平台更新源。
 
-当前项目以 Room Schema 20 直接创建全新数据库，只识别当前偏好键和当前格式的备份，
-不包含旧 APK 数据库、偏好设置、文件路径或后台表结构的迁移逻辑。
+当前项目以 Room Schema 21 创建全新数据库，只识别当前偏好键和当前格式的备份。
+仅保留 Schema 20 到 21 的发布修复迁移，用于修复 2.0 构建 38 已发布的数据库结构冲突；
+不包含更早版本的数据库、偏好设置、文件路径或后台表结构迁移逻辑。
 
 ## 商业平台部署
 
