@@ -2,8 +2,6 @@
 
 平台提供激活授权、应用更新、在线音效库、服务二维码和诊断日志管理。
 车辆端可通过 `POST /api/v1/logs/upload` 主动上传 `/sdcard/WJX/wjx.log`，后台按车辆和版本保存并支持查看、下载与删除。
-创意工坊的车型、彩绘和 Three.js 查看器由 Nginx 在 `/creative-workshop/` 下作为静态 CDN 资源提供，
-不写入平台数据库，也不打包进 Android APK；部署目录和缓存规则见 `creative_workshop/README.md`。
 
 平台首次启动时直接创建当前数据库结构，不包含旧表、旧字段补齐或历史数据迁移逻辑。
 初始化使用数据库旁的跨进程文件锁串行执行；普通连接启用 SQLite WAL、外键检查和忙等待，
