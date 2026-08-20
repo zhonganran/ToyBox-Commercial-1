@@ -112,6 +112,19 @@ class MafuSettingsViewModel @Inject constructor(
         }
     }
 
+    fun setScreenPower(enabled: Boolean) {
+        viewModelScope.launch {
+            val ok = runtimeCoordinator.setScreenPower(enabled)
+            showMessage(
+                when {
+                    ok && enabled -> "屏幕已开启"
+                    ok -> "屏幕已关闭"
+                    else -> "设备未连接，无法切换屏幕电源"
+                },
+            )
+        }
+    }
+
     fun setRemoteModel(model: MafuRemoteModel) {
         preferences.setRemoteModel(model)
         showMessage("已切换为${model.title}")

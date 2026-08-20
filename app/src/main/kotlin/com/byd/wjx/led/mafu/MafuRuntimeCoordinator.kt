@@ -187,6 +187,19 @@ class MafuRuntimeCoordinator @Inject constructor(
         return bleClient.setBrightness(level)
     }
 
+    suspend fun setScreenPower(enabled: Boolean): Boolean {
+        if (!bleClient.connection.value.ready) return false
+        val sent = bleClient.setScreenPower(enabled)
+        if (sent) {
+            _runtime.value = _runtime.value.copy(
+                screenPowerEnabled = enabled,
+                lastCommandAt = System.currentTimeMillis(),
+                lastError = null,
+            )
+        }
+        return sent
+    }
+
     private suspend fun runSignalLoop(
         label: String,
         intervalMs: Long,

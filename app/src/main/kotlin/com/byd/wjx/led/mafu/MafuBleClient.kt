@@ -17,6 +17,7 @@ import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import com.byd.wjx.log.WjxFileLogger
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -68,7 +69,8 @@ class MafuBleClient @Inject constructor(
     private var reconnectJob: Job? = null
     private var scanStopJob: Job? = null
     private var protocolInitJob: Job? = null
-    private var mtuFallbackJob: Job? = null
+    private var notificationSetupJob: Job? = null
+    @Volatile private var connectedAtElapsedRealtime = 0L
 
     private val bluetoothManager: BluetoothManager?
         get() = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
@@ -278,6 +280,11 @@ class MafuBleClient @Inject constructor(
         description = "brightness=${level.coerceIn(1, 15)}",
     )
 
+    suspend fun setScreenPower(enabled: Boolean): Boolean = sendCommand(
+        buildPacket = { MafuProtocol.screenPower(enabled, it) },
+        description = "screenPower=${if (enabled) "on" else "off"}",
+    )
+
     suspend fun queryRemote(model: MafuRemoteModel): Boolean = sendCommand(
         buildPacket = { MafuProtocol.queryRemote(model, it) },
         description = "query remote model=${model.modelCode.toString(16)}",
@@ -377,7 +384,7 @@ class MafuBleClient @Inject constructor(
     private fun startProtocolInitialization(gatt: BluetoothGatt) {
         protocolInitJob?.cancel()
         val job = scope.launch {
-            delay(MafuProtocol.NOTIFY_SETTLE_MS)
+            delay(MafuProtocol.NOTIFY_SETTLE_BEFORE_INIT_MS)
             if (gatt !== bluetoothGatt) return@launch
             _connection.value = _connection.value.copy(
                 phase = MafuConnectionPhase.INITIALIZING,
@@ -405,13 +412,24 @@ class MafuBleClient @Inject constructor(
         }
     }
 
-    @SuppressLint("MissingPermission")
     @Synchronized
-    private fun enableNotifications(gatt: BluetoothGatt) {
+    private fun scheduleNotificationSetup(gatt: BluetoothGatt) {
         if (gatt !== bluetoothGatt || transportSetupStarted) return
         transportSetupStarted = true
-        mtuFallbackJob?.cancel()
-        mtuFallbackJob = null
+        notificationSetupJob?.cancel()
+        val elapsedSinceConnection = SystemClock.elapsedRealtime() - connectedAtElapsedRealtime
+        val remainingSettle = (
+            MafuProtocol.CONNECTION_SETTLE_BEFORE_NOTIFY_MS - elapsedSinceConnection
+            ).coerceAtLeast(0L)
+        notificationSetupJob = scope.launch {
+            delay(remainingSettle)
+            if (gatt !== bluetoothGatt) return@launch
+            enableNotifications(gatt)
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun enableNotifications(gatt: BluetoothGatt) {
         val characteristic = notifyCharacteristic ?: return failConnection("马夫 LED 通知通道不可用")
         _connection.value = _connection.value.copy(
             phase = MafuConnectionPhase.SUBSCRIBING,
@@ -476,7 +494,7 @@ class MafuBleClient @Inject constructor(
         )
         closeGatt()
         _connection.value = failed
-        scheduleReconnect(failed)
+        WjxFileLogger.w(TAG, "$message; GATT released, waiting for manual retry")
     }
 
     @SuppressLint("MissingPermission")
@@ -485,8 +503,8 @@ class MafuBleClient @Inject constructor(
         val old = bluetoothGatt
         protocolInitJob?.cancel()
         protocolInitJob = null
-        mtuFallbackJob?.cancel()
-        mtuFallbackJob = null
+        notificationSetupJob?.cancel()
+        notificationSetupJob = null
         pendingProtocolAck?.deferred?.complete(false)
         pendingProtocolAck = null
         pendingGattWriteAck?.complete(BluetoothGatt.GATT_FAILURE)
@@ -495,6 +513,7 @@ class MafuBleClient @Inject constructor(
         writeCharacteristic = null
         notifyCharacteristic = null
         transportSetupStarted = false
+        connectedAtElapsedRealtime = 0L
         negotiatedMtu = DEFAULT_MTU
         synchronized(notificationLock) { notificationBuffer = byteArrayOf() }
         runCatching { old?.disconnect() }
@@ -645,6 +664,7 @@ class MafuBleClient @Inject constructor(
             }
             WjxFileLogger.i(TAG, "connection state status=$status newState=$newState")
             if (status == BluetoothGatt.GATT_SUCCESS && newState == BluetoothProfile.STATE_CONNECTED) {
+                connectedAtElapsedRealtime = SystemClock.elapsedRealtime()
                 val current = _connection.value
                 _connection.value = current.copy(
                     phase = MafuConnectionPhase.DISCOVERING,
@@ -694,18 +714,11 @@ class MafuBleClient @Inject constructor(
             writeCharacteristic = write
             notifyCharacteristic = notify
             runCatching { gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH) }
+            scheduleNotificationSetup(gatt)
             val mtuRequested = runCatching { gatt.requestMtu(MafuProtocol.REQUESTED_MTU) }
                 .getOrDefault(false)
-            if (mtuRequested) {
-                mtuFallbackJob?.cancel()
-                mtuFallbackJob = scope.launch {
-                    delay(MTU_CALLBACK_TIMEOUT_MS)
-                    WjxFileLogger.w(TAG, "Mafu MTU callback timeout; continuing with mtu=$negotiatedMtu")
-                    enableNotifications(gatt)
-                }
-            } else {
+            if (!mtuRequested) {
                 WjxFileLogger.w(TAG, "Mafu MTU request rejected; continuing with mtu=$negotiatedMtu")
-                enableNotifications(gatt)
             }
         }
 
@@ -713,7 +726,6 @@ class MafuBleClient @Inject constructor(
             if (gatt !== bluetoothGatt) return
             negotiatedMtu = if (status == BluetoothGatt.GATT_SUCCESS) mtu else DEFAULT_MTU
             WjxFileLogger.i(TAG, "Mafu MTU status=$status mtu=$negotiatedMtu")
-            enableNotifications(gatt)
         }
 
         override fun onDescriptorWrite(gatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
@@ -773,7 +785,6 @@ class MafuBleClient @Inject constructor(
         private const val DEFAULT_MTU = 23
         private const val SCAN_WINDOW_MS = 10_000L
         private const val CONNECT_SETTLE_MS = 12_000L
-        private const val MTU_CALLBACK_TIMEOUT_MS = 2_500L
         private const val GATT_WRITE_TIMEOUT_MS = 2_500L
         private const val PROTOCOL_HEADER_SIZE = 10
         private const val COMMAND_ATTEMPTS = 3

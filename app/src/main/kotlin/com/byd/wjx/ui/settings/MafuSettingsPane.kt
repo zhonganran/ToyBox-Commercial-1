@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Bluetooth
 import androidx.compose.material.icons.outlined.BluetoothConnected
 import androidx.compose.material.icons.outlined.LinkOff
+import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Button
@@ -184,6 +185,48 @@ internal fun MafuSettingsPane(viewModel: MafuSettingsViewModel) {
 
                 state.actionMessage?.let {
                     Text(it, color = TextSecondary, fontSize = 11.sp)
+                }
+            }
+        }
+
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = CardSurfaceElevated),
+            border = BorderStroke(1.dp, CardBorder),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(AccentBlue.copy(alpha = 0.14f), RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Outlined.PowerSettingsNew,
+                            contentDescription = null,
+                            tint = AccentBlue,
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("屏幕电源", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            "控制 LED 屏幕的开启和关闭",
+                            color = TextSecondary,
+                            fontSize = 11.sp,
+                        )
+                    }
+                    Switch(
+                        checked = state.runtime.screenPowerEnabled,
+                        onCheckedChange = viewModel::setScreenPower,
+                        enabled = connected,
+                        colors = bydSwitchColors(),
+                    )
                 }
             }
         }

@@ -18,7 +18,8 @@ internal object MafuProtocol {
     const val REQUESTED_MTU = 185
     const val MAX_WRITE_CHUNK_SIZE = 180
     const val WRITE_GAP_MS = 10L
-    const val NOTIFY_SETTLE_MS = 1_500L
+    const val CONNECTION_SETTLE_BEFORE_NOTIFY_MS = 1_500L
+    const val NOTIFY_SETTLE_BEFORE_INIT_MS = 20L
     const val ACK_TIMEOUT_MS = 5_000L
 
     fun acceptsDeviceName(name: String): Boolean =
@@ -36,6 +37,12 @@ internal object MafuProtocol {
         payload = byteArrayOf(0x06, 0x02, 0x00, level.coerceIn(1, 15).toByte()),
     )
 
+    /** Controls the LED panel power state; this is the APK's `cmd.power` command. */
+    fun screenPower(enabled: Boolean, sequence: Int): ByteArray = frame(
+        sequence = sequence,
+        payload = byteArrayOf(0x04, 0x02, 0x00, if (enabled) 1 else 0),
+    )
+
     fun playRemoteKey(
         model: MafuRemoteModel,
         key: MafuRemoteKey,
@@ -50,18 +57,18 @@ internal object MafuProtocol {
         return frame(
             sequence = sequence,
             payload = byteArrayOf(
-                0x18,
-                0x04,
-                0x02,
-                (programId - 1).toByte(),
+                0x36,
+                0x03,
+                0x01,
                 0x00,
-                0xFF.toByte(),
+                (programId - 1).toByte(),
             ),
         )
     }
 
     fun queryDeviceInfoAll(sequence: Int): ByteArray = frame(
         sequence = sequence,
+        requestType = REQUEST_TYPE_GET,
         payload = byteArrayOf(0x0A, 0x00, 0x1B, 0x00, 0x04, 0x00, 0x06, 0x00),
     )
 
@@ -91,6 +98,7 @@ internal object MafuProtocol {
 
     fun queryRemote(model: MafuRemoteModel, sequence: Int): ByteArray = frame(
         sequence = sequence,
+        requestType = REQUEST_TYPE_GET,
         payload = byteArrayOf(
             0x34,
             0x03,
@@ -134,11 +142,13 @@ internal object MafuProtocol {
 
     fun parseAcknowledgement(packet: ByteArray): MafuAcknowledgement? {
         val size = packetSize(packet) ?: return null
-        if (packet.size != size || !hasValidChecksum(packet)) return null
+        if (packet.size != size) return null
+        val includesChecksum = packet[8].toInt() and CHECKSUM_FLAG != 0
+        if (includesChecksum && !hasValidChecksum(packet)) return null
         val sequence = readLittleEndian(packet, 6)
         val responseType = packet[9].toInt() and 0xFF
         val accepted = when (responseType) {
-            RESPONSE_ACK, RESPONSE_ACK_ALT -> packet.size > 12 && packet[10].toInt() == 0
+            RESPONSE_ACK, RESPONSE_ACK_ALT -> packet.size > HEADER_SIZE && packet[10].toInt() == 0
             RESPONSE_DATA, RESPONSE_UPLOAD -> true
             else -> return null
         }
@@ -152,7 +162,11 @@ internal object MafuProtocol {
         return expected == actual
     }
 
-    private fun frame(sequence: Int, payload: ByteArray): ByteArray {
+    private fun frame(
+        sequence: Int,
+        payload: ByteArray,
+        requestType: Byte = REQUEST_TYPE_SET,
+    ): ByteArray {
         require(sequence in 0..0xFFFF) { "马夫协议序号必须在 0..65535" }
         val packet = ByteArray(HEADER_SIZE + payload.size + CHECKSUM_SIZE)
         packet[0] = MAGIC_LOW
@@ -162,7 +176,7 @@ internal object MafuProtocol {
         writeLittleEndian(packet, 4, payload.size + INNER_LENGTH_OVERHEAD)
         writeLittleEndian(packet, 6, sequence)
         packet[8] = REQUEST_FLAGS
-        packet[9] = REQUEST_TYPE
+        packet[9] = requestType
         payload.copyInto(packet, destinationOffset = HEADER_SIZE)
         val checksum = packet.dropLast(CHECKSUM_SIZE).sumOf { it.toInt() and 0xFF } and 0xFFFF
         writeLittleEndian(packet, packet.size - CHECKSUM_SIZE, checksum)
@@ -181,7 +195,9 @@ internal object MafuProtocol {
     private val MAGIC_LOW = 0xAA.toByte()
     private val MAGIC_HIGH = 0x55.toByte()
     private val REQUEST_FLAGS = 0xC1.toByte()
-    private val REQUEST_TYPE = 0x02.toByte()
+    private val REQUEST_TYPE_SET = 0x02.toByte()
+    private val REQUEST_TYPE_GET = 0x03.toByte()
+    private const val CHECKSUM_FLAG = 0x80
     private const val RESPONSE_UPLOAD = 0x06
     private const val RESPONSE_ACK = 0x82
     private const val RESPONSE_DATA = 0x83
@@ -190,6 +206,6 @@ internal object MafuProtocol {
     private const val CHECKSUM_SIZE = 2
     private const val INNER_LENGTH_OVERHEAD = 6
     private const val LENGTH_FIELD_OVERHEAD = 6
-    private const val MIN_PACKET_SIZE = 12
+    private const val MIN_PACKET_SIZE = 10
     private const val MAX_PACKET_SIZE = 4_096
 }

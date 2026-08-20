@@ -32,7 +32,19 @@ class MafuProtocolTest {
     }
 
     @Test
-    fun `remote models map keys to the APK program slots`() {
+    fun `screen power uses the APK power TLV`() {
+        assertArrayEquals(
+            hex("AA 55 FF FF 0A 00 01 00 C1 02 04 02 00 01 D2 03"),
+            MafuProtocol.screenPower(enabled = true, sequence = 1),
+        )
+        assertArrayEquals(
+            hex("AA 55 FF FF 0A 00 02 00 C1 02 04 02 00 00 D2 03"),
+            MafuProtocol.screenPower(enabled = false, sequence = 2),
+        )
+    }
+
+    @Test
+    fun `remote models map every boundary key to the APK program slots`() {
         assertEquals(76..92, MafuRemoteModel.YS_17_KEY.programRange)
         assertEquals(76..95, MafuRemoteModel.YS_20_KEY.programRange)
         assertEquals(87..95, MafuRemoteModel.YS_9_KEY.programRange)
@@ -41,11 +53,51 @@ class MafuProtocolTest {
         assertEquals(95, MafuRemoteModel.YS_9_KEY.programId(MafuRemoteKey.KEY_9))
 
         assertArrayEquals(
-            hex("AA 55 FF FF 0C 00 01 00 C1 02 18 04 02 4B 00 FF 35 05"),
+            hex("AA 55 FF FF 0B 00 01 00 C1 02 36 03 01 00 4B 51 04"),
             MafuProtocol.playRemoteKey(
                 MafuRemoteModel.YS_17_KEY,
                 MafuRemoteKey.KEY_1,
                 sequence = 1,
+            ),
+        )
+        assertArrayEquals(
+            hex("AA 55 FF FF 0B 00 02 00 C1 02 36 03 01 00 5B 62 04"),
+            MafuProtocol.playRemoteKey(
+                MafuRemoteModel.YS_17_KEY,
+                MafuRemoteKey.KEY_17,
+                sequence = 2,
+            ),
+        )
+        assertArrayEquals(
+            hex("AA 55 FF FF 0B 00 03 00 C1 02 36 03 01 00 4B 53 04"),
+            MafuProtocol.playRemoteKey(
+                MafuRemoteModel.YS_20_KEY,
+                MafuRemoteKey.KEY_1,
+                sequence = 3,
+            ),
+        )
+        assertArrayEquals(
+            hex("AA 55 FF FF 0B 00 04 00 C1 02 36 03 01 00 5E 67 04"),
+            MafuProtocol.playRemoteKey(
+                MafuRemoteModel.YS_20_KEY,
+                MafuRemoteKey.KEY_20,
+                sequence = 4,
+            ),
+        )
+        assertArrayEquals(
+            hex("AA 55 FF FF 0B 00 05 00 C1 02 36 03 01 00 56 60 04"),
+            MafuProtocol.playRemoteKey(
+                MafuRemoteModel.YS_9_KEY,
+                MafuRemoteKey.KEY_1,
+                sequence = 5,
+            ),
+        )
+        assertArrayEquals(
+            hex("AA 55 FF FF 0B 00 06 00 C1 02 36 03 01 00 5E 69 04"),
+            MafuProtocol.playRemoteKey(
+                MafuRemoteModel.YS_9_KEY,
+                MafuRemoteKey.KEY_9,
+                sequence = 6,
             ),
         )
     }
@@ -53,7 +105,7 @@ class MafuProtocolTest {
     @Test
     fun `remote query encodes model code in big endian`() {
         assertArrayEquals(
-            hex("AA 55 FF FF 0B 00 02 00 C1 02 34 03 04 AA BF 71 05"),
+            hex("AA 55 FF FF 0B 00 02 00 C1 03 34 03 04 AA BF 72 05"),
             MafuProtocol.queryRemote(MafuRemoteModel.YS_17_KEY, sequence = 2),
         )
     }
@@ -61,7 +113,7 @@ class MafuProtocolTest {
     @Test
     fun `initial device query and remote binding match APK TLVs`() {
         assertArrayEquals(
-            hex("AA 55 FF FF 0E 00 03 00 C1 02 0A 00 1B 00 04 00 06 00 00 04"),
+            hex("AA 55 FF FF 0E 00 03 00 C1 03 0A 00 1B 00 04 00 06 00 01 04"),
             MafuProtocol.queryDeviceInfoAll(sequence = 3),
         )
         assertArrayEquals(
@@ -84,6 +136,20 @@ class MafuProtocolTest {
             listOf(59, 60, 61, 62, 63),
             MafuVehicleLinkageSlot.entries.map(MafuVehicleLinkageSlot::materialTag),
         )
+        val expectedPackets = listOf(
+            "AA 55 FF FF 0B 00 07 00 C1 02 36 03 01 00 42 4E 04",
+            "AA 55 FF FF 0B 00 07 00 C1 02 36 03 01 00 43 4F 04",
+            "AA 55 FF FF 0B 00 07 00 C1 02 36 03 01 00 44 50 04",
+            "AA 55 FF FF 0B 00 07 00 C1 02 36 03 01 00 45 51 04",
+            "AA 55 FF FF 0B 00 07 00 C1 02 36 03 01 00 46 52 04",
+        )
+        MafuVehicleLinkageSlot.entries.zip(expectedPackets).forEach { (slot, expected) ->
+            assertArrayEquals(
+                slot.title,
+                hex(expected),
+                MafuProtocol.playVehicleLinkage(slot, sequence = 7),
+            )
+        }
     }
 
     @Test
@@ -99,19 +165,39 @@ class MafuProtocolTest {
         assertNull(MafuProtocol.parseAcknowledgement(accepted))
     }
 
-    private fun response(sequence: Int, responseType: Int, payload: ByteArray): ByteArray {
-        val packet = ByteArray(10 + payload.size + 2)
+    @Test
+    fun `ACK parser accepts the APK no-checksum response form`() {
+        val accepted = response(
+            sequence = 0x2345,
+            responseType = 0x82,
+            payload = byteArrayOf(0),
+            withChecksum = false,
+        )
+
+        assertEquals(MafuAcknowledgement(0x2345, true, 0x82), MafuProtocol.parseAcknowledgement(accepted))
+    }
+
+    private fun response(
+        sequence: Int,
+        responseType: Int,
+        payload: ByteArray,
+        withChecksum: Boolean = true,
+    ): ByteArray {
+        val checksumSize = if (withChecksum) 2 else 0
+        val packet = ByteArray(10 + payload.size + checksumSize)
         packet[0] = 0xAA.toByte()
         packet[1] = 0x55
         packet[2] = 0xFF.toByte()
         packet[3] = 0xFF.toByte()
-        writeLittleEndian(packet, 4, payload.size + 6)
+        writeLittleEndian(packet, 4, payload.size + checksumSize + 4)
         writeLittleEndian(packet, 6, sequence)
-        packet[8] = 0x81.toByte()
+        packet[8] = if (withChecksum) 0x81.toByte() else 0x01
         packet[9] = responseType.toByte()
         payload.copyInto(packet, 10)
-        val checksum = packet.dropLast(2).sumOf { it.toInt() and 0xFF } and 0xFFFF
-        writeLittleEndian(packet, packet.size - 2, checksum)
+        if (withChecksum) {
+            val checksum = packet.dropLast(2).sumOf { it.toInt() and 0xFF } and 0xFFFF
+            writeLittleEndian(packet, packet.size - 2, checksum)
+        }
         return packet
     }
 

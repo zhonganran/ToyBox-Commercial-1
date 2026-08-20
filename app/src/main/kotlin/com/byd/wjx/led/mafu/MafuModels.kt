@@ -161,4 +161,5 @@ data class MafuRuntimeState(
     val lastPresetChangedAt: Long = 0L,
     val lastCommandAt: Long = 0L,
     val lastError: String? = null,
+    val screenPowerEnabled: Boolean = true,
 )
