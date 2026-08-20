@@ -1,8 +1,8 @@
 package com.byd.wjx.ui.settings
 
 import android.Manifest
-import android.os.Build
 import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -14,17 +14,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Bluetooth
 import androidx.compose.material.icons.outlined.BluetoothConnected
 import androidx.compose.material.icons.outlined.LinkOff
-import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Button
@@ -32,10 +28,11 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -45,7 +42,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -54,11 +50,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.byd.wjx.led.LedConnectionPhase
-import com.byd.wjx.led.DuduFff0SceneCatalogState
-import com.byd.wjx.led.LedDevice
-import com.byd.wjx.led.LedProtocolKind
-import com.byd.wjx.led.LedScene
+import com.byd.wjx.led.ipixelfa.IpixelFaConnectionPhase
+import com.byd.wjx.led.ipixelfa.IpixelFaDevice
 import com.byd.wjx.ui.components.bydSwitchColors
 import com.byd.wjx.ui.theme.AccentBlue
 import com.byd.wjx.ui.theme.AccentGreen
@@ -72,18 +65,54 @@ import com.byd.wjx.ui.theme.TextSecondary
 
 @Composable
 fun LedLinkSettingsSection(
-    viewModel: LedSettingsViewModel = hiltViewModel(),
+    faViewModel: IpixelFaSettingsViewModel = hiltViewModel(),
+    a950ViewModel: A950SettingsViewModel = hiltViewModel(),
+    mafuViewModel: MafuSettingsViewModel = hiltViewModel(),
+) {
+    val navigationViewModel: LedLinkSettingsViewModel = hiltViewModel()
+    val selectedTab by navigationViewModel.selectedTab.collectAsStateWithLifecycle()
+
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        TabRow(
+            selectedTabIndex = selectedTab.ordinal,
+            containerColor = CardSurfaceElevated,
+            contentColor = AccentBlue,
+            divider = {},
+        ) {
+            LedProtocolSettingsTab.entries.forEach { tab ->
+                Tab(
+                    selected = selectedTab == tab,
+                    onClick = { navigationViewModel.selectTab(tab) },
+                    text = {
+                        Text(
+                            tab.title,
+                            fontWeight = if (selectedTab == tab) FontWeight.ExtraBold else FontWeight.Medium,
+                        )
+                    },
+                )
+            }
+        }
+
+        when (selectedTab) {
+            LedProtocolSettingsTab.FA -> IpixelFaSettingsPane(faViewModel)
+            LedProtocolSettingsTab.A950 -> A950SettingsPane(a950ViewModel)
+            LedProtocolSettingsTab.MAFU -> MafuSettingsPane(mafuViewModel)
+        }
+    }
+}
+
+@Composable
+private fun IpixelFaSettingsPane(
+    viewModel: IpixelFaSettingsViewModel,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val selectedProtocol = state.preferences.selectedProtocol
-    val activeProfile = state.preferences.activeProtocol
-    val selectedConnected = state.connection.ready &&
-        state.connection.protocol == selectedProtocol &&
-        state.connection.address.equals(activeProfile.deviceAddress, ignoreCase = true)
+    val preferences = state.preferences
+    val connected = state.connection.ready &&
+        state.connection.address.equals(preferences.deviceAddress, ignoreCase = true)
     var pendingScan by remember { mutableStateOf(false) }
-    var brightness by remember(selectedProtocol, activeProfile.brightness) {
-        mutableFloatStateOf(activeProfile.brightness.toFloat())
+    var brightness by remember(preferences.brightness) {
+        mutableFloatStateOf(preferences.brightness.toFloat())
     }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -96,9 +125,13 @@ fun LedLinkSettingsSection(
     fun startScanWithPermission() {
         val missing = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
-                .filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
+                .filter {
+                    ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+                }
         } else {
-            emptyList()
+            listOf(Manifest.permission.ACCESS_FINE_LOCATION).filter {
+                ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+            }
         }
         if (missing.isEmpty()) {
             viewModel.scan()
@@ -119,13 +152,6 @@ fun LedLinkSettingsSection(
                 modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Text("设备协议", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                LedProtocolSelector(
-                    selected = selectedProtocol,
-                    preferences = state.preferences,
-                    onSelected = viewModel::selectProtocol,
-                )
-
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
@@ -134,69 +160,74 @@ fun LedLinkSettingsSection(
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
-                            if (selectedConnected) Icons.Outlined.BluetoothConnected else Icons.Outlined.Bluetooth,
+                            if (connected) Icons.Outlined.BluetoothConnected else Icons.Outlined.Bluetooth,
                             contentDescription = null,
-                            tint = if (selectedConnected) AccentGreen else AccentBlue,
+                            tint = if (connected) AccentGreen else AccentBlue,
                         )
                     }
                     Spacer(Modifier.size(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(selectedProtocol.title, color = TextPrimary, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
                         Text(
-                            when {
-                                state.connection.phase == LedConnectionPhase.SCANNING -> state.connection.message
-                                state.connection.protocol == selectedProtocol -> state.connection.message
-                                !activeProfile.enabled -> "当前协议未开启"
-                                activeProfile.deviceAddress.isBlank() -> "请自动识别并绑定设备"
-                                else -> "等待连接当前协议设备"
+                            "标准 FA 协议",
+                            color = TextPrimary,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                        )
+                        Text(
+                            text = when {
+                                state.connection.phase == IpixelFaConnectionPhase.SCANNING ->
+                                    state.connection.message
+                                connected -> state.connection.message
+                                !preferences.enabled -> "联动未开启"
+                                state.connection.phase in setOf(
+                                    IpixelFaConnectionPhase.CONNECTING,
+                                    IpixelFaConnectionPhase.DISCOVERING,
+                                    IpixelFaConnectionPhase.RETRYING,
+                                    IpixelFaConnectionPhase.ERROR,
+                                ) -> state.connection.message
+                                preferences.deviceAddress.isBlank() -> "请识别并绑定标准 FA 设备"
+                                state.connection.address.equals(
+                                    preferences.deviceAddress,
+                                    ignoreCase = true,
+                                ) -> state.connection.message
+                                else -> "等待连接标准 FA 设备"
                             },
-                            color = if (selectedConnected) AccentGreen else TextSecondary,
+                            color = if (connected) AccentGreen else TextSecondary,
                             fontSize = 12.sp,
                         )
                     }
                     Switch(
-                        checked = activeProfile.enabled,
+                        checked = preferences.enabled,
                         onCheckedChange = viewModel::setEnabled,
                         colors = bydSwitchColors(),
                     )
                 }
 
-                if (activeProfile.deviceAddress.isNotBlank()) {
-                    LedBoundDeviceRow(
-                        name = activeProfile.deviceName.ifBlank { "LED设备" },
-                        address = activeProfile.deviceAddress,
-                        kindTitle = selectedProtocol.title,
-                        connected = selectedConnected,
+                if (preferences.deviceAddress.isNotBlank()) {
+                    FaBoundDeviceRow(
+                        name = preferences.deviceName.ifBlank { "标准 FA 设备" },
+                        address = preferences.deviceAddress,
+                        connected = connected,
                         onReconnect = viewModel::reconnect,
                         onUnbind = viewModel::unbind,
                     )
                 }
 
-                Row(
+                Button(
+                    onClick = ::startScanWithPermission,
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentBlue),
+                    shape = RoundedCornerShape(9.dp),
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Button(
-                        onClick = ::startScanWithPermission,
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentBlue),
-                        shape = RoundedCornerShape(9.dp),
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Icon(Icons.Outlined.Search, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.size(7.dp))
-                        Text(if (state.connection.phase == LedConnectionPhase.SCANNING) "重新识别" else "自动识别设备")
-                    }
-                    Button(
-                        onClick = { viewModel.testScene(LedScene.DEFAULT) },
-                        enabled = selectedConnected,
-                        colors = ButtonDefaults.buttonColors(containerColor = CardSurface, contentColor = TextPrimary),
-                        shape = RoundedCornerShape(9.dp),
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.size(7.dp))
-                        Text("恢复微笑画面")
-                    }
+                    Icon(Icons.Outlined.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.size(7.dp))
+                    Text(
+                        if (state.connection.phase == IpixelFaConnectionPhase.SCANNING) {
+                            "重新识别"
+                        } else {
+                            "识别 FA 设备"
+                        }
+                    )
                 }
 
                 state.actionMessage?.let {
@@ -204,31 +235,6 @@ fun LedLinkSettingsSection(
                 }
             }
         }
-
-        if (state.devices.isNotEmpty()) {
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = CardSurfaceElevated),
-                border = BorderStroke(1.dp, CardBorder),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("发现的设备", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                    state.devices.forEach { device ->
-                        LedDeviceRow(device = device, onClick = { viewModel.bind(device) })
-                    }
-                }
-            }
-        }
-
-        LedLinkageRulesSection(
-            rules = state.preferences.rules,
-            currentScene = state.runtime.currentScene,
-            onSave = viewModel::saveRule,
-            onDelete = viewModel::deleteRule,
-            onEnabledChange = viewModel::setRuleEnabled,
-            onMove = viewModel::moveRule,
-        )
 
         Card(
             shape = RoundedCornerShape(16.dp),
@@ -239,7 +245,12 @@ fun LedLinkSettingsSection(
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("屏幕亮度", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                    Text("${brightness.toInt()}%", color = AccentBlue, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        "${brightness.toInt()}%",
+                        color = AccentBlue,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
                 }
                 Slider(
                     value = brightness,
@@ -258,192 +269,46 @@ fun LedLinkSettingsSection(
             }
         }
 
-        if (selectedProtocol == LedProtocolKind.DUDU_FFF0) {
-            DuduSceneSlotSettings(
-                sceneSlots = activeProfile.sceneSlots,
-                catalog = state.duduSceneCatalog,
-                connected = selectedConnected,
-                onSlotChanged = viewModel::setDuduSceneSlot,
-                onRefresh = viewModel::refreshDuduSceneSlots,
-            )
-        }
-
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = CardSurfaceElevated),
-            border = BorderStroke(1.dp, CardBorder),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("内置联动画面测试", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                    Text(
-                        "当前：${state.runtime.currentScene.title}",
-                        color = AccentGreen,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-                LedScene.entries.filterNot { it == LedScene.DEFAULT }.chunked(4).forEach { rowScenes ->
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        rowScenes.forEach { scene ->
-                            Button(
-                                onClick = { viewModel.testScene(scene) },
-                                enabled = selectedConnected,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (state.runtime.currentScene == scene) AccentGreen else CardSurface,
-                                    contentColor = if (state.runtime.currentScene == scene) Color.White else TextPrimary,
-                                ),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                Text(scene.title, fontSize = 12.sp, maxLines = 1)
-                            }
-                        }
-                        repeat(4 - rowScenes.size) { Spacer(Modifier.weight(1f)) }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun LedProtocolSelector(
-    selected: LedProtocolKind,
-    preferences: com.byd.wjx.led.LedPreferenceSnapshot,
-    onSelected: (LedProtocolKind) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(CardSurface.copy(alpha = 0.78f), RoundedCornerShape(10.dp))
-            .padding(3.dp),
-    ) {
-        LedProtocolKind.entries.forEach { protocol ->
-            val profile = preferences.protocol(protocol)
-            val isSelected = protocol == selected
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .background(
-                        if (isSelected) AccentBlue else Color.Transparent,
-                        RoundedCornerShape(8.dp),
-                    )
-                    .clickable { onSelected(protocol) }
-                    .padding(horizontal = 10.dp, vertical = 9.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(
-                    text = protocol.shortTitle,
-                    color = if (isSelected) Color.White else TextPrimary,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    text = if (profile.deviceAddress.isBlank()) "未绑定" else "已绑定",
-                    color = if (isSelected) Color.White.copy(alpha = 0.78f) else TextMuted,
-                    fontSize = 10.sp,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun DuduSceneSlotSettings(
-    sceneSlots: Map<LedScene, Int>,
-    catalog: DuduFff0SceneCatalogState,
-    connected: Boolean,
-    onSlotChanged: (LedScene, Int) -> Unit,
-    onRefresh: () -> Unit,
-) {
-    Card(
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = CardSurfaceElevated),
-        border = BorderStroke(1.dp, CardBorder),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Row(
+        if (state.devices.isNotEmpty()) {
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = CardSurfaceElevated),
+                border = BorderStroke(1.dp, CardBorder),
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("FFF0 场景槽位", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                    Text(
-                        text = when {
-                            catalog.scanning -> "正在读取 ${catalog.scannedSlots}/60"
-                            catalog.scanComplete -> "已识别 ${catalog.availableSlots.size} 个可用场景"
-                            catalog.error != null -> catalog.error
-                            connected -> "等待读取场景"
-                            else -> "连接设备后自动读取"
-                        },
-                        color = if (catalog.error == null) TextMuted else AccentOrange,
-                        fontSize = 11.sp,
-                    )
-                }
-                IconButton(
-                    onClick = onRefresh,
-                    enabled = connected && !catalog.scanning,
-                    modifier = Modifier.size(36.dp),
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Icon(Icons.Outlined.Refresh, contentDescription = "重新读取场景")
-                }
-            }
-            val availableSlots = if (catalog.scanComplete) catalog.availableSlots.sorted() else emptyList()
-            LedScene.entries.forEach { scene ->
-                val slot = sceneSlots[scene] ?: 1
-                val previousSlot = availableSlots.lastOrNull { it < slot }
-                val nextSlot = availableSlots.firstOrNull { it > slot }
-                val slotAvailable = !catalog.scanComplete || slot in catalog.availableSlots
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(38.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = scene.title,
-                        color = TextSecondary,
-                        fontSize = 13.sp,
-                        modifier = Modifier.weight(1f),
-                    )
-                    IconButton(
-                        onClick = { previousSlot?.let { onSlotChanged(scene, it) } },
-                        enabled = previousSlot != null,
-                        modifier = Modifier.size(34.dp),
-                    ) {
-                        Icon(Icons.Outlined.Remove, contentDescription = "减小${scene.title}场景槽位")
-                    }
-                    Text(
-                        text = slot.toString().padStart(2, '0'),
-                        color = if (slotAvailable) TextPrimary else AccentOrange,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.width(34.dp),
-                    )
-                    IconButton(
-                        onClick = { nextSlot?.let { onSlotChanged(scene, it) } },
-                        enabled = nextSlot != null,
-                        modifier = Modifier.size(34.dp),
-                    ) {
-                        Icon(Icons.Outlined.Add, contentDescription = "增大${scene.title}场景槽位")
+                    Text("发现的标准 FA 设备", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    state.devices.forEach { device ->
+                        FaDeviceRow(device = device, onClick = { viewModel.bind(device) })
                     }
                 }
             }
         }
+
+        LedLinkageRulesSection(
+            rules = preferences.rules,
+            currentPreset = state.runtime.currentPreset,
+            onSave = viewModel::saveRule,
+            onDelete = viewModel::deleteRule,
+            onEnabledChange = viewModel::setRuleEnabled,
+            onMove = viewModel::moveRule,
+        )
     }
 }
 
+internal enum class LedProtocolSettingsTab(val title: String) {
+    FA("FA 标准"),
+    A950("A950"),
+    MAFU("马夫 LED"),
+}
+
 @Composable
-private fun LedBoundDeviceRow(
+private fun FaBoundDeviceRow(
     name: String,
     address: String,
-    kindTitle: String,
     connected: Boolean,
     onReconnect: () -> Unit,
     onUnbind: () -> Unit,
@@ -456,10 +321,14 @@ private fun LedBoundDeviceRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Box(Modifier.size(8.dp).background(if (connected) AccentGreen else AccentOrange, RoundedCornerShape(4.dp)))
+        Box(
+            Modifier
+                .size(8.dp)
+                .background(if (connected) AccentGreen else AccentOrange, RoundedCornerShape(4.dp))
+        )
         Column(modifier = Modifier.weight(1f)) {
             Text(name, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            Text("$kindTitle  ·  $address", color = TextMuted, fontSize = 10.sp)
+            Text("标准 FA 协议  ·  $address", color = TextMuted, fontSize = 10.sp)
         }
         Icon(
             Icons.Outlined.Refresh,
@@ -477,7 +346,7 @@ private fun LedBoundDeviceRow(
 }
 
 @Composable
-private fun LedDeviceRow(device: LedDevice, onClick: () -> Unit) {
+private fun FaDeviceRow(device: IpixelFaDevice, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -486,12 +355,17 @@ private fun LedDeviceRow(device: LedDevice, onClick: () -> Unit) {
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Outlined.Bluetooth, contentDescription = null, tint = AccentBlue, modifier = Modifier.size(20.dp))
+        Icon(
+            Icons.Outlined.Bluetooth,
+            contentDescription = null,
+            tint = AccentBlue,
+            modifier = Modifier.size(20.dp),
+        )
         Spacer(Modifier.size(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(device.name, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             Text(
-                "${device.protocol?.title ?: "连接后识别"}  ·  ${device.address}",
+                "标准 FA 协议  ·  ${device.address}",
                 color = TextMuted,
                 fontSize = 10.sp,
                 maxLines = 1,

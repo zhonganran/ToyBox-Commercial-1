@@ -193,7 +193,7 @@ private val SettingsCategory.subtitle: String
         SettingsCategory.Service -> "永久授权 $PERMANENT_AUTH_PRICE、联系客服、售后支持"
         SettingsCategory.Vehicle -> "电池容量、充电价格、能耗区间和常用地点"
         SettingsCategory.Control -> "车外音效通道、方向盘快捷键、仪表盘投射"
-        SettingsCategory.Led -> "蓝牙屏幕、车辆事件联动和内置画面测试"
+        SettingsCategory.Led -> "独立蓝牙协议、屏幕亮度和车辆事件联动"
         SettingsCategory.EventSound -> "锁车、解锁和哨兵的后台车外音效"
         SettingsCategory.Data -> "界面主题、行程轨迹、备份恢复、更新和关于"
     }

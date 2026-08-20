@@ -1,10 +1,12 @@
-package com.byd.wjx.led
+package com.byd.wjx.led.ipixelfa
 
+import com.byd.wjx.led.LedLinkageTriggerType
+import com.byd.wjx.led.LedVehicleSignals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-class LedLinkageEngineTest {
+class IpixelFaLinkageEngineTest {
     @Test
     fun `numeric conditions use strict comparisons`() {
         assertTriggers(
@@ -68,72 +70,72 @@ class LedLinkageEngineTest {
 
     @Test
     fun `a condition triggers only on its rising edge`() {
-        val engine = LedLinkageEngine()
+        val engine = IpixelFaLinkageEngine()
         val rules = listOf(rule("speed", LedLinkageTriggerType.SPEED, "gt_30"))
 
         assertNull(engine.evaluate(rules, LedVehicleSignals(speed = 20), 0L))
-        assertEquals(LedScene.LEFT_TURN, engine.evaluate(rules, LedVehicleSignals(speed = 31), 100L))
+        assertEquals(IpixelFaPreset.TURN_LEFT, engine.evaluate(rules, LedVehicleSignals(speed = 31), 100L))
         assertNull(engine.evaluate(rules, LedVehicleSignals(speed = 40), 200L))
         assertNull(engine.evaluate(rules, LedVehicleSignals(speed = 20), 5_100L))
-        assertEquals(LedScene.LEFT_TURN, engine.evaluate(rules, LedVehicleSignals(speed = 31), 5_200L))
+        assertEquals(IpixelFaPreset.TURN_LEFT, engine.evaluate(rules, LedVehicleSignals(speed = 31), 5_200L))
     }
 
     @Test
     fun `simultaneous matches choose the first saved rule`() {
-        val engine = LedLinkageEngine()
+        val engine = IpixelFaLinkageEngine()
         val rules = listOf(
-            rule("hazard", LedLinkageTriggerType.LIGHT, "hazard", LedScene.HAZARD),
-            rule("reverse", LedLinkageTriggerType.GEAR, "R", LedScene.REVERSE_PARKING),
+            rule("hazard", LedLinkageTriggerType.LIGHT, "hazard", IpixelFaPreset.HAZARD_WARNING),
+            rule("reverse", LedLinkageTriggerType.GEAR, "R", IpixelFaPreset.REVERSING),
         )
 
         assertEquals(
-            LedScene.HAZARD,
+            IpixelFaPreset.HAZARD_WARNING,
             engine.evaluate(rules, LedVehicleSignals(turnSignalFlash = 6, gear = 2), 0L),
         )
     }
 
     @Test
     fun `scene steps play in order and other rules are ignored during playback`() {
-        val engine = LedLinkageEngine()
+        val engine = IpixelFaLinkageEngine()
         val rules = listOf(
-            LedLinkageRule(
+            IpixelFaLinkageRule(
                 id = "reverse",
                 triggerType = LedLinkageTriggerType.GEAR,
                 conditionValue = "R",
                 steps = listOf(
-                    LedLinkageStep(LedScene.LEFT_TURN, 1),
-                    LedLinkageStep(LedScene.RIGHT_TURN, 2),
+                    IpixelFaLinkageStep(IpixelFaPreset.TURN_LEFT, 1),
+                    IpixelFaLinkageStep(IpixelFaPreset.TURN_RIGHT, 2),
                 ),
             ),
-            rule("hazard", LedLinkageTriggerType.LIGHT, "hazard", LedScene.HAZARD),
+            rule("hazard", LedLinkageTriggerType.LIGHT, "hazard", IpixelFaPreset.HAZARD_WARNING),
         )
 
         val bothActive = LedVehicleSignals(gear = 2, turnSignalFlash = 6)
-        assertEquals(LedScene.LEFT_TURN, engine.evaluate(rules, bothActive, 0L))
+        assertEquals(IpixelFaPreset.TURN_LEFT, engine.evaluate(rules, bothActive, 0L))
         assertNull(engine.evaluate(rules, bothActive, 500L))
-        assertEquals(LedScene.RIGHT_TURN, engine.evaluate(rules, bothActive, 1_000L))
+        assertEquals(IpixelFaPreset.TURN_RIGHT, engine.evaluate(rules, bothActive, 1_000L))
         assertNull(engine.evaluate(rules, bothActive, 3_000L))
         assertNull(engine.evaluate(rules, LedVehicleSignals(gear = 4, turnSignalFlash = 1), 3_100L))
         assertEquals(
-            LedScene.HAZARD,
+            IpixelFaPreset.HAZARD_WARNING,
             engine.evaluate(rules, LedVehicleSignals(gear = 4, turnSignalFlash = 6), 3_200L),
         )
     }
 
     @Test
     fun `a newly active higher priority rule preempts current playback`() {
-        val engine = LedLinkageEngine()
+        val engine = IpixelFaLinkageEngine()
         val rules = listOf(
-            rule("hazard", LedLinkageTriggerType.LIGHT, "hazard", LedScene.HAZARD),
-            rule("reverse", LedLinkageTriggerType.GEAR, "R", LedScene.REVERSE_PARKING),
+            rule("hazard", LedLinkageTriggerType.LIGHT, "hazard", IpixelFaPreset.HAZARD_WARNING),
+            rule("reverse", LedLinkageTriggerType.GEAR, "R", IpixelFaPreset.REVERSING),
         )
 
         assertEquals(
-            LedScene.REVERSE_PARKING,
+            IpixelFaPreset.REVERSING,
             engine.evaluate(rules, LedVehicleSignals(gear = 2), 0L),
         )
         assertEquals(
-            LedScene.HAZARD,
+            IpixelFaPreset.HAZARD_WARNING,
             engine.evaluate(rules, LedVehicleSignals(gear = 2, turnSignalFlash = 6), 500L),
         )
         assertNull(
@@ -142,31 +144,27 @@ class LedLinkageEngineTest {
     }
 
     @Test
-    fun `default scene returns after every condition stays inactive for five seconds`() {
-        val engine = LedLinkageEngine(clearDelayMs = 5_000L)
+    fun `sequence completion does not emit an implicit fallback scene`() {
+        val engine = IpixelFaLinkageEngine()
         val rules = listOf(rule("left", LedLinkageTriggerType.LIGHT, "left_turn"))
 
         assertEquals(
-            LedScene.LEFT_TURN,
+            IpixelFaPreset.TURN_LEFT,
             engine.evaluate(rules, LedVehicleSignals(turnSignalFlash = 2), 0L),
         )
-        assertNull(engine.evaluate(rules, LedVehicleSignals(turnSignalFlash = 1), 5_000L))
-        assertNull(engine.evaluate(rules, LedVehicleSignals(turnSignalFlash = 1), 9_999L))
-        assertEquals(
-            LedScene.DEFAULT,
-            engine.evaluate(rules, LedVehicleSignals(turnSignalFlash = 1), 10_000L),
-        )
+        assertNull(engine.evaluate(rules, LedVehicleSignals(turnSignalFlash = 1), 1_000L))
+        assertNull(engine.evaluate(rules, LedVehicleSignals(turnSignalFlash = 1), 10_000L))
     }
 
     @Test
     fun `reset permits an active condition to trigger again`() {
-        val engine = LedLinkageEngine()
+        val engine = IpixelFaLinkageEngine()
         val rules = listOf(rule("left", LedLinkageTriggerType.LIGHT, "left_turn"))
         val active = LedVehicleSignals(turnSignalFlash = 2)
 
-        assertEquals(LedScene.LEFT_TURN, engine.evaluate(rules, active, 0L))
+        assertEquals(IpixelFaPreset.TURN_LEFT, engine.evaluate(rules, active, 0L))
         engine.reset()
-        assertEquals(LedScene.LEFT_TURN, engine.evaluate(rules, active, 1L))
+        assertEquals(IpixelFaPreset.TURN_LEFT, engine.evaluate(rules, active, 1L))
     }
 
     private fun assertTriggers(
@@ -175,21 +173,21 @@ class LedLinkageEngineTest {
         inactive: LedVehicleSignals,
         active: LedVehicleSignals,
     ) {
-        val engine = LedLinkageEngine()
+        val engine = IpixelFaLinkageEngine()
         val rules = listOf(rule("rule", type, condition))
         assertNull(engine.evaluate(rules, inactive, 0L))
-        assertEquals(LedScene.LEFT_TURN, engine.evaluate(rules, active, 1L))
+        assertEquals(IpixelFaPreset.TURN_LEFT, engine.evaluate(rules, active, 1L))
     }
 
     private fun rule(
         id: String,
         type: LedLinkageTriggerType,
         condition: String,
-        scene: LedScene = LedScene.LEFT_TURN,
-    ) = LedLinkageRule(
+        preset: IpixelFaPreset = IpixelFaPreset.TURN_LEFT,
+    ) = IpixelFaLinkageRule(
         id = id,
         triggerType = type,
         conditionValue = condition,
-        steps = listOf(LedLinkageStep(scene, 1)),
+        steps = listOf(IpixelFaLinkageStep(preset, 1)),
     )
 }

@@ -49,11 +49,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.byd.wjx.led.LedLinkageCatalog
-import com.byd.wjx.led.LedLinkageDefaults
-import com.byd.wjx.led.LedLinkageRule
-import com.byd.wjx.led.LedLinkageStep
 import com.byd.wjx.led.LedLinkageTriggerType
-import com.byd.wjx.led.LedScene
+import com.byd.wjx.led.ipixelfa.IpixelFaLinkageRule
+import com.byd.wjx.led.ipixelfa.IpixelFaLinkageRuleFactory
+import com.byd.wjx.led.ipixelfa.IpixelFaLinkageStep
+import com.byd.wjx.led.ipixelfa.IpixelFaPreset
 import com.byd.wjx.ui.components.bydSwitchColors
 import com.byd.wjx.ui.theme.AccentBlue
 import com.byd.wjx.ui.theme.AccentGreen
@@ -68,9 +68,9 @@ import java.util.UUID
 
 @Composable
 internal fun LedLinkageRulesSection(
-    rules: List<LedLinkageRule>,
-    currentScene: LedScene,
-    onSave: (LedLinkageRule) -> Boolean,
+    rules: List<IpixelFaLinkageRule>,
+    currentPreset: IpixelFaPreset?,
+    onSave: (IpixelFaLinkageRule) -> Boolean,
     onDelete: (String) -> Unit,
     onEnabledChange: (String, Boolean) -> Unit,
     onMove: (String, Int) -> Unit,
@@ -92,16 +92,23 @@ internal fun LedLinkageRulesSection(
                 Column(modifier = Modifier.weight(1f)) {
                     Text("智能联动规则", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                     Text(
-                        "当前画面：${currentScene.title}",
+                        "当前画面：${currentPreset?.title ?: "无"}",
                         color = AccentGreen,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                     )
+                    currentPreset?.let {
+                        Spacer(Modifier.size(6.dp))
+                        IpixelFaPresetPreview(
+                            preset = it,
+                            modifier = Modifier.widthIn(max = 180.dp),
+                        )
+                    }
                 }
                 Button(
                     onClick = {
                         editorState = LedRuleEditorState(
-                            rule = LedLinkageDefaults.newRule(UUID.randomUUID().toString()),
+                            rule = IpixelFaLinkageRuleFactory.newRule(UUID.randomUUID().toString()),
                             isNew = true,
                         )
                     },
@@ -153,7 +160,7 @@ internal fun LedLinkageRulesSection(
 
 @Composable
 private fun LedRuleRow(
-    rule: LedLinkageRule,
+    rule: IpixelFaLinkageRule,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     onEdit: () -> Unit,
@@ -177,7 +184,7 @@ private fun LedRuleRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                rule.steps.joinToString("  →  ") { "${it.scene.title} ${it.durationSeconds}秒" },
+                rule.steps.joinToString("  →  ") { "${it.preset.title} ${it.durationSeconds}秒" },
                 color = TextSecondary,
                 fontSize = 11.sp,
                 maxLines = 2,
@@ -212,10 +219,10 @@ private fun LedRuleRow(
 
 @Composable
 private fun LedRuleEditorDialog(
-    initialRule: LedLinkageRule,
+    initialRule: IpixelFaLinkageRule,
     isNew: Boolean,
     onDismiss: () -> Unit,
-    onSave: (LedLinkageRule) -> Boolean,
+    onSave: (IpixelFaLinkageRule) -> Boolean,
 ) {
     var draft by remember(initialRule.id) { mutableStateOf(initialRule) }
     var saveError by remember(initialRule.id) { mutableStateOf(false) }
@@ -265,7 +272,11 @@ private fun LedRuleEditorDialog(
                         OutlinedButton(
                             onClick = {
                                 if (draft.steps.size < 8) {
-                                    draft = draft.copy(steps = draft.steps + LedLinkageStep(LedScene.DEFAULT))
+                                    draft = draft.copy(
+                                        steps = draft.steps + IpixelFaLinkageStep(
+                                            IpixelFaPreset.TEMPORARY_STOP
+                                        )
+                                    )
                                 }
                             },
                             enabled = draft.steps.size < 8,
@@ -340,18 +351,18 @@ private fun LedRuleEditorDialog(
 }
 
 private data class LedRuleEditorState(
-    val rule: LedLinkageRule,
+    val rule: IpixelFaLinkageRule,
     val isNew: Boolean,
 )
 
 @Composable
 private fun LedStepEditor(
     index: Int,
-    step: LedLinkageStep,
+    step: IpixelFaLinkageStep,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     canDelete: Boolean,
-    onChange: (LedLinkageStep) -> Unit,
+    onChange: (IpixelFaLinkageStep) -> Unit,
     onMove: (Int) -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -380,11 +391,10 @@ private fun LedStepEditor(
                 )
             }
         }
-        ChoiceField(
-            label = "画面",
-            selected = step.scene,
-            options = LedScene.entries.map { it to it.title },
-        ) { onChange(step.copy(scene = it)) }
+        IpixelFaPresetChoiceField(
+            selected = step.preset,
+            onSelected = { onChange(step.copy(preset = it)) },
+        )
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("持续时间", color = TextSecondary, fontSize = 12.sp, modifier = Modifier.weight(1f))
             IconButton(
@@ -407,6 +417,64 @@ private fun LedStepEditor(
                 modifier = Modifier.size(32.dp),
             ) {
                 Icon(Icons.Outlined.Add, contentDescription = "增加一秒", modifier = Modifier.size(18.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun IpixelFaPresetChoiceField(
+    selected: IpixelFaPreset,
+    onSelected: (IpixelFaPreset) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = { expanded = true },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, CardBorder),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
+        ) {
+            IpixelFaPresetPreview(
+                preset = selected,
+                modifier = Modifier.size(width = 144.dp, height = 24.dp),
+            )
+            Spacer(Modifier.size(10.dp))
+            Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
+                Text("画面 ${selected.presetId.toString().padStart(2, '0')}", color = TextMuted, fontSize = 10.sp)
+                Text(selected.title, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            }
+            Icon(Icons.Outlined.ExpandMore, contentDescription = "展开画面", modifier = Modifier.size(18.dp))
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            IpixelFaPreset.entries.forEach { preset ->
+                DropdownMenuItem(
+                    text = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            IpixelFaPresetPreview(
+                                preset = preset,
+                                modifier = Modifier.size(width = 144.dp, height = 24.dp),
+                            )
+                            Column {
+                                Text(
+                                    text = preset.presetId.toString().padStart(2, '0'),
+                                    color = TextMuted,
+                                    fontSize = 10.sp,
+                                )
+                                Text(preset.title, color = TextPrimary, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    },
+                    onClick = {
+                        expanded = false
+                        onSelected(preset)
+                    },
+                )
             }
         }
     }

@@ -31,7 +31,21 @@ object BackupPreferencesRegistry {
         PreferenceFilePolicy("lyric_display_controls", "LyricDisplayPanelPreferences", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("sound_library", "SoundLibrary", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("wjx_sound_downloads", "SoundDownloadStore", PreferenceBackupPolicy.DEVICE_LOCAL),
-        PreferenceFilePolicy("wjx_led_link", "LedPreferences", PreferenceBackupPolicy.USER_CONFIGURATION),
+        PreferenceFilePolicy(
+            "wjx_led_ipixel_fa",
+            "IpixelFaPreferences",
+            PreferenceBackupPolicy.USER_CONFIGURATION,
+        ),
+        PreferenceFilePolicy(
+            "wjx_led_a950",
+            "A950Preferences",
+            PreferenceBackupPolicy.USER_CONFIGURATION,
+        ),
+        PreferenceFilePolicy(
+            "wjx_led_mafu",
+            "MafuPreferences",
+            PreferenceBackupPolicy.USER_CONFIGURATION,
+        ),
         PreferenceFilePolicy("wjx_energy_flow_stats", "EnergyFlowStatsStore", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("wjx_desktop_cards", "DesktopQuickCardRepository", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("wjx_cluster_card", "ClusterCardRepository", PreferenceBackupPolicy.USER_CONFIGURATION),

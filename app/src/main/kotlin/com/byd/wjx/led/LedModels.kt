@@ -1,92 +1,5 @@
 package com.byd.wjx.led
 
-/** Fixed firmware scenes exposed by the vehicle LED panel. */
-enum class LedScene(
-    val title: String,
-    val priority: Int,
-) {
-    DEFAULT("微笑", 0),
-    LEFT_TURN("左转", 70),
-    RIGHT_TURN("右转", 70),
-    TEMPORARY_STOP("临时停靠", 40),
-    REVERSE_PARKING("倒车入库", 90),
-    AUTOPILOT("自动驾驶", 60),
-    EXIT_VEHICLE("下车", 50),
-    HAZARD("双闪", 100),
-    BRAKE_WARNING("刹车提醒", 55),
-}
-
-enum class LedProtocolKind(
-    val shortTitle: String,
-    val title: String,
-    val description: String,
-) {
-    IPIXEL_FA("FA 标准", "标准 FA 协议", "FA 服务与遥控预设指令"),
-    A950("A950", "A950 协议", "A950 服务、初始化与周期保活"),
-    DUDU_FFF0("FFF0", "嘟嘟 FFF0 协议", "兼容快乐马夫、LedSpace 场景屏"),
-}
-
-enum class LedConnectionPhase {
-    DISABLED,
-    IDLE,
-    SCANNING,
-    CONNECTING,
-    DISCOVERING,
-    READY,
-    RETRYING,
-    ERROR,
-}
-
-data class LedDevice(
-    val address: String,
-    val name: String,
-    val rssi: Int,
-    val protocol: LedProtocolKind? = null,
-)
-
-data class LedConnectionState(
-    val phase: LedConnectionPhase = LedConnectionPhase.IDLE,
-    val address: String = "",
-    val name: String = "",
-    val protocol: LedProtocolKind? = null,
-    val message: String = "未连接",
-    val retryInSeconds: Int? = null,
-) {
-    val ready: Boolean get() = phase == LedConnectionPhase.READY
-}
-
-data class DuduFff0SceneCatalogState(
-    val scanning: Boolean = false,
-    val scannedSlots: Int = 0,
-    val availableSlots: Set<Int> = emptySet(),
-    val scanComplete: Boolean = false,
-    val error: String? = null,
-)
-
-data class LedProtocolPreference(
-    val enabled: Boolean = false,
-    val deviceAddress: String = "",
-    val deviceName: String = "",
-    val brightness: Int = 70,
-    val sceneSlots: Map<LedScene, Int> = emptyMap(),
-)
-
-data class LedPreferenceSnapshot(
-    val selectedProtocol: LedProtocolKind = LedProtocolKind.IPIXEL_FA,
-    val ipixelFa: LedProtocolPreference = LedProtocolPreference(),
-    val a950: LedProtocolPreference = LedProtocolPreference(),
-    val duduFff0: LedProtocolPreference = LedProtocolPreference(),
-    val rules: List<LedLinkageRule> = LedLinkageDefaults.rules,
-) {
-    fun protocol(kind: LedProtocolKind): LedProtocolPreference = when (kind) {
-        LedProtocolKind.IPIXEL_FA -> ipixelFa
-        LedProtocolKind.A950 -> a950
-        LedProtocolKind.DUDU_FFF0 -> duduFff0
-    }
-
-    val activeProtocol: LedProtocolPreference get() = protocol(selectedProtocol)
-}
-
 data class LedVehicleSignals(
     val speed: Int? = null,
     val turnSignalFlash: Int? = null,
@@ -103,13 +16,6 @@ data class LedVehicleSignals(
     val accelPedalDepth: Int? = null,
 )
 
-data class LedRuntimeState(
-    val currentScene: LedScene = LedScene.DEFAULT,
-    val lastSceneChangedAt: Long = 0L,
-    val lastCommandAt: Long = 0L,
-    val lastError: String? = null,
-)
-
 enum class LedLinkageTriggerType(val title: String) {
     SPEED("车速"),
     GEAR("挡位"),
@@ -123,37 +29,6 @@ data class LedLinkageConditionOption(
     val value: String,
     val title: String,
 )
-
-data class LedLinkageStep(
-    val scene: LedScene,
-    val durationSeconds: Int = 5,
-) {
-    fun normalized(): LedLinkageStep = copy(durationSeconds = durationSeconds.coerceIn(1, 60))
-}
-
-data class LedLinkageRule(
-    val id: String,
-    val enabled: Boolean = true,
-    val triggerType: LedLinkageTriggerType,
-    val conditionValue: String,
-    val steps: List<LedLinkageStep>,
-) {
-    val conditionTitle: String
-        get() = LedLinkageCatalog.options(triggerType)
-            .firstOrNull { it.value == conditionValue }
-            ?.title
-            ?: conditionValue
-
-    val title: String get() = "${triggerType.title} $conditionTitle"
-
-    fun normalized(): LedLinkageRule = copy(
-        conditionValue = conditionValue.takeIf {
-            value -> LedLinkageCatalog.options(triggerType).any { it.value == value }
-        } ?: LedLinkageCatalog.options(triggerType).first().value,
-        steps = steps.take(8).map(LedLinkageStep::normalized)
-            .ifEmpty { listOf(LedLinkageStep(LedScene.DEFAULT)) },
-    )
-}
 
 object LedLinkageCatalog {
     private val percentOptions = (10..90 step 10).map {
@@ -196,38 +71,4 @@ object LedLinkageCatalog {
 
     fun options(type: LedLinkageTriggerType): List<LedLinkageConditionOption> =
         checkNotNull(optionsByType[type])
-}
-
-object LedLinkageDefaults {
-    val rules: List<LedLinkageRule> = listOf(
-        rule("default_hazard", LedLinkageTriggerType.LIGHT, "hazard", LedScene.HAZARD),
-        rule("default_reverse", LedLinkageTriggerType.GEAR, "R", LedScene.REVERSE_PARKING),
-        rule("default_left_turn", LedLinkageTriggerType.LIGHT, "left_turn", LedScene.LEFT_TURN),
-        rule("default_right_turn", LedLinkageTriggerType.LIGHT, "right_turn", LedScene.RIGHT_TURN),
-        rule("default_brake", LedLinkageTriggerType.BRAKE, "gt_10", LedScene.BRAKE_WARNING),
-        rule("default_door_fl", LedLinkageTriggerType.DOOR, "front_left", LedScene.EXIT_VEHICLE),
-        rule("default_door_fr", LedLinkageTriggerType.DOOR, "front_right", LedScene.EXIT_VEHICLE),
-        rule("default_door_rl", LedLinkageTriggerType.DOOR, "rear_left", LedScene.EXIT_VEHICLE),
-        rule("default_door_rr", LedLinkageTriggerType.DOOR, "rear_right", LedScene.EXIT_VEHICLE),
-        rule("default_trunk", LedLinkageTriggerType.DOOR, "trunk", LedScene.EXIT_VEHICLE),
-    )
-
-    fun newRule(id: String): LedLinkageRule = LedLinkageRule(
-        id = id,
-        triggerType = LedLinkageTriggerType.SPEED,
-        conditionValue = LedLinkageCatalog.options(LedLinkageTriggerType.SPEED).first().value,
-        steps = listOf(LedLinkageStep(LedScene.TEMPORARY_STOP)),
-    )
-
-    private fun rule(
-        id: String,
-        type: LedLinkageTriggerType,
-        condition: String,
-        scene: LedScene,
-    ) = LedLinkageRule(
-        id = id,
-        triggerType = type,
-        conditionValue = condition,
-        steps = listOf(LedLinkageStep(scene)),
-    )
 }

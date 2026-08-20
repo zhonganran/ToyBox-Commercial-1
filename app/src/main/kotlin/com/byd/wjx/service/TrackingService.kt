@@ -52,7 +52,9 @@ class TrackingService : Service() {
     @Inject lateinit var cameraRuntimeCoordinator: CameraRuntimeCoordinator
     @Inject lateinit var steeringWheelRuntimeCoordinator: SteeringWheelRuntimeCoordinator
     @Inject lateinit var notificationController: TrackingNotificationController
-    @Inject lateinit var ledRuntimeCoordinator: com.byd.wjx.led.LedRuntimeCoordinator
+    @Inject lateinit var ipixelFaRuntimeCoordinator: com.byd.wjx.led.ipixelfa.IpixelFaRuntimeCoordinator
+    @Inject lateinit var a950RuntimeCoordinator: com.byd.wjx.led.a950.A950RuntimeCoordinator
+    @Inject lateinit var mafuRuntimeCoordinator: com.byd.wjx.led.mafu.MafuRuntimeCoordinator
     @Inject lateinit var desktopQuickCardRuntime: DesktopQuickCardRuntime
     @Inject lateinit var clusterCardRuntime: ClusterCardRuntime
 
@@ -122,7 +124,9 @@ class TrackingService : Service() {
         desktopQuickCardRuntime.start(serviceScope)
         clusterCardRuntime.start(serviceScope)
         lyricRuntime.start(cameraRuntimeCoordinator.active)
-        ledRuntimeCoordinator.start(serviceScope)
+        ipixelFaRuntimeCoordinator.start(serviceScope)
+        a950RuntimeCoordinator.start(serviceScope)
+        mafuRuntimeCoordinator.start(serviceScope)
         publishRunning(true)
         ChainLog.append(this, "TrackingService fully started")
         WjxFileLogger.i(TAG, "fully started")
@@ -171,7 +175,9 @@ class TrackingService : Service() {
         lyricRuntime.stop()
         clusterCardRuntime.stop()
         desktopQuickCardRuntime.stop()
-        ledRuntimeCoordinator.stop()
+        mafuRuntimeCoordinator.stop()
+        a950RuntimeCoordinator.stop()
+        ipixelFaRuntimeCoordinator.stop()
         cameraRuntimeCoordinator.stop()
         steeringWheelRuntimeCoordinator.stop()
         networkAvailableMonitor.stop()
@@ -253,8 +259,12 @@ class TrackingService : Service() {
 
             launch {
                 sharedAdaptiveLoop.actionFlow.collect { data ->
-                    runCatching { ledRuntimeCoordinator.onVehicleData(data) }
-                        .onFailure { WjxFileLogger.e(TAG, "LED linkage tick failed: ${it.message}", it) }
+                    runCatching { ipixelFaRuntimeCoordinator.onVehicleData(data) }
+                        .onFailure { WjxFileLogger.e(TAG, "FA LED linkage tick failed: ${it.message}", it) }
+                    runCatching { a950RuntimeCoordinator.onVehicleData(data) }
+                        .onFailure { WjxFileLogger.e(TAG, "A950 LED linkage tick failed: ${it.message}", it) }
+                    runCatching { mafuRuntimeCoordinator.onVehicleData(data) }
+                        .onFailure { WjxFileLogger.e(TAG, "Mafu LED linkage tick failed: ${it.message}", it) }
                 }
             }
 
