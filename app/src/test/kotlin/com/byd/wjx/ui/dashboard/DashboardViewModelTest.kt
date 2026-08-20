@@ -282,7 +282,7 @@ class DashboardViewModelTest {
     }
 
     @Test
-    fun `home ranges ignore reported values and change with energy and consumption`() = runTest {
+    fun `home ranges use reported vehicle values without consumption estimates`() = runTest {
         val vehicleStateRepository = FakeVehicleStateRepository()
         val vm = buildViewModel(
             fakeAutoservice = FakeAutoservice(sampleReading),
@@ -299,28 +299,37 @@ class DashboardViewModelTest {
                 fuelLevel = 50,
                 elecConPer100km = 18.0,
                 fuelConPer100km = 6.0,
-                elecDrivingRangeKm = 999,
-                fuelDrivingRangeKm = 999,
+                elecDrivingRangeKm = 231,
+                fuelDrivingRangeKm = 642,
             ),
         )
         testDispatcher.scheduler.advanceUntilIdle()
-        assertEquals(203, vm.uiState.value.estimatedElectricRangeKm)
-        assertEquals(500, vm.uiState.value.estimatedFuelRangeKm)
-        assertEquals(703, vm.uiState.value.estimatedCombinedRangeKm)
+        assertEquals(231, vm.uiState.value.electricRangeKm)
+        assertEquals(642, vm.uiState.value.fuelRangeKm)
+        assertEquals(873, vm.uiState.value.combinedRangeKm)
 
         vehicleStateRepository.update(
             diParsData(soc = 50).copy(
                 fuelLevel = 40,
                 elecConPer100km = 24.0,
                 fuelConPer100km = 10.0,
-                elecDrivingRangeKm = 999,
-                fuelDrivingRangeKm = 999,
             ),
         )
         testDispatcher.scheduler.advanceUntilIdle()
-        assertEquals(152, vm.uiState.value.estimatedElectricRangeKm)
-        assertEquals(240, vm.uiState.value.estimatedFuelRangeKm)
-        assertEquals(392, vm.uiState.value.estimatedCombinedRangeKm)
+        assertEquals(231, vm.uiState.value.electricRangeKm)
+        assertEquals(642, vm.uiState.value.fuelRangeKm)
+        assertEquals(873, vm.uiState.value.combinedRangeKm)
+
+        vehicleStateRepository.update(
+            diParsData().copy(
+                elecDrivingRangeKm = 205,
+                fuelDrivingRangeKm = 608,
+            ),
+        )
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(205, vm.uiState.value.electricRangeKm)
+        assertEquals(608, vm.uiState.value.fuelRangeKm)
+        assertEquals(813, vm.uiState.value.combinedRangeKm)
     }
 
     @Test

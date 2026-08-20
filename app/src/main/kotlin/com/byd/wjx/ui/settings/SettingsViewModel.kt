@@ -453,7 +453,7 @@ class SettingsViewModel @Inject constructor(
         _uiState.update { it.copy(fuelTankCapacity = value, capacitySaveStatus = null) }
     }
 
-    /** Atomically save both vehicle-specific capacities used by the home estimates. */
+    /** Atomically save capacities used for remaining-energy, trip-cost and charge statistics. */
     fun saveEnergyCapacities() {
         val state = _uiState.value
         val batteryCapacity = state.batteryCapacity.normalizedPositiveNumber()

@@ -1,6 +1,7 @@
 package com.byd.wjx.clustercard
 
 import com.byd.wjx.data.remote.DiParsData
+import com.byd.wjx.domain.vehicle.totalVehicleRangeKm
 import java.util.Locale
 import kotlin.math.abs
 
@@ -48,6 +49,7 @@ enum class ClusterCardMetric(
     FUEL_LEVEL("fuel_level", "剩余油量", "能耗"),
     ELECTRIC_RANGE("electric_range", "纯电续航", "能耗"),
     FUEL_RANGE("fuel_range", "燃油续航", "能耗"),
+    TOTAL_RANGE("total_range", "总续航", "能耗"),
     ELECTRIC_CONSUMPTION("electric_consumption", "百公里电耗", "能耗"),
     FUEL_CONSUMPTION("fuel_consumption", "百公里油耗", "能耗"),
     TRIP_ELECTRICITY("trip_electricity", "本次用电", "能耗"),
@@ -86,6 +88,10 @@ enum class ClusterCardMetric(
         FUEL_LEVEL -> base?.fuelLevel?.let { "$it%" }
         ELECTRIC_RANGE -> base?.elecDrivingRangeKm?.let { "$it km" }
         FUEL_RANGE -> base?.fuelDrivingRangeKm?.let { "$it km" }
+        TOTAL_RANGE -> totalVehicleRangeKm(
+            base?.elecDrivingRangeKm,
+            base?.fuelDrivingRangeKm,
+        )?.let { "$it km" }
         ELECTRIC_CONSUMPTION -> base?.elecConPer100km?.let { decimal(it, "kWh/100km") }
         FUEL_CONSUMPTION -> base?.fuelConPer100km?.let { decimal(it, "L/100km") }
         TRIP_ELECTRICITY -> base?.currentTripElecKwh?.let { decimal(it, "kWh") }

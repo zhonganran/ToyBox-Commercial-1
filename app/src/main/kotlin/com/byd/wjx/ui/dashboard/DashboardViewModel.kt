@@ -19,7 +19,6 @@ import com.byd.wjx.data.system.SystemMetricsReader
 import com.byd.wjx.data.system.SystemMetricsSnapshot
 import com.byd.wjx.domain.calculator.ConsumptionAggregator
 import com.byd.wjx.domain.calculator.ConsumptionState
-import com.byd.wjx.domain.calculator.HomeRangeEstimator
 import com.byd.wjx.domain.calculator.Trend
 import com.byd.wjx.domain.insight.LocalInsightEngine
 import com.byd.wjx.domain.insight.LocalInsightResult
@@ -27,6 +26,7 @@ import com.byd.wjx.domain.insight.LocalInsightStatsAggregator
 import com.byd.wjx.domain.energy.EnergyFlowCategory
 import com.byd.wjx.domain.energy.EnergyFlowStats
 import com.byd.wjx.domain.energy.EnergyFlowTotals
+import com.byd.wjx.domain.vehicle.totalVehicleRangeKm
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -89,10 +89,9 @@ data class DashboardUiState(
     val systemMetricsSampleCount: Int = 0,
     val idleDrainKwhWeek: Double = 0.0,
     val idleDrainHoursWeek: Double = 0.0,
-    val estimatedRangeKm: Double? = null,
-    val estimatedElectricRangeKm: Int? = null,
-    val estimatedFuelRangeKm: Int? = null,
-    val estimatedCombinedRangeKm: Int? = null,
+    val electricRangeKm: Int? = null,
+    val fuelRangeKm: Int? = null,
+    val combinedRangeKm: Int? = null,
     val fuelLevel: Int? = null,
     val batteryRemainingKwh: Double? = null,
     val fuelRemainingLiters: Double? = null,
@@ -330,7 +329,6 @@ class DashboardViewModel @Inject constructor(
         val dataUpdatedAt: Long?,
         val running: Boolean,
         val connected: Boolean,
-        val rangeKm: Double?,
         val sessionStartedAt: Long?,
         val tripDistanceKm: Double?,
         val consumption: ConsumptionState,
@@ -386,7 +384,6 @@ class DashboardViewModel @Inject constructor(
                     connected = vehicleState.connected &&
                         vehicleState.freshness == VehicleDataFreshness.FRESH,
                     running = trackingState.isRunning,
-                    rangeKm = trackingState.rangeKm,
                     sessionStartedAt = trackingState.sessionStartedAt,
                     tripDistanceKm = trackingState.tripDistanceKm,
                     consumption = metrics.consumption,
@@ -400,11 +397,12 @@ class DashboardViewModel @Inject constructor(
                 val data = snapshot.data
                 val running = snapshot.running
                 val connected = snapshot.connected
-                val rangeKm = snapshot.rangeKm
-
                 _uiState.update { current ->
                     val newSoc = data?.soc ?: current.soc
                     val newFuelLevel = data?.fuelLevel ?: current.fuelLevel
+                    val electricRangeKm = data?.elecDrivingRangeKm ?: current.electricRangeKm
+                    val fuelRangeKm = data?.fuelDrivingRangeKm ?: current.fuelRangeKm
+                    val combinedRangeKm = totalVehicleRangeKm(electricRangeKm, fuelRangeKm)
                     val batteryRemaining = remainingAmount(newSoc, snapshot.batteryCapacityKwh)
                     val fuelRemaining = remainingAmount(newFuelLevel, snapshot.fuelTankCapacityLiters)
                     val electricConsumption = snapshot.consumption.displayValue
@@ -412,13 +410,6 @@ class DashboardViewModel @Inject constructor(
                         ?: current.elecConPer100km
                     val fuelConsumption = data?.fuelConPer100km.validFuelConsumption()
                         ?: current.fuelConPer100km
-                    val ranges = HomeRangeEstimator.estimate(
-                        dynamicElectricKm = rangeKm,
-                        remainingBatteryKwh = batteryRemaining,
-                        electricConsumptionPer100Km = electricConsumption,
-                        remainingFuelLiters = fuelRemaining,
-                        fuelConsumptionPer100Km = fuelConsumption,
-                    )
                     val tripElecKwh = data?.currentTripElecKwh ?: current.currentTripElecKwh
                     val tripFuelL = data?.currentTripFuelL ?: current.currentTripFuelL
                     current.copy(
@@ -441,10 +432,9 @@ class DashboardViewModel @Inject constructor(
                         exteriorTemp = data?.exteriorTemp ?: current.exteriorTemp,
                         batteryHealthStatus = calculateBatteryStatus(data, current),
                         voltage12vStatus = calculate12vStatus(data?.voltage12v ?: current.voltage12v),
-                        estimatedRangeKm = rangeKm ?: current.estimatedRangeKm,
-                        estimatedElectricRangeKm = ranges.electricKm,
-                        estimatedFuelRangeKm = ranges.fuelKm,
-                        estimatedCombinedRangeKm = ranges.combinedKm,
+                        electricRangeKm = electricRangeKm,
+                        fuelRangeKm = fuelRangeKm,
+                        combinedRangeKm = combinedRangeKm,
                         fuelLevel = newFuelLevel,
                         batteryRemainingKwh = batteryRemaining,
                         fuelRemainingLiters = fuelRemaining,

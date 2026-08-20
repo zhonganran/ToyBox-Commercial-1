@@ -227,6 +227,8 @@ class NativeParsReader @Inject constructor(
         fun <T> field(name: String): T? = decoded[name] as? T
         fun intField(name: String): Int? = field<Int>(name)
         fun doubleField(name: String): Double? = field<Double>(name)
+        fun rangeKmField(name: String, maximum: Int): Int? =
+            intField(name)?.takeIf { it in 0..maximum }
         fun percentField(name: String): Int? = intField(name)?.takeIf { it in 0..100 }
         fun consumptionField(name: String): Double? = doubleField(name)?.takeIf { it in 0.0..100.0 }
         fun tripEnergyField(name: String): Double? = doubleField(name)?.takeIf { it in 0.0..500.0 }
@@ -340,6 +342,8 @@ class NativeParsReader @Inject constructor(
             drl                 = intField("drl"),
             adasApaParkingStatus = intField("adasApaParkingStatus"),
             fuelLevel           = percentField("fuelLevel"),
+            elecDrivingRangeKm  = rangeKmField("elecDrivingRangeKm", MAX_ELECTRIC_RANGE_KM),
+            fuelDrivingRangeKm  = rangeKmField("fuelDrivingRangeKm", MAX_FUEL_RANGE_KM),
             elecConPer100km     = consumptionField("elecConPer100km"),
             fuelConPer100km     = consumptionField("fuelConPer100km"),
             currentTripElecKwh  = tripEnergyField("currentTripElecKwh"),
@@ -427,6 +431,8 @@ class NativeParsReader @Inject constructor(
         private const val DETAIL_REFRESH_INTERVAL_NANOS = 3_000_000_000L
         private const val MAX_ENGINE_RPM = 8_000
         private const val MAX_MOTOR_RPM = 50_000
+        private const val MAX_ELECTRIC_RANGE_KM = 1_500
+        private const val MAX_FUEL_RANGE_KM = 2_500
         private const val GEAR_PARK = 1
         private const val GEAR_NEUTRAL = 3
         private val UNAVAILABLE_RAW_READ = com.byd.wjx.data.vehicle.VehicleRawRead(

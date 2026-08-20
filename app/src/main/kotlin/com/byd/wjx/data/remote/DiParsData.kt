@@ -78,7 +78,7 @@ data class DiParsData(
     val turnSignalLeft: Int? = null,     // 0=off, 1=on
     val turnSignalRight: Int? = null,    // 0=off, 1=on
     // Validated comfort/light reads. These fields are selected on demand by enabled
-    // automations and stay out of the regular 71-FID full snapshot.
+    // automations and stay out of the regular 73-FID full snapshot.
     val acCtrlMode: Int? = null,
     val acDefrostFront: Int? = null,
     val acWindMode: Int? = null,

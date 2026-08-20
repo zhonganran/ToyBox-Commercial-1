@@ -227,6 +227,27 @@ class NativeParsReaderTest {
     }
 
     @Test
+    fun `instrument range fids are exposed as real vehicle values`() = runTest {
+        fun entry(field: String) = FidMap.entries.single { it.field == field }
+        val mileage = entry("mileage")
+        val electricRange = entry("elecDrivingRangeKm")
+        val fuelRange = entry("fuelDrivingRangeKm")
+        val gateway = FakeVehicleGateway().apply {
+            intValues[mileage.device to mileage.fid] = 10_000
+            intValues[electricRange.device to electricRange.fid] = 186
+            intValues[fuelRange.device to fuelRange.fid] = 742
+        }
+        val settings = mockk<SettingsRepository>()
+        coEvery { settings.getBatteryCapacity() } returns 72.9
+
+        val data = NativeParsReader(gateway, settings, noAdditionalActionFields)
+            .fetchVehicleSnapshot()?.data
+
+        assertEquals(186, data?.elecDrivingRangeKm)
+        assertEquals(742, data?.fuelDrivingRangeKm)
+    }
+
+    @Test
     fun `charge gun unknown sentinel zero remains available`() = runTest {
         val mileageEntry = FidMap.entries.single { it.field == "mileage" }
         val chargeGunEntry = FidMap.entries.single { it.field == "chargeGunState" }
@@ -477,7 +498,7 @@ class NativeParsReaderTest {
         assertEquals(18, initial?.data?.insideTemp)
         assertEquals(1, gateway.batchHistory.size)
         assertEquals(VehicleReadProfiles.regularFull.size, gateway.batchHistory.single().size)
-        assertEquals(71, gateway.batchHistory.single().size)
+        assertEquals(73, gateway.batchHistory.single().size)
         assertTrue(
             gateway.batchHistory.single().none { spec ->
                 FidMap.entries.any {

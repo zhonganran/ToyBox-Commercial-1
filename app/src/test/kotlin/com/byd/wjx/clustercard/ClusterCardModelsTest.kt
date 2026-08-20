@@ -1,5 +1,6 @@
 package com.byd.wjx.clustercard
 
+import com.byd.wjx.data.remote.diParsData
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -47,6 +48,25 @@ class ClusterCardModelsTest {
         )
 
         assertEquals(setOf("engineRpm", "waterTemp"), ClusterCardMetricCatalog.telemetryFields(config))
+    }
+
+    @Test
+    fun `range metrics render vehicle readings and their exact total`() {
+        val data = diParsData().copy(
+            elecDrivingRangeKm = 188,
+            fuelDrivingRangeKm = 702,
+        )
+
+        assertEquals("188 km", ClusterCardMetric.ELECTRIC_RANGE.displayValue(data, null))
+        assertEquals("702 km", ClusterCardMetric.FUEL_RANGE.displayValue(data, null))
+        assertEquals("890 km", ClusterCardMetric.TOTAL_RANGE.displayValue(data, null))
+        assertEquals(
+            "188 km",
+            ClusterCardMetric.TOTAL_RANGE.displayValue(
+                data.copy(fuelDrivingRangeKm = null),
+                null,
+            ),
+        )
     }
 
     @Test

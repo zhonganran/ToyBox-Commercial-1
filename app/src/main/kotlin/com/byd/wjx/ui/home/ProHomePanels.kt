@@ -79,9 +79,9 @@ internal fun HomeMetricRibbon(
     compact: Boolean = false,
 ) {
     val metrics = listOf(
-        RibbonMetric("预估电续航", state.estimatedElectricRangeKm?.toString() ?: "--", "km", Icons.Outlined.EvStation, SceneMint, rangeProgress(state.estimatedElectricRangeKm, 320)),
-        RibbonMetric("预估油续航", state.estimatedFuelRangeKm?.toString() ?: "--", "km", Icons.Outlined.LocalGasStation, SceneBlue, rangeProgress(state.estimatedFuelRangeKm, 800)),
-        RibbonMetric("预估总续航", state.estimatedCombinedRangeKm?.toString() ?: "--", "km", Icons.Outlined.Route, SceneViolet, rangeProgress(state.estimatedCombinedRangeKm, 1200)),
+        RibbonMetric("纯电续航", state.electricRangeKm?.toString() ?: "--", "km", Icons.Outlined.EvStation, SceneMint, rangeProgress(state.electricRangeKm, 320)),
+        RibbonMetric("燃油续航", state.fuelRangeKm?.toString() ?: "--", "km", Icons.Outlined.LocalGasStation, SceneBlue, rangeProgress(state.fuelRangeKm, 800)),
+        RibbonMetric("总续航", state.combinedRangeKm?.toString() ?: "--", "km", Icons.Outlined.Route, SceneViolet, rangeProgress(state.combinedRangeKm, 1200)),
         RibbonMetric(
             label = "油量",
             value = state.fuelLevel?.toString() ?: "--",
