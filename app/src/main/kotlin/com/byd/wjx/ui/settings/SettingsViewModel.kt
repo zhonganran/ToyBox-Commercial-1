@@ -8,6 +8,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import com.byd.wjx.BuildConfig
 import com.byd.wjx.activation.ActivationManager
+import com.byd.wjx.activation.ActivationPaymentOrder
 import com.byd.wjx.activation.ActivationSnapshot
 import com.byd.wjx.activation.PremiumFeature
 import com.byd.wjx.data.backup.BackupManager
@@ -37,6 +38,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -78,6 +80,7 @@ class SettingsViewModel @Inject constructor(
 
     // Tracks the in-flight update download so "Close" can cancel it (issue #23).
     private var downloadJob: Job? = null
+    private var activationPaymentJob: Job? = null
     private var availableUpdate: UpdateChecker.UpdateInfo? = null
 
     private fun getVersion(): String = try {
@@ -381,6 +384,79 @@ class SettingsViewModel @Inject constructor(
             } else {
                 refreshLockSoundState(status = null)
             }
+        }
+    }
+
+    fun startActivationPayment(paymentType: String) {
+        activationPaymentJob?.cancel()
+        activationPaymentJob = viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    activationPaymentLoading = true,
+                    activationPaymentMessage = "正在创建安全支付订单",
+                    activationPaymentOrder = null,
+                )
+            }
+            val order = runCatching { activationManager.createPayment(paymentType) }
+                .getOrElse { error ->
+                    _uiState.update {
+                        it.copy(
+                            activationPaymentLoading = false,
+                            activationPaymentMessage = error.message ?: "创建支付订单失败",
+                        )
+                    }
+                    activationPaymentJob = null
+                    return@launch
+                }
+            _uiState.update {
+                it.copy(
+                    activationPaymentOrder = order,
+                    activationPaymentLoading = false,
+                    activationPaymentMessage = "请扫码支付，到账后会自动激活",
+                )
+            }
+            pollActivationPayment(order)
+            activationPaymentJob = null
+        }
+    }
+
+    private suspend fun pollActivationPayment(order: ActivationPaymentOrder) {
+        while (currentCoroutineContext().isActive) {
+            delay(ACTIVATION_PAYMENT_POLL_MS)
+            val result = try {
+                activationManager.checkPayment(order)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                _uiState.update {
+                    it.copy(activationPaymentMessage = error.message ?: "查询支付状态失败，正在重试")
+                }
+                continue
+            }
+            _uiState.update {
+                it.copy(
+                    activation = result.snapshot,
+                    activationPaymentLoading = false,
+                    activationPaymentMessage = result.message,
+                )
+            }
+            if (result.paid) {
+                syncLockSoundConfig("payment_activation_success")
+                return
+            }
+            if (result.status == "expired" || result.status == "failed") return
+        }
+    }
+
+    fun dismissActivationPayment() {
+        activationPaymentJob?.cancel()
+        activationPaymentJob = null
+        _uiState.update {
+            it.copy(
+                activationPaymentOrder = null,
+                activationPaymentLoading = false,
+                activationPaymentMessage = null,
+            )
         }
     }
 
@@ -779,6 +855,10 @@ class SettingsViewModel @Inject constructor(
                 downloadJob = null
             }
         }
+    }
+
+    private companion object {
+        const val ACTIVATION_PAYMENT_POLL_MS = 2_500L
     }
 
 }

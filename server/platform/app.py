@@ -2,9 +2,11 @@ import os
 import hashlib
 import json
 import secrets
+import sqlite3
 import time
 import wave
 from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from html import escape
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -44,6 +46,11 @@ from platform_config import (
     MAX_SERVICE_QR_SIZE,
     MAX_UPLOAD_SIZE,
     PASSWORD_HASH_METHOD,
+    PAYMENT_ACTIVATION_PRICE,
+    PAYMENT_ORDER_TTL_SECONDS,
+    PAYMENT_PID,
+    PAYMENT_QUERY_INTERVAL_SECONDS,
+    PAYMENT_SITE_NAME,
     PUBLIC_API_BASE_URL,
     PUBLIC_CDN_BASE_URL,
     SERVICE_QR_DIR,
@@ -68,6 +75,14 @@ from platform_license import (
     parse_utc,
     sign_offline_license,
     verify_offline_license_proof,
+)
+from platform_payment import (
+    PaymentConfigurationError,
+    PaymentProviderError,
+    create_order as create_provider_order,
+    payment_ready,
+    query_order as query_provider_order,
+    verify_params as verify_payment_params,
 )
 from platform_storage import configured_admin_credentials, db, init_db, utc_datetime, utc_now
 
@@ -529,6 +544,7 @@ def page(title, active, body):
         ("updates", "更新管理", url_for("updates"), "U"),
         ("sounds", "音效库", url_for("sounds"), "S"),
         ("licenses", "激活授权", url_for("licenses"), "L"),
+        ("payments", "支付订单", url_for("payment_orders"), "P"),
         ("service", "服务授权", url_for("service_qrcodes"), "Q"),
         ("vehicles", "车辆在线", url_for("vehicles"), "V"),
         ("diagnostic_logs", "诊断日志", url_for("diagnostic_logs"), "G"),
@@ -1196,6 +1212,53 @@ def delete_license(code_id):
             refresh_cached_device_activation(conn, row["device_code"])
         log_event(conn, "license", f"删除激活码 #{code_id}")
     return redirect(url_for("licenses"))
+
+
+@app.get("/payments")
+def payment_orders():
+    guard = require_login()
+    if guard:
+        return guard
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM payment_orders ORDER BY id DESC LIMIT 300"
+        ).fetchall()
+        counts = {
+            row["status"]: row["count"]
+            for row in conn.execute(
+                "SELECT status, COUNT(*) AS count FROM payment_orders GROUP BY status"
+            ).fetchall()
+        }
+    status_labels = {
+        "pending": ("待支付", "orange"),
+        "paid": ("已支付", "green"),
+        "failed": ("下单失败", "red"),
+        "expired": ("已过期", "gray"),
+    }
+    order_rows = "".join(
+        f"""
+<div class="data-row payment-row">
+  <span class="mono">{h(row["out_trade_no"])}</span>
+  <span>{h("支付宝" if row["payment_type"] == "alipay" else "微信支付")}</span>
+  <span>{int(row["expected_amount_cents"]) / 100:.2f} 元</span>
+  <span class="mono">{h(row["device_code"])}</span>
+  <span>{status_badge(*status_labels.get(row["status"], (row["status"], "gray")))}</span>
+  <span>{h(row["paid_at"] or row["created_at"])}</span>
+</div>"""
+        for row in rows
+    ) or '<p class="empty">暂无支付订单</p>'
+    body = f"""
+<section class="metric-grid three">
+  <article class="metric"><span>待支付</span><b>{counts.get("pending", 0)}</b><small>等待用户扫码</small></article>
+  <article class="metric"><span>已支付</span><b>{counts.get("paid", 0)}</b><small>已自动绑定授权</small></article>
+  <article class="metric"><span>异常订单</span><b>{counts.get("failed", 0) + counts.get("expired", 0)}</b><small>下单失败或超时</small></article>
+</section>
+<section class="panel">
+  <div class="panel-title"><div><h2>易支付 V2 订单</h2><p>平台验签并主动查单后才会自动激活，客户端支付状态不能直接改变授权。</p></div>{status_badge("RSA 双向签名", "green")}</div>
+  <div class="data-table payment-table"><div class="data-row table-head"><span>商户订单号</span><span>支付方式</span><span>金额</span><span>车架号</span><span>状态</span><span>时间</span></div>{order_rows}</div>
+</section>
+"""
+    return page("支付订单", "payments", body)
 
 
 @app.get("/vehicles")
@@ -1892,6 +1955,268 @@ def device_license_payload(
     return result
 
 
+PAYMENT_TYPES = {
+    "alipay": "支付宝",
+    "wxpay": "微信支付",
+}
+
+
+def payment_amount_cents(value=None):
+    raw = PAYMENT_ACTIVATION_PRICE if value is None else value
+    try:
+        amount = Decimal(str(raw)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise PaymentConfigurationError("payment activation price is invalid") from exc
+    cents = int(amount * 100)
+    if cents <= 0:
+        raise PaymentConfigurationError("payment activation price must be positive")
+    return cents
+
+
+def payment_amount_text(cents):
+    return f"{int(cents) / 100:.2f}"
+
+
+def payment_order_number():
+    stamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    return f"WJX{stamp}{secrets.token_hex(5).upper()}"
+
+
+def payment_expiry_iso():
+    return (
+        utc_datetime() + timedelta(seconds=PAYMENT_ORDER_TTL_SECONDS)
+    ).replace(microsecond=0).isoformat() + "Z"
+
+
+def payment_poll_token_matches(order, token):
+    expected = str(order["poll_token_hash"] or "")
+    candidate = device_token_hash(token) if token else ""
+    return bool(expected and candidate and secrets.compare_digest(expected, candidate))
+
+
+def payment_device_authorized(conn, order, presented_token):
+    try:
+        aliases = json.loads(order["device_codes_json"] or "[]")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        aliases = []
+    codes = list(dict.fromkeys([order["device_code"], *aliases]))
+    rows = conn.execute(
+        f"SELECT * FROM devices WHERE device_code IN ({sql_placeholders(codes)})",
+        codes,
+    ).fetchall()
+    return bool(presented_token and any(device_token_matches(row, presented_token) for row in rows))
+
+
+def payment_order_client_payload(order, poll_token=""):
+    result = {
+        "success": True,
+        "orderNo": order["out_trade_no"],
+        "paymentType": order["payment_type"],
+        "paymentName": PAYMENT_TYPES.get(order["payment_type"], order["payment_type"]),
+        "payType": order["pay_payload_type"],
+        "payInfo": order["pay_info"],
+        "amount": payment_amount_text(order["expected_amount_cents"]),
+        "status": order["status"],
+        "paid": order["status"] == "paid",
+        "expiresAt": epoch_millis(order["expires_at"]),
+    }
+    if poll_token:
+        result["pollToken"] = poll_token
+    return result
+
+
+def provider_result_matches_order(result, order, require_paid=False):
+    if str(result.get("pid") or "") != PAYMENT_PID:
+        return False, "支付平台商户号不匹配"
+    if str(result.get("out_trade_no") or "") != order["out_trade_no"]:
+        return False, "支付平台订单号不匹配"
+    if require_paid and "money" not in result:
+        return False, "支付平台回包缺少金额"
+    if "money" in result:
+        try:
+            paid_cents = payment_amount_cents(result.get("money"))
+        except PaymentConfigurationError:
+            return False, "支付平台金额格式错误"
+        if paid_cents != int(order["expected_amount_cents"]):
+            return False, "支付金额不匹配"
+    if require_paid and str(result.get("status") or "0") != "1":
+        return False, "订单尚未支付"
+    return True, ""
+
+
+def ensure_payment_license(conn, order, provider_result, payload_hash=""):
+    current = conn.execute(
+        "SELECT * FROM payment_orders WHERE id = ?",
+        (order["id"],),
+    ).fetchone()
+    if current is None:
+        raise RuntimeError("payment order disappeared")
+    if current["status"] == "paid" and current["license_code_id"]:
+        return current
+
+    try:
+        aliases = json.loads(current["device_codes_json"] or "[]")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        aliases = []
+    device_codes = list(dict.fromkeys([current["device_code"], *aliases]))
+    license_row = license_for_device_codes(conn, device_codes)
+    now = utc_now()
+    if license_row is None:
+        for _attempt in range(20):
+            code = generate_license_code()
+            try:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO license_codes
+                        (code, device_code, raw_device_code, note, enabled, activated_at, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+                    """,
+                    (
+                        code,
+                        current["device_code"],
+                        current["raw_device_code"],
+                        f"扫码支付 {current['out_trade_no']}",
+                        now,
+                        now,
+                        now,
+                    ),
+                )
+                license_row = conn.execute(
+                    "SELECT * FROM license_codes WHERE id = ?",
+                    (cursor.lastrowid,),
+                ).fetchone()
+                break
+            except sqlite3.IntegrityError:
+                continue
+    if license_row is None:
+        raise RuntimeError("unable to create payment license")
+
+    upsert_device_group(
+        conn,
+        device_codes,
+        current["raw_device_code"],
+        current["app_version"],
+        current["package_name"],
+        True,
+    )
+    conn.execute(
+        """
+        UPDATE payment_orders
+        SET provider_trade_no = ?, paid_amount_cents = ?, status = 'paid',
+            license_code_id = ?, notify_payload_hash = ?, paid_at = COALESCE(paid_at, ?),
+            last_provider_query_at = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            str(provider_result.get("trade_no") or current["provider_trade_no"]),
+            int(current["expected_amount_cents"]),
+            license_row["id"],
+            payload_hash or current["notify_payload_hash"],
+            now,
+            now,
+            now,
+            current["id"],
+        ),
+    )
+    log_event(
+        conn,
+        "payment",
+        f"订单 {current['out_trade_no']} 支付成功，车辆 {current['device_code']} 已自动激活",
+        request.remote_addr,
+    )
+    return conn.execute(
+        "SELECT * FROM payment_orders WHERE id = ?",
+        (current["id"],),
+    ).fetchone()
+
+
+def refresh_payment_order_from_provider(out_trade_no, payload_hash=""):
+    with db() as conn:
+        order = conn.execute(
+            "SELECT * FROM payment_orders WHERE out_trade_no = ?",
+            (out_trade_no,),
+        ).fetchone()
+        if order is None:
+            return None
+        if order["status"] == "paid":
+            return order
+    result = query_provider_order(out_trade_no)
+    matched, message = provider_result_matches_order(result, order)
+    if not matched:
+        raise PaymentProviderError(message)
+    with db() as conn:
+        current = conn.execute(
+            "SELECT * FROM payment_orders WHERE out_trade_no = ?",
+            (out_trade_no,),
+        ).fetchone()
+        if current is None:
+            return None
+        if str(result.get("status") or "0") == "1":
+            matched, message = provider_result_matches_order(result, current, require_paid=True)
+            if not matched:
+                raise PaymentProviderError(message)
+            return ensure_payment_license(conn, current, result, payload_hash)
+        now = utc_now()
+        conn.execute(
+            "UPDATE payment_orders SET last_provider_query_at = ?, updated_at = ? WHERE id = ?",
+            (now, now, current["id"]),
+        )
+        return conn.execute(
+            "SELECT * FROM payment_orders WHERE id = ?",
+            (current["id"],),
+        ).fetchone()
+
+
+def paid_payment_payload(conn, order, presented_token):
+    try:
+        aliases = json.loads(order["device_codes_json"] or "[]")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        aliases = []
+    device_codes = list(dict.fromkeys([order["device_code"], *aliases]))
+    license_row = conn.execute(
+        "SELECT * FROM license_codes WHERE id = ? AND enabled = 1",
+        (order["license_code_id"],),
+    ).fetchone()
+    if license_row is None:
+        return {
+            "success": False,
+            "paid": True,
+            "status": "paid",
+            "activated": False,
+            "message": "支付已到账，但授权生成异常，请联系客服",
+        }
+    result = device_license_payload(
+        conn,
+        order["device_code"],
+        order["raw_device_code"],
+        order["app_version"],
+        order["package_name"],
+        True,
+        device_codes=device_codes,
+        credential_requested=True,
+        presented_token=presented_token,
+    )
+    activated_at_iso, activated_at_ms = license_row_activated_at(conn, license_row)
+    result.update({
+        "paid": True,
+        "status": "paid",
+        "orderNo": order["out_trade_no"],
+        "activatedAt": activated_at_ms,
+        "activatedAtIso": activated_at_iso,
+        "activationCodeMasked": mask_license_code(license_row["code"]),
+        "message": "支付成功，永久授权已自动激活",
+    })
+    offline_license = build_offline_license(
+        device_codes,
+        order["package_name"],
+        license_row["code"],
+        activated_at_ms,
+    )
+    if offline_license is not None:
+        result["offlineLicense"] = offline_license
+    return result
+
+
 @app.post("/api/v1/license/status")
 def api_license_status():
     payload = request.get_json(silent=True) or {}
@@ -2034,6 +2359,237 @@ def api_license_activate():
         if offline_license is not None:
             result["offlineLicense"] = offline_license
     return jsonify(result)
+
+
+@app.post("/api/v1/license/payment/create")
+def api_payment_create():
+    payload = request.get_json(silent=True) or {}
+    payment_type = str(payload.get("paymentType") or "").strip().lower()
+    device_codes = collect_device_codes(payload)
+    device_code = device_codes[0] if device_codes else ""
+    raw_device = str(payload.get("rawDeviceCode") or "")
+    app_version = str(payload.get("appVersion") or "")[:64]
+    package_name = str(payload.get("packageName") or "")[:160]
+    presented_token = request_device_token()
+    if payment_type not in PAYMENT_TYPES:
+        return jsonify({"success": False, "message": "请选择支付宝或微信支付"}), 400
+    if not device_code:
+        return jsonify({"success": False, "message": "未读取到车架号，暂时无法创建订单"}), 400
+    try:
+        expected_cents = payment_amount_cents()
+        if not payment_ready():
+            raise PaymentConfigurationError("payment RSA keys are not configured")
+    except PaymentConfigurationError:
+        return jsonify({"success": False, "message": "支付服务尚未完成配置"}), 503
+
+    poll_token = secrets.token_urlsafe(32)
+    with db() as conn:
+        device_rows = conn.execute(
+            f"SELECT * FROM devices WHERE device_code IN ({sql_placeholders(device_codes)})",
+            device_codes,
+        ).fetchall()
+        if not presented_token or not any(
+            device_token_matches(row, presented_token) for row in device_rows
+        ):
+            return jsonify({"success": False, "message": "设备身份已失效，请刷新授权状态后重试"}), 401
+        if license_for_device_codes(conn, device_codes) is not None:
+            return jsonify({"success": False, "message": "当前车辆已经永久激活，无需重复购买"}), 409
+        reusable = conn.execute(
+            f"""
+            SELECT * FROM payment_orders
+            WHERE device_code IN ({sql_placeholders(device_codes)})
+              AND payment_type = ? AND status = 'pending' AND expires_at > ?
+              AND pay_info != ''
+            ORDER BY id DESC LIMIT 1
+            """,
+            (*device_codes, payment_type, utc_now()),
+        ).fetchone()
+        if reusable is not None:
+            conn.execute(
+                "UPDATE payment_orders SET poll_token_hash = ?, updated_at = ? WHERE id = ?",
+                (device_token_hash(poll_token), utc_now(), reusable["id"]),
+            )
+            refreshed = conn.execute(
+                "SELECT * FROM payment_orders WHERE id = ?",
+                (reusable["id"],),
+            ).fetchone()
+            return jsonify(payment_order_client_payload(refreshed, poll_token))
+
+        out_trade_no = payment_order_number()
+        now = utc_now()
+        expires_at = payment_expiry_iso()
+        title = f"{PAYMENT_SITE_NAME}永久授权"
+        conn.execute(
+            """
+            INSERT INTO payment_orders
+                (out_trade_no, device_code, raw_device_code, device_codes_json,
+                 app_version, package_name, payment_type, title, expected_amount_cents,
+                 poll_token_hash, created_at, expires_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                out_trade_no,
+                device_code,
+                raw_device,
+                json.dumps(device_codes, ensure_ascii=True, separators=(",", ":")),
+                app_version,
+                package_name,
+                payment_type,
+                title,
+                expected_cents,
+                device_token_hash(poll_token),
+                now,
+                expires_at,
+                now,
+            ),
+        )
+
+    try:
+        provider = create_provider_order({
+            "type": payment_type,
+            "method": "scan",
+            "device": "pc",
+            "out_trade_no": out_trade_no,
+            "notify_url": f"{PUBLIC_API_BASE_URL}/api/v1/license/payment/notify",
+            "return_url": f"{PUBLIC_API_BASE_URL}/api/v1/license/payment/return?out_trade_no={out_trade_no}",
+            "name": title,
+            "money": payment_amount_text(expected_cents),
+        })
+        pay_type = str(provider.get("pay_type") or "").strip().lower()
+        pay_info = str(provider.get("pay_info") or "").strip()
+        if pay_type not in {"qrcode", "jump", "urlscheme"} or not pay_info:
+            raise PaymentProviderError("支付平台没有返回可用的付款信息")
+        with db() as conn:
+            now = utc_now()
+            conn.execute(
+                """
+                UPDATE payment_orders
+                SET provider_trade_no = ?, pay_payload_type = ?, pay_info = ?, updated_at = ?
+                WHERE out_trade_no = ?
+                """,
+                (
+                    str(provider.get("trade_no") or ""),
+                    pay_type,
+                    pay_info,
+                    now,
+                    out_trade_no,
+                ),
+            )
+            order = conn.execute(
+                "SELECT * FROM payment_orders WHERE out_trade_no = ?",
+                (out_trade_no,),
+            ).fetchone()
+            log_event(conn, "payment", f"车辆 {device_code} 创建{PAYMENT_TYPES[payment_type]}订单 {out_trade_no}")
+        return jsonify(payment_order_client_payload(order, poll_token))
+    except (PaymentConfigurationError, PaymentProviderError) as exc:
+        with db() as conn:
+            conn.execute(
+                "UPDATE payment_orders SET status = 'failed', updated_at = ? WHERE out_trade_no = ?",
+                (utc_now(), out_trade_no),
+            )
+            log_event(conn, "payment", f"订单 {out_trade_no} 创建失败：{str(exc)[:180]}")
+        return jsonify({"success": False, "message": f"创建支付订单失败：{exc}"}), 502
+
+
+@app.post("/api/v1/license/payment/status")
+def api_payment_status():
+    payload = request.get_json(silent=True) or {}
+    out_trade_no = str(payload.get("orderNo") or "").strip()[:80]
+    poll_token = str(payload.get("pollToken") or "").strip()[:256]
+    presented_token = request_device_token()
+    if not out_trade_no or not poll_token:
+        return jsonify({"success": False, "message": "缺少支付订单凭据"}), 400
+    with db() as conn:
+        order = conn.execute(
+            "SELECT * FROM payment_orders WHERE out_trade_no = ?",
+            (out_trade_no,),
+        ).fetchone()
+        if order is None:
+            return jsonify({"success": False, "message": "支付订单不存在"}), 404
+        if not payment_poll_token_matches(order, poll_token) or not payment_device_authorized(
+            conn,
+            order,
+            presented_token,
+        ):
+            return jsonify({"success": False, "message": "支付订单凭据无效"}), 403
+        expires_at = parse_utc(order["expires_at"])
+        if order["status"] == "pending" and expires_at and expires_at <= utc_datetime():
+            conn.execute(
+                "UPDATE payment_orders SET status = 'expired', updated_at = ? WHERE id = ?",
+                (utc_now(), order["id"]),
+            )
+            order = conn.execute(
+                "SELECT * FROM payment_orders WHERE id = ?",
+                (order["id"],),
+            ).fetchone()
+        last_query = parse_utc(order["last_provider_query_at"])
+        query_due = (
+            order["status"] == "pending"
+            and (last_query is None or last_query <= utc_datetime() - timedelta(seconds=PAYMENT_QUERY_INTERVAL_SECONDS))
+        )
+    if query_due:
+        try:
+            order = refresh_payment_order_from_provider(out_trade_no) or order
+        except (PaymentConfigurationError, PaymentProviderError):
+            pass
+    with db() as conn:
+        order = conn.execute(
+            "SELECT * FROM payment_orders WHERE out_trade_no = ?",
+            (out_trade_no,),
+        ).fetchone()
+        if order["status"] == "paid":
+            return jsonify(paid_payment_payload(conn, order, presented_token))
+        result = payment_order_client_payload(order)
+        result["message"] = {
+            "pending": "等待扫码支付",
+            "expired": "支付二维码已过期，请重新创建订单",
+            "failed": "支付订单创建失败，请重新尝试",
+        }.get(order["status"], "等待支付结果")
+        return jsonify(result)
+
+
+@app.route("/api/v1/license/payment/notify", methods=["GET", "POST"])
+def api_payment_notify():
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        source = request.form if request.method == "POST" else request.args
+        payload = source.to_dict(flat=True)
+    try:
+        if not verify_payment_params(payload):
+            return "fail", 400, {"Content-Type": "text/plain; charset=utf-8"}
+    except PaymentConfigurationError:
+        return "fail", 503, {"Content-Type": "text/plain; charset=utf-8"}
+    out_trade_no = str(payload.get("out_trade_no") or "").strip()[:80]
+    if not out_trade_no or str(payload.get("pid") or "") != PAYMENT_PID:
+        return "fail", 400, {"Content-Type": "text/plain; charset=utf-8"}
+    with db() as conn:
+        order = conn.execute(
+            "SELECT * FROM payment_orders WHERE out_trade_no = ?",
+            (out_trade_no,),
+        ).fetchone()
+    if order is None:
+        return "fail", 404, {"Content-Type": "text/plain; charset=utf-8"}
+    matched, _message = provider_result_matches_order(payload, order)
+    if not matched:
+        return "fail", 400, {"Content-Type": "text/plain; charset=utf-8"}
+    payload_hash = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, ensure_ascii=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    try:
+        refreshed = refresh_payment_order_from_provider(out_trade_no, payload_hash)
+    except (PaymentConfigurationError, PaymentProviderError):
+        return "fail", 502, {"Content-Type": "text/plain; charset=utf-8"}
+    if refreshed is None or refreshed["status"] != "paid":
+        return "fail", 409, {"Content-Type": "text/plain; charset=utf-8"}
+    return "success", 200, {"Content-Type": "text/plain; charset=utf-8"}
+
+
+@app.get("/api/v1/license/payment/return")
+def api_payment_return():
+    return """<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>支付结果</title><style>body{margin:0;background:#f5f7fb;color:#18202a;font-family:system-ui,-apple-system,sans-serif;display:grid;place-items:center;min-height:100vh}.box{max-width:420px;margin:24px;padding:28px;background:#fff;border:1px solid #e6eaf0;border-radius:16px;text-align:center;box-shadow:0 16px 50px rgba(25,35,45,.08)}h1{font-size:22px;margin:0 0 10px}p{color:#607080;line-height:1.7;margin:0}</style></head>
+<body><div class="box"><h1>支付结果已提交</h1><p>请返回车机上的超级玩具箱，系统核实到账后会自动完成永久激活。</p></div></body></html>"""
 
 
 if __name__ == "__main__":

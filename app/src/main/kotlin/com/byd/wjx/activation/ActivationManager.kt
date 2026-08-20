@@ -73,6 +73,24 @@ data class ActivationResult(
     val snapshot: ActivationSnapshot,
 )
 
+data class ActivationPaymentOrder(
+    val orderNo: String,
+    val paymentType: String,
+    val paymentName: String,
+    val payType: String,
+    val payInfo: String,
+    val amount: String,
+    val pollToken: String,
+    val expiresAt: Long,
+)
+
+data class ActivationPaymentStatus(
+    val status: String,
+    val paid: Boolean,
+    val message: String,
+    val snapshot: ActivationSnapshot,
+)
+
 private data class OfflineLicenseMatch(
     val deviceCode: String,
 )
@@ -202,6 +220,70 @@ class ActivationManager @Inject constructor(
         }
         WjxFileLogger.i(TAG, "activate result success=$ok message=$message")
         ActivationResult(ok, message, currentSnapshot())
+    }
+
+    suspend fun createPayment(paymentType: String): ActivationPaymentOrder = withContext(Dispatchers.IO) {
+        val normalizedType = paymentType.trim().lowercase(Locale.US)
+        require(normalizedType == "alipay" || normalizedType == "wxpay") { "不支持的支付方式" }
+        val current = refreshSnapshot()
+        require(!current.activated) { "当前车辆已经永久激活" }
+        val candidates = refreshDeviceCodeCandidates(forceHardware = true)
+        val deviceCode = candidates.firstOrNull().orEmpty()
+        require(deviceCode.isNotBlank()) { "未读取到稳定车架号，请启动车辆并刷新后重试" }
+        require(currentDeviceToken().isNotBlank()) { "设备身份尚未建立，请刷新授权状态后重试" }
+        val response = postJson(
+            "payment/create",
+            basePayload(deviceCode, candidates).apply {
+                put("paymentType", normalizedType)
+            },
+        )
+        val order = ActivationPaymentOrder(
+            orderNo = response.optString("orderNo"),
+            paymentType = response.optString("paymentType", normalizedType),
+            paymentName = response.optString(
+                "paymentName",
+                if (normalizedType == "alipay") "支付宝" else "微信支付",
+            ),
+            payType = response.optString("payType"),
+            payInfo = response.optString("payInfo"),
+            amount = response.optString("amount", "15.90"),
+            pollToken = response.optString("pollToken"),
+            expiresAt = jsonMillis(response, "expiresAt"),
+        )
+        require(order.orderNo.isNotBlank() && order.pollToken.isNotBlank() && order.payInfo.isNotBlank()) {
+            "支付服务器返回的订单信息不完整"
+        }
+        WjxFileLogger.i(TAG, "payment order created type=$normalizedType payType=${order.payType}")
+        order
+    }
+
+    suspend fun checkPayment(order: ActivationPaymentOrder): ActivationPaymentStatus = withContext(Dispatchers.IO) {
+        val candidates = storedDeviceAliases()
+        val deviceCode = candidates.firstOrNull().orEmpty()
+        require(deviceCode.isNotBlank()) { "车架号不可用，请刷新后重试" }
+        val response = postJson(
+            "payment/status",
+            basePayload(deviceCode, candidates).apply {
+                put("orderNo", order.orderNo)
+                put("pollToken", order.pollToken)
+            },
+        )
+        val status = response.optString("status", "pending")
+        val paid = response.optBoolean("paid", false)
+        if (paid && response.optBoolean("activated", false)) {
+            applyServerStatus(response, deviceCode, candidates)
+        }
+        val message = response.optString(
+            "message",
+            when (status) {
+                "paid" -> "支付成功，永久授权已自动激活"
+                "expired" -> "支付二维码已过期，请重新创建订单"
+                "failed" -> "支付订单失败，请重新尝试"
+                else -> "等待扫码支付"
+            },
+        )
+        WjxFileLogger.i(TAG, "payment status status=$status paid=$paid")
+        ActivationPaymentStatus(status, paid, message, currentSnapshot())
     }
 
     fun canUse(feature: PremiumFeature): Boolean {

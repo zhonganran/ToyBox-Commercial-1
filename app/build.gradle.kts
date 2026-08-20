@@ -55,8 +55,8 @@ android {
         // on DiLink Android 12 through requestLegacyExternalStorage.
         // targetSdk 30+ would break listFiles() on /storage/emulated/0/energydata/
         targetSdk = 29
-        versionCode = 43
-        versionName = "2.1.3"
+        versionCode = 44
+        versionName = "2.1.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "UPDATE_API_URL", "\"$updateApiUrl\"")
@@ -186,6 +186,9 @@ dependencies {
 
     // JSON parsing
     implementation("org.json:json:20231013")
+
+    // QR rendering for server-created activation payment orders
+    implementation("com.google.zxing:core:3.5.3")
 
     // Sun/moon position calculation for time_of_day trigger
     implementation("org.shredzone.commons:commons-suncalc:3.7")

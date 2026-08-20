@@ -27,6 +27,7 @@ os.environ["WJX_PLATFORM_TRUSTED_PROXY_COUNT"] = "0"
 
 import app as platform_app
 import platform_license
+import platform_payment
 import platform_storage
 
 
@@ -169,6 +170,37 @@ class PlatformStorageTest(unittest.TestCase):
             finally:
                 platform_storage._db_initialized = initialized
 
+
+class PaymentProtocolTest(unittest.TestCase):
+    def test_v2_canonicalization_excludes_signature_fields_and_empty_values(self):
+        self.assertEqual(
+            "money=15.90&out_trade_no=WJX-001&pid=1000&type=wxpay",
+            platform_payment.canonicalize({
+                "type": "wxpay",
+                "sign": "ignored",
+                "pid": "1000",
+                "empty": "",
+                "sign_type": "RSA",
+                "money": "15.90",
+                "out_trade_no": "WJX-001",
+            }),
+        )
+
+    def test_v2_rsa_sha256_signature_detects_tampering(self):
+        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        params = {
+            "pid": "1000",
+            "type": "wxpay",
+            "out_trade_no": "WJX-001",
+            "money": "15.90",
+            "timestamp": "1700000000",
+            "sign_type": "RSA",
+        }
+        params["sign"] = platform_payment.sign_params(params, private_key)
+        self.assertTrue(platform_payment.verify_params(params, private_key.public_key()))
+        self.assertFalse(platform_payment.verify_params({**params, "money": "0.01"}, private_key.public_key()))
+
+
 class PlatformRequestSecurityTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -271,6 +303,7 @@ class PlatformWorkflowTest(unittest.TestCase):
             for table in (
                 "releases",
                 "sounds",
+                "payment_orders",
                 "license_codes",
                 "devices",
                 "diagnostic_logs",
@@ -520,6 +553,166 @@ class PlatformWorkflowTest(unittest.TestCase):
         self.assertTrue(response.json["deviceToken"])
         self.device_tokens[vin] = response.json["deviceToken"]
         return vin
+
+    def create_payment(self, vin, token, payment_type="wxpay"):
+        return self.client.post(
+            "/api/v1/license/payment/create",
+            json={
+                "deviceCode": vin,
+                "rawDeviceCode": vin,
+                "deviceCodes": [vin],
+                "appVersion": "2.2-test",
+                "packageName": "com.byd.wjx",
+                "paymentType": payment_type,
+            },
+            headers={"Authorization": f"Bearer {token}"} if token else {},
+        )
+
+    def payment_provider_create_result(self, trade_no="PLATFORM-001"):
+        return {
+            "code": 0,
+            "msg": "success",
+            "trade_no": trade_no,
+            "pay_type": "qrcode",
+            "pay_info": "weixin://wxpay/test-order",
+            "timestamp": "1700000000",
+            "sign": "verified-by-platform-client",
+            "sign_type": "RSA",
+        }
+
+    def test_payment_create_requires_device_credential(self):
+        vin = self.register_device("LC0FD4C42S7184301")
+        with patch.object(platform_app, "payment_ready", return_value=True):
+            response = self.create_payment(vin, "")
+        self.assertEqual(401, response.status_code)
+        with platform_app.db() as conn:
+            self.assertEqual(0, conn.execute("SELECT COUNT(*) FROM payment_orders").fetchone()[0])
+
+    def test_duplicate_pending_payment_reuses_provider_order(self):
+        vin = self.register_device("LC0FD4C42S7184302")
+        token = self.device_tokens[vin]
+        with patch.object(platform_app, "payment_ready", return_value=True), patch.object(
+            platform_app,
+            "create_provider_order",
+            return_value=self.payment_provider_create_result(),
+        ) as create_provider:
+            first = self.create_payment(vin, token)
+            second = self.create_payment(vin, token)
+        self.assertEqual(200, first.status_code)
+        self.assertEqual(200, second.status_code)
+        self.assertEqual(first.json["orderNo"], second.json["orderNo"])
+        self.assertNotEqual(first.json["pollToken"], second.json["pollToken"])
+        create_provider.assert_called_once()
+        with platform_app.db() as conn:
+            self.assertEqual(1, conn.execute("SELECT COUNT(*) FROM payment_orders").fetchone()[0])
+
+    def test_verified_paid_query_activates_once_and_wrong_poll_token_is_rejected(self):
+        vin = self.register_device("LC0FD4C42S7184303")
+        token = self.device_tokens[vin]
+        with patch.object(platform_app, "PAYMENT_PID", "1000"), patch.object(
+            platform_app,
+            "payment_ready",
+            return_value=True,
+        ), patch.object(
+            platform_app,
+            "create_provider_order",
+            return_value=self.payment_provider_create_result(),
+        ):
+            created = self.create_payment(vin, token)
+        self.assertEqual(200, created.status_code)
+        order_no = created.json["orderNo"]
+        status_payload = {"orderNo": order_no, "pollToken": created.json["pollToken"]}
+        rejected = self.client.post(
+            "/api/v1/license/payment/status",
+            json={"orderNo": order_no, "pollToken": "wrong-token"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        self.assertEqual(403, rejected.status_code)
+
+        provider_paid = {
+            "code": 0,
+            "msg": "success",
+            "trade_no": "PLATFORM-001",
+            "out_trade_no": order_no,
+            "status": 1,
+            "pid": "1000",
+            "money": "15.90",
+            "timestamp": "1700000001",
+            "sign": "verified-by-platform-client",
+            "sign_type": "RSA",
+        }
+        with patch.object(platform_app, "PAYMENT_PID", "1000"), patch.object(
+            platform_app,
+            "query_provider_order",
+            return_value=provider_paid,
+        ) as query_provider:
+            paid = self.client.post(
+                "/api/v1/license/payment/status",
+                json=status_payload,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            repeated = self.client.post(
+                "/api/v1/license/payment/status",
+                json=status_payload,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        self.assertEqual(200, paid.status_code)
+        self.assertTrue(paid.json["paid"])
+        self.assertTrue(paid.json["activated"])
+        self.assertEqual(200, repeated.status_code)
+        self.assertTrue(repeated.json["activated"])
+        query_provider.assert_called_once()
+        with platform_app.db() as conn:
+            self.assertEqual(1, conn.execute("SELECT COUNT(*) FROM license_codes").fetchone()[0])
+            self.assertEqual("paid", conn.execute("SELECT status FROM payment_orders").fetchone()[0])
+
+    def test_wrong_payment_amount_and_forged_notification_do_not_activate(self):
+        vin = self.register_device("LC0FD4C42S7184304")
+        token = self.device_tokens[vin]
+        with patch.object(platform_app, "PAYMENT_PID", "1000"), patch.object(
+            platform_app,
+            "payment_ready",
+            return_value=True,
+        ), patch.object(
+            platform_app,
+            "create_provider_order",
+            return_value=self.payment_provider_create_result(),
+        ):
+            created = self.create_payment(vin, token)
+        order_no = created.json["orderNo"]
+        wrong_amount = {
+            "code": 0,
+            "msg": "success",
+            "trade_no": "PLATFORM-002",
+            "out_trade_no": order_no,
+            "status": 1,
+            "pid": "1000",
+            "money": "0.01",
+            "timestamp": "1700000002",
+            "sign": "verified-by-platform-client",
+            "sign_type": "RSA",
+        }
+        with patch.object(platform_app, "PAYMENT_PID", "1000"), patch.object(
+            platform_app,
+            "query_provider_order",
+            return_value=wrong_amount,
+        ):
+            pending = self.client.post(
+                "/api/v1/license/payment/status",
+                json={"orderNo": order_no, "pollToken": created.json["pollToken"]},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        self.assertEqual(200, pending.status_code)
+        self.assertFalse(pending.json["paid"])
+        with patch.object(platform_app, "verify_payment_params", return_value=False):
+            forged = self.client.post(
+                "/api/v1/license/payment/notify",
+                data={"pid": "1000", "out_trade_no": order_no, "money": "15.90", "sign": "forged"},
+            )
+        self.assertEqual(400, forged.status_code)
+        with platform_app.db() as conn:
+            self.assertEqual(0, conn.execute("SELECT COUNT(*) FROM license_codes").fetchone()[0])
+            self.assertEqual("pending", conn.execute("SELECT status FROM payment_orders").fetchone()[0])
 
     def upload_log(self, vin, data=b"07-23 12:00:00.000 I/Test diagnostic\n", filename="wjx.log"):
         token = self.device_tokens.get(vin, "")

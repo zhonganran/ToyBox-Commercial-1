@@ -1,6 +1,7 @@
 package com.byd.wjx.ui.settings
 
 import com.byd.wjx.activation.ActivationSnapshot
+import com.byd.wjx.activation.ActivationPaymentOrder
 import com.byd.wjx.audio.LockSoundConfig
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.data.vehicle.HeadlightAvailability
@@ -43,6 +44,9 @@ data class SettingsUiState(
     val activationCodeInput: String = "",
     val activationMessage: String? = null,
     val activationLoading: Boolean = false,
+    val activationPaymentOrder: ActivationPaymentOrder? = null,
+    val activationPaymentLoading: Boolean = false,
+    val activationPaymentMessage: String? = null,
     val serviceQrCodes: Map<String, ServiceQrCode> = emptyMap(),
     val serviceQrLoading: Boolean = false,
     val serviceQrMessage: String? = null,

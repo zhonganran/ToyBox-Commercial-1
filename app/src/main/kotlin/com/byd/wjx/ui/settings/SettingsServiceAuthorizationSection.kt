@@ -1,10 +1,7 @@
 package com.byd.wjx.ui.settings
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.BitmapFactory
-import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -54,18 +51,11 @@ internal fun ServiceAuthorizationSection(state: SettingsUiState, viewModel: Sett
     var activeQrTarget by remember { mutableStateOf<ServiceQrTarget?>(null) }
     val wechatTarget = serviceQrTarget(state, "wechat", "微信客服", "点击查看二维码", "待配置微信二维码", AccentGreen)
     val wechatGroupTarget = serviceQrTarget(state, "wechat_group", "微信交流群", "点击查看二维码", "待配置微信交流群二维码", AccentPurple)
-    val paymentTarget = serviceQrTarget(
-        state,
-        "payment",
-        "付款二维码",
-        "永久授权 $PERMANENT_AUTH_PRICE / 车，确认后付款",
-        "待配置收款二维码",
-        AccentOrange,
-    )
 
     activeQrTarget?.let { target ->
         ServiceQrDialog(target = target, onDismiss = { activeQrTarget = null })
     }
+    ActivationPaymentDialog(state, viewModel)
 
     SectionHeader(text = "服务与授权")
     ServicePanel(
@@ -122,7 +112,7 @@ internal fun ServiceAuthorizationSection(state: SettingsUiState, viewModel: Sett
         accent = if (activation.activated) AccentGreen else AccentOrange,
     ) {
         Text(
-            "超级玩具箱永久授权价格为 $PERMANENT_AUTH_PRICE / 车，采用一车一授权方式并绑定当前车辆设备信息。付款前请先联系客服确认车型与功能支持情况，付款后请发送付款截图和软件内显示的车架号，核验后为你开通授权。",
+            "超级玩具箱永久授权价格为 $PERMANENT_AUTH_PRICE / 车，采用一车一授权并绑定当前车辆 VIN。扫码付款后由服务器核实到账并自动激活，不需要发送付款截图。",
             color = TextSecondary,
             fontSize = 12.sp,
             lineHeight = 17.sp,
@@ -148,31 +138,33 @@ internal fun ServiceAuthorizationSection(state: SettingsUiState, viewModel: Sett
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Button(
-                onClick = {
-                    if (activation.deviceCode.isBlank()) {
-                        Toast.makeText(context, "暂未读取到车架号", Toast.LENGTH_SHORT).show()
-                    } else {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("超级玩具箱车架号", activation.deviceCode))
-                        Toast.makeText(context, "车架号已复制", Toast.LENGTH_SHORT).show()
-                    }
-                },
-                enabled = activation.deviceCode.isNotBlank(),
+                onClick = { viewModel.startActivationPayment("alipay") },
+                enabled = !activation.activated && activation.deviceCode.isNotBlank() && !state.activationPaymentLoading,
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = AccentBlue, contentColor = Color.White),
+            ) {
+                Text("支付宝扫码", fontSize = 12.sp, maxLines = 1)
+            }
+            Button(
+                onClick = { viewModel.startActivationPayment("wxpay") },
+                enabled = !activation.activated && activation.deviceCode.isNotBlank() && !state.activationPaymentLoading,
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = AccentGreen, contentColor = AccentContent),
             ) {
-                Text("复制车架号", fontSize = 12.sp, maxLines = 1)
-            }
-            Button(
-                onClick = { activeQrTarget = paymentTarget },
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = AccentOrange, contentColor = AccentContent),
-            ) {
-                Text("查看付款二维码", fontSize = 12.sp, maxLines = 1)
+                Text("微信扫码", fontSize = 12.sp, maxLines = 1)
             }
         }
+        state.activationPaymentMessage
+            ?.takeIf { state.activationPaymentOrder == null }
+            ?.let { message ->
+                Text(
+                    message,
+                    color = if (message.contains("失败") || message.contains("失效")) SocRed else TextSecondary,
+                    fontSize = 11.sp,
+                )
+            }
     }
 
     ServicePanel(
@@ -182,7 +174,8 @@ internal fun ServiceAuthorizationSection(state: SettingsUiState, viewModel: Sett
     ) {
         ServiceBullet("永久授权价格为 $PERMANENT_AUTH_PRICE / 车，一车一授权。")
         ServiceBullet("请先联系客服确认车型、系统版本和需要使用的功能。")
-        ServiceBullet("付款完成后，请发送付款截图和软件内显示的车架号。")
+        ServiceBullet("请在软件内选择支付宝或微信，扫描订单二维码完成付款。")
+        ServiceBullet("服务器确认到账后自动绑定当前 VIN 并开通永久授权。")
         ServiceBullet("授权开通后，更新或重新安装会按车架号自动恢复。")
         ServiceBullet("付款即表示你已阅读并同意软件免责声明及授权规则。")
     }

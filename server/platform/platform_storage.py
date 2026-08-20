@@ -193,6 +193,33 @@ def init_db(force=False):
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS payment_orders (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    out_trade_no TEXT NOT NULL UNIQUE,
+                    provider_trade_no TEXT NOT NULL DEFAULT '',
+                    device_code TEXT NOT NULL,
+                    raw_device_code TEXT NOT NULL DEFAULT '',
+                    device_codes_json TEXT NOT NULL DEFAULT '[]',
+                    app_version TEXT NOT NULL DEFAULT '',
+                    package_name TEXT NOT NULL DEFAULT '',
+                    payment_type TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    pay_payload_type TEXT NOT NULL DEFAULT '',
+                    pay_info TEXT NOT NULL DEFAULT '',
+                    expected_amount_cents INTEGER NOT NULL,
+                    paid_amount_cents INTEGER NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    license_code_id INTEGER REFERENCES license_codes(id) ON DELETE SET NULL,
+                    poll_token_hash TEXT NOT NULL,
+                    notify_payload_hash TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    last_provider_query_at TEXT,
+                    paid_at TEXT,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_payment_orders_device_status
+                    ON payment_orders(device_code, status, created_at);
                 CREATE TABLE IF NOT EXISTS devices (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     device_code TEXT NOT NULL UNIQUE,
