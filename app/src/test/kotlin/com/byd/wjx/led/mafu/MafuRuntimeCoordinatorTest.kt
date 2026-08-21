@@ -54,6 +54,7 @@ class MafuRuntimeCoordinatorTest {
         coEvery { parsReader.fetchLedMotionVehicleSnapshot() } returns null
         coEvery { parsReader.fetchLedBrakeVehicleSnapshot() } returns null
         coEvery { parsReader.fetchLedBodyVehicleSnapshot() } returns null
+        coEvery { parsReader.fetchLedAdasVehicleSnapshot() } returns null
 
         val coordinator = MafuRuntimeCoordinator(preferences, bleClient, parsReader)
         coordinator.start(backgroundScope)
@@ -112,6 +113,7 @@ class MafuRuntimeCoordinatorTest {
         coEvery { parsReader.fetchLedMotionVehicleSnapshot() } returns null
         coEvery { parsReader.fetchLedBrakeVehicleSnapshot() } returns null
         coEvery { parsReader.fetchLedBodyVehicleSnapshot() } returns null
+        coEvery { parsReader.fetchLedAdasVehicleSnapshot() } returns null
 
         val coordinator = MafuRuntimeCoordinator(preferences, bleClient, parsReader)
         coordinator.start(backgroundScope)

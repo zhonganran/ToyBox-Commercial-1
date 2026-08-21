@@ -106,27 +106,55 @@ class LyricRuntime @Inject constructor(
                     latestLyrics = LyricsResult(key)
                     lyricLoadJob?.cancel()
                     lyricLoadJob = launch(Dispatchers.IO) {
-                        val loaded = runCatching { repository.load(snapshot) }
-                            .onFailure {
-                                if (it !is CancellationException) {
-                                    WjxFileLogger.w(
+                        var requestSnapshot = snapshot
+                        var failedAttempts = 0
+                        while (isActive) {
+                            val loaded = runCatching { repository.load(requestSnapshot) }
+                                .onFailure {
+                                    if (it !is CancellationException) {
+                                        WjxFileLogger.w(
+                                            TAG,
+                                            "lyrics load failed key=${logSafeKey(key)}: ${it.message}",
+                                            it,
+                                        )
+                                    }
+                                }
+                                .getOrDefault(LyricsResult(key))
+                            val stillCurrent = withContext(Dispatchers.Main.immediate) {
+                                if (lastSongKey != loaded.key) {
+                                    false
+                                } else {
+                                    latestLyrics = loaded
+                                    trackChangeHoldUntilMs = 0L
+                                    suppressNextFrameAnimation = true
+                                    WjxFileLogger.i(
                                         TAG,
-                                        "lyrics load failed key=${logSafeKey(key)}: ${it.message}",
-                                        it,
+                                        "lyrics loaded key=${logSafeKey(loaded.key)} " +
+                                            "lines=${loaded.lines.size} attempt=${failedAttempts + 1}",
                                     )
+                                    true
                                 }
                             }
-                            .getOrDefault(LyricsResult(key))
-                        withContext(Dispatchers.Main.immediate) {
-                            if (lastSongKey == loaded.key) {
-                                latestLyrics = loaded
-                                trackChangeHoldUntilMs = 0L
-                                suppressNextFrameAnimation = true
-                                WjxFileLogger.i(
+                            if (!stillCurrent || loaded.lines.isNotEmpty()) break
+
+                            failedAttempts += 1
+                            val retryDelayMs = LyricLoadRetryPolicy.delayAfterFailure(failedAttempts)
+                            if (retryDelayMs == null) {
+                                WjxFileLogger.w(
                                     TAG,
-                                    "lyrics loaded key=${logSafeKey(loaded.key)} lines=${loaded.lines.size}",
+                                    "lyrics unavailable key=${logSafeKey(key)} attempts=$failedAttempts",
                                 )
+                                break
                             }
+                            WjxFileLogger.i(
+                                TAG,
+                                "lyrics empty key=${logSafeKey(key)} retryIn=${retryDelayMs}ms " +
+                                    "attempt=${failedAttempts + 1}",
+                            )
+                            delay(retryDelayMs)
+                            requestSnapshot = withContext(Dispatchers.Main.immediate) {
+                                latestPlayback.takeIf { it.hasSong && it.songKey() == key }
+                            } ?: break
                         }
                     }
                 }
@@ -323,3 +351,10 @@ internal fun shouldKeepDesktopLyricsVisible(
     homeForeground: Boolean,
     cameraActive: Boolean,
 ): Boolean = allowOnOtherApps || homeForeground || cameraActive
+
+internal object LyricLoadRetryPolicy {
+    private val retryDelaysMs = longArrayOf(3_000L, 10_000L, 30_000L, 90_000L)
+
+    fun delayAfterFailure(failedAttempts: Int): Long? =
+        retryDelaysMs.getOrNull(failedAttempts - 1)
+}

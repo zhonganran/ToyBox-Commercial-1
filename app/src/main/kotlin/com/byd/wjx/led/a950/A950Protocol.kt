@@ -1,6 +1,7 @@
 package com.byd.wjx.led.a950
 
 import java.util.UUID
+import java.util.zip.CRC32
 
 internal data class A950InitializationStep(
     val packet: ByteArray,
@@ -16,7 +17,7 @@ internal object A950Protocol {
 
     const val REQUESTED_MTU = 517
     const val WRITE_GAP_MS = 90L
-    const val PROGRAM_LIST_RESUME_DELAY_MS = 250L
+    const val LONG_WRITE_GAP_MS = 10L
     const val READY_DELAY_MS = 200L
     const val KEEPALIVE_INTERVAL_MS = 2_000L
 
@@ -40,7 +41,9 @@ internal object A950Protocol {
     fun acceptsGattProfile(
         serviceUuid: UUID?,
         characteristicUuids: Set<UUID>,
-    ): Boolean = serviceUuid == this.serviceUuid && writeUuid in characteristicUuids
+    ): Boolean = serviceUuid == this.serviceUuid &&
+        writeUuid in characteristicUuids &&
+        longWriteUuid in characteristicUuids
 
     fun playPreset(preset: A950Preset): ByteArray = remoteControl(
         commandIndex = preset.commandCode,
@@ -48,13 +51,50 @@ internal object A950Protocol {
     )
 
     val enableRemoteControlPacket: ByteArray
-        get() = remoteControl(commandIndex = 0xFF, value = 0x01)
+        get() = command(command = 0x01, parameter1 = 0x09, parameter2 = 0x01)
 
-    val disableRemoteControlPacket: ByteArray
-        get() = remoteControl(commandIndex = 0xFF, value = 0x00)
+    val showGraffitiPacket: ByteArray
+        get() = command(command = 0x01, parameter1 = 0x07, parameter2 = 0x01)
 
-    val playProgramListPacket: ByteArray
-        get() = command(command = 0x01, parameter1 = 0x05, parameter2 = 0xFF)
+    val graffitiUploadEndPacket: ByteArray
+        get() = command(command = 0x81, parameter1 = 0x01, parameter2 = 0x01)
+
+    fun graffitiSessionHeader(payload: ByteArray): ByteArray {
+        val crc = CRC32().apply { update(payload) }.value
+        return checksumPacket(
+            0x4E,
+            0x52,
+            0x0B,
+            0x02,
+            0x01,
+            0x00,
+            (payload.size ushr 24) and 0xFF,
+            (payload.size ushr 16) and 0xFF,
+            (payload.size ushr 8) and 0xFF,
+            payload.size and 0xFF,
+            ((crc ushr 24) and 0xFF).toInt(),
+            ((crc ushr 16) and 0xFF).toInt(),
+            ((crc ushr 8) and 0xFF).toInt(),
+            (crc and 0xFF).toInt(),
+        )
+    }
+
+    fun graffitiChunk(sequence: Int, data: ByteArray): ByteArray {
+        require(sequence in 0..0xFFFF) { "A950 chunk sequence must fit in two bytes" }
+        require(data.size in 1..0xFFFF) { "A950 chunk length must fit in two bytes" }
+        return byteArrayOf(
+            0x4E,
+            0x52,
+            0x01,
+            0x01,
+            (sequence ushr 8).toByte(),
+            sequence.toByte(),
+            (data.size ushr 8).toByte(),
+            data.size.toByte(),
+        ) + data
+    }
+
+    fun graffitiChunkDataSize(mtu: Int): Int = (mtu - 15).coerceAtLeast(8)
 
     fun brightness(percent: Int): ByteArray = command(
         command = 0x01,

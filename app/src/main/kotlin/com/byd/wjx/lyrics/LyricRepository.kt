@@ -107,7 +107,9 @@ class LyricRepository(
             ?: loadLocalLyrics(snapshot, key)
             ?: loadOnlineLyrics(snapshot, key)
             ?: LyricsResult(key)
-        putCache(key, result)
+        // An empty lookup can be caused by delayed player metadata or a transient network error.
+        // Caching it would make the missing lyrics permanent for the rest of this runtime.
+        if (result.lines.isNotEmpty()) putCache(key, result)
         result
     }
 

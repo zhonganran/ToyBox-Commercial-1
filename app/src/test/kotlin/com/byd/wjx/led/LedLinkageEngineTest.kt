@@ -71,6 +71,40 @@ class IpixelFaLinkageEngineTest {
     }
 
     @Test
+    fun `parking ACC and pilot conditions use verified ADAS enums`() {
+        assertTriggers(
+            LedLinkageTriggerType.AUTO_PARKING,
+            "active",
+            LedVehicleSignals(adasApaParkingStatus = 3),
+            LedVehicleSignals(adasApaParkingStatus = 4),
+        )
+        assertTriggers(
+            LedLinkageTriggerType.ACC,
+            "active",
+            LedVehicleSignals(adasAccMode = 2),
+            LedVehicleSignals(adasAccMode = 3),
+        )
+        assertTriggers(
+            LedLinkageTriggerType.ACC,
+            "active",
+            LedVehicleSignals(accCruiseState = 1),
+            LedVehicleSignals(accCruiseState = 2),
+        )
+        assertTriggers(
+            LedLinkageTriggerType.PILOT_ASSIST,
+            "active",
+            LedVehicleSignals(adasLccNcaStatus = 1),
+            LedVehicleSignals(adasLccNcaStatus = 2),
+        )
+        assertTriggers(
+            LedLinkageTriggerType.PILOT_ASSIST,
+            "active",
+            LedVehicleSignals(adasMnoaStatus = 1),
+            LedVehicleSignals(adasMnoaStatus = 2),
+        )
+    }
+
+    @Test
     fun `a condition triggers only on its rising edge`() {
         val engine = IpixelFaLinkageEngine()
         val rules = listOf(rule("speed", LedLinkageTriggerType.SPEED, "gt_30"))
@@ -165,13 +199,13 @@ class IpixelFaLinkageEngineTest {
 
         assertEquals(
             IpixelFaPreset.AUTOPILOT,
-            drivingEngine.evaluate(rules, LedVehicleSignals(speed = 31), 0L),
+            drivingEngine.evaluate(rules, LedVehicleSignals(adasAccMode = 3), 0L),
         )
         assertEquals(
             IpixelFaPreset.TURN_LEFT,
             drivingEngine.evaluate(
                 rules,
-                LedVehicleSignals(speed = 31, turnSignalFlash = 2),
+                LedVehicleSignals(adasAccMode = 3, turnSignalFlash = 2),
                 1L,
             ),
         )
@@ -179,7 +213,7 @@ class IpixelFaLinkageEngineTest {
             IpixelFaPreset.HAZARD_WARNING,
             drivingEngine.evaluate(
                 rules,
-                LedVehicleSignals(speed = 31, turnSignalFlash = 6),
+                LedVehicleSignals(adasAccMode = 3, turnSignalFlash = 6),
                 2L,
             ),
         )
@@ -192,6 +226,12 @@ class IpixelFaLinkageEngineTest {
         assertEquals(
             IpixelFaPreset.GET_OFF,
             parkedEngine.evaluate(rules, LedVehicleSignals(gear = 1, doorFL = 1), 1L),
+        )
+
+        val autoParkingEngine = IpixelFaLinkageEngine()
+        assertEquals(
+            IpixelFaPreset.REVERSING,
+            autoParkingEngine.evaluate(rules, LedVehicleSignals(adasApaParkingStatus = 4), 0L),
         )
     }
 

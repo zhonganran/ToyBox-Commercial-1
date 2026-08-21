@@ -95,6 +95,10 @@ object MusicIdentity {
         "音乐正在播放",
         "“音乐”正在运行",
         "\"音乐\"正在运行",
+        "null",
+        "(null)",
+        "<null>",
+        "none",
         "unknown",
         "unknown title",
     )

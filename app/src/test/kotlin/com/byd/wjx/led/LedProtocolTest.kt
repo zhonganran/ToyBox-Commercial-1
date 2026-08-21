@@ -90,16 +90,24 @@ class LedProtocolTest {
             A950Protocol.playPreset(A950Preset.LEFT_TURN),
         )
         assertArrayEquals(
-            byteArrayOf(0x4E, 0x52, 0x04, 0x01, 0x05, 0xFF.toByte(), 0x01, 0xAA.toByte()),
+            byteArrayOf(0x4E, 0x52, 0x04, 0x01, 0x09, 0x01, 0xAF.toByte()),
             A950Protocol.enableRemoteControlPacket,
         )
-        assertArrayEquals(
-            byteArrayOf(0x4E, 0x52, 0x04, 0x01, 0x05, 0xFF.toByte(), 0x00, 0xA9.toByte()),
-            A950Protocol.disableRemoteControlPacket,
+    }
+
+    @Test
+    fun `A950 profile requires both command and graffiti write channels`() {
+        assertTrue(
+            A950Protocol.acceptsGattProfile(
+                A950Protocol.serviceUuid,
+                setOf(A950Protocol.writeUuid, A950Protocol.longWriteUuid),
+            )
         )
-        assertArrayEquals(
-            byteArrayOf(0x4E, 0x52, 0x04, 0x01, 0x05, 0xFF.toByte(), 0xA9.toByte()),
-            A950Protocol.playProgramListPacket,
+        assertTrue(
+            !A950Protocol.acceptsGattProfile(
+                A950Protocol.serviceUuid,
+                setOf(A950Protocol.writeUuid),
+            )
         )
     }
 
@@ -117,6 +125,45 @@ class LedProtocolTest {
             byteArrayOf(0x4E, 0x52, 0x04, 0x81.toByte(), 0x01, 0x01, 0x27),
             A950Protocol.keepalivePacket,
         )
+    }
+
+    @Test
+    fun `A950 graffiti upload packets match the Vivid single frame protocol`() {
+        val payload = "123456789".toByteArray()
+        assertArrayEquals(
+            byteArrayOf(
+                0x4E,
+                0x52,
+                0x0B,
+                0x02,
+                0x01,
+                0x00,
+                0x00,
+                0x00,
+                0x00,
+                0x09,
+                0xCB.toByte(),
+                0xF4.toByte(),
+                0x39,
+                0x26,
+                0xD5.toByte(),
+            ),
+            A950Protocol.graffitiSessionHeader(payload),
+        )
+        assertArrayEquals(
+            byteArrayOf(0x4E, 0x52, 0x01, 0x01, 0x12, 0x34, 0x00, 0x03, 0x01, 0x02, 0x03),
+            A950Protocol.graffitiChunk(0x1234, byteArrayOf(1, 2, 3)),
+        )
+        assertArrayEquals(
+            byteArrayOf(0x4E, 0x52, 0x04, 0x01, 0x07, 0x01, 0xAD.toByte()),
+            A950Protocol.showGraffitiPacket,
+        )
+        assertArrayEquals(
+            byteArrayOf(0x4E, 0x52, 0x04, 0x81.toByte(), 0x01, 0x01, 0x27),
+            A950Protocol.graffitiUploadEndPacket,
+        )
+        assertEquals(502, A950Protocol.graffitiChunkDataSize(517))
+        assertEquals(8, A950Protocol.graffitiChunkDataSize(23))
     }
 
 }

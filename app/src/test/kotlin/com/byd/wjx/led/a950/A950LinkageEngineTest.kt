@@ -4,6 +4,7 @@ import com.byd.wjx.led.LedLinkageTriggerType
 import com.byd.wjx.led.LedVehicleSignals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Test
 
 class A950LinkageEngineTest {
@@ -66,6 +67,40 @@ class A950LinkageEngineTest {
         cases.forEach { (type, condition, active) ->
             assertTriggers(type, condition, LedVehicleSignals(), active)
         }
+    }
+
+    @Test
+    fun `parking ACC and pilot conditions use verified ADAS enums`() {
+        assertTriggers(
+            LedLinkageTriggerType.AUTO_PARKING,
+            "active",
+            LedVehicleSignals(adasApaParkingStatus = 3),
+            LedVehicleSignals(adasApaParkingStatus = 4),
+        )
+        assertTriggers(
+            LedLinkageTriggerType.ACC,
+            "active",
+            LedVehicleSignals(adasAccMode = 2),
+            LedVehicleSignals(adasAccMode = 3),
+        )
+        assertTriggers(
+            LedLinkageTriggerType.ACC,
+            "active",
+            LedVehicleSignals(accCruiseState = 1),
+            LedVehicleSignals(accCruiseState = 2),
+        )
+        assertTriggers(
+            LedLinkageTriggerType.PILOT_ASSIST,
+            "active",
+            LedVehicleSignals(adasLccNcaStatus = 1),
+            LedVehicleSignals(adasLccNcaStatus = 2),
+        )
+        assertTriggers(
+            LedLinkageTriggerType.PILOT_ASSIST,
+            "active",
+            LedVehicleSignals(adasMnoaStatus = 1),
+            LedVehicleSignals(adasMnoaStatus = 2),
+        )
     }
 
     @Test
@@ -150,13 +185,13 @@ class A950LinkageEngineTest {
 
         assertEquals(
             A950Preset.AUTOPILOT,
-            drivingEngine.evaluate(rules, LedVehicleSignals(speed = 31), 0L),
+            drivingEngine.evaluate(rules, LedVehicleSignals(adasAccMode = 3), 0L),
         )
         assertEquals(
             A950Preset.LEFT_TURN,
             drivingEngine.evaluate(
                 rules,
-                LedVehicleSignals(speed = 31, turnSignalFlash = 2),
+                LedVehicleSignals(adasAccMode = 3, turnSignalFlash = 2),
                 1L,
             ),
         )
@@ -164,7 +199,7 @@ class A950LinkageEngineTest {
             A950Preset.HAZARD_WARNING,
             drivingEngine.evaluate(
                 rules,
-                LedVehicleSignals(speed = 31, turnSignalFlash = 6),
+                LedVehicleSignals(adasAccMode = 3, turnSignalFlash = 6),
                 2L,
             ),
         )
@@ -178,22 +213,35 @@ class A950LinkageEngineTest {
             A950Preset.OPEN_DOOR_CAREFULLY,
             parkedEngine.evaluate(rules, LedVehicleSignals(gear = 1, doorFL = 1), 1L),
         )
+
+        val autoParkingEngine = A950LinkageEngine()
+        assertEquals(
+            A950Preset.REVERSING,
+            autoParkingEngine.evaluate(rules, LedVehicleSignals(adasApaParkingStatus = 4), 0L),
+        )
     }
 
     @Test
-    fun `condition release requests the device program list once`() {
+    fun `condition release requests the configured graffiti exactly once`() {
         val engine = A950LinkageEngine()
         val rules = listOf(rule("left", LedLinkageTriggerType.LIGHT, "left_turn"))
 
         assertEquals(
-            A950Preset.LEFT_TURN,
-            engine.evaluate(rules, LedVehicleSignals(turnSignalFlash = 2), 0L),
+            A950LinkageDecision.Play(A950Preset.LEFT_TURN),
+            engine.evaluateDecision(rules, LedVehicleSignals(turnSignalFlash = 2), 0L),
         )
-        assertNull(engine.evaluate(rules, LedVehicleSignals(turnSignalFlash = 1), 1_000L))
-        assertEquals(true, engine.consumeProgramListResume())
-        assertEquals(false, engine.consumeProgramListResume())
-        assertNull(engine.evaluate(rules, LedVehicleSignals(turnSignalFlash = 1), 10_000L))
-        assertEquals(false, engine.consumeProgramListResume())
+        assertSame(
+            A950LinkageDecision.RestoreGraffiti,
+            engine.evaluateDecision(rules, LedVehicleSignals(turnSignalFlash = 1), 1_000L),
+        )
+        assertSame(
+            A950LinkageDecision.None,
+            engine.evaluateDecision(rules, LedVehicleSignals(turnSignalFlash = 1), 10_000L),
+        )
+        assertEquals(
+            A950LinkageDecision.Play(A950Preset.LEFT_TURN),
+            engine.evaluateDecision(rules, LedVehicleSignals(turnSignalFlash = 2), 10_100L),
+        )
     }
 
     @Test

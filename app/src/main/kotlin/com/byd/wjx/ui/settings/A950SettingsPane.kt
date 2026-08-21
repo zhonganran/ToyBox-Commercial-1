@@ -2,13 +2,16 @@ package com.byd.wjx.ui.settings
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,6 +24,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Bluetooth
 import androidx.compose.material.icons.outlined.BluetoothConnected
 import androidx.compose.material.icons.outlined.LinkOff
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Button
@@ -40,6 +46,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -79,6 +88,11 @@ internal fun A950SettingsPane(
         val granted = result.values.all { it }
         if (pendingScan && granted) viewModel.scan()
         pendingScan = false
+    }
+    val imageLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent(),
+    ) { uri ->
+        if (uri != null) viewModel.selectGraffitiImage(uri)
     }
 
     fun startScanWithPermission() {
@@ -226,6 +240,111 @@ internal fun A950SettingsPane(
                         inactiveTrackColor = CardBorder,
                     ),
                 )
+            }
+        }
+
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = CardSurfaceElevated),
+            border = BorderStroke(1.dp, CardBorder),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "条件解除画面",
+                            color = TextPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            if (preferences.graffitiPayloadPath.isBlank()) "未选择" else "96 × 16 GIF 涂鸦",
+                            color = TextSecondary,
+                            fontSize = 11.sp,
+                        )
+                    }
+                    if (preferences.graffitiPayloadPath.isNotBlank()) {
+                        Icon(
+                            Icons.Outlined.Delete,
+                            contentDescription = "删除条件解除画面",
+                            tint = AccentOrange,
+                            modifier = Modifier
+                                .size(22.dp)
+                                .clickable(onClick = viewModel::deleteGraffitiImage),
+                        )
+                    }
+                }
+
+                val preview = remember(
+                    preferences.graffitiPreviewPath,
+                    preferences.graffitiImageVersion,
+                ) {
+                    preferences.graffitiPreviewPath
+                        .takeIf { it.isNotBlank() }
+                        ?.let(BitmapFactory::decodeFile)
+                        ?.asImageBitmap()
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(6f)
+                        .background(CardSurface, RoundedCornerShape(6.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (preview != null) {
+                        Image(
+                            bitmap = preview,
+                            contentDescription = "A950 条件解除画面预览",
+                            modifier = Modifier.fillMaxWidth().aspectRatio(6f),
+                            contentScale = ContentScale.FillBounds,
+                            filterQuality = FilterQuality.None,
+                        )
+                    } else {
+                        Icon(
+                            Icons.Outlined.Image,
+                            contentDescription = null,
+                            tint = TextMuted,
+                        )
+                    }
+                }
+
+                Button(
+                    onClick = { imageLauncher.launch("image/*") },
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentBlue),
+                    shape = RoundedCornerShape(9.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(
+                        Icons.Outlined.PhotoLibrary,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.size(7.dp))
+                    Text(
+                        if (preferences.graffitiPayloadPath.isBlank()) "选择 GIF / 图片" else "更换 GIF / 图片"
+                    )
+                }
+
+                when {
+                    state.runtime.graffitiUploadInProgress -> Text(
+                        "正在切换到条件解除画面",
+                        color = AccentBlue,
+                        fontSize = 11.sp,
+                    )
+                    state.runtime.showingGraffiti -> Text(
+                        "当前正在显示条件解除画面",
+                        color = AccentGreen,
+                        fontSize = 11.sp,
+                    )
+                }
             }
         }
 

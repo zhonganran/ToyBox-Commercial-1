@@ -51,6 +51,7 @@ class IpixelFaRuntimeCoordinatorTest {
         coEvery { parsReader.fetchLedMotionVehicleSnapshot() } returns null
         coEvery { parsReader.fetchLedBrakeVehicleSnapshot() } returns null
         coEvery { parsReader.fetchLedBodyVehicleSnapshot() } returns null
+        coEvery { parsReader.fetchLedAdasVehicleSnapshot() } returns null
 
         val coordinator = IpixelFaRuntimeCoordinator(preferences, bleClient, parsReader)
         coordinator.start(backgroundScope)
@@ -107,6 +108,7 @@ class IpixelFaRuntimeCoordinatorTest {
         coEvery { parsReader.fetchLedMotionVehicleSnapshot() } returns null
         coEvery { parsReader.fetchLedBrakeVehicleSnapshot() } returns null
         coEvery { parsReader.fetchLedBodyVehicleSnapshot() } returns null
+        coEvery { parsReader.fetchLedAdasVehicleSnapshot() } returns null
 
         val coordinator = IpixelFaRuntimeCoordinator(preferences, bleClient, parsReader)
         coordinator.start(backgroundScope)
@@ -168,6 +170,7 @@ class IpixelFaRuntimeCoordinatorTest {
         coEvery { parsReader.fetchLedMotionVehicleSnapshot() } returns null
         coEvery { parsReader.fetchLedBrakeVehicleSnapshot() } returns null
         coEvery { parsReader.fetchLedBodyVehicleSnapshot() } returns null
+        coEvery { parsReader.fetchLedAdasVehicleSnapshot() } returns null
 
         val coordinator = IpixelFaRuntimeCoordinator(preferences, bleClient, parsReader)
         coordinator.start(backgroundScope)

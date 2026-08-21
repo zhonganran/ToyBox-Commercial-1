@@ -77,6 +77,7 @@ object IpixelFaLinkageRuleFactory {
     /** Rules used when the FA protocol has never been configured before. */
     fun defaultRules(): List<IpixelFaLinkageRule> = listOf(
         rule("light-hazard", LedLinkageTriggerType.LIGHT, "hazard", IpixelFaPreset.HAZARD_WARNING),
+        rule("auto-parking", LedLinkageTriggerType.AUTO_PARKING, "active", IpixelFaPreset.REVERSING),
         rule("light-reverse", LedLinkageTriggerType.LIGHT, "reverse", IpixelFaPreset.REVERSING),
         rule("gear-reverse", LedLinkageTriggerType.GEAR, "R", IpixelFaPreset.REVERSING),
         rule("light-left-turn", LedLinkageTriggerType.LIGHT, "left_turn", IpixelFaPreset.TURN_LEFT),
@@ -84,7 +85,8 @@ object IpixelFaLinkageRuleFactory {
         rule("door-front-left", LedLinkageTriggerType.DOOR, "front_left", IpixelFaPreset.GET_OFF),
         rule("door-front-right", LedLinkageTriggerType.DOOR, "front_right", IpixelFaPreset.GET_OFF),
         rule("gear-park", LedLinkageTriggerType.GEAR, "P", IpixelFaPreset.TEMPORARY_STOP),
-        rule("speed-running", LedLinkageTriggerType.SPEED, "gt_30", IpixelFaPreset.AUTOPILOT),
+        rule("pilot-assist", LedLinkageTriggerType.PILOT_ASSIST, "active", IpixelFaPreset.AUTOPILOT),
+        rule("acc", LedLinkageTriggerType.ACC, "active", IpixelFaPreset.AUTOPILOT),
     )
 
     private fun rule(

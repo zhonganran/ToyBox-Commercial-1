@@ -1,7 +1,14 @@
 package com.byd.wjx.lyrics
 
+import kotlinx.coroutines.test.runTest
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LyricRepositoryTest {
@@ -157,5 +164,40 @@ class LyricRepositoryTest {
         )
 
         assertEquals("live", selected?.id)
+    }
+
+    @Test
+    fun emptyOnlineLookup_isNotCachedPermanently() = runTest {
+        var requestCount = 0
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                requestCount += 1
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body("{}".toResponseBody("application/json".toMediaType()))
+                    .build()
+            }
+            .build()
+        val repository = LyricRepository(client)
+        val snapshot = MusicPlaybackSnapshot(title = "晚风", artist = "歌手A")
+
+        assertTrue(repository.load(snapshot).lines.isEmpty())
+        val requestsAfterFirstLoad = requestCount
+        assertTrue(requestsAfterFirstLoad > 0)
+
+        assertTrue(repository.load(snapshot).lines.isEmpty())
+        assertTrue(requestCount > requestsAfterFirstLoad)
+    }
+
+    @Test
+    fun lyricRetryPolicy_usesBoundedBackoff() {
+        assertEquals(3_000L, LyricLoadRetryPolicy.delayAfterFailure(1))
+        assertEquals(10_000L, LyricLoadRetryPolicy.delayAfterFailure(2))
+        assertEquals(30_000L, LyricLoadRetryPolicy.delayAfterFailure(3))
+        assertEquals(90_000L, LyricLoadRetryPolicy.delayAfterFailure(4))
+        assertNull(LyricLoadRetryPolicy.delayAfterFailure(5))
     }
 }

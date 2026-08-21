@@ -112,6 +112,8 @@ class MusicPlaybackStateTest {
         assertFalse(MusicPlaybackSnapshot(title = "Unknown Title", playing = true).hasSong)
         assertFalse(MusicPlaybackSnapshot(title = "音乐 正在播放", playing = true).hasSong)
         assertFalse(MusicPlaybackSnapshot(title = "“音乐”正在运行", playing = true).hasSong)
+        assertFalse(MusicPlaybackSnapshot(title = "null", artist = "null", playing = true).hasSong)
+        assertFalse(MusicPlaybackSnapshot(title = "(null)", playing = true).hasSong)
     }
 
     @Test

@@ -33,6 +33,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -54,7 +55,9 @@ class A950BleClient @Inject constructor(
 
     @Volatile private var bluetoothGatt: BluetoothGatt? = null
     @Volatile private var writeCharacteristic: BluetoothGattCharacteristic? = null
+    @Volatile private var longWriteCharacteristic: BluetoothGattCharacteristic? = null
     @Volatile private var pendingWriteAck: CompletableDeferred<Int>? = null
+    @Volatile private var pendingWriteUuid: UUID? = null
     @Volatile private var manualDisconnect = false
     @Volatile private var protocolSetupStarted = false
     @Volatile private var negotiatedMtu = DEFAULT_MTU
@@ -285,28 +288,42 @@ class A950BleClient @Inject constructor(
         ),
     )
 
-    suspend fun resumeProgramList(): Boolean = writeMutex.withLock {
-        val remoteControlDisabled = writeLocked(
-            packet = A950Protocol.disableRemoteControlPacket,
-            description = "remote control disabled",
-            requireReady = true,
-            preferWriteWithResponse = true,
-        )
-        if (!remoteControlDisabled) return@withLock false
-
-        delay(A950Protocol.PROGRAM_LIST_RESUME_DELAY_MS)
-        writeLocked(
-            packet = A950Protocol.playProgramListPacket,
-            description = "play device program list",
-            requireReady = true,
-            preferWriteWithResponse = true,
-        )
-    }
-
     suspend fun setBrightness(percent: Int): Boolean = write(
         packet = A950Protocol.brightness(percent),
         description = "brightness=${percent.coerceIn(0, 100)}",
     )
+
+    suspend fun uploadGraffiti(payload: ByteArray): Boolean = writeMutex.withLock {
+        if (payload.isEmpty() || !_connection.value.ready) return@withLock false
+        val chunkSize = A950Protocol.graffitiChunkDataSize(negotiatedMtu)
+        if (!writeLongPacketLocked(A950Protocol.graffitiSessionHeader(payload), "graffiti header")) {
+            return@withLock false
+        }
+        var sequence = 0
+        var offset = 0
+        while (offset < payload.size) {
+            val end = (offset + chunkSize).coerceAtMost(payload.size)
+            val packet = A950Protocol.graffitiChunk(
+                sequence = sequence,
+                data = payload.copyOfRange(offset, end),
+            )
+            if (!writeLongPacketLocked(packet, "graffiti chunk=$sequence")) {
+                return@withLock false
+            }
+            offset = end
+            sequence++
+        }
+        if (!writeLongPacketLocked(A950Protocol.graffitiUploadEndPacket, "graffiti end")) {
+            return@withLock false
+        }
+        delay(GRAFFITI_RENDER_DELAY_MS)
+        writeLocked(
+            packet = A950Protocol.showGraffitiPacket,
+            description = "show graffiti",
+            requireReady = true,
+            preferWriteWithResponse = true,
+        )
+    }
 
     @SuppressLint("MissingPermission")
     private suspend fun write(
@@ -332,9 +349,47 @@ class A950BleClient @Inject constructor(
         description: String,
         requireReady: Boolean,
         preferWriteWithResponse: Boolean = false,
+    ): Boolean = writeCharacteristicLocked(
+        characteristic = writeCharacteristic,
+        packet = packet,
+        description = description,
+        requireReady = requireReady,
+        preferWriteWithResponse = preferWriteWithResponse,
+        gapMs = A950Protocol.WRITE_GAP_MS,
+        recoverOnFailure = true,
+    )
+
+    private suspend fun writeLongPacketLocked(packet: ByteArray, description: String): Boolean {
+        repeat(LONG_WRITE_RETRIES) { attempt ->
+            val sent = writeCharacteristicLocked(
+                characteristic = longWriteCharacteristic,
+                packet = packet,
+                description = description,
+                requireReady = true,
+                preferWriteWithResponse = true,
+                gapMs = A950Protocol.LONG_WRITE_GAP_MS,
+                recoverOnFailure = false,
+            )
+            if (sent) return true
+            if (!_connection.value.ready) return false
+            delay(LONG_WRITE_RETRY_DELAY_MS)
+            WjxFileLogger.w(TAG, "retry $description attempt=${attempt + 2}")
+        }
+        if (_connection.value.ready) recoverFromWriteFailure("$description retries exhausted")
+        return false
+    }
+
+    @SuppressLint("MissingPermission")
+    private suspend fun writeCharacteristicLocked(
+        characteristic: BluetoothGattCharacteristic?,
+        packet: ByteArray,
+        description: String,
+        requireReady: Boolean,
+        preferWriteWithResponse: Boolean,
+        gapMs: Long,
+        recoverOnFailure: Boolean,
     ): Boolean {
         val gatt = bluetoothGatt
-        val characteristic = writeCharacteristic
         if (gatt == null || characteristic == null || (requireReady && !_connection.value.ready)) {
             WjxFileLogger.w(TAG, "write skipped not ready description=$description")
             return false
@@ -360,6 +415,7 @@ class A950BleClient @Inject constructor(
             null
         }
         pendingWriteAck = ack
+        pendingWriteUuid = ack?.let { characteristic.uuid }
         val accepted = runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 gatt.writeCharacteristic(characteristic, packet, writeType) ==
@@ -373,7 +429,8 @@ class A950BleClient @Inject constructor(
         }.getOrDefault(false)
         if (!accepted) {
             if (pendingWriteAck === ack) pendingWriteAck = null
-            recoverFromWriteFailure(description)
+            if (pendingWriteUuid == characteristic.uuid) pendingWriteUuid = null
+            if (recoverOnFailure) recoverFromWriteFailure(description)
             return false
         }
         WjxFileLogger.i(
@@ -383,14 +440,20 @@ class A950BleClient @Inject constructor(
         )
 
         if (ack != null) {
-            val status = withTimeoutOrNull(WRITE_ACK_TIMEOUT_MS) { ack.await() }
-            if (pendingWriteAck === ack) pendingWriteAck = null
+            val status = try {
+                withTimeoutOrNull(WRITE_ACK_TIMEOUT_MS) { ack.await() }
+            } finally {
+                if (pendingWriteAck === ack) pendingWriteAck = null
+                if (pendingWriteUuid == characteristic.uuid) pendingWriteUuid = null
+            }
             if (status != BluetoothGatt.GATT_SUCCESS) {
-                recoverFromWriteFailure("$description callback status=$status")
+                if (recoverOnFailure) {
+                    recoverFromWriteFailure("$description callback status=$status")
+                }
                 return false
             }
         }
-        delay(A950Protocol.WRITE_GAP_MS)
+        delay(gapMs)
         return true
     }
 
@@ -492,8 +555,10 @@ class A950BleClient @Inject constructor(
         mtuFallbackJob = null
         bluetoothGatt = null
         writeCharacteristic = null
+        longWriteCharacteristic = null
         pendingWriteAck?.complete(BluetoothGatt.GATT_FAILURE)
         pendingWriteAck = null
+        pendingWriteUuid = null
         protocolSetupStarted = false
         negotiatedMtu = DEFAULT_MTU
         runCatching { old?.disconnect() }
@@ -659,6 +724,7 @@ class A950BleClient @Inject constructor(
                 return
             }
             val write = checkNotNull(service?.getCharacteristic(A950Protocol.writeUuid))
+            val longWrite = checkNotNull(service.getCharacteristic(A950Protocol.longWriteUuid))
             val supportsWriteWithResponse = write.properties and
                 BluetoothGattCharacteristic.PROPERTY_WRITE != 0
             val supportsWriteWithoutResponse = write.properties and
@@ -671,7 +737,20 @@ class A950BleClient @Inject constructor(
                 closeGatt()
                 return
             }
+            val longSupportsWriteWithResponse = longWrite.properties and
+                BluetoothGattCharacteristic.PROPERTY_WRITE != 0
+            val longSupportsWriteWithoutResponse = longWrite.properties and
+                BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0
+            if (!longSupportsWriteWithResponse && !longSupportsWriteWithoutResponse) {
+                _connection.value = _connection.value.copy(
+                    phase = A950ConnectionPhase.ERROR,
+                    message = "A950 涂鸦通道不可用",
+                )
+                closeGatt()
+                return
+            }
             writeCharacteristic = write
+            longWriteCharacteristic = longWrite
             runCatching { gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH) }
             val mtuRequested = runCatching {
                 gatt.requestMtu(A950Protocol.REQUESTED_MTU)
@@ -701,9 +780,13 @@ class A950BleClient @Inject constructor(
             characteristic: BluetoothGattCharacteristic,
             status: Int,
         ) {
-            if (gatt !== bluetoothGatt || characteristic.uuid != A950Protocol.writeUuid) return
+            if (gatt !== bluetoothGatt) return
+            if (
+                characteristic.uuid != A950Protocol.writeUuid &&
+                characteristic.uuid != A950Protocol.longWriteUuid
+            ) return
             val ack = pendingWriteAck
-            if (ack != null) {
+            if (ack != null && pendingWriteUuid == characteristic.uuid) {
                 ack.complete(status)
                 return
             }
@@ -726,6 +809,9 @@ class A950BleClient @Inject constructor(
         private const val CONNECT_SETTLE_MS = 10_000L
         private const val MTU_CALLBACK_TIMEOUT_MS = 2_500L
         private const val WRITE_ACK_TIMEOUT_MS = 2_500L
+        private const val LONG_WRITE_RETRIES = 3
+        private const val LONG_WRITE_RETRY_DELAY_MS = 35L
+        private const val GRAFFITI_RENDER_DELAY_MS = 120L
         private val RECONNECT_DELAYS_MS = longArrayOf(1_000L, 2_000L, 5_000L, 10_000L, 30_000L)
     }
 }

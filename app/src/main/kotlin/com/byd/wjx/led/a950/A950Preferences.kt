@@ -34,6 +34,18 @@ class A950Preferences @Inject constructor(
         putInt(KEY_BRIGHTNESS, percent.coerceIn(0, 100))
     }
 
+    fun setGraffitiImage(asset: A950GraffitiAsset) = update {
+        putString(KEY_GRAFFITI_PREVIEW_PATH, asset.previewPath)
+        putString(KEY_GRAFFITI_PAYLOAD_PATH, asset.payloadPath)
+        putLong(KEY_GRAFFITI_IMAGE_VERSION, asset.version)
+    }
+
+    fun clearGraffitiImage() = update {
+        remove(KEY_GRAFFITI_PREVIEW_PATH)
+        remove(KEY_GRAFFITI_PAYLOAD_PATH)
+        remove(KEY_GRAFFITI_IMAGE_VERSION)
+    }
+
     @Synchronized
     fun saveRule(rule: A950LinkageRule): Boolean {
         val normalized = rule.normalized()
@@ -90,6 +102,9 @@ class A950Preferences @Inject constructor(
         deviceAddress = prefs.getString(KEY_DEVICE_ADDRESS, "").orEmpty(),
         deviceName = prefs.getString(KEY_DEVICE_NAME, "").orEmpty(),
         brightness = prefs.getInt(KEY_BRIGHTNESS, 70).coerceIn(0, 100),
+        graffitiPreviewPath = prefs.getString(KEY_GRAFFITI_PREVIEW_PATH, "").orEmpty(),
+        graffitiPayloadPath = prefs.getString(KEY_GRAFFITI_PAYLOAD_PATH, "").orEmpty(),
+        graffitiImageVersion = prefs.getLong(KEY_GRAFFITI_IMAGE_VERSION, 0L),
         rules = prefs.getString(KEY_RULES, null).let { raw ->
             when {
                 raw == null -> A950LinkageRuleFactory.defaultRules()
@@ -107,5 +122,8 @@ class A950Preferences @Inject constructor(
         private const val KEY_DEVICE_ADDRESS = "device_address"
         private const val KEY_DEVICE_NAME = "device_name"
         private const val KEY_BRIGHTNESS = "brightness"
+        private const val KEY_GRAFFITI_PREVIEW_PATH = "graffiti_preview_path"
+        private const val KEY_GRAFFITI_PAYLOAD_PATH = "graffiti_payload_path"
+        private const val KEY_GRAFFITI_IMAGE_VERSION = "graffiti_image_version"
     }
 }

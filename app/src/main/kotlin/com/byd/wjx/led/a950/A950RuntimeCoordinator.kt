@@ -7,6 +7,7 @@ import com.byd.wjx.log.WjxFileLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,6 +19,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -38,15 +40,19 @@ class A950RuntimeCoordinator @Inject constructor(
     @Volatile private var latestMotionSample = TimedSignals()
     @Volatile private var latestBrakeSample = TimedSignals()
     @Volatile private var latestBodySample = TimedSignals()
+    @Volatile private var latestAdasSample = TimedSignals()
     private var lastSignalLogKey: SignalLogKey? = null
     private var pendingPreset: A950Preset? = null
-    private var programListResumePending = false
+    private var graffitiUploadJob: Job? = null
+    private var graffitiUploadGeneration = 0L
     private var runtimeJob: Job? = null
+    private var workerScope: CoroutineScope? = null
 
     @Synchronized
     fun start(scope: CoroutineScope) {
         if (runtimeJob?.isActive == true) return
         runtimeActive = true
+        workerScope = scope
         runtimeJob = scope.launch {
             coroutineScope {
                 launch {
@@ -71,7 +77,6 @@ class A950RuntimeCoordinator @Inject constructor(
                                 (!binding.enabled || !connectionMatches)
                             if (shouldDisconnect) {
                                 decisionMutex.withLock {
-                                    restoreProgramListBeforeReset("binding-change")
                                     resetRuntimeState()
                                 }
                                 bleClient.disconnect()
@@ -97,20 +102,32 @@ class A950RuntimeCoordinator @Inject constructor(
                                 return@collect
                             }
                             decisionMutex.withLock {
-                                val hadActiveLinkage = _runtime.value.currentPreset != null
-                                if (hadActiveLinkage && bleClient.connection.value.ready) {
-                                    pendingPreset = null
-                                    programListResumePending = true
-                                    tryResumeProgramList(
-                                        now = System.currentTimeMillis(),
-                                        reason = "rules-changed",
-                                    )
-                                }
                                 ruleEngine.reset()
                                 pendingPreset = null
-                                if (!programListResumePending) {
-                                    _runtime.value = A950RuntimeState()
-                                }
+                                cancelGraffitiUpload()
+                                _runtime.value = _runtime.value.copy(
+                                    graffitiUploadInProgress = false,
+                                    lastError = null,
+                                )
+                            }
+                        }
+                }
+                launch {
+                    var initialEmission = true
+                    preferences.state
+                        .map { it.graffitiImageVersion to it.graffitiPayloadPath }
+                        .distinctUntilChanged()
+                        .collect {
+                            if (initialEmission) {
+                                initialEmission = false
+                                return@collect
+                            }
+                            decisionMutex.withLock {
+                                cancelGraffitiUpload()
+                                _runtime.value = _runtime.value.copy(
+                                    graffitiUploadInProgress = false,
+                                    lastError = null,
+                                )
                             }
                         }
                 }
@@ -158,6 +175,13 @@ class A950RuntimeCoordinator @Inject constructor(
                     ) { signals, at -> latestBodySample = TimedSignals(signals, at) }
                 }
                 launch {
+                    runSignalLoop(
+                        label = "ADAS",
+                        intervalMs = ADAS_INTERVAL_MS,
+                        fetch = parsReader::fetchLedAdasVehicleSnapshot,
+                    ) { signals, at -> latestAdasSample = TimedSignals(signals, at) }
+                }
+                launch {
                     while (kotlin.coroutines.coroutineContext.isActive) {
                         if (
                             preferences.state.value.enabled &&
@@ -202,6 +226,7 @@ class A950RuntimeCoordinator @Inject constructor(
         runtimeActive = false
         runtimeJob?.cancel()
         runtimeJob = null
+        workerScope = null
         ruleEngine.reset()
         clearPendingCommands()
         connectionInitialized = false
@@ -262,18 +287,23 @@ class A950RuntimeCoordinator @Inject constructor(
         val motion = freshSignals(now, latestMotionSample, MOTION_FRESH_MS)
         val brake = freshSignals(now, latestBrakeSample, BRAKE_FRESH_MS)
         val body = freshSignals(now, latestBodySample, BODY_FRESH_MS)
+        val adas = freshSignals(now, latestAdasSample, ADAS_FRESH_MS)
         val signals = latestVehicleSignals
             .mergeMotion(motion)
             .mergeBrake(brake)
             .mergeBody(body)
+            .mergeAdas(adas)
         logSignalChanges(signals)
-        val next = ruleEngine.evaluate(preferences.state.value.rules, signals, now)
-        if (next != null) {
-            pendingPreset = next
-            programListResumePending = false
-        } else if (ruleEngine.consumeProgramListResume()) {
-            pendingPreset = null
-            programListResumePending = true
+        when (val decision = ruleEngine.evaluateDecision(preferences.state.value.rules, signals, now)) {
+            is A950LinkageDecision.Play -> {
+                cancelGraffitiUploadAndJoin()
+                pendingPreset = decision.preset
+            }
+            A950LinkageDecision.RestoreGraffiti -> {
+                pendingPreset = null
+                startGraffitiRestore(now)
+            }
+            A950LinkageDecision.None -> Unit
         }
         val current = _runtime.value.currentPreset
         if (!bleClient.connection.value.ready) return@withLock
@@ -285,6 +315,8 @@ class A950RuntimeCoordinator @Inject constructor(
             _runtime.value = if (sent) {
                 _runtime.value.copy(
                     currentPreset = presetToSend,
+                    showingGraffiti = false,
+                    graffitiUploadInProgress = false,
                     lastPresetChangedAt = now,
                     lastCommandAt = System.currentTimeMillis(),
                     lastError = null,
@@ -302,8 +334,77 @@ class A950RuntimeCoordinator @Inject constructor(
             return@withLock
         }
 
-        if (!programListResumePending) return@withLock
-        tryResumeProgramList(now, "condition-ended")
+    }
+
+    private fun startGraffitiRestore(now: Long) {
+        cancelGraffitiUpload()
+        val path = preferences.state.value.graffitiPayloadPath
+        if (path.isBlank()) {
+            _runtime.value = _runtime.value.copy(
+                graffitiUploadInProgress = false,
+                lastError = "请先选择 A950 条件解除画面",
+            )
+            return
+        }
+        val scope = workerScope ?: return
+        val generation = ++graffitiUploadGeneration
+        _runtime.value = _runtime.value.copy(
+            graffitiUploadInProgress = true,
+            lastError = null,
+        )
+        val job = scope.launch {
+            val payload = try {
+                File(path).takeIf { it.isFile }?.readBytes()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                WjxFileLogger.w(TAG, "read A950 graffiti payload failed", e)
+                null
+            }
+            if (generation != graffitiUploadGeneration) return@launch
+            if (payload == null || payload.isEmpty()) {
+                _runtime.value = _runtime.value.copy(
+                    graffitiUploadInProgress = false,
+                    lastError = "A950 条件解除画面已丢失，请重新选择",
+                )
+                return@launch
+            }
+            val sent = bleClient.uploadGraffiti(payload)
+            if (generation != graffitiUploadGeneration) return@launch
+            _runtime.value = if (sent) {
+                _runtime.value.copy(
+                    currentPreset = null,
+                    showingGraffiti = true,
+                    graffitiUploadInProgress = false,
+                    lastPresetChangedAt = now,
+                    lastCommandAt = System.currentTimeMillis(),
+                    lastError = null,
+                )
+            } else {
+                _runtime.value.copy(
+                    graffitiUploadInProgress = false,
+                    lastError = "A950 涂鸦画面上传失败",
+                )
+            }
+            WjxFileLogger.i(TAG, "restore A950 graffiti bytes=${payload.size} sent=$sent")
+        }
+        graffitiUploadJob = job
+        job.invokeOnCompletion {
+            if (graffitiUploadJob === job) graffitiUploadJob = null
+        }
+    }
+
+    private suspend fun cancelGraffitiUploadAndJoin() {
+        graffitiUploadGeneration++
+        val job = graffitiUploadJob
+        graffitiUploadJob = null
+        job?.cancelAndJoin()
+    }
+
+    private fun cancelGraffitiUpload() {
+        graffitiUploadGeneration++
+        graffitiUploadJob?.cancel()
+        graffitiUploadJob = null
     }
 
     private suspend fun initializeReadyConnection(): Boolean {
@@ -316,10 +417,8 @@ class A950RuntimeCoordinator @Inject constructor(
             return false
         }
         val brightnessApplied = bleClient.setBrightness(preferences.state.value.brightness)
-        val programListResumed = brightnessApplied && bleClient.resumeProgramList()
-        val initialized = programListResumed && bleClient.connection.value.ready
+        val initialized = brightnessApplied && bleClient.connection.value.ready
         connectionInitialized = initialized
-        programListResumePending = false
         _runtime.value = if (initialized) {
             A950RuntimeState(
                 lastCommandAt = System.currentTimeMillis(),
@@ -327,44 +426,14 @@ class A950RuntimeCoordinator @Inject constructor(
             )
         } else {
             A950RuntimeState(
-                lastError = if (brightnessApplied) {
-                    "A950 节目列表恢复失败"
-                } else {
-                    "亮度设置发送失败"
-                }
+                lastError = "亮度设置发送失败",
             )
         }
         WjxFileLogger.i(
             TAG,
-            "A950 initialization brightness=$brightnessApplied programList=$programListResumed " +
-                "initialized=$initialized",
+            "A950 initialization brightness=$brightnessApplied initialized=$initialized",
         )
         return initialized
-    }
-
-    private suspend fun restoreProgramListBeforeReset(reason: String) {
-        if (_runtime.value.currentPreset == null || !bleClient.connection.value.ready) return
-        pendingPreset = null
-        programListResumePending = true
-        tryResumeProgramList(System.currentTimeMillis(), reason)
-    }
-
-    private suspend fun tryResumeProgramList(now: Long, reason: String): Boolean {
-        val current = _runtime.value.currentPreset
-        val resumed = bleClient.resumeProgramList()
-        programListResumePending = !resumed && bleClient.connection.value.ready
-        _runtime.value = if (resumed) {
-            _runtime.value.copy(
-                currentPreset = null,
-                lastPresetChangedAt = now,
-                lastCommandAt = System.currentTimeMillis(),
-                lastError = null,
-            )
-        } else {
-            _runtime.value.copy(lastError = "A950 节目列表恢复失败")
-        }
-        WjxFileLogger.i(TAG, "resume A950 program list reason=$reason from=$current sent=$resumed")
-        return resumed
     }
 
     private fun resetRuntimeState() {
@@ -377,7 +446,8 @@ class A950RuntimeCoordinator @Inject constructor(
 
     private fun clearPendingCommands() {
         pendingPreset = null
-        programListResumePending = false
+        cancelGraffitiUpload()
+        _runtime.value = _runtime.value.copy(graffitiUploadInProgress = false)
     }
 
     private fun DiParsData.toLedCoreSignals(): LedVehicleSignals = LedVehicleSignals(
@@ -396,6 +466,11 @@ class A950RuntimeCoordinator @Inject constructor(
         doorRL = doorRL,
         doorRR = doorRR,
         trunk = trunk,
+        adasApaParkingStatus = adasApaParkingStatus,
+        adasAccMode = adasAccMode,
+        adasLccNcaStatus = adasLccNcaStatus,
+        accCruiseState = accCruiseState,
+        adasMnoaStatus = adasMnoaStatus,
         brakePedalDepth = brakePedalDepth,
         lightBrake = lightBrake,
         lightReversing = lightReversing,
@@ -420,6 +495,14 @@ class A950RuntimeCoordinator @Inject constructor(
         doorRL = body.doorRL ?: doorRL,
         doorRR = body.doorRR ?: doorRR,
         trunk = body.trunk ?: trunk,
+        adasApaParkingStatus = body.adasApaParkingStatus ?: adasApaParkingStatus,
+    )
+
+    private fun LedVehicleSignals.mergeAdas(adas: LedVehicleSignals): LedVehicleSignals = copy(
+        adasAccMode = adas.adasAccMode ?: adasAccMode,
+        adasLccNcaStatus = adas.adasLccNcaStatus ?: adasLccNcaStatus,
+        accCruiseState = adas.accCruiseState ?: accCruiseState,
+        adasMnoaStatus = adas.adasMnoaStatus ?: adasMnoaStatus,
     )
 
     private fun freshSignals(
@@ -438,6 +521,7 @@ class A950RuntimeCoordinator @Inject constructor(
         latestMotionSample = TimedSignals()
         latestBrakeSample = TimedSignals()
         latestBodySample = TimedSignals()
+        latestAdasSample = TimedSignals()
         lastSignalLogKey = null
     }
 
@@ -452,6 +536,11 @@ class A950RuntimeCoordinator @Inject constructor(
             reverseLight = signals.lightReversing,
             doors = listOf(signals.doorFL, signals.doorFR, signals.doorRL, signals.doorRR),
             trunk = signals.trunk,
+            apa = signals.adasApaParkingStatus,
+            acc = signals.adasAccMode,
+            accCruise = signals.accCruiseState,
+            lccNca = signals.adasLccNcaStatus,
+            mnoa = signals.adasMnoaStatus,
         )
         if (key == lastSignalLogKey) return
         lastSignalLogKey = key
@@ -461,7 +550,9 @@ class A950RuntimeCoordinator @Inject constructor(
                 "brake=${signals.brakePedalDepth} accel=${signals.accelPedalDepth} " +
                 "brakeLight=${signals.lightBrake} reverseLight=${signals.lightReversing} " +
                 "doors=${signals.doorFL}/${signals.doorFR}/${signals.doorRL}/${signals.doorRR} " +
-                "trunk=${signals.trunk}",
+                "trunk=${signals.trunk} apa=${signals.adasApaParkingStatus} " +
+                "acc=${signals.adasAccMode} accCruise=${signals.accCruiseState} " +
+                "lccNca=${signals.adasLccNcaStatus} mnoa=${signals.adasMnoaStatus}",
         )
     }
 
@@ -470,11 +561,13 @@ class A950RuntimeCoordinator @Inject constructor(
         private const val MOTION_INTERVAL_MS = 100L
         private const val BRAKE_INTERVAL_MS = 200L
         private const val BODY_INTERVAL_MS = 500L
+        private const val ADAS_INTERVAL_MS = 1_000L
         private const val ENGINE_TICK_MS = 100L
         private const val INITIALIZATION_RETRY_MS = 2_000L
         private const val MOTION_FRESH_MS = 350L
         private const val BRAKE_FRESH_MS = 700L
         private const val BODY_FRESH_MS = 1_500L
+        private const val ADAS_FRESH_MS = 2_500L
         private const val MIN_LOOP_DELAY_MS = 20L
         private const val INACTIVE_LOOP_DELAY_MS = 500L
     }
@@ -489,6 +582,11 @@ class A950RuntimeCoordinator @Inject constructor(
         val reverseLight: Int?,
         val doors: List<Int?>,
         val trunk: Int?,
+        val apa: Int?,
+        val acc: Int?,
+        val accCruise: Int?,
+        val lccNca: Int?,
+        val mnoa: Int?,
     )
 
     private data class ActiveA950Binding(

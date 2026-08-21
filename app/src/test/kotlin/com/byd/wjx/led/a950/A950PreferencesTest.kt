@@ -32,10 +32,11 @@ class A950PreferencesTest {
     fun `fresh A950 settings include default linkage rules`() {
         val rules = A950Preferences(context).state.value.rules
 
-        assertEquals(9, rules.size)
+        assertEquals(11, rules.size)
         assertEquals(
             listOf(
                 "default-light-hazard",
+                "default-auto-parking",
                 "default-light-reverse",
                 "default-gear-reverse",
                 "default-light-left-turn",
@@ -43,11 +44,12 @@ class A950PreferencesTest {
                 "default-door-front-left",
                 "default-door-front-right",
                 "default-gear-park",
-                "default-speed-running",
+                "default-pilot-assist",
+                "default-acc",
             ),
             rules.map { it.id },
         )
-        assertEquals(A950Preset.OPEN_DOOR_CAREFULLY, rules[5].steps.single().preset)
+        assertEquals(A950Preset.OPEN_DOOR_CAREFULLY, rules[6].steps.single().preset)
     }
 
     @Test
@@ -107,17 +109,39 @@ class A950PreferencesTest {
         val preferences = A950Preferences(context)
         preferences.bindDevice("A950:00", "A950 LED")
         preferences.setBrightness(35)
+        preferences.setGraffitiImage(
+            A950GraffitiAsset(
+                previewPath = "/tmp/a950-preview.png",
+                payloadPath = "/tmp/a950-payload.gif",
+                version = 123L,
+            )
+        )
 
         val snapshot = A950Preferences(context).state.value
         assertTrue(snapshot.enabled)
         assertEquals("A950:00", snapshot.deviceAddress)
         assertEquals("A950 LED", snapshot.deviceName)
         assertEquals(35, snapshot.brightness)
+        assertEquals("/tmp/a950-preview.png", snapshot.graffitiPreviewPath)
+        assertEquals("/tmp/a950-payload.gif", snapshot.graffitiPayloadPath)
+        assertEquals(123L, snapshot.graffitiImageVersion)
         assertTrue(
             context.getSharedPreferences(LEGACY_MIXED_PREFS, Context.MODE_PRIVATE)
                 .all
                 .isEmpty(),
         )
+    }
+
+    @Test
+    fun `clearing the A950 graffiti image removes its cached paths`() {
+        val preferences = A950Preferences(context)
+        preferences.setGraffitiImage(A950GraffitiAsset("preview", "payload", 7L))
+
+        preferences.clearGraffitiImage()
+
+        assertTrue(preferences.state.value.graffitiPreviewPath.isBlank())
+        assertTrue(preferences.state.value.graffitiPayloadPath.isBlank())
+        assertEquals(0L, preferences.state.value.graffitiImageVersion)
     }
 
     @Test

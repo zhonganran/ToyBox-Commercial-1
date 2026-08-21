@@ -358,7 +358,15 @@ private fun IpixelFaPresetChoiceField(
             }
             Icon(Icons.Outlined.ExpandMore, contentDescription = "展开画面", modifier = Modifier.size(18.dp))
         }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            // Constrain the popup so Compose reports the overflow to its scroll state.
+            // Without a finite height, some car-screen window managers clip the menu
+            // after item 17 instead of allowing items 18-20 to be reached.
+            modifier = Modifier.heightIn(max = 560.dp),
+            scrollState = rememberScrollState(),
+        ) {
             IpixelFaPreset.entries.forEach { preset ->
                 DropdownMenuItem(
                     text = {

@@ -1,5 +1,6 @@
 package com.byd.wjx.ui.settings
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.byd.wjx.activation.ActivationManager
@@ -8,6 +9,8 @@ import com.byd.wjx.led.a950.A950BleClient
 import com.byd.wjx.led.a950.A950ConnectionPhase
 import com.byd.wjx.led.a950.A950ConnectionState
 import com.byd.wjx.led.a950.A950Device
+import com.byd.wjx.led.a950.A950GraffitiImageStore
+import com.byd.wjx.led.a950.A950GraffitiSaveResult
 import com.byd.wjx.led.a950.A950LinkageRule
 import com.byd.wjx.led.a950.A950PreferenceSnapshot
 import com.byd.wjx.led.a950.A950Preferences
@@ -35,6 +38,7 @@ class A950SettingsViewModel @Inject constructor(
     private val bleClient: A950BleClient,
     private val runtimeCoordinator: A950RuntimeCoordinator,
     private val activationManager: ActivationManager,
+    private val graffitiImageStore: A950GraffitiImageStore,
 ) : ViewModel() {
     private val actionMessage = MutableStateFlow<String?>(null)
     private val _uiState = MutableStateFlow(A950SettingsUiState())
@@ -142,6 +146,28 @@ class A950SettingsViewModel @Inject constructor(
     fun moveRule(id: String, offset: Int) {
         if (!requireLedLinkageAccess()) return
         preferences.moveRule(id, offset)
+    }
+
+    fun selectGraffitiImage(uri: Uri) {
+        if (!requireLedLinkageAccess()) return
+        showMessage("正在处理 A950 条件解除画面")
+        viewModelScope.launch {
+            when (val result = graffitiImageStore.save(uri)) {
+                is A950GraffitiSaveResult.Success -> {
+                    preferences.setGraffitiImage(result.asset)
+                    showMessage("条件解除 GIF 已保存")
+                }
+                is A950GraffitiSaveResult.Failure -> showMessage(result.message)
+            }
+        }
+    }
+
+    fun deleteGraffitiImage() {
+        viewModelScope.launch {
+            graffitiImageStore.delete()
+            preferences.clearGraffitiImage()
+            showMessage("条件解除画面已删除")
+        }
     }
 
     private fun requireLedLinkageAccess(): Boolean {

@@ -1,6 +1,7 @@
 package com.byd.wjx.lyrics
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -76,5 +77,19 @@ class MediaSessionDumpParserTest {
         assertEquals("com.kugou.android.auto", snapshot.packageName)
         assertEquals("新歌", snapshot.title)
         assertEquals(12_000L, snapshot.positionMs)
+    }
+
+    @Test
+    fun parse_rejectsLiteralNullMetadataFromVendorSession() {
+        val snapshot = MediaSessionDumpParser.parse(
+            """
+            Sessions Stack - have 1 sessions:
+              SessionRecord{empty packageName=com.byd.mediacenter}
+                metadata: size=3, description=null, null, null
+                state=PlaybackState {state=3, position=12000, buffered position=0, speed=1.0, updated=65000}
+            """.trimIndent(),
+        )
+
+        assertNull(snapshot)
     }
 }

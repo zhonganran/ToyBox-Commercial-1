@@ -126,11 +126,20 @@ internal object VehicleReadProfiles {
         "doorRL",
         "doorRR",
         "trunk",
+        "adasApaParkingStatus",
+    )
+
+    val ledAdasFields: Set<String> = setOf(
+        "adasAccMode",
+        "adasLccNcaStatus",
+        "accCruiseState",
+        "adasMnoaStatus",
     )
 
     val ledMotion: List<FidEntry> = FidMap.entries.filter { it.field in ledMotionFields }
     val ledBrake: List<FidEntry> = FidMap.entries.filter { it.field in ledBrakeFields }
     val ledBody: List<FidEntry> = FidMap.entries.filter { it.field in ledBodyFields }
+    val ledAdas: List<FidEntry> = FidMap.entries.filter { it.field in ledAdasFields }
     val tireTelemetry: List<FidEntry> = FidMap.entries.filter {
         it.field in tireTelemetryFields
     }
@@ -181,6 +190,9 @@ internal object VehicleReadProfiles {
         }
         require(ledBody.map { it.field }.toSet() == ledBodyFields) {
             "LED body read profile references an unmapped field"
+        }
+        require(ledAdas.map { it.field }.toSet() == ledAdasFields) {
+            "LED ADAS read profile references an unmapped field"
         }
     }
 }

@@ -26,6 +26,35 @@ class MafuLinkageEngineTest {
     }
 
     @Test
+    fun `parking ACC and pilot conditions use verified ADAS enums`() {
+        assertTriggers(
+            LedLinkageTriggerType.AUTO_PARKING,
+            LedVehicleSignals(adasApaParkingStatus = 3),
+            LedVehicleSignals(adasApaParkingStatus = 4),
+        )
+        assertTriggers(
+            LedLinkageTriggerType.ACC,
+            LedVehicleSignals(adasAccMode = 2),
+            LedVehicleSignals(adasAccMode = 3),
+        )
+        assertTriggers(
+            LedLinkageTriggerType.ACC,
+            LedVehicleSignals(accCruiseState = 1),
+            LedVehicleSignals(accCruiseState = 2),
+        )
+        assertTriggers(
+            LedLinkageTriggerType.PILOT_ASSIST,
+            LedVehicleSignals(adasLccNcaStatus = 1),
+            LedVehicleSignals(adasLccNcaStatus = 2),
+        )
+        assertTriggers(
+            LedLinkageTriggerType.PILOT_ASSIST,
+            LedVehicleSignals(adasMnoaStatus = 1),
+            LedVehicleSignals(adasMnoaStatus = 2),
+        )
+    }
+
+    @Test
     fun `remote key remains selected while its condition remains true`() {
         val engine = MafuLinkageEngine()
         val rules = listOf(
@@ -80,6 +109,24 @@ class MafuLinkageEngineTest {
         conditionValue = condition,
         steps = listOf(MafuLinkageStep(MafuRemoteKey.KEY_1)),
     )
+
+    private fun assertTriggers(
+        type: LedLinkageTriggerType,
+        inactive: LedVehicleSignals,
+        active: LedVehicleSignals,
+    ) {
+        val engine = MafuLinkageEngine()
+        val rules = listOf(
+            MafuLinkageRule(
+                id = "adas",
+                triggerType = type,
+                conditionValue = "active",
+                steps = listOf(MafuLinkageStep(MafuRemoteKey.KEY_1)),
+            )
+        )
+        assertNull(engine.evaluate(rules, MODEL, inactive, 0L))
+        assertEquals(MafuRemoteKey.KEY_1, engine.evaluate(rules, MODEL, active, 1L))
+    }
 
     private companion object {
         val MODEL = MafuRemoteModel.YS_20_KEY

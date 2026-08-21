@@ -38,14 +38,19 @@ class NativeParsReaderTest {
             VehicleReadProfiles.ledBrakeFields,
         )
         assertEquals(
-            setOf("doorFL", "doorFR", "doorRL", "doorRR", "trunk"),
+            setOf("doorFL", "doorFR", "doorRL", "doorRR", "trunk", "adasApaParkingStatus"),
             VehicleReadProfiles.ledBodyFields,
+        )
+        assertEquals(
+            setOf("adasAccMode", "adasLccNcaStatus", "accCruiseState", "adasMnoaStatus"),
+            VehicleReadProfiles.ledAdasFields,
         )
 
         val readsPerSecond = VehicleReadProfiles.ledMotion.size * 10 +
             VehicleReadProfiles.ledBrake.size * 5 +
-            VehicleReadProfiles.ledBody.size * 2
-        assertEquals(50, readsPerSecond)
+            VehicleReadProfiles.ledBody.size * 2 +
+            VehicleReadProfiles.ledAdas.size
+        assertEquals(56, readsPerSecond)
     }
 
     private fun loadFixture(): JSONObject {
@@ -574,12 +579,13 @@ class NativeParsReaderTest {
     }
 
     @Test
-    fun `LED body snapshot reads four doors and trunk`() = runTest {
+    fun `LED body snapshot reads doors trunk and parking state`() = runTest {
         val gateway = FakeVehicleGateway().apply {
             VehicleReadProfiles.ledBody.forEach { entry ->
                 intValues[entry.device to entry.fid] = when (entry.field) {
                     "doorFL", "doorFR", "doorRL", "doorRR" -> 0
                     "trunk" -> 1
+                    "adasApaParkingStatus" -> 4
                     else -> error("Unexpected LED context field ${entry.field}")
                 }
             }
@@ -590,7 +596,35 @@ class NativeParsReaderTest {
         val body = reader.fetchLedBodyVehicleSnapshot()
         assertEquals(0, body?.data?.doorFL)
         assertEquals(1, body?.data?.trunk)
+        assertEquals(4, body?.data?.adasApaParkingStatus)
         assertEquals(VehicleReadProfiles.ledBody.size, gateway.lastBatchSpecs.size)
+        coVerify(exactly = 0) { settings.getBatteryCapacity() }
+    }
+
+    @Test
+    fun `LED ADAS snapshot reads ACC and pilot assist states`() = runTest {
+        val gateway = FakeVehicleGateway().apply {
+            VehicleReadProfiles.ledAdas.forEach { entry ->
+                intValues[entry.device to entry.fid] = when (entry.field) {
+                    "adasAccMode" -> 3
+                    "adasLccNcaStatus" -> 2
+                    "accCruiseState" -> 2
+                    "adasMnoaStatus" -> 2
+                    else -> error("Unexpected LED ADAS field ${entry.field}")
+                }
+            }
+        }
+        val settings = mockk<SettingsRepository>(relaxed = true)
+
+        val snapshot = NativeParsReader(gateway, settings, noAdditionalActionFields)
+            .fetchLedAdasVehicleSnapshot()
+
+        assertNotNull(snapshot)
+        assertEquals(3, snapshot?.data?.adasAccMode)
+        assertEquals(2, snapshot?.data?.adasLccNcaStatus)
+        assertEquals(2, snapshot?.data?.accCruiseState)
+        assertEquals(2, snapshot?.data?.adasMnoaStatus)
+        assertEquals(4, gateway.lastBatchSpecs.size)
         coVerify(exactly = 0) { settings.getBatteryCapacity() }
     }
 

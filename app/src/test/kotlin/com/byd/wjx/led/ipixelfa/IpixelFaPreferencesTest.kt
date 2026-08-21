@@ -32,10 +32,11 @@ class IpixelFaPreferencesTest {
     fun `fresh FA settings include default linkage rules`() {
         val rules = IpixelFaPreferences(context).state.value.rules
 
-        assertEquals(9, rules.size)
+        assertEquals(11, rules.size)
         assertEquals(
             listOf(
                 "default-light-hazard",
+                "default-auto-parking",
                 "default-light-reverse",
                 "default-gear-reverse",
                 "default-light-left-turn",
@@ -43,11 +44,12 @@ class IpixelFaPreferencesTest {
                 "default-door-front-left",
                 "default-door-front-right",
                 "default-gear-park",
-                "default-speed-running",
+                "default-pilot-assist",
+                "default-acc",
             ),
             rules.map { it.id },
         )
-        assertEquals(IpixelFaPreset.GET_OFF, rules[5].steps.single().preset)
+        assertEquals(IpixelFaPreset.GET_OFF, rules[6].steps.single().preset)
     }
 
     @Test

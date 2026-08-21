@@ -38,6 +38,7 @@ class IpixelFaRuntimeCoordinator @Inject constructor(
     @Volatile private var latestMotionSample = TimedSignals()
     @Volatile private var latestBrakeSample = TimedSignals()
     @Volatile private var latestBodySample = TimedSignals()
+    @Volatile private var latestAdasSample = TimedSignals()
     private var lastSignalLogKey: SignalLogKey? = null
     private var pendingPreset: IpixelFaPreset? = null
     private var programListResumePending = false
@@ -165,6 +166,15 @@ class IpixelFaRuntimeCoordinator @Inject constructor(
                     }
                 }
                 launch {
+                    runSignalLoop(
+                        label = "ADAS",
+                        intervalMs = ADAS_INTERVAL_MS,
+                        fetch = parsReader::fetchLedAdasVehicleSnapshot,
+                    ) { signals, at ->
+                        latestAdasSample = TimedSignals(signals, at)
+                    }
+                }
+                launch {
                     while (kotlin.coroutines.coroutineContext.isActive) {
                         if (
                             preferences.state.value.enabled &&
@@ -269,10 +279,12 @@ class IpixelFaRuntimeCoordinator @Inject constructor(
         val motion = freshSignals(now, latestMotionSample, MOTION_FRESH_MS)
         val brake = freshSignals(now, latestBrakeSample, BRAKE_FRESH_MS)
         val body = freshSignals(now, latestBodySample, BODY_FRESH_MS)
+        val adas = freshSignals(now, latestAdasSample, ADAS_FRESH_MS)
         val signals = latestVehicleSignals
             .mergeMotion(motion)
             .mergeBrake(brake)
             .mergeBody(body)
+            .mergeAdas(adas)
         logSignalChanges(signals)
         val next = ruleEngine.evaluate(preferences.state.value.rules, signals, now)
         if (next != null) {
@@ -402,6 +414,11 @@ class IpixelFaRuntimeCoordinator @Inject constructor(
         doorRL = doorRL,
         doorRR = doorRR,
         trunk = trunk,
+        adasApaParkingStatus = adasApaParkingStatus,
+        adasAccMode = adasAccMode,
+        adasLccNcaStatus = adasLccNcaStatus,
+        accCruiseState = accCruiseState,
+        adasMnoaStatus = adasMnoaStatus,
         brakePedalDepth = brakePedalDepth,
         lightBrake = lightBrake,
         lightReversing = lightReversing,
@@ -426,6 +443,14 @@ class IpixelFaRuntimeCoordinator @Inject constructor(
         doorRL = body.doorRL ?: doorRL,
         doorRR = body.doorRR ?: doorRR,
         trunk = body.trunk ?: trunk,
+        adasApaParkingStatus = body.adasApaParkingStatus ?: adasApaParkingStatus,
+    )
+
+    private fun LedVehicleSignals.mergeAdas(adas: LedVehicleSignals): LedVehicleSignals = copy(
+        adasAccMode = adas.adasAccMode ?: adasAccMode,
+        adasLccNcaStatus = adas.adasLccNcaStatus ?: adasLccNcaStatus,
+        accCruiseState = adas.accCruiseState ?: accCruiseState,
+        adasMnoaStatus = adas.adasMnoaStatus ?: adasMnoaStatus,
     )
 
     private fun freshSignals(
@@ -444,6 +469,7 @@ class IpixelFaRuntimeCoordinator @Inject constructor(
         latestMotionSample = TimedSignals()
         latestBrakeSample = TimedSignals()
         latestBodySample = TimedSignals()
+        latestAdasSample = TimedSignals()
         lastSignalLogKey = null
     }
 
@@ -458,6 +484,11 @@ class IpixelFaRuntimeCoordinator @Inject constructor(
             reverseLight = signals.lightReversing,
             doors = listOf(signals.doorFL, signals.doorFR, signals.doorRL, signals.doorRR),
             trunk = signals.trunk,
+            apa = signals.adasApaParkingStatus,
+            acc = signals.adasAccMode,
+            accCruise = signals.accCruiseState,
+            lccNca = signals.adasLccNcaStatus,
+            mnoa = signals.adasMnoaStatus,
         )
         if (key == lastSignalLogKey) return
         lastSignalLogKey = key
@@ -467,7 +498,9 @@ class IpixelFaRuntimeCoordinator @Inject constructor(
                 "brake=${signals.brakePedalDepth} accel=${signals.accelPedalDepth} " +
                 "brakeLight=${signals.lightBrake} reverseLight=${signals.lightReversing} " +
                 "doors=${signals.doorFL}/${signals.doorFR}/${signals.doorRL}/${signals.doorRR} " +
-                "trunk=${signals.trunk}",
+                "trunk=${signals.trunk} apa=${signals.adasApaParkingStatus} " +
+                "acc=${signals.adasAccMode} accCruise=${signals.accCruiseState} " +
+                "lccNca=${signals.adasLccNcaStatus} mnoa=${signals.adasMnoaStatus}",
         )
     }
 
@@ -476,11 +509,13 @@ class IpixelFaRuntimeCoordinator @Inject constructor(
         private const val MOTION_INTERVAL_MS = 100L
         private const val BRAKE_INTERVAL_MS = 200L
         private const val BODY_INTERVAL_MS = 500L
+        private const val ADAS_INTERVAL_MS = 1_000L
         private const val ENGINE_TICK_MS = 100L
         private const val INITIALIZATION_RETRY_MS = 2_000L
         private const val MOTION_FRESH_MS = 350L
         private const val BRAKE_FRESH_MS = 700L
         private const val BODY_FRESH_MS = 1_500L
+        private const val ADAS_FRESH_MS = 2_500L
         private const val MIN_LOOP_DELAY_MS = 20L
         private const val INACTIVE_LOOP_DELAY_MS = 500L
     }
@@ -495,6 +530,11 @@ class IpixelFaRuntimeCoordinator @Inject constructor(
         val reverseLight: Int?,
         val doors: List<Int?>,
         val trunk: Int?,
+        val apa: Int?,
+        val acc: Int?,
+        val accCruise: Int?,
+        val lccNca: Int?,
+        val mnoa: Int?,
     )
 
     private data class ActiveFaBinding(

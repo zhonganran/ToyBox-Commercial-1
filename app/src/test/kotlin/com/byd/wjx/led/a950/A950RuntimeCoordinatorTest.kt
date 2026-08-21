@@ -8,14 +8,19 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class A950RuntimeCoordinatorTest {
@@ -45,12 +50,12 @@ class A950RuntimeCoordinatorTest {
         every { bleClient.connection } returns connectionState
         coEvery { bleClient.setBrightness(any()) } returns true
         coEvery { bleClient.play(any()) } returns true
-        coEvery { bleClient.resumeProgramList() } returns true
 
         val parsReader = mockk<ParsReader>()
         coEvery { parsReader.fetchLedMotionVehicleSnapshot() } returns null
         coEvery { parsReader.fetchLedBrakeVehicleSnapshot() } returns null
         coEvery { parsReader.fetchLedBodyVehicleSnapshot() } returns null
+        coEvery { parsReader.fetchLedAdasVehicleSnapshot() } returns null
 
         val coordinator = A950RuntimeCoordinator(preferences, bleClient, parsReader)
         coordinator.start(backgroundScope)
@@ -81,7 +86,6 @@ class A950RuntimeCoordinatorTest {
 
         assertNull(coordinator.runtime.value.currentPreset)
         coVerify(exactly = 2) { bleClient.setBrightness(63) }
-        coVerify(exactly = 2) { bleClient.resumeProgramList() }
         coVerify(exactly = 1) { bleClient.play(any()) }
 
         coordinator.stop()
@@ -98,12 +102,12 @@ class A950RuntimeCoordinatorTest {
         every { bleClient.connection } returns connectionState
         coEvery { bleClient.setBrightness(any()) } returns true
         coEvery { bleClient.play(any()) } returns true
-        coEvery { bleClient.resumeProgramList() } returns true
 
         val parsReader = mockk<ParsReader>()
         coEvery { parsReader.fetchLedMotionVehicleSnapshot() } returns null
         coEvery { parsReader.fetchLedBrakeVehicleSnapshot() } returns null
         coEvery { parsReader.fetchLedBodyVehicleSnapshot() } returns null
+        coEvery { parsReader.fetchLedAdasVehicleSnapshot() } returns null
 
         val coordinator = A950RuntimeCoordinator(preferences, bleClient, parsReader)
         coordinator.start(backgroundScope)
@@ -124,7 +128,6 @@ class A950RuntimeCoordinatorTest {
         runCurrent()
 
         coVerify(exactly = 1) { bleClient.setBrightness(48) }
-        coVerify(exactly = 1) { bleClient.resumeProgramList() }
         coVerify(exactly = 0) { bleClient.play(any()) }
         assertNull(coordinator.runtime.value.currentPreset)
 
@@ -160,12 +163,12 @@ class A950RuntimeCoordinatorTest {
         every { bleClient.connection } returns connectionState
         coEvery { bleClient.setBrightness(any()) } returns true
         coEvery { bleClient.play(any()) } returns true
-        coEvery { bleClient.resumeProgramList() } returns true
 
         val parsReader = mockk<ParsReader>()
         coEvery { parsReader.fetchLedMotionVehicleSnapshot() } returns null
         coEvery { parsReader.fetchLedBrakeVehicleSnapshot() } returns null
         coEvery { parsReader.fetchLedBodyVehicleSnapshot() } returns null
+        coEvery { parsReader.fetchLedAdasVehicleSnapshot() } returns null
 
         val coordinator = A950RuntimeCoordinator(preferences, bleClient, parsReader)
         coordinator.start(backgroundScope)
@@ -178,12 +181,18 @@ class A950RuntimeCoordinatorTest {
     }
 
     @Test
-    fun `released A950 condition retries restoring the device program list`() = runTest {
+    fun `released A950 condition uploads and shows the configured graffiti once`() = runTest {
+        val graffiti = File.createTempFile("a950-release", ".gif").apply {
+            writeBytes(byteArrayOf(1, 2, 3, 4))
+            deleteOnExit()
+        }
         val preferenceState = MutableStateFlow(
             A950PreferenceSnapshot(
                 enabled = true,
                 deviceAddress = "AA:BB:CC:DD:EE:FF",
                 brightness = 50,
+                graffitiPayloadPath = graffiti.absolutePath,
+                graffitiImageVersion = 1L,
                 rules = listOf(
                     A950LinkageRule(
                         id = "reverse",
@@ -202,12 +211,13 @@ class A950RuntimeCoordinatorTest {
         every { bleClient.connection } returns connectionState
         coEvery { bleClient.setBrightness(any()) } returns true
         coEvery { bleClient.play(any()) } returns true
-        coEvery { bleClient.resumeProgramList() } returnsMany listOf(true, false, true)
+        coEvery { bleClient.uploadGraffiti(any()) } returns true
 
         val parsReader = mockk<ParsReader>()
         coEvery { parsReader.fetchLedMotionVehicleSnapshot() } returns null
         coEvery { parsReader.fetchLedBrakeVehicleSnapshot() } returns null
         coEvery { parsReader.fetchLedBodyVehicleSnapshot() } returns null
+        coEvery { parsReader.fetchLedAdasVehicleSnapshot() } returns null
 
         val coordinator = A950RuntimeCoordinator(preferences, bleClient, parsReader)
         coordinator.start(backgroundScope)
@@ -223,14 +233,88 @@ class A950RuntimeCoordinatorTest {
         assertEquals(A950Preset.REVERSING, coordinator.runtime.value.currentPreset)
 
         coordinator.onVehicleData(diParsData(gear = 4, powerState = 3))
-        assertEquals(A950Preset.REVERSING, coordinator.runtime.value.currentPreset)
-        assertEquals("A950 节目列表恢复失败", coordinator.runtime.value.lastError)
+        runCurrent()
+        assertNull(coordinator.runtime.value.currentPreset)
+        assertTrue(coordinator.runtime.value.showingGraffiti)
+        assertFalse(coordinator.runtime.value.graffitiUploadInProgress)
+        assertNull(coordinator.runtime.value.lastError)
+        coVerify(exactly = 1) { bleClient.play(A950Preset.REVERSING) }
+        coVerify(exactly = 1) { bleClient.uploadGraffiti(byteArrayOf(1, 2, 3, 4)) }
 
         coordinator.onVehicleData(diParsData(gear = 4, powerState = 3))
-        assertNull(coordinator.runtime.value.currentPreset)
-        assertNull(coordinator.runtime.value.lastError)
-        coVerify(exactly = 3) { bleClient.resumeProgramList() }
+        runCurrent()
+        coVerify(exactly = 1) { bleClient.uploadGraffiti(any()) }
 
+        coordinator.onVehicleData(diParsData(gear = 2, powerState = 3))
+        assertEquals(A950Preset.REVERSING, coordinator.runtime.value.currentPreset)
+        assertFalse(coordinator.runtime.value.showingGraffiti)
+        assertNull(coordinator.runtime.value.lastError)
+        coVerify(exactly = 2) { bleClient.play(A950Preset.REVERSING) }
+
+        coordinator.stop()
+    }
+
+    @Test
+    fun `new A950 condition cancels an in flight graffiti upload before playing`() = runTest {
+        val graffiti = File.createTempFile("a950-cancel", ".gif").apply {
+            writeBytes(ByteArray(32) { it.toByte() })
+            deleteOnExit()
+        }
+        val preferenceState = MutableStateFlow(
+            A950PreferenceSnapshot(
+                enabled = true,
+                deviceAddress = "AA:BB:CC:DD:EE:FF",
+                graffitiPayloadPath = graffiti.absolutePath,
+                graffitiImageVersion = 1L,
+                rules = listOf(
+                    A950LinkageRule(
+                        id = "reverse",
+                        triggerType = LedLinkageTriggerType.GEAR,
+                        conditionValue = "R",
+                        steps = listOf(A950LinkageStep(A950Preset.REVERSING)),
+                    )
+                ),
+            )
+        )
+        val preferences = mockk<A950Preferences>()
+        every { preferences.state } returns preferenceState
+        val connectionState = MutableStateFlow(A950ConnectionState())
+        val uploadStarted = CompletableDeferred<Unit>()
+        val uploadCancelled = CompletableDeferred<Unit>()
+        val bleClient = mockk<A950BleClient>(relaxed = true)
+        every { bleClient.connection } returns connectionState
+        coEvery { bleClient.setBrightness(any()) } returns true
+        coEvery { bleClient.play(any()) } returns true
+        coEvery { bleClient.uploadGraffiti(any()) } coAnswers {
+            uploadStarted.complete(Unit)
+            try {
+                awaitCancellation()
+            } finally {
+                uploadCancelled.complete(Unit)
+            }
+        }
+        val parsReader = mockk<ParsReader>(relaxed = true)
+        val coordinator = A950RuntimeCoordinator(preferences, bleClient, parsReader)
+        coordinator.start(backgroundScope)
+        runCurrent()
+        connectionState.value = A950ConnectionState(
+            phase = A950ConnectionPhase.READY,
+            address = "AA:BB:CC:DD:EE:FF",
+        )
+        runCurrent()
+
+        coordinator.onVehicleData(diParsData(gear = 2, powerState = 3))
+        coordinator.onVehicleData(diParsData(gear = 4, powerState = 3))
+        runCurrent()
+        assertTrue(uploadStarted.isCompleted)
+        assertTrue(coordinator.runtime.value.graffitiUploadInProgress)
+
+        coordinator.onVehicleData(diParsData(gear = 2, powerState = 3))
+
+        assertTrue(uploadCancelled.isCompleted)
+        assertEquals(A950Preset.REVERSING, coordinator.runtime.value.currentPreset)
+        assertFalse(coordinator.runtime.value.graffitiUploadInProgress)
+        coVerify(exactly = 2) { bleClient.play(A950Preset.REVERSING) }
         coordinator.stop()
     }
 
@@ -248,8 +332,7 @@ class A950RuntimeCoordinatorTest {
         val connectionState = MutableStateFlow(A950ConnectionState())
         val bleClient = mockk<A950BleClient>(relaxed = true)
         every { bleClient.connection } returns connectionState
-        coEvery { bleClient.setBrightness(45) } returns true
-        coEvery { bleClient.resumeProgramList() } returnsMany listOf(false, true)
+        coEvery { bleClient.setBrightness(45) } returnsMany listOf(false, true)
         val parsReader = mockk<ParsReader>(relaxed = true)
 
         val coordinator = A950RuntimeCoordinator(preferences, bleClient, parsReader)
@@ -262,21 +345,19 @@ class A950RuntimeCoordinatorTest {
         runCurrent()
 
         coVerify(exactly = 1) { bleClient.setBrightness(45) }
-        coVerify(exactly = 1) { bleClient.resumeProgramList() }
-        assertEquals("A950 节目列表恢复失败", coordinator.runtime.value.lastError)
+        assertEquals("亮度设置发送失败", coordinator.runtime.value.lastError)
 
         advanceTimeBy(2_100L)
         runCurrent()
 
         coVerify(exactly = 2) { bleClient.setBrightness(45) }
-        coVerify(exactly = 2) { bleClient.resumeProgramList() }
         assertNull(coordinator.runtime.value.lastError)
 
         coordinator.stop()
     }
 
     @Test
-    fun `clearing A950 rules restores the device program list`() = runTest {
+    fun `clearing A950 rules leaves the last remote scene displayed`() = runTest {
         val reverseRule = A950LinkageRule(
             id = "reverse",
             triggerType = LedLinkageTriggerType.GEAR,
@@ -296,7 +377,6 @@ class A950RuntimeCoordinatorTest {
         val bleClient = mockk<A950BleClient>(relaxed = true)
         every { bleClient.connection } returns connectionState
         coEvery { bleClient.setBrightness(any()) } returns true
-        coEvery { bleClient.resumeProgramList() } returns true
         coEvery { bleClient.play(any()) } returns true
         val parsReader = mockk<ParsReader>(relaxed = true)
 
@@ -314,8 +394,8 @@ class A950RuntimeCoordinatorTest {
         preferenceState.value = preferenceState.value.copy(rules = emptyList())
         runCurrent()
 
-        assertNull(coordinator.runtime.value.currentPreset)
-        coVerify(exactly = 2) { bleClient.resumeProgramList() }
+        assertEquals(A950Preset.REVERSING, coordinator.runtime.value.currentPreset)
+        coVerify(exactly = 1) { bleClient.play(A950Preset.REVERSING) }
 
         coordinator.stop()
     }

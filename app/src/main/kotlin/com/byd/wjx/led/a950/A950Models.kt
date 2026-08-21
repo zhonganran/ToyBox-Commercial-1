@@ -80,6 +80,7 @@ object A950LinkageRuleFactory {
     /** Rules used when the A950 protocol has never been configured before. */
     fun defaultRules(): List<A950LinkageRule> = listOf(
         rule("light-hazard", LedLinkageTriggerType.LIGHT, "hazard", A950Preset.HAZARD_WARNING),
+        rule("auto-parking", LedLinkageTriggerType.AUTO_PARKING, "active", A950Preset.REVERSING),
         rule("light-reverse", LedLinkageTriggerType.LIGHT, "reverse", A950Preset.REVERSING),
         rule("gear-reverse", LedLinkageTriggerType.GEAR, "R", A950Preset.REVERSING),
         rule("light-left-turn", LedLinkageTriggerType.LIGHT, "left_turn", A950Preset.LEFT_TURN),
@@ -87,7 +88,8 @@ object A950LinkageRuleFactory {
         rule("door-front-left", LedLinkageTriggerType.DOOR, "front_left", A950Preset.OPEN_DOOR_CAREFULLY),
         rule("door-front-right", LedLinkageTriggerType.DOOR, "front_right", A950Preset.OPEN_DOOR_CAREFULLY),
         rule("gear-park", LedLinkageTriggerType.GEAR, "P", A950Preset.TEMPORARY_STOP),
-        rule("speed-running", LedLinkageTriggerType.SPEED, "gt_30", A950Preset.AUTOPILOT),
+        rule("pilot-assist", LedLinkageTriggerType.PILOT_ASSIST, "active", A950Preset.AUTOPILOT),
+        rule("acc", LedLinkageTriggerType.ACC, "active", A950Preset.AUTOPILOT),
     )
 
     private fun rule(
@@ -136,11 +138,16 @@ data class A950PreferenceSnapshot(
     val deviceAddress: String = "",
     val deviceName: String = "",
     val brightness: Int = 70,
+    val graffitiPreviewPath: String = "",
+    val graffitiPayloadPath: String = "",
+    val graffitiImageVersion: Long = 0L,
     val rules: List<A950LinkageRule> = emptyList(),
 )
 
 data class A950RuntimeState(
     val currentPreset: A950Preset? = null,
+    val showingGraffiti: Boolean = false,
+    val graffitiUploadInProgress: Boolean = false,
     val lastPresetChangedAt: Long = 0L,
     val lastCommandAt: Long = 0L,
     val lastError: String? = null,

@@ -55,6 +55,9 @@ class NativeParsReader @Inject constructor(
     override suspend fun fetchLedBodyVehicleSnapshot(): VehicleSnapshot? =
         fetchPlan(LedBodyReadPlan, VehicleSnapshotKind.ACTION)
 
+    override suspend fun fetchLedAdasVehicleSnapshot(): VehicleSnapshot? =
+        fetchPlan(LedAdasReadPlan, VehicleSnapshotKind.ACTION)
+
     override suspend fun readTireTelemetry(): DiParsData? =
         fetchPlan(TireTelemetryReadPlan, VehicleSnapshotKind.ACTION)?.data
 
@@ -445,6 +448,7 @@ class NativeParsReader @Inject constructor(
         private val LedMotionReadPlan = ReadPlan(VehicleReadProfiles.ledMotion)
         private val LedBrakeReadPlan = ReadPlan(VehicleReadProfiles.ledBrake)
         private val LedBodyReadPlan = ReadPlan(VehicleReadProfiles.ledBody)
+        private val LedAdasReadPlan = ReadPlan(VehicleReadProfiles.ledAdas)
         private val TireTelemetryReadPlan = ReadPlan(VehicleReadProfiles.tireTelemetry)
         private val PowertrainTelemetryReadPlan = ReadPlan(
             VehicleReadProfiles.powertrainTelemetry + FidMap.entries.single { it.field == "gear" },
