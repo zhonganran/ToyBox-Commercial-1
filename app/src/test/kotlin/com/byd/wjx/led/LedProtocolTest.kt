@@ -19,9 +19,25 @@ class LedProtocolTest {
     }
 
     @Test
-    fun `FA exits temporary display mode instead of deleting the stored program list`() {
+    fun `FA enters program mode immediately with every stored program slot`() {
         assertArrayEquals(
-            byteArrayOf(0x04, 0x00, 0x01, 0x01),
+            byteArrayOf(
+                0x0F,
+                0x00,
+                0x08,
+                0x80.toByte(),
+                0x09,
+                0x00,
+                0x01,
+                0x02,
+                0x03,
+                0x04,
+                0x05,
+                0x06,
+                0x07,
+                0x08,
+                0x09,
+            ),
             IpixelFaProtocol.playProgramList(),
         )
     }

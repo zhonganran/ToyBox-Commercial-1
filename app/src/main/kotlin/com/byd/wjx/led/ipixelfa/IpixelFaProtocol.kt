@@ -16,13 +16,19 @@ internal object IpixelFaProtocol {
 
     fun playPreset(preset: IpixelFaPreset): ByteArray = playRemotePreset(preset.presetId)
 
-    /** Exit the FA firmware's temporary display mode so its stored program list resumes. */
-    fun playProgramList(): ByteArray = byteArrayOf(
-        0x04,
-        0x00,
-        0x01,
-        0x01,
-    )
+    /** Immediately enter program mode and rotate through every stored FA program buffer. */
+    fun playProgramList(): ByteArray {
+        val slots = (MIN_PROGRAM_SLOT..MAX_PROGRAM_SLOT).map(Int::toByte)
+        return byteArrayOf(
+            (PROGRAM_MODE_HEADER_SIZE + slots.size).toByte(),
+            0x00,
+            0x08,
+            0x80.toByte(),
+            slots.size.toByte(),
+            0x00,
+            *slots.toByteArray(),
+        )
+    }
 
     fun playRemotePreset(presetId: Int, language: Int = LANGUAGE_CHINESE): ByteArray {
         require(presetId in 1..20) { "FA remote preset must be in 1..20" }
@@ -49,4 +55,7 @@ internal object IpixelFaProtocol {
 
     private const val LANGUAGE_ENGLISH = 0
     private const val LANGUAGE_CHINESE = 1
+    private const val PROGRAM_MODE_HEADER_SIZE = 6
+    private const val MIN_PROGRAM_SLOT = 1
+    private const val MAX_PROGRAM_SLOT = 9
 }
