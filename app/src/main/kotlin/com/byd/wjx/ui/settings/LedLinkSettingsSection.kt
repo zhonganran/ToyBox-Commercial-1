@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Bluetooth
 import androidx.compose.material.icons.outlined.BluetoothConnected
 import androidx.compose.material.icons.outlined.LinkOff
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Button
@@ -59,12 +60,14 @@ import com.byd.wjx.ui.theme.AccentOrange
 import com.byd.wjx.ui.theme.CardBorder
 import com.byd.wjx.ui.theme.CardSurface
 import com.byd.wjx.ui.theme.CardSurfaceElevated
+import com.byd.wjx.ui.theme.SocRed
 import com.byd.wjx.ui.theme.TextMuted
 import com.byd.wjx.ui.theme.TextPrimary
 import com.byd.wjx.ui.theme.TextSecondary
 
 @Composable
 fun LedLinkSettingsSection(
+    activationAllowed: Boolean,
     faViewModel: IpixelFaSettingsViewModel = hiltViewModel(),
     a950ViewModel: A950SettingsViewModel = hiltViewModel(),
     mafuViewModel: MafuSettingsViewModel = hiltViewModel(),
@@ -73,6 +76,11 @@ fun LedLinkSettingsSection(
     val selectedTab by navigationViewModel.selectedTab.collectAsStateWithLifecycle()
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        if (!activationAllowed) {
+            LedLinkActivationRequiredCard()
+            return@Column
+        }
+
         TabRow(
             selectedTabIndex = selectedTab.ordinal,
             containerColor = CardSurfaceElevated,
@@ -97,6 +105,44 @@ fun LedLinkSettingsSection(
             LedProtocolSettingsTab.FA -> IpixelFaSettingsPane(faViewModel)
             LedProtocolSettingsTab.A950 -> A950SettingsPane(a950ViewModel)
             LedProtocolSettingsTab.MAFU -> MafuSettingsPane(mafuViewModel)
+        }
+    }
+}
+
+@Composable
+private fun LedLinkActivationRequiredCard() {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = CardSurfaceElevated),
+        border = BorderStroke(1.dp, SocRed.copy(alpha = 0.55f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .background(SocRed.copy(alpha = 0.14f), RoundedCornerShape(10.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Outlined.Lock, contentDescription = null, tint = SocRed)
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    "LED 联动需要激活后使用",
+                    color = TextPrimary,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                )
+                Text(
+                    "请先在授权激活页面完成永久激活",
+                    color = TextSecondary,
+                    fontSize = 12.sp,
+                )
+            }
         }
     }
 }

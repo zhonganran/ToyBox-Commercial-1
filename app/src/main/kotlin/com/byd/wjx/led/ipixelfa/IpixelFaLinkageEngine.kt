@@ -9,6 +9,7 @@ class IpixelFaLinkageEngine {
     private val previousMatches = linkedMapOf<String, Boolean>()
     private var activeRuleId: String? = null
     private var displayedPreset: IpixelFaPreset? = null
+    private var lastPresetDispatchedAt: Long? = null
     private var programListRestorePending = false
 
     fun evaluate(
@@ -47,7 +48,11 @@ class IpixelFaLinkageEngine {
                 activeRuleId = null
             }
         }
-        return triggered?.let { startPlayback(it) }
+        return when {
+            triggered != null -> startPlayback(triggered, now)
+            activeStillMatches -> refreshPlayback(now)
+            else -> null
+        }
     }
 
     /** True after a linkage condition ends and the stored device program list must be resumed. */
@@ -56,6 +61,8 @@ class IpixelFaLinkageEngine {
     fun consumeProgramListRestore(): Boolean {
         if (!programListRestorePending) return false
         programListRestorePending = false
+        displayedPreset = null
+        lastPresetDispatchedAt = null
         return true
     }
 
@@ -64,6 +71,7 @@ class IpixelFaLinkageEngine {
         previousMatches.clear()
         activeRuleId = null
         displayedPreset = null
+        lastPresetDispatchedAt = null
         programListRestorePending = false
     }
 
@@ -73,6 +81,8 @@ class IpixelFaLinkageEngine {
         boundRules = normalized
         previousMatches.clear()
         activeRuleId = null
+        displayedPreset = null
+        lastPresetDispatchedAt = null
         programListRestorePending = false
     }
 
@@ -84,13 +94,30 @@ class IpixelFaLinkageEngine {
         previousMatches.putAll(matches)
     }
 
-    private fun startPlayback(rule: IpixelFaLinkageRule): IpixelFaPreset? {
-        return dispatch(rule.steps.first().preset, force = true)
+    private fun startPlayback(rule: IpixelFaLinkageRule, now: Long): IpixelFaPreset? {
+        return dispatch(rule.steps.first().preset, now, force = true)
     }
 
-    private fun dispatch(preset: IpixelFaPreset, force: Boolean = false): IpixelFaPreset? {
+    private fun refreshPlayback(now: Long): IpixelFaPreset? {
+        val preset = displayedPreset ?: return null
+        val lastDispatchedAt = lastPresetDispatchedAt ?: return dispatch(preset, now, force = true)
+        if (
+            now < lastDispatchedAt ||
+            now - lastDispatchedAt < IpixelFaProtocol.REMOTE_PRESET_REFRESH_MS
+        ) {
+            return null
+        }
+        return dispatch(preset, now, force = true)
+    }
+
+    private fun dispatch(
+        preset: IpixelFaPreset,
+        now: Long,
+        force: Boolean = false,
+    ): IpixelFaPreset? {
         if (!force && displayedPreset == preset) return null
         displayedPreset = preset
+        lastPresetDispatchedAt = now
         return preset
     }
 

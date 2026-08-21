@@ -2,6 +2,8 @@ package com.byd.wjx.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.byd.wjx.activation.ActivationManager
+import com.byd.wjx.activation.PremiumFeature
 import com.byd.wjx.led.mafu.MafuBleClient
 import com.byd.wjx.led.mafu.MafuConnectionPhase
 import com.byd.wjx.led.mafu.MafuConnectionState
@@ -33,6 +35,7 @@ class MafuSettingsViewModel @Inject constructor(
     private val preferences: MafuPreferences,
     private val bleClient: MafuBleClient,
     private val runtimeCoordinator: MafuRuntimeCoordinator,
+    private val activationManager: ActivationManager,
 ) : ViewModel() {
     private val actionMessage = MutableStateFlow<String?>(null)
     private val _uiState = MutableStateFlow(MafuSettingsUiState())
@@ -59,6 +62,7 @@ class MafuSettingsViewModel @Inject constructor(
     }
 
     fun setEnabled(enabled: Boolean) {
+        if (enabled && !requireLedLinkageAccess()) return
         bleClient.stopScan()
         preferences.setEnabled(enabled)
         bleClient.startAutoConnect()
@@ -66,6 +70,7 @@ class MafuSettingsViewModel @Inject constructor(
     }
 
     fun scan() {
+        if (!requireLedLinkageAccess()) return
         showMessage(null)
         val connection = bleClient.connection.value
         if (connection.phase in setOf(
@@ -83,6 +88,7 @@ class MafuSettingsViewModel @Inject constructor(
     }
 
     fun bind(device: MafuDevice) {
+        if (!requireLedLinkageAccess()) return
         bleClient.stopScan()
         preferences.setEnabled(true)
         bleClient.connect(device.address, device.name)
@@ -90,6 +96,7 @@ class MafuSettingsViewModel @Inject constructor(
     }
 
     fun reconnect() {
+        if (!requireLedLinkageAccess()) return
         bleClient.startAutoConnect()
         showMessage("正在重新连接马夫 LED 设备")
     }
@@ -101,10 +108,12 @@ class MafuSettingsViewModel @Inject constructor(
     }
 
     fun setBrightness(level: Int) {
+        if (!requireLedLinkageAccess()) return
         preferences.setBrightness(level)
     }
 
     fun applyBrightness(level: Int) {
+        if (!requireLedLinkageAccess()) return
         preferences.setBrightness(level)
         viewModelScope.launch {
             val ok = runtimeCoordinator.applyBrightness(level)
@@ -113,6 +122,7 @@ class MafuSettingsViewModel @Inject constructor(
     }
 
     fun setScreenPower(enabled: Boolean) {
+        if (!requireLedLinkageAccess()) return
         viewModelScope.launch {
             val ok = runtimeCoordinator.setScreenPower(enabled)
             showMessage(
@@ -126,11 +136,13 @@ class MafuSettingsViewModel @Inject constructor(
     }
 
     fun setRemoteModel(model: MafuRemoteModel) {
+        if (!requireLedLinkageAccess()) return
         preferences.setRemoteModel(model)
         showMessage("已切换为${model.title}")
     }
 
     fun saveRule(rule: MafuLinkageRule): Boolean {
+        if (!requireLedLinkageAccess()) return false
         val saved = preferences.saveRule(rule)
         showMessage(if (saved) "马夫 LED 联动规则已保存" else "同一条件只能创建一条规则")
         return saved
@@ -142,12 +154,21 @@ class MafuSettingsViewModel @Inject constructor(
     }
 
     fun setRuleEnabled(id: String, enabled: Boolean) {
+        if (enabled && !requireLedLinkageAccess()) return
         preferences.setRuleEnabled(id, enabled)
         showMessage(if (enabled) "规则已启用" else "规则已停用")
     }
 
     fun moveRule(id: String, offset: Int) {
+        if (!requireLedLinkageAccess()) return
         preferences.moveRule(id, offset)
+    }
+
+    private fun requireLedLinkageAccess(): Boolean {
+        if (activationManager.canUse(PremiumFeature.LED_LINKAGE)) return true
+        bleClient.stopScan()
+        showMessage(LED_LINKAGE_ACTIVATION_REQUIRED_MESSAGE)
+        return false
     }
 
     private fun showMessage(message: String?) {

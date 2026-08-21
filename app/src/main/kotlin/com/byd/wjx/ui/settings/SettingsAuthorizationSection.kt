@@ -539,7 +539,7 @@ internal fun SettingsCapabilityCard(state: SettingsUiState) {
             CapabilityRow("基础功能", "音效播放、歌词显示、常用设置", "可用", AccentGreen)
             CapabilityRow(
                 "高级功能",
-                "解锁/锁车/哨兵音效、按键快捷操作、仪表投射",
+                "解锁/锁车/哨兵音效、按键快捷操作、仪表投射、LED 联动",
                 if (activation.activated || activation.trialActive) "可用" else "需激活",
                 if (activation.activated || activation.trialActive) AccentBlue else SocRed,
             )

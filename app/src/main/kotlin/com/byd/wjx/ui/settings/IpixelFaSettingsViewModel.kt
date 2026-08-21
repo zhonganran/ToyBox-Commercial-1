@@ -2,6 +2,8 @@ package com.byd.wjx.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.byd.wjx.activation.ActivationManager
+import com.byd.wjx.activation.PremiumFeature
 import com.byd.wjx.led.ipixelfa.IpixelFaBleClient
 import com.byd.wjx.led.ipixelfa.IpixelFaConnectionPhase
 import com.byd.wjx.led.ipixelfa.IpixelFaConnectionState
@@ -32,6 +34,7 @@ class IpixelFaSettingsViewModel @Inject constructor(
     private val preferences: IpixelFaPreferences,
     private val bleClient: IpixelFaBleClient,
     private val runtimeCoordinator: IpixelFaRuntimeCoordinator,
+    private val activationManager: ActivationManager,
 ) : ViewModel() {
     private val actionMessage = MutableStateFlow<String?>(null)
     private val _uiState = MutableStateFlow(IpixelFaSettingsUiState())
@@ -58,6 +61,7 @@ class IpixelFaSettingsViewModel @Inject constructor(
     }
 
     fun setEnabled(enabled: Boolean) {
+        if (enabled && !requireLedLinkageAccess()) return
         bleClient.stopScan()
         preferences.setEnabled(enabled)
         bleClient.startAutoConnect()
@@ -65,6 +69,7 @@ class IpixelFaSettingsViewModel @Inject constructor(
     }
 
     fun scan() {
+        if (!requireLedLinkageAccess()) return
         showMessage(null)
         viewModelScope.launch {
             val connection = bleClient.connection.value
@@ -84,6 +89,7 @@ class IpixelFaSettingsViewModel @Inject constructor(
     fun stopScan() = bleClient.stopScan()
 
     fun bind(device: IpixelFaDevice) {
+        if (!requireLedLinkageAccess()) return
         bleClient.stopScan()
         preferences.setEnabled(true)
         bleClient.connect(device.address, device.name)
@@ -91,6 +97,7 @@ class IpixelFaSettingsViewModel @Inject constructor(
     }
 
     fun reconnect() {
+        if (!requireLedLinkageAccess()) return
         bleClient.startAutoConnect()
         showMessage("正在重新连接标准 FA 设备")
     }
@@ -108,10 +115,12 @@ class IpixelFaSettingsViewModel @Inject constructor(
     }
 
     fun setBrightness(percent: Int) {
+        if (!requireLedLinkageAccess()) return
         preferences.setBrightness(percent)
     }
 
     fun applyBrightness(percent: Int) {
+        if (!requireLedLinkageAccess()) return
         preferences.setBrightness(percent)
         viewModelScope.launch {
             val ok = runtimeCoordinator.applyBrightness(percent)
@@ -120,6 +129,7 @@ class IpixelFaSettingsViewModel @Inject constructor(
     }
 
     fun saveRule(rule: IpixelFaLinkageRule): Boolean {
+        if (!requireLedLinkageAccess()) return false
         val saved = preferences.saveRule(rule)
         showMessage(if (saved) "联动规则已保存" else "同一条件只能创建一条规则")
         return saved
@@ -131,12 +141,21 @@ class IpixelFaSettingsViewModel @Inject constructor(
     }
 
     fun setRuleEnabled(id: String, enabled: Boolean) {
+        if (enabled && !requireLedLinkageAccess()) return
         preferences.setRuleEnabled(id, enabled)
         showMessage(if (enabled) "规则已启用" else "规则已停用")
     }
 
     fun moveRule(id: String, offset: Int) {
+        if (!requireLedLinkageAccess()) return
         preferences.moveRule(id, offset)
+    }
+
+    private fun requireLedLinkageAccess(): Boolean {
+        if (activationManager.canUse(PremiumFeature.LED_LINKAGE)) return true
+        bleClient.stopScan()
+        showMessage(LED_LINKAGE_ACTIVATION_REQUIRED_MESSAGE)
+        return false
     }
 
     private fun showMessage(message: String?) {

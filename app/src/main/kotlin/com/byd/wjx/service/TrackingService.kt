@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.os.IBinder
 import android.util.Log
+import com.byd.wjx.activation.ActivationManager
+import com.byd.wjx.activation.PremiumFeature
 import com.byd.wjx.data.automation.AutomationEngine
 import com.byd.wjx.data.charging.ChargingCatchUpCoordinator
 import com.byd.wjx.data.repository.TrackingStateStore
@@ -26,6 +28,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
@@ -55,17 +59,20 @@ class TrackingService : Service() {
     @Inject lateinit var ipixelFaRuntimeCoordinator: com.byd.wjx.led.ipixelfa.IpixelFaRuntimeCoordinator
     @Inject lateinit var a950RuntimeCoordinator: com.byd.wjx.led.a950.A950RuntimeCoordinator
     @Inject lateinit var mafuRuntimeCoordinator: com.byd.wjx.led.mafu.MafuRuntimeCoordinator
+    @Inject lateinit var activationManager: ActivationManager
     @Inject lateinit var desktopQuickCardRuntime: DesktopQuickCardRuntime
     @Inject lateinit var clusterCardRuntime: ClusterCardRuntime
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val helperReadiness = CompletableDeferred<Boolean>()
     private var pollingJob: Job? = null
+    private var ledRuntimeGateJob: Job? = null
     private var tripTrackerOwner: Long = 0L
 
     companion object {
         private const val TAG = "TrackingService"
         private const val HELPER_READINESS_WAIT_MS = 9_000L
+        private const val LED_ACTIVATION_CHECK_INTERVAL_MS = 5_000L
 
         fun start(context: Context) {
             val intent = Intent(context, TrackingService::class.java)
@@ -124,9 +131,7 @@ class TrackingService : Service() {
         desktopQuickCardRuntime.start(serviceScope)
         clusterCardRuntime.start(serviceScope)
         lyricRuntime.start(cameraRuntimeCoordinator.active)
-        ipixelFaRuntimeCoordinator.start(serviceScope)
-        a950RuntimeCoordinator.start(serviceScope)
-        mafuRuntimeCoordinator.start(serviceScope)
+        startLedRuntimeGate()
         publishRunning(true)
         ChainLog.append(this, "TrackingService fully started")
         WjxFileLogger.i(TAG, "fully started")
@@ -151,6 +156,8 @@ class TrackingService : Service() {
         ChainLog.append(this, "TrackingService onDestroy")
         pollingJob?.cancel()
         pollingJob = null
+        ledRuntimeGateJob?.cancel()
+        ledRuntimeGateJob = null
         sharedAdaptiveLoop.stop()
         chargingCatchUpCoordinator.stop()
         energyFlowStatsStore.flush()
@@ -302,6 +309,30 @@ class TrackingService : Service() {
                     Log.e(TAG, "Downstream consumer threw on tick: ${e.message}", e)
                     WjxFileLogger.e(TAG, "Downstream consumer threw on tick: ${e.message}", e)
                 }
+            }
+        }
+    }
+
+    private fun startLedRuntimeGate() {
+        ledRuntimeGateJob?.cancel()
+        ledRuntimeGateJob = serviceScope.launch {
+            var running = false
+            while (isActive) {
+                val allowed = activationManager.canUse(PremiumFeature.LED_LINKAGE)
+                if (allowed && !running) {
+                    ipixelFaRuntimeCoordinator.start(this@TrackingService.serviceScope)
+                    a950RuntimeCoordinator.start(this@TrackingService.serviceScope)
+                    mafuRuntimeCoordinator.start(this@TrackingService.serviceScope)
+                    running = true
+                    WjxFileLogger.i(TAG, "LED runtimes started: activation allowed")
+                } else if (!allowed && running) {
+                    mafuRuntimeCoordinator.stop()
+                    a950RuntimeCoordinator.stop()
+                    ipixelFaRuntimeCoordinator.stop()
+                    running = false
+                    WjxFileLogger.i(TAG, "LED runtimes stopped: activation locked")
+                }
+                delay(LED_ACTIVATION_CHECK_INTERVAL_MS)
             }
         }
     }

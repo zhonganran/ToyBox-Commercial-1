@@ -19,9 +19,9 @@ class LedProtocolTest {
     }
 
     @Test
-    fun `FA restores the stored program list instead of selecting preset six`() {
+    fun `FA exits temporary display mode instead of deleting the stored program list`() {
         assertArrayEquals(
-            byteArrayOf(0x04, 0x00, 0x03, 0x80.toByte()),
+            byteArrayOf(0x04, 0x00, 0x01, 0x01),
             IpixelFaProtocol.playProgramList(),
         )
     }
@@ -79,7 +79,11 @@ class LedProtocolTest {
         )
         assertArrayEquals(
             byteArrayOf(0x4E, 0x52, 0x04, 0x01, 0x05, 0xFF.toByte(), 0x00, 0xA9.toByte()),
-            A950Protocol.resumeProgramListPacket,
+            A950Protocol.disableRemoteControlPacket,
+        )
+        assertArrayEquals(
+            byteArrayOf(0x4E, 0x52, 0x04, 0x01, 0x05, 0xFF.toByte(), 0xA9.toByte()),
+            A950Protocol.playProgramListPacket,
         )
     }
 

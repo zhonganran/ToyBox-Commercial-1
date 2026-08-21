@@ -16,6 +16,7 @@ internal object A950Protocol {
 
     const val REQUESTED_MTU = 517
     const val WRITE_GAP_MS = 90L
+    const val PROGRAM_LIST_RESUME_DELAY_MS = 250L
     const val READY_DELAY_MS = 200L
     const val KEEPALIVE_INTERVAL_MS = 2_000L
 
@@ -49,8 +50,11 @@ internal object A950Protocol {
     val enableRemoteControlPacket: ByteArray
         get() = remoteControl(commandIndex = 0xFF, value = 0x01)
 
-    val resumeProgramListPacket: ByteArray
+    val disableRemoteControlPacket: ByteArray
         get() = remoteControl(commandIndex = 0xFF, value = 0x00)
+
+    val playProgramListPacket: ByteArray
+        get() = command(command = 0x01, parameter1 = 0x05, parameter2 = 0xFF)
 
     fun brightness(percent: Int): ByteArray = command(
         command = 0x01,

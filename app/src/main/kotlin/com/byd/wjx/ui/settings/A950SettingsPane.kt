@@ -240,7 +240,7 @@ internal fun A950SettingsPane(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text("发现的 A950 设备", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    Text("发现的蓝牙设备", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                     state.devices.forEach { device ->
                         A950DeviceRow(device = device, onClick = { viewModel.bind(device) })
                     }
@@ -319,7 +319,7 @@ private fun A950DeviceRow(device: A950Device, onClick: () -> Unit) {
         Column(modifier = Modifier.weight(1f)) {
             Text(device.name, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             Text(
-                "A950 协议  ·  ${device.address}",
+                "连接后验证 A950  ·  ${device.address}",
                 color = TextMuted,
                 fontSize = 10.sp,
                 maxLines = 1,

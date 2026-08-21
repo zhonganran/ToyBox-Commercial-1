@@ -2,6 +2,8 @@ package com.byd.wjx.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.byd.wjx.activation.ActivationManager
+import com.byd.wjx.activation.PremiumFeature
 import com.byd.wjx.led.a950.A950BleClient
 import com.byd.wjx.led.a950.A950ConnectionPhase
 import com.byd.wjx.led.a950.A950ConnectionState
@@ -32,6 +34,7 @@ class A950SettingsViewModel @Inject constructor(
     private val preferences: A950Preferences,
     private val bleClient: A950BleClient,
     private val runtimeCoordinator: A950RuntimeCoordinator,
+    private val activationManager: ActivationManager,
 ) : ViewModel() {
     private val actionMessage = MutableStateFlow<String?>(null)
     private val _uiState = MutableStateFlow(A950SettingsUiState())
@@ -58,6 +61,7 @@ class A950SettingsViewModel @Inject constructor(
     }
 
     fun setEnabled(enabled: Boolean) {
+        if (enabled && !requireLedLinkageAccess()) return
         bleClient.stopScan()
         preferences.setEnabled(enabled)
         bleClient.startAutoConnect()
@@ -65,6 +69,7 @@ class A950SettingsViewModel @Inject constructor(
     }
 
     fun scan() {
+        if (!requireLedLinkageAccess()) return
         showMessage(null)
         val connection = bleClient.connection.value
         if (connection.phase in setOf(
@@ -83,6 +88,7 @@ class A950SettingsViewModel @Inject constructor(
     fun stopScan() = bleClient.stopScan()
 
     fun bind(device: A950Device) {
+        if (!requireLedLinkageAccess()) return
         bleClient.stopScan()
         preferences.setEnabled(true)
         bleClient.connect(device.address, device.name)
@@ -90,6 +96,7 @@ class A950SettingsViewModel @Inject constructor(
     }
 
     fun reconnect() {
+        if (!requireLedLinkageAccess()) return
         bleClient.startAutoConnect()
         showMessage("正在重新连接 A950 设备")
     }
@@ -101,10 +108,12 @@ class A950SettingsViewModel @Inject constructor(
     }
 
     fun setBrightness(percent: Int) {
+        if (!requireLedLinkageAccess()) return
         preferences.setBrightness(percent)
     }
 
     fun applyBrightness(percent: Int) {
+        if (!requireLedLinkageAccess()) return
         preferences.setBrightness(percent)
         viewModelScope.launch {
             val ok = runtimeCoordinator.applyBrightness(percent)
@@ -113,6 +122,7 @@ class A950SettingsViewModel @Inject constructor(
     }
 
     fun saveRule(rule: A950LinkageRule): Boolean {
+        if (!requireLedLinkageAccess()) return false
         val saved = preferences.saveRule(rule)
         showMessage(if (saved) "A950 联动规则已保存" else "同一条件只能创建一条规则")
         return saved
@@ -124,12 +134,21 @@ class A950SettingsViewModel @Inject constructor(
     }
 
     fun setRuleEnabled(id: String, enabled: Boolean) {
+        if (enabled && !requireLedLinkageAccess()) return
         preferences.setRuleEnabled(id, enabled)
         showMessage(if (enabled) "规则已启用" else "规则已停用")
     }
 
     fun moveRule(id: String, offset: Int) {
+        if (!requireLedLinkageAccess()) return
         preferences.moveRule(id, offset)
+    }
+
+    private fun requireLedLinkageAccess(): Boolean {
+        if (activationManager.canUse(PremiumFeature.LED_LINKAGE)) return true
+        bleClient.stopScan()
+        showMessage(LED_LINKAGE_ACTIVATION_REQUIRED_MESSAGE)
+        return false
     }
 
     private fun showMessage(message: String?) {

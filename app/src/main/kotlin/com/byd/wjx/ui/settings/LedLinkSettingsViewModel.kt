@@ -6,6 +6,8 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
 
+internal const val LED_LINKAGE_ACTIVATION_REQUIRED_MESSAGE = "当前授权不可用，LED 联动需要激活后使用"
+
 @HiltViewModel
 internal class LedLinkSettingsViewModel @Inject constructor(
     private val savedStateHandle: SavedStateHandle,

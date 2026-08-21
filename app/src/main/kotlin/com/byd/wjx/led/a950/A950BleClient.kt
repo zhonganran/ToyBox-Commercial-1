@@ -19,6 +19,7 @@ import android.os.Build
 import androidx.core.content.ContextCompat
 import com.byd.wjx.log.WjxFileLogger
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -31,6 +32,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -52,6 +54,7 @@ class A950BleClient @Inject constructor(
 
     @Volatile private var bluetoothGatt: BluetoothGatt? = null
     @Volatile private var writeCharacteristic: BluetoothGattCharacteristic? = null
+    @Volatile private var pendingWriteAck: CompletableDeferred<Int>? = null
     @Volatile private var manualDisconnect = false
     @Volatile private var protocolSetupStarted = false
     @Volatile private var negotiatedMtu = DEFAULT_MTU
@@ -137,7 +140,7 @@ class A950BleClient @Inject constructor(
         _devices.value = emptyList()
         _connection.value = A950ConnectionState(
             phase = A950ConnectionPhase.SCANNING,
-            message = "正在查找 A950 设备",
+            message = "正在查找可连接的蓝牙设备",
         )
         val settings = ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
@@ -172,7 +175,11 @@ class A950BleClient @Inject constructor(
         if (_connection.value.phase == A950ConnectionPhase.SCANNING) {
             _connection.value = A950ConnectionState(
                 phase = A950ConnectionPhase.IDLE,
-                message = if (_devices.value.isEmpty()) "未发现 A950 设备" else "请选择 A950 设备",
+                message = if (_devices.value.isEmpty()) {
+                    "未发现可连接设备，请确认屏幕已进入配对状态"
+                } else {
+                    "请选择设备并验证 A950 协议"
+                },
             )
         }
     }
@@ -278,10 +285,23 @@ class A950BleClient @Inject constructor(
         ),
     )
 
-    suspend fun resumeProgramList(): Boolean = write(
-        packet = A950Protocol.resumeProgramListPacket,
-        description = "resume device program list",
-    )
+    suspend fun resumeProgramList(): Boolean = writeMutex.withLock {
+        val remoteControlDisabled = writeLocked(
+            packet = A950Protocol.disableRemoteControlPacket,
+            description = "remote control disabled",
+            requireReady = true,
+            preferWriteWithResponse = true,
+        )
+        if (!remoteControlDisabled) return@withLock false
+
+        delay(A950Protocol.PROGRAM_LIST_RESUME_DELAY_MS)
+        writeLocked(
+            packet = A950Protocol.playProgramListPacket,
+            description = "play device program list",
+            requireReady = true,
+            preferWriteWithResponse = true,
+        )
+    }
 
     suspend fun setBrightness(percent: Int): Boolean = write(
         packet = A950Protocol.brightness(percent),
@@ -311,6 +331,7 @@ class A950BleClient @Inject constructor(
         packet: ByteArray,
         description: String,
         requireReady: Boolean,
+        preferWriteWithResponse: Boolean = false,
     ): Boolean {
         val gatt = bluetoothGatt
         val characteristic = writeCharacteristic
@@ -318,10 +339,30 @@ class A950BleClient @Inject constructor(
             WjxFileLogger.w(TAG, "write skipped not ready description=$description")
             return false
         }
-        characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+        val supportsWriteWithResponse = characteristic.properties and
+            BluetoothGattCharacteristic.PROPERTY_WRITE != 0
+        val supportsWriteWithoutResponse = characteristic.properties and
+            BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0
+        val writeType = if (preferWriteWithResponse && supportsWriteWithResponse) {
+            BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+        } else if (supportsWriteWithoutResponse) {
+            BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+        } else if (supportsWriteWithResponse) {
+            BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+        } else {
+            WjxFileLogger.w(TAG, "write skipped unsupported characteristic description=$description")
+            return false
+        }
+        characteristic.writeType = writeType
+        val ack = if (writeType == BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) {
+            CompletableDeferred<Int>()
+        } else {
+            null
+        }
+        pendingWriteAck = ack
         val accepted = runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                gatt.writeCharacteristic(characteristic, packet, characteristic.writeType) ==
+                gatt.writeCharacteristic(characteristic, packet, writeType) ==
                     BluetoothStatusCodes.SUCCESS
             } else {
                 @Suppress("DEPRECATION")
@@ -331,10 +372,24 @@ class A950BleClient @Inject constructor(
             }
         }.getOrDefault(false)
         if (!accepted) {
+            if (pendingWriteAck === ack) pendingWriteAck = null
             recoverFromWriteFailure(description)
             return false
         }
-        WjxFileLogger.i(TAG, "write queued $description bytes=${packet.toHex()}")
+        WjxFileLogger.i(
+            TAG,
+            "write queued $description type=${if (ack == null) "NO_RESPONSE" else "DEFAULT"} " +
+                "bytes=${packet.toHex()}",
+        )
+
+        if (ack != null) {
+            val status = withTimeoutOrNull(WRITE_ACK_TIMEOUT_MS) { ack.await() }
+            if (pendingWriteAck === ack) pendingWriteAck = null
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                recoverFromWriteFailure("$description callback status=$status")
+                return false
+            }
+        }
         delay(A950Protocol.WRITE_GAP_MS)
         return true
     }
@@ -437,6 +492,8 @@ class A950BleClient @Inject constructor(
         mtuFallbackJob = null
         bluetoothGatt = null
         writeCharacteristic = null
+        pendingWriteAck?.complete(BluetoothGatt.GATT_FAILURE)
+        pendingWriteAck = null
         protocolSetupStarted = false
         negotiatedMtu = DEFAULT_MTU
         runCatching { old?.disconnect() }
@@ -494,23 +551,12 @@ class A950BleClient @Inject constructor(
     private val scanCallback = object : ScanCallback() {
         @SuppressLint("MissingPermission")
         override fun onScanResult(callbackType: Int, result: ScanResult) {
-            val name = runCatching { result.device.name }.getOrNull()
-                .orEmpty()
-                .ifBlank { result.scanRecord?.deviceName.orEmpty() }
-            val services = result.scanRecord?.serviceUuids.orEmpty().mapTo(linkedSetOf()) { it.uuid }
-            val advertisesA950 = A950Protocol.serviceUuid in services
-            val nameLooksLikeA950 = name.contains("A950", ignoreCase = true) ||
-                name.contains("VIVID", ignoreCase = true) ||
-                name.contains("LED", ignoreCase = true)
-            if (!advertisesA950 && !(services.isEmpty() && nameLooksLikeA950)) return
+            handleScanResult(result)
+        }
 
-            val item = A950Device(
-                address = result.device.address,
-                name = name.ifBlank { "A950 设备" },
-                rssi = result.rssi,
-            )
-            foundDevices[item.address] = item
-            _devices.value = foundDevices.values.sortedByDescending { it.rssi }
+        @SuppressLint("MissingPermission")
+        override fun onBatchScanResults(results: MutableList<ScanResult>) {
+            results.forEach(::handleScanResult)
         }
 
         override fun onScanFailed(errorCode: Int) {
@@ -521,6 +567,31 @@ class A950BleClient @Inject constructor(
                 message = "扫描失败：$errorCode",
             )
             WjxFileLogger.w(TAG, "A950 BLE scan failed code=$errorCode")
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun handleScanResult(result: ScanResult) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !result.isConnectable) return
+
+        val name = runCatching { result.device.name }.getOrNull()
+            .orEmpty()
+            .ifBlank { result.scanRecord?.deviceName.orEmpty() }
+        val services = result.scanRecord?.serviceUuids.orEmpty().mapTo(linkedSetOf()) { it.uuid }
+        val advertisesA950 = A950Protocol.serviceUuid in services
+        val item = A950Device(
+            address = result.device.address,
+            name = name.ifBlank { if (advertisesA950) "A950 设备" else "未知蓝牙设备" },
+            rssi = result.rssi,
+        )
+        val previous = foundDevices.put(item.address, item)
+        _devices.value = foundDevices.values.sortedByDescending { it.rssi }
+        if (previous == null) {
+            WjxFileLogger.i(
+                TAG,
+                "scan candidate address=${item.address} name=${item.name} " +
+                    "advertisesA950=$advertisesA950 services=${services.joinToString()}",
+            )
         }
     }
 
@@ -588,12 +659,14 @@ class A950BleClient @Inject constructor(
                 return
             }
             val write = checkNotNull(service?.getCharacteristic(A950Protocol.writeUuid))
+            val supportsWriteWithResponse = write.properties and
+                BluetoothGattCharacteristic.PROPERTY_WRITE != 0
             val supportsWriteWithoutResponse = write.properties and
                 BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0
-            if (!supportsWriteWithoutResponse) {
+            if (!supportsWriteWithResponse && !supportsWriteWithoutResponse) {
                 _connection.value = _connection.value.copy(
                     phase = A950ConnectionPhase.ERROR,
-                    message = "A950 无响应写入通道不可用",
+                    message = "A950 写入通道不可用",
                 )
                 closeGatt()
                 return
@@ -629,10 +702,12 @@ class A950BleClient @Inject constructor(
             status: Int,
         ) {
             if (gatt !== bluetoothGatt || characteristic.uuid != A950Protocol.writeUuid) return
-            if (status == BluetoothGatt.GATT_SUCCESS) {
-                WjxFileLogger.i(TAG, "write callback success")
+            val ack = pendingWriteAck
+            if (ack != null) {
+                ack.complete(status)
                 return
             }
+            if (status == BluetoothGatt.GATT_SUCCESS) return
             WjxFileLogger.w(TAG, "write callback failed status=$status")
             scope.launch {
                 writeMutex.withLock {
@@ -647,9 +722,10 @@ class A950BleClient @Inject constructor(
     private companion object {
         private const val TAG = "A950BleClient"
         private const val DEFAULT_MTU = 23
-        private const val SCAN_WINDOW_MS = 10_000L
+        private const val SCAN_WINDOW_MS = 15_000L
         private const val CONNECT_SETTLE_MS = 10_000L
         private const val MTU_CALLBACK_TIMEOUT_MS = 2_500L
+        private const val WRITE_ACK_TIMEOUT_MS = 2_500L
         private val RECONNECT_DELAYS_MS = longArrayOf(1_000L, 2_000L, 5_000L, 10_000L, 30_000L)
     }
 }

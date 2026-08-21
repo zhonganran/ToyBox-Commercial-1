@@ -34,6 +34,7 @@ enum class PremiumFeature {
     CLUSTER_PROJECTION,
     KEY_SHORTCUT_ACTIONS,
     DESKTOP_LYRICS,
+    LED_LINKAGE,
 }
 
 data class ActivationSnapshot(
@@ -295,7 +296,8 @@ class ActivationManager @Inject constructor(
             PremiumFeature.AUTOMATION_UNLIMITED,
             PremiumFeature.CLUSTER_PROJECTION,
             PremiumFeature.KEY_SHORTCUT_ACTIONS,
-            PremiumFeature.DESKTOP_LYRICS -> snapshot.activated || snapshot.trialActive
+            PremiumFeature.DESKTOP_LYRICS,
+            PremiumFeature.LED_LINKAGE -> snapshot.activated || snapshot.trialActive
         }
     }
 

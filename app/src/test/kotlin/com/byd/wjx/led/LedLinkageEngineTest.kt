@@ -115,13 +115,26 @@ class IpixelFaLinkageEngineTest {
         val bothActive = LedVehicleSignals(gear = 2, turnSignalFlash = 6)
         assertEquals(IpixelFaPreset.TURN_LEFT, engine.evaluate(rules, bothActive, 0L))
         assertNull(engine.evaluate(rules, bothActive, 500L))
-        assertNull(engine.evaluate(rules, bothActive, 10_000L))
+        assertEquals(IpixelFaPreset.TURN_LEFT, engine.evaluate(rules, bothActive, 9_000L))
         assertNull(engine.evaluate(rules, LedVehicleSignals(gear = 4, turnSignalFlash = 1), 10_100L))
         assertEquals(IpixelFaPreset.HAZARD_WARNING, engine.evaluate(
             rules,
             LedVehicleSignals(gear = 4, turnSignalFlash = 6),
             10_200L,
         ))
+    }
+
+    @Test
+    fun `active FA preset refreshes before the firmware remote timeout`() {
+        val engine = IpixelFaLinkageEngine()
+        val rules = listOf(rule("left", LedLinkageTriggerType.LIGHT, "left_turn"))
+        val active = LedVehicleSignals(turnSignalFlash = 2)
+
+        assertEquals(IpixelFaPreset.TURN_LEFT, engine.evaluate(rules, active, 1_000L))
+        assertNull(engine.evaluate(rules, active, 9_999L))
+        assertEquals(IpixelFaPreset.TURN_LEFT, engine.evaluate(rules, active, 10_000L))
+        assertNull(engine.evaluate(rules, active, 18_999L))
+        assertEquals(IpixelFaPreset.TURN_LEFT, engine.evaluate(rules, active, 19_000L))
     }
 
     @Test

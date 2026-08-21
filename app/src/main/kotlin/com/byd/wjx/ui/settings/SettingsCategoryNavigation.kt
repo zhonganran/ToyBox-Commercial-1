@@ -147,7 +147,9 @@ internal fun SettingsCategoryContent(
                 PlacesSection(onNavigateToPlaces)
             }
             SettingsCategory.Control -> DisplaySection(state, viewModel)
-            SettingsCategory.Led -> LedLinkSettingsSection()
+            SettingsCategory.Led -> LedLinkSettingsSection(
+                activationAllowed = state.activation.activated || state.activation.trialActive,
+            )
             SettingsCategory.EventSound -> VehicleEventSoundSection(state, viewModel)
             SettingsCategory.Data -> AppSection(state, viewModel)
         }
@@ -204,7 +206,11 @@ private fun SettingsCategory.status(state: SettingsUiState): String =
         SettingsCategory.Service -> if (state.activation.activated) "已授权" else PERMANENT_AUTH_PRICE
         SettingsCategory.Vehicle -> "费用 / 能耗"
         SettingsCategory.Control -> if (state.activation.activated || state.activation.trialActive) "高级可用" else "部分需激活"
-        SettingsCategory.Led -> "设备联动"
+        SettingsCategory.Led -> if (state.activation.activated || state.activation.trialActive) {
+            "设备联动"
+        } else {
+            "需激活"
+        }
         SettingsCategory.EventSound -> {
             val count = LockSoundEvent.entries.count { state.lockSound.enabled(it) }
             if (count > 0) "${count} 项开启" else "未开启"
@@ -222,7 +228,7 @@ private fun SettingsCategory.accent(state: SettingsUiState): Color =
         SettingsCategory.Service -> AccentOrange
         SettingsCategory.Vehicle -> AccentBlue
         SettingsCategory.Control -> AccentGreen
-        SettingsCategory.Led -> AccentBlue
+        SettingsCategory.Led -> if (state.activation.activated || state.activation.trialActive) AccentBlue else SocRed
         SettingsCategory.EventSound -> AccentOrange
         SettingsCategory.Data -> AccentPurple
     }

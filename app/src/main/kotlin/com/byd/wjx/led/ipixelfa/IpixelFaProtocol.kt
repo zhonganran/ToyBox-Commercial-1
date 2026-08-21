@@ -7,6 +7,7 @@ internal object IpixelFaProtocol {
     val writeUuid: UUID = UUID.fromString("0000fa02-0000-1000-8000-00805f9b34fb")
     val notifyUuid: UUID = UUID.fromString("0000fa03-0000-1000-8000-00805f9b34fb")
     const val WRITE_GAP_MS = 70L
+    const val REMOTE_PRESET_REFRESH_MS = 9_000L
 
     fun acceptsGattProfile(
         serviceUuid: UUID?,
@@ -15,12 +16,12 @@ internal object IpixelFaProtocol {
 
     fun playPreset(preset: IpixelFaPreset): ByteArray = playRemotePreset(preset.presetId)
 
-    /** Return from a temporary remote preset to the device's stored program list. */
+    /** Exit the FA firmware's temporary display mode so its stored program list resumes. */
     fun playProgramList(): ByteArray = byteArrayOf(
         0x04,
         0x00,
-        0x03,
-        0x80.toByte(),
+        0x01,
+        0x01,
     )
 
     fun playRemotePreset(presetId: Int, language: Int = LANGUAGE_CHINESE): ByteArray {
