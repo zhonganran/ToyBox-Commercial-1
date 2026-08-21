@@ -33,7 +33,9 @@ class PaymentProviderError(RuntimeError):
 def canonicalize(params):
     values = []
     for key in sorted(params):
-        if key in {"sign", "sign_type"}:
+        # XPay V2 signs business fields only. The response envelope's
+        # `code` and algorithm marker are metadata, not signed fields.
+        if key in {"code", "sign", "sign_type"}:
             continue
         value = params[key]
         if value is None or value == "":

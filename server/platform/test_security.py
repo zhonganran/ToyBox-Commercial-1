@@ -178,6 +178,7 @@ class PaymentProtocolTest(unittest.TestCase):
             platform_payment.canonicalize({
                 "type": "wxpay",
                 "sign": "ignored",
+                "code": 0,
                 "pid": "1000",
                 "empty": "",
                 "sign_type": "RSA",
@@ -199,6 +200,22 @@ class PaymentProtocolTest(unittest.TestCase):
         params["sign"] = platform_payment.sign_params(params, private_key)
         self.assertTrue(platform_payment.verify_params(params, private_key.public_key()))
         self.assertFalse(platform_payment.verify_params({**params, "money": "0.01"}, private_key.public_key()))
+
+    def test_v2_response_signature_ignores_code_envelope(self):
+        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        response = {
+            "code": 0,
+            "msg": "success",
+            "trade_no": "20260820195701575389",
+            "pay_type": "jump",
+            "pay_info": "https://mzf.mapay.cc/pay/20260820195701575389",
+            "timestamp": "1787227021",
+            "sign_type": "RSA",
+        }
+        response["sign"] = platform_payment.sign_params(response, private_key)
+        self.assertTrue(platform_payment.verify_params(response, private_key.public_key()))
+        response["code"] = 1
+        self.assertTrue(platform_payment.verify_params(response, private_key.public_key()))
 
 
 class PlatformRequestSecurityTest(unittest.TestCase):
@@ -588,7 +605,7 @@ class PlatformWorkflowTest(unittest.TestCase):
         with platform_app.db() as conn:
             self.assertEqual(0, conn.execute("SELECT COUNT(*) FROM payment_orders").fetchone()[0])
 
-    def test_duplicate_pending_payment_reuses_provider_order(self):
+    def test_pending_payment_reuses_order_until_local_expiry(self):
         vin = self.register_device("LC0FD4C42S7184302")
         token = self.device_tokens[vin]
         with patch.object(platform_app, "payment_ready", return_value=True), patch.object(
@@ -605,6 +622,57 @@ class PlatformWorkflowTest(unittest.TestCase):
         create_provider.assert_called_once()
         with platform_app.db() as conn:
             self.assertEqual(1, conn.execute("SELECT COUNT(*) FROM payment_orders").fetchone()[0])
+
+    def test_expired_pending_payment_creates_fresh_provider_order(self):
+        vin = self.register_device("LC0FD4C42S7184305")
+        token = self.device_tokens[vin]
+        provider_results = [
+            self.payment_provider_create_result("PLATFORM-001") | {"pay_info": "https://mzf.mapay.cc/pay/first"},
+            self.payment_provider_create_result("PLATFORM-002") | {"payurl": "https://mzf.mapay.cc/pay/second"},
+        ]
+        with patch.object(platform_app, "payment_ready", return_value=True), patch.object(
+            platform_app,
+            "create_provider_order",
+            side_effect=provider_results,
+        ) as create_provider:
+            first = self.create_payment(vin, token)
+            with platform_app.db() as conn:
+                conn.execute(
+                    "UPDATE payment_orders SET expires_at = ? WHERE out_trade_no = ?",
+                    ("2000-01-01T00:00:00Z", first.json["orderNo"]),
+                )
+            second = self.create_payment(vin, token)
+        self.assertEqual(200, first.status_code)
+        self.assertEqual(200, second.status_code)
+        self.assertNotEqual(first.json["orderNo"], second.json["orderNo"])
+        self.assertEqual("https://mzf.mapay.cc/pay/second", second.json["payInfo"])
+        self.assertEqual("https://mzf.mapay.cc/pay/second", second.json["payUrl"])
+        self.assertEqual(2, create_provider.call_count)
+        with platform_app.db() as conn:
+            self.assertEqual(2, conn.execute("SELECT COUNT(*) FROM payment_orders").fetchone()[0])
+
+    def test_legacy_order_uses_current_ttl_for_reuse_decision(self):
+        vin = self.register_device("LC0FD4C42S7184306")
+        token = self.device_tokens[vin]
+        with patch.object(platform_app, "payment_ready", return_value=True), patch.object(
+            platform_app,
+            "create_provider_order",
+            return_value=self.payment_provider_create_result(),
+        ) as create_provider:
+            first = self.create_payment(vin, token)
+            with platform_app.db() as conn:
+                old_created = (
+                    platform_app.utc_datetime()
+                    - platform_app.timedelta(seconds=301)
+                ).replace(microsecond=0).isoformat() + "Z"
+                conn.execute(
+                    "UPDATE payment_orders SET created_at = ?, expires_at = ? WHERE out_trade_no = ?",
+                    (old_created, "2099-01-01T00:00:00Z", first.json["orderNo"]),
+                )
+            second = self.create_payment(vin, token)
+        self.assertEqual(200, second.status_code)
+        self.assertNotEqual(first.json["orderNo"], second.json["orderNo"])
+        self.assertEqual(2, create_provider.call_count)
 
     def test_verified_paid_query_activates_once_and_wrong_poll_token_is_rejected(self):
         vin = self.register_device("LC0FD4C42S7184303")

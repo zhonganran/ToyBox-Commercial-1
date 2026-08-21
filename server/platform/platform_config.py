@@ -43,7 +43,7 @@ PAYMENT_ACTIVATION_PRICE = os.environ.get("WJX_PAYMENT_ACTIVATION_PRICE", "15.90
 PAYMENT_SITE_NAME = os.environ.get("WJX_PAYMENT_SITE_NAME", "超级玩具箱").strip() or "超级玩具箱"
 PAYMENT_ORDER_TTL_SECONDS = max(
     300,
-    min(int(os.environ.get("WJX_PAYMENT_ORDER_TTL_SECONDS", "1800")), 86400),
+    min(int(os.environ.get("WJX_PAYMENT_ORDER_TTL_SECONDS", "300")), 86400),
 )
 PAYMENT_HTTP_TIMEOUT_SECONDS = max(
     3,

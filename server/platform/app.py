@@ -1988,6 +1988,23 @@ def payment_expiry_iso():
     ).replace(microsecond=0).isoformat() + "Z"
 
 
+def payment_order_expired(order, now=None):
+    """Use both persisted expiry and the current provider TTL.
+
+    The creation-time check keeps orders created before a TTL configuration
+    change from reusing a payment page that is already stale at the provider.
+    """
+    current = now or utc_datetime()
+    stored_expiry = parse_utc(order["expires_at"])
+    created_at = parse_utc(order["created_at"])
+    if stored_expiry and stored_expiry <= current:
+        return True
+    return bool(
+        created_at
+        and created_at + timedelta(seconds=PAYMENT_ORDER_TTL_SECONDS) <= current
+    )
+
+
 def payment_poll_token_matches(order, token):
     expected = str(order["poll_token_hash"] or "")
     candidate = device_token_hash(token) if token else ""
@@ -2015,6 +2032,10 @@ def payment_order_client_payload(order, poll_token=""):
         "paymentName": PAYMENT_TYPES.get(order["payment_type"], order["payment_type"]),
         "payType": order["pay_payload_type"],
         "payInfo": order["pay_info"],
+        # payInfo is the provider's hosted checkout page in V2 mode. Keep a
+        # named alias so clients do not mistake it for a QR payload and encode
+        # it into a second QR code.
+        "payUrl": order["pay_info"],
         "amount": payment_amount_text(order["expected_amount_cents"]),
         "status": order["status"],
         "paid": order["status"] == "paid",
@@ -2399,10 +2420,19 @@ def api_payment_create():
             SELECT * FROM payment_orders
             WHERE device_code IN ({sql_placeholders(device_codes)})
               AND payment_type = ? AND status = 'pending' AND expires_at > ?
+              AND created_at > ?
               AND pay_info != ''
             ORDER BY id DESC LIMIT 1
             """,
-            (*device_codes, payment_type, utc_now()),
+            (
+                *device_codes,
+                payment_type,
+                utc_now(),
+                (utc_datetime() - timedelta(seconds=PAYMENT_ORDER_TTL_SECONDS))
+                .replace(microsecond=0)
+                .isoformat()
+                + "Z",
+            ),
         ).fetchone()
         if reusable is not None:
             conn.execute(
@@ -2456,7 +2486,16 @@ def api_payment_create():
             "money": payment_amount_text(expected_cents),
         })
         pay_type = str(provider.get("pay_type") or "").strip().lower()
-        pay_info = str(provider.get("pay_info") or "").strip()
+        # V2 providers may return the hosted checkout page as `payurl`/`url`
+        # while older responses call the same value `pay_info`.
+        pay_info = next(
+            (
+                str(provider.get(key) or "").strip()
+                for key in ("payurl", "pay_url", "url", "pay_info", "qrcode")
+                if str(provider.get(key) or "").strip()
+            ),
+            "",
+        )
         if pay_type not in {"qrcode", "jump", "urlscheme"} or not pay_info:
             raise PaymentProviderError("支付平台没有返回可用的付款信息")
         with db() as conn:
@@ -2512,8 +2551,7 @@ def api_payment_status():
             presented_token,
         ):
             return jsonify({"success": False, "message": "支付订单凭据无效"}), 403
-        expires_at = parse_utc(order["expires_at"])
-        if order["status"] == "pending" and expires_at and expires_at <= utc_datetime():
+        if order["status"] == "pending" and payment_order_expired(order):
             conn.execute(
                 "UPDATE payment_orders SET status = 'expired', updated_at = ? WHERE id = ?",
                 (utc_now(), order["id"]),

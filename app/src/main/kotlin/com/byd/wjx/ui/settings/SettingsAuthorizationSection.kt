@@ -3,10 +3,8 @@ package com.byd.wjx.ui.settings
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -40,12 +38,16 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -54,9 +56,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.EncodeHintType
-import com.google.zxing.qrcode.QRCodeWriter
+import androidx.compose.ui.viewinterop.AndroidView
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import com.byd.wjx.ui.theme.*
 
 internal const val PERMANENT_AUTH_PRICE = "15.9 元"
@@ -337,29 +340,28 @@ internal fun ActivationPaymentDialog(state: SettingsUiState, viewModel: Settings
                     )
                 }
             } else {
-                val qrBitmap = remember(order.payInfo) { createPaymentQrBitmap(order.payInfo) }
+                var nowMillis by remember(order.orderNo) { mutableLongStateOf(System.currentTimeMillis()) }
+                LaunchedEffect(order.orderNo, order.expiresAt) {
+                    while (true) {
+                        nowMillis = System.currentTimeMillis()
+                        kotlinx.coroutines.delay(1000)
+                    }
+                }
+                val remainingSeconds = ((order.expiresAt - nowMillis) / 1000L).coerceAtLeast(0L)
+                val remainingLabel = "%02d:%02d".format(remainingSeconds / 60, remainingSeconds % 60)
+                val paymentExpired = remainingSeconds <= 0L || state.activationPaymentMessage?.contains("过期") == true
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(24.dp),
                     horizontalArrangement = Arrangement.spacedBy(28.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(
+                    PaymentCheckoutWebView(
+                        url = order.payUrl,
                         modifier = Modifier
-                            .size(260.dp)
-                            .background(Color.White, RoundedCornerShape(8.dp))
-                            .padding(10.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (qrBitmap != null) {
-                            Image(
-                                bitmap = qrBitmap.asImageBitmap(),
-                                contentDescription = "支付二维码",
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        } else {
-                            Text("二维码生成失败", color = SocRed, fontSize = 13.sp)
-                        }
-                    }
+                            .width(390.dp)
+                            .height(620.dp)
+                            .background(Color.White, RoundedCornerShape(8.dp)),
+                    )
                     Column(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -396,6 +398,12 @@ internal fun ActivationPaymentDialog(state: SettingsUiState, viewModel: Settings
                             fontWeight = FontWeight.ExtraBold,
                         )
                         Text(
+                            if (paymentExpired) "订单已过期" else "订单有效期剩余 $remainingLabel",
+                            color = if (paymentExpired) SocRed else AccentOrange,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
                             state.activationPaymentMessage ?: "请扫码支付，到账后会自动激活",
                             color = if (state.activation.activated) AccentGreen else TextPrimary,
                             fontSize = 14.sp,
@@ -404,13 +412,31 @@ internal fun ActivationPaymentDialog(state: SettingsUiState, viewModel: Settings
                         Text(
                             if (state.activation.activated) {
                                 "当前车辆已经获得永久授权，可以关闭此窗口。"
+                            } else if (paymentExpired) {
+                                "订单已过期，请点击下方重新生成订单。"
                             } else {
-                                "请勿重复付款。服务器验签并确认到账后，本页面会自动更新。"
+                                "请用手机支付宝扫描当前页面中的二维码，支付完成后本页面会自动更新。"
                             },
                             color = TextSecondary,
                             fontSize = 12.sp,
                             lineHeight = 17.sp,
                         )
+                        if (paymentExpired) {
+                            Button(
+                                onClick = { viewModel.startActivationPayment(order.paymentType) },
+                                enabled = !state.activationPaymentLoading,
+                                modifier = Modifier.fillMaxWidth().height(46.dp),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = AccentOrange,
+                                    contentColor = Color.White,
+                                ),
+                            ) {
+                                Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(7.dp))
+                                Text("重新生成订单", fontWeight = FontWeight.Bold)
+                            }
+                        }
                         Text(
                             "订单号 ${order.orderNo}",
                             color = TextMuted,
@@ -426,22 +452,37 @@ internal fun ActivationPaymentDialog(state: SettingsUiState, viewModel: Settings
     }
 }
 
-private fun createPaymentQrBitmap(content: String, size: Int = 720): Bitmap? = runCatching {
-    val matrix = QRCodeWriter().encode(
-        content,
-        BarcodeFormat.QR_CODE,
-        size,
-        size,
-        mapOf(EncodeHintType.MARGIN to 1),
-    )
-    val pixels = IntArray(size * size)
-    for (y in 0 until size) {
-        for (x in 0 until size) {
-            pixels[y * size + x] = if (matrix[x, y]) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+@Composable
+private fun PaymentCheckoutWebView(url: String, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val webView = remember(url) {
+        WebView(context).apply {
+            webViewClient = WebViewClient()
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            settings.cacheMode = WebSettings.LOAD_NO_CACHE
+            settings.useWideViewPort = true
+            settings.loadWithOverviewMode = true
+            settings.builtInZoomControls = false
+            settings.displayZoomControls = false
+            setBackgroundColor(android.graphics.Color.WHITE)
+            loadUrl(url)
         }
     }
-    Bitmap.createBitmap(pixels, size, size, Bitmap.Config.ARGB_8888)
-}.getOrNull()
+    DisposableEffect(webView) {
+        onDispose {
+            webView.stopLoading()
+            webView.destroy()
+        }
+    }
+    AndroidView(
+        factory = { webView },
+        modifier = modifier,
+        update = { view ->
+            if (view.url != url) view.loadUrl(url)
+        },
+    )
+}
 
 @Composable
 private fun AuthorizationValue(

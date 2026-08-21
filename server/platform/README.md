@@ -20,8 +20,11 @@ WJX_PAYMENT_GATEWAY_BASE_URL=https://mzf.mapay.cc/xpay/epayn
 WJX_PAYMENT_MERCHANT_PRIVATE_KEY_FILE=/var/lib/supertoybox/platform/payment_merchant_private.pem
 WJX_PAYMENT_PLATFORM_PUBLIC_KEY_FILE=/var/lib/supertoybox/platform/payment_platform_public.pem
 WJX_PAYMENT_ACTIVATION_PRICE=15.90
+WJX_PAYMENT_ORDER_TTL_SECONDS=300
 ```
 
 两个密钥文件应归服务账号所有，目录不可被其他用户写入，私钥权限设为 `600`。平台通过
 `api/pay/create` 下单、`api/pay/query` 查单；异步通知只用于触发主动查单，最终以平台公钥验签后的
 查询结果为准。确认 PID、商户订单号、金额和支付状态全部一致后，才会绑定 VIN 并生成永久授权。
+V2 返回签名按字段名排序，仅包含业务字段；`code`、`sign` 和 `sign_type` 不参与签名。
+客户端直接打开平台返回的收银页，订单未过期时重复点击会复用该订单；订单过期后才会重新下单。

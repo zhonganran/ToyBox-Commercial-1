@@ -79,6 +79,7 @@ data class ActivationPaymentOrder(
     val paymentName: String,
     val payType: String,
     val payInfo: String,
+    val payUrl: String,
     val amount: String,
     val pollToken: String,
     val expiresAt: Long,
@@ -246,11 +247,12 @@ class ActivationManager @Inject constructor(
             ),
             payType = response.optString("payType"),
             payInfo = response.optString("payInfo"),
+            payUrl = response.optString("payUrl", response.optString("payInfo")),
             amount = response.optString("amount", "15.90"),
             pollToken = response.optString("pollToken"),
             expiresAt = jsonMillis(response, "expiresAt"),
         )
-        require(order.orderNo.isNotBlank() && order.pollToken.isNotBlank() && order.payInfo.isNotBlank()) {
+        require(order.orderNo.isNotBlank() && order.pollToken.isNotBlank() && order.payUrl.isNotBlank()) {
             "支付服务器返回的订单信息不完整"
         }
         WjxFileLogger.i(TAG, "payment order created type=$normalizedType payType=${order.payType}")

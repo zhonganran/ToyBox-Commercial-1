@@ -174,7 +174,7 @@ internal fun ServiceAuthorizationSection(state: SettingsUiState, viewModel: Sett
     ) {
         ServiceBullet("永久授权价格为 $PERMANENT_AUTH_PRICE / 车，一车一授权。")
         ServiceBullet("请先联系客服确认车型、系统版本和需要使用的功能。")
-        ServiceBullet("请在软件内选择支付宝或微信，扫描订单二维码完成付款。")
+        ServiceBullet("请在软件内选择支付宝或微信，打开支付页面后用手机扫码完成付款。")
         ServiceBullet("服务器确认到账后自动绑定当前 VIN 并开通永久授权。")
         ServiceBullet("授权开通后，更新或重新安装会按车架号自动恢复。")
         ServiceBullet("付款即表示你已阅读并同意软件免责声明及授权规则。")
