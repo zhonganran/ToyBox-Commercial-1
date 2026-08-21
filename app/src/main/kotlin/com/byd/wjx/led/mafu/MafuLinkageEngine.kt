@@ -3,12 +3,13 @@ package com.byd.wjx.led.mafu
 import com.byd.wjx.led.LedLinkageTriggerType
 import com.byd.wjx.led.LedVehicleSignals
 
-/** Evaluates only Mafu rules and emits only Mafu remote-key slots. */
+/** Keeps the selected Mafu remote-key program active while its condition remains true. */
 class MafuLinkageEngine {
     private var boundRules: List<MafuLinkageRule> = emptyList()
     private val previousMatches = linkedMapOf<String, Boolean>()
-    private var playback: Playback? = null
+    private var activeRuleId: String? = null
     private var displayedKey: MafuRemoteKey? = null
+    private var resumeProgramListPending = false
 
     fun evaluate(
         rules: List<MafuLinkageRule>,
@@ -18,52 +19,51 @@ class MafuLinkageEngine {
     ): MafuRemoteKey? {
         bindRules(rules, model)
         val currentMatches = matchesByRule(signals)
-        playback?.let { active ->
-            val activeIndex = boundRules.indexOfFirst { it.id == active.rule.id }
-            val higherPriorityTrigger = boundRules
-                .take(activeIndex.coerceAtLeast(0))
-                .firstOrNull { rule ->
-                    rule.enabled &&
-                        currentMatches[rule.id] == true &&
-                        previousMatches[rule.id] != true
-                }
-            captureMatches(currentMatches)
-            if (higherPriorityTrigger != null) {
-                return startPlayback(higherPriorityTrigger, now)
+        val hadActiveRule = activeRuleId != null
+        val activeRule = activeRuleId?.let { id -> boundRules.firstOrNull { it.id == id } }
+        val activeStillMatches = activeRule?.let { currentMatches[it.id] == true } == true
+        val activeIndex = activeRule?.let { boundRules.indexOf(it) } ?: -1
+        val higherPriorityTrigger = if (activeStillMatches) {
+            boundRules.take(activeIndex.coerceAtLeast(0)).firstOrNull { rule ->
+                rule.enabled &&
+                    currentMatches[rule.id] == true &&
+                    previousMatches[rule.id] != true
             }
-
-            val elapsed = (now - active.startedAt).coerceAtLeast(0L)
-            var stepStart = 0L
-            active.rule.steps.forEachIndexed { index, step ->
-                val stepEnd = stepStart + step.durationSeconds * 1_000L
-                if (elapsed < stepEnd) {
-                    if (index != active.stepIndex) {
-                        playback = active.copy(stepIndex = index)
-                        return dispatch(step.remoteKey, force = true)
-                    }
-                    return null
-                }
-                stepStart = stepEnd
-            }
-
-            playback = null
-            return null
+        } else {
+            null
         }
-
-        val triggered = boundRules.firstOrNull { rule ->
-            rule.enabled &&
-                currentMatches[rule.id] == true &&
-                previousMatches[rule.id] != true
+        val triggered = higherPriorityTrigger ?: if (!activeStillMatches) {
+            boundRules.firstOrNull { rule -> rule.enabled && currentMatches[rule.id] == true }
+        } else {
+            null
         }
         captureMatches(currentMatches)
-        return triggered?.let { startPlayback(it, now) }
+        when {
+            triggered != null -> {
+                activeRuleId = triggered.id
+                resumeProgramListPending = false
+            }
+            !activeStillMatches -> {
+                activeRuleId = null
+                if (hadActiveRule) resumeProgramListPending = true
+            }
+        }
+        return triggered?.let { startPlayback(it) }
+    }
+
+    fun consumeProgramListResume(): Boolean {
+        if (!resumeProgramListPending) return false
+        resumeProgramListPending = false
+        displayedKey = null
+        return true
     }
 
     fun reset() {
         boundRules = emptyList()
         previousMatches.clear()
-        playback = null
+        activeRuleId = null
         displayedKey = null
+        resumeProgramListPending = false
     }
 
     private fun bindRules(rules: List<MafuLinkageRule>, model: MafuRemoteModel) {
@@ -71,7 +71,8 @@ class MafuLinkageEngine {
         if (normalized == boundRules) return
         boundRules = normalized
         previousMatches.clear()
-        playback = null
+        activeRuleId = null
+        resumeProgramListPending = false
     }
 
     private fun matchesByRule(signals: LedVehicleSignals): LinkedHashMap<String, Boolean> =
@@ -82,8 +83,7 @@ class MafuLinkageEngine {
         previousMatches.putAll(matches)
     }
 
-    private fun startPlayback(rule: MafuLinkageRule, now: Long): MafuRemoteKey? {
-        playback = Playback(rule, startedAt = now, stepIndex = 0)
+    private fun startPlayback(rule: MafuLinkageRule): MafuRemoteKey? {
         return dispatch(rule.steps.first().remoteKey, force = true)
     }
 
@@ -141,9 +141,4 @@ class MafuLinkageEngine {
         return this?.let { it > threshold } == true
     }
 
-    private data class Playback(
-        val rule: MafuLinkageRule,
-        val startedAt: Long,
-        val stepIndex: Int,
-    )
 }

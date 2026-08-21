@@ -77,6 +77,7 @@ class A950Preferences @Inject constructor(
 
     private fun setRules(rules: List<A950LinkageRule>) = update {
         putString(KEY_RULES, A950LinkageRuleCodec.encode(rules))
+        putBoolean(KEY_RULES_CUSTOMIZED, true)
     }
 
     private fun update(block: android.content.SharedPreferences.Editor.() -> Unit) {
@@ -89,14 +90,18 @@ class A950Preferences @Inject constructor(
         deviceAddress = prefs.getString(KEY_DEVICE_ADDRESS, "").orEmpty(),
         deviceName = prefs.getString(KEY_DEVICE_NAME, "").orEmpty(),
         brightness = prefs.getInt(KEY_BRIGHTNESS, 70).coerceIn(0, 100),
-        rules = prefs.getString(KEY_RULES, null)
-            ?.let(A950LinkageRuleCodec::decode)
-            ?: emptyList(),
+        rules = prefs.getString(KEY_RULES, null).let { raw ->
+            when {
+                raw == null -> A950LinkageRuleFactory.defaultRules()
+                else -> A950LinkageRuleCodec.decode(raw) ?: emptyList()
+            }
+        },
     )
 
     companion object {
         const val PREFS_NAME = "wjx_led_a950"
         internal const val KEY_RULES = "rules"
+        private const val KEY_RULES_CUSTOMIZED = "rules_customized"
 
         private const val KEY_ENABLED = "enabled"
         private const val KEY_DEVICE_ADDRESS = "device_address"

@@ -17,7 +17,6 @@ internal object MafuLinkageRuleCodec {
                     rule.steps.forEach { step ->
                         put(JSONObject().apply {
                             put("remoteKey", step.remoteKey.keyNumber)
-                            put("durationSeconds", step.durationSeconds)
                         })
                     }
                 })
@@ -47,7 +46,6 @@ internal object MafuLinkageRuleCodec {
                         add(
                             MafuLinkageStep(
                                 remoteKey = key,
-                                durationSeconds = stepJson.optInt("durationSeconds", 5),
                             ).normalized(model)
                         )
                     }

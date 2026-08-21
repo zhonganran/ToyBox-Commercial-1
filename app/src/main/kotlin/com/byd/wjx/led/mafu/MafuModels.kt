@@ -76,11 +76,9 @@ enum class MafuVehicleLinkageSlot(
 
 data class MafuLinkageStep(
     val remoteKey: MafuRemoteKey,
-    val durationSeconds: Int = 5,
 ) {
     fun normalized(model: MafuRemoteModel): MafuLinkageStep = copy(
         remoteKey = remoteKey.takeIf { it.keyNumber <= model.keyCount } ?: MafuRemoteKey.KEY_1,
-        durationSeconds = durationSeconds.coerceIn(1, 60),
     )
 }
 
@@ -103,7 +101,8 @@ data class MafuLinkageRule(
         conditionValue = conditionValue.takeIf { value ->
             LedLinkageCatalog.options(triggerType).any { it.value == value }
         } ?: LedLinkageCatalog.options(triggerType).first().value,
-        steps = steps.take(8).map { it.normalized(model) }
+        // A linkage is stateful: keep one scene active while its condition is true.
+        steps = steps.take(1).map { it.normalized(model) }
             .ifEmpty { listOf(MafuLinkageStep(MafuRemoteKey.KEY_1)) },
     )
 }

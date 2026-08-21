@@ -37,11 +37,8 @@ enum class IpixelFaPreset(
 
 data class IpixelFaLinkageStep(
     val preset: IpixelFaPreset,
-    val durationSeconds: Int = 5,
 ) {
-    fun normalized(): IpixelFaLinkageStep = copy(
-        durationSeconds = durationSeconds.coerceIn(1, 60),
-    )
+    fun normalized(): IpixelFaLinkageStep = this
 }
 
 data class IpixelFaLinkageRule(
@@ -63,7 +60,8 @@ data class IpixelFaLinkageRule(
         conditionValue = conditionValue.takeIf { value ->
             LedLinkageCatalog.options(triggerType).any { it.value == value }
         } ?: LedLinkageCatalog.options(triggerType).first().value,
-        steps = steps.take(8).map(IpixelFaLinkageStep::normalized)
+        // A linkage is stateful: keep one scene active while its condition is true.
+        steps = steps.take(1).map(IpixelFaLinkageStep::normalized)
             .ifEmpty { listOf(IpixelFaLinkageStep(IpixelFaPreset.TEMPORARY_STOP)) },
     )
 }
@@ -74,6 +72,31 @@ object IpixelFaLinkageRuleFactory {
         triggerType = LedLinkageTriggerType.SPEED,
         conditionValue = LedLinkageCatalog.options(LedLinkageTriggerType.SPEED).first().value,
         steps = listOf(IpixelFaLinkageStep(IpixelFaPreset.TEMPORARY_STOP)),
+    )
+
+    /** Rules used when the FA protocol has never been configured before. */
+    fun defaultRules(): List<IpixelFaLinkageRule> = listOf(
+        rule("light-hazard", LedLinkageTriggerType.LIGHT, "hazard", IpixelFaPreset.HAZARD_WARNING),
+        rule("light-reverse", LedLinkageTriggerType.LIGHT, "reverse", IpixelFaPreset.REVERSING),
+        rule("gear-reverse", LedLinkageTriggerType.GEAR, "R", IpixelFaPreset.REVERSING),
+        rule("light-left-turn", LedLinkageTriggerType.LIGHT, "left_turn", IpixelFaPreset.TURN_LEFT),
+        rule("light-right-turn", LedLinkageTriggerType.LIGHT, "right_turn", IpixelFaPreset.TURN_RIGHT),
+        rule("door-front-left", LedLinkageTriggerType.DOOR, "front_left", IpixelFaPreset.GET_OFF),
+        rule("door-front-right", LedLinkageTriggerType.DOOR, "front_right", IpixelFaPreset.GET_OFF),
+        rule("gear-park", LedLinkageTriggerType.GEAR, "P", IpixelFaPreset.TEMPORARY_STOP),
+        rule("speed-running", LedLinkageTriggerType.SPEED, "gt_30", IpixelFaPreset.AUTOPILOT),
+    )
+
+    private fun rule(
+        id: String,
+        triggerType: LedLinkageTriggerType,
+        conditionValue: String,
+        preset: IpixelFaPreset,
+    ): IpixelFaLinkageRule = IpixelFaLinkageRule(
+        id = "default-$id",
+        triggerType = triggerType,
+        conditionValue = conditionValue,
+        steps = listOf(IpixelFaLinkageStep(preset)),
     )
 }
 

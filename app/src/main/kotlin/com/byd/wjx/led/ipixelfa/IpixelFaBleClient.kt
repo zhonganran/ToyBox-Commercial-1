@@ -258,6 +258,11 @@ class IpixelFaBleClient @Inject constructor(
         description = "preset=${preset.presetId}",
     )
 
+    suspend fun playProgramList(): Boolean = write(
+        packet = IpixelFaProtocol.playProgramList(),
+        description = "program-list",
+    )
+
     suspend fun setBrightness(percent: Int): Boolean = write(
         packet = IpixelFaProtocol.brightness(percent),
         description = "brightness=${percent.coerceIn(0, 100)}",

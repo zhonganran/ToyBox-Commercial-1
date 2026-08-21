@@ -8,7 +8,7 @@ import org.junit.Test
 
 class IpixelFaLinkageRuleCodecTest {
     @Test
-    fun `rules round trip with order enabled state and scene steps intact`() {
+    fun `rules round trip with order enabled state and active scene intact`() {
         val expected = listOf(
             IpixelFaLinkageRule(
                 id = "first",
@@ -16,15 +16,14 @@ class IpixelFaLinkageRuleCodecTest {
                 triggerType = LedLinkageTriggerType.SPEED,
                 conditionValue = "gt_60",
                 steps = listOf(
-                    IpixelFaLinkageStep(IpixelFaPreset.AUTOPILOT, 3),
-                    IpixelFaLinkageStep(IpixelFaPreset.KEEP_DISTANCE, 7),
+                    IpixelFaLinkageStep(IpixelFaPreset.AUTOPILOT),
                 ),
             ),
             IpixelFaLinkageRule(
                 id = "second",
                 triggerType = LedLinkageTriggerType.DOOR,
                 conditionValue = "trunk",
-                steps = listOf(IpixelFaLinkageStep(IpixelFaPreset.GET_OFF, 5)),
+                steps = listOf(IpixelFaLinkageStep(IpixelFaPreset.GET_OFF)),
             ),
         )
 
@@ -42,13 +41,13 @@ class IpixelFaLinkageRuleCodecTest {
     }
 
     @Test
-    fun `invalid entries are skipped and durations are bounded`() {
+    fun `invalid entries are skipped and legacy durations are ignored`() {
         val decoded = IpixelFaLinkageRuleCodec.decode(
             """[{"id":"ok","enabled":true,"triggerType":"BRAKE","conditionValue":"gt_10","steps":[{"presetId":20,"durationSeconds":999}]},{"id":"bad","triggerType":"UNKNOWN","conditionValue":"x","steps":[]}]"""
         )
 
         assertNotNull(decoded)
         assertEquals(1, decoded?.size)
-        assertEquals(60, decoded?.single()?.steps?.single()?.durationSeconds)
+        assertEquals(IpixelFaPreset.HAZARD_WARNING, decoded?.single()?.steps?.single()?.preset)
     }
 }

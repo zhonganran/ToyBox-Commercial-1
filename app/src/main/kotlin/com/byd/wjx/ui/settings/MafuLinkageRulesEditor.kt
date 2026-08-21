@@ -183,9 +183,9 @@ private fun MafuRuleRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                rule.steps.joinToString("  →  ") {
-                    "${it.remoteKey.title}(${remoteModel.programId(it.remoteKey)}) ${it.durationSeconds}秒"
-                },
+                rule.steps.firstOrNull()?.let {
+                    "${it.remoteKey.title}（节目 ${remoteModel.programId(it.remoteKey)}）"
+                } ?: "未选择遥控节目",
                 color = TextSecondary,
                 fontSize = 11.sp,
                 maxLines = 2,
@@ -267,51 +267,13 @@ private fun MafuRuleEditorDialog(
                     ) { draft = draft.copy(conditionValue = it) }
 
                     HorizontalDivider(color = CardBorder)
-                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text("遥控节目序列", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.weight(1f))
-                        OutlinedButton(
-                            onClick = {
-                                if (draft.steps.size < 8) {
-                                    draft = draft.copy(
-                                        steps = draft.steps + MafuLinkageStep(remoteModel.supportedKeys.first())
-                                    )
-                                }
-                            },
-                            enabled = draft.steps.size < 8,
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, CardBorder),
-                        ) {
-                            Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(17.dp))
-                            Spacer(Modifier.size(5.dp))
-                            Text("添加节目", fontSize = 12.sp)
-                        }
-                    }
-
-                    draft.steps.forEachIndexed { index, step ->
-                        MafuStepEditor(
-                            index = index,
-                            step = step,
-                            remoteModel = remoteModel,
-                            canMoveUp = index > 0,
-                            canMoveDown = index < draft.steps.lastIndex,
-                            canDelete = draft.steps.size > 1,
-                            onChange = { changed ->
-                                draft = draft.copy(
-                                    steps = draft.steps.toMutableList().apply { this[index] = changed }
-                                )
-                            },
-                            onMove = { offset ->
-                                val steps = draft.steps.toMutableList()
-                                val item = steps.removeAt(index)
-                                steps.add(index + offset, item)
-                                draft = draft.copy(steps = steps)
-                            },
-                            onDelete = {
-                                draft = draft.copy(steps = draft.steps.filterIndexed { i, _ -> i != index })
-                            },
-                        )
-                    }
+                    Text("联动节目（条件满足时持续播放）", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    val step = draft.steps.firstOrNull() ?: MafuLinkageStep(remoteModel.supportedKeys.first())
+                    MafuStepEditor(
+                        step = step,
+                        remoteModel = remoteModel,
+                        onChange = { draft = draft.copy(steps = listOf(it)) },
+                    )
                 }
 
                 Row(
@@ -352,15 +314,9 @@ private fun MafuRuleEditorDialog(
 
 @Composable
 private fun MafuStepEditor(
-    index: Int,
     step: MafuLinkageStep,
     remoteModel: MafuRemoteModel,
-    canMoveUp: Boolean,
-    canMoveDown: Boolean,
-    canDelete: Boolean,
     onChange: (MafuLinkageStep) -> Unit,
-    onMove: (Int) -> Unit,
-    onDelete: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -369,24 +325,7 @@ private fun MafuStepEditor(
             .padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("步骤 ${index + 1}", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.weight(1f))
-            IconButton(onClick = { onMove(-1) }, enabled = canMoveUp, modifier = Modifier.size(30.dp)) {
-                Icon(Icons.Outlined.ArrowUpward, contentDescription = "上移节目", modifier = Modifier.size(18.dp))
-            }
-            IconButton(onClick = { onMove(1) }, enabled = canMoveDown, modifier = Modifier.size(30.dp)) {
-                Icon(Icons.Outlined.ArrowDownward, contentDescription = "下移节目", modifier = Modifier.size(18.dp))
-            }
-            IconButton(onClick = onDelete, enabled = canDelete, modifier = Modifier.size(30.dp)) {
-                Icon(
-                    Icons.Outlined.DeleteOutline,
-                    contentDescription = "删除节目",
-                    tint = AccentOrange,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
-        }
+        Text("选择要持续播放的遥控节目", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         MafuChoiceField(
             label = "遥控按键",
             selected = step.remoteKey,
@@ -394,30 +333,6 @@ private fun MafuStepEditor(
                 it to "${it.title} · 节目 ${remoteModel.programId(it)}"
             },
         ) { onChange(step.copy(remoteKey = it)) }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("持续时间", color = TextSecondary, fontSize = 12.sp, modifier = Modifier.weight(1f))
-            IconButton(
-                onClick = { onChange(step.copy(durationSeconds = step.durationSeconds - 1)) },
-                enabled = step.durationSeconds > 1,
-                modifier = Modifier.size(32.dp),
-            ) {
-                Icon(Icons.Outlined.Remove, contentDescription = "减少一秒", modifier = Modifier.size(18.dp))
-            }
-            Text(
-                "${step.durationSeconds} 秒",
-                color = TextPrimary,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.widthIn(min = 48.dp),
-            )
-            IconButton(
-                onClick = { onChange(step.copy(durationSeconds = step.durationSeconds + 1)) },
-                enabled = step.durationSeconds < 60,
-                modifier = Modifier.size(32.dp),
-            ) {
-                Icon(Icons.Outlined.Add, contentDescription = "增加一秒", modifier = Modifier.size(18.dp))
-            }
-        }
     }
 }
 

@@ -103,6 +103,22 @@ class MafuProtocolTest {
     }
 
     @Test
+    fun `program list restores the APK carousel across slots one through sixty`() {
+        val packet = MafuProtocol.playProgramList(sequence = 8)
+
+        assertEquals(76, packet.size)
+        assertArrayEquals(
+            hex("AA 55 FF FF 46 00 08 00 C1 02 36 3E 00 FF"),
+            packet.copyOfRange(0, 14),
+        )
+        assertArrayEquals(
+            (0 until 60).map(Int::toByte).toByteArray(),
+            packet.copyOfRange(14, 74),
+        )
+        assertTrue(MafuProtocol.hasValidChecksum(packet))
+    }
+
+    @Test
     fun `remote query encodes model code in big endian`() {
         assertArrayEquals(
             hex("AA 55 FF FF 0B 00 02 00 C1 03 34 03 04 AA BF 72 05"),

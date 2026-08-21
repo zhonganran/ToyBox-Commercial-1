@@ -8,7 +8,7 @@ import org.junit.Test
 
 class A950LinkageRuleCodecTest {
     @Test
-    fun `rules round trip with order enabled state and scene steps intact`() {
+    fun `rules round trip with order enabled state and active scene intact`() {
         val expected = listOf(
             A950LinkageRule(
                 id = "first",
@@ -16,15 +16,14 @@ class A950LinkageRuleCodecTest {
                 triggerType = LedLinkageTriggerType.SPEED,
                 conditionValue = "gt_60",
                 steps = listOf(
-                    A950LinkageStep(A950Preset.AUTOPILOT, 3),
-                    A950LinkageStep(A950Preset.KEEP_DISTANCE, 7),
+                    A950LinkageStep(A950Preset.AUTOPILOT),
                 ),
             ),
             A950LinkageRule(
                 id = "second",
                 triggerType = LedLinkageTriggerType.DOOR,
                 conditionValue = "trunk",
-                steps = listOf(A950LinkageStep(A950Preset.OPEN_DOOR_CAREFULLY, 5)),
+                steps = listOf(A950LinkageStep(A950Preset.OPEN_DOOR_CAREFULLY)),
             ),
         )
 
@@ -42,13 +41,13 @@ class A950LinkageRuleCodecTest {
     }
 
     @Test
-    fun `invalid entries are skipped and durations are bounded`() {
+    fun `invalid entries are skipped and legacy durations are ignored`() {
         val decoded = A950LinkageRuleCodec.decode(
             """[{"id":"ok","enabled":true,"triggerType":"BRAKE","conditionValue":"gt_10","steps":[{"commandCode":19,"durationSeconds":999}]},{"id":"bad","triggerType":"UNKNOWN","conditionValue":"x","steps":[]}]"""
         )
 
         assertNotNull(decoded)
         assertEquals(1, decoded?.size)
-        assertEquals(60, decoded?.single()?.steps?.single()?.durationSeconds)
+        assertEquals(A950Preset.HAZARD_WARNING, decoded?.single()?.steps?.single()?.preset)
     }
 }

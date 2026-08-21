@@ -19,6 +19,14 @@ class LedProtocolTest {
     }
 
     @Test
+    fun `FA restores the stored program list instead of selecting preset six`() {
+        assertArrayEquals(
+            byteArrayOf(0x04, 0x00, 0x03, 0x80.toByte()),
+            IpixelFaProtocol.playProgramList(),
+        )
+    }
+
+    @Test
     fun `scene preset ids match official iPixel remote order`() {
         assertEquals((1..20).toList(), IpixelFaPreset.entries.map(IpixelFaPreset::presetId))
         assertEquals("紧急情况", IpixelFaPreset.EMERGENCY.title)
@@ -62,8 +70,16 @@ class LedProtocolTest {
         assertEquals("请让我先走", A950Preset.LET_ME_GO_FIRST.title)
         assertEquals("开门请注意", A950Preset.OPEN_DOOR_CAREFULLY.title)
         assertArrayEquals(
-            byteArrayOf(0x4E, 0x52, 0x04, 0x01, 0x05, 0x02, 0xAC.toByte()),
+            byteArrayOf(0x4E, 0x52, 0x04, 0x01, 0x05, 0x02, 0x00, 0xAC.toByte()),
             A950Protocol.playPreset(A950Preset.LEFT_TURN),
+        )
+        assertArrayEquals(
+            byteArrayOf(0x4E, 0x52, 0x04, 0x01, 0x05, 0xFF.toByte(), 0x01, 0xAA.toByte()),
+            A950Protocol.enableRemoteControlPacket,
+        )
+        assertArrayEquals(
+            byteArrayOf(0x4E, 0x52, 0x04, 0x01, 0x05, 0xFF.toByte(), 0x00, 0xA9.toByte()),
+            A950Protocol.resumeProgramListPacket,
         )
     }
 

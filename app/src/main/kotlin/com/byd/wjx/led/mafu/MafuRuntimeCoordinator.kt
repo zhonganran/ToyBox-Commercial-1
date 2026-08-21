@@ -39,6 +39,8 @@ class MafuRuntimeCoordinator @Inject constructor(
     @Volatile private var latestBrakeSample = TimedSignals()
     @Volatile private var latestBodySample = TimedSignals()
     private var lastSignalLogKey: SignalLogKey? = null
+    private var pendingRemoteKey: MafuRemoteKey? = null
+    private var programListResumePending = false
     private var runtimeJob: Job? = null
 
     @Synchronized
@@ -66,13 +68,20 @@ class MafuRuntimeCoordinator @Inject constructor(
                                 binding.deviceAddress,
                                 ignoreCase = true,
                             )
-                            if (connectionIsActive && (!binding.enabled || !connectionMatches)) {
+                            val shouldDisconnect = connectionIsActive &&
+                                (!binding.enabled || !connectionMatches)
+                            if (shouldDisconnect) {
+                                decisionMutex.withLock {
+                                    restoreProgramListBeforeReset("binding-change")
+                                    resetRuntimeState()
+                                }
                                 bleClient.disconnect()
-                            }
-                            val bindingChanged = previousBinding != null && previousBinding != binding
-                            val readyForCurrentBinding = connection.ready && connectionMatches
-                            if (!binding.enabled || (bindingChanged && !readyForCurrentBinding)) {
-                                decisionMutex.withLock { resetRuntimeState() }
+                            } else {
+                                val bindingChanged = previousBinding != null && previousBinding != binding
+                                val readyForCurrentBinding = connection.ready && connectionMatches
+                                if (!binding.enabled || (bindingChanged && !readyForCurrentBinding)) {
+                                    decisionMutex.withLock { resetRuntimeState() }
+                                }
                             }
                             previousBinding = binding
                             bleClient.startAutoConnect()
@@ -89,8 +98,20 @@ class MafuRuntimeCoordinator @Inject constructor(
                                 return@collect
                             }
                             decisionMutex.withLock {
+                                val hadActiveLinkage = _runtime.value.currentRemoteKey != null
+                                if (hadActiveLinkage && bleClient.connection.value.ready) {
+                                    pendingRemoteKey = null
+                                    programListResumePending = true
+                                    tryResumeProgramList(
+                                        now = System.currentTimeMillis(),
+                                        reason = "rules-or-model-changed",
+                                    )
+                                }
                                 ruleEngine.reset()
-                                _runtime.value = MafuRuntimeState()
+                                pendingRemoteKey = null
+                                if (!programListResumePending) {
+                                    _runtime.value = MafuRuntimeState()
+                                }
                             }
                         }
                 }
@@ -101,27 +122,18 @@ class MafuRuntimeCoordinator @Inject constructor(
                             connectionInitialized = false
                             decisionMutex.withLock {
                                 ruleEngine.reset()
+                                clearPendingCommands()
                                 resetSignalCaches()
                                 _runtime.value = MafuRuntimeState()
-                                val brightnessApplied = bleClient.setBrightness(
-                                    preferences.state.value.brightness
-                                )
-                                _runtime.value = if (brightnessApplied) {
-                                    MafuRuntimeState(
-                                        lastCommandAt = System.currentTimeMillis(),
-                                        lastError = null,
-                                    )
-                                } else {
-                                    MafuRuntimeState(lastError = "亮度设置发送失败")
-                                }
-                                connectionInitialized = brightnessApplied && bleClient.connection.value.ready
-                                WjxFileLogger.i(
-                                    TAG,
-                                    "Mafu connected; brightness applied=$brightnessApplied",
-                                )
+                                initializeReadyConnection()
                             }
                         }
-                        if (!connection.ready) connectionInitialized = false
+                        if (!connection.ready) {
+                            decisionMutex.withLock {
+                                connectionInitialized = false
+                                clearPendingCommands()
+                            }
+                        }
                         wasReady = connection.ready
                     }
                 }
@@ -148,6 +160,29 @@ class MafuRuntimeCoordinator @Inject constructor(
                 }
                 launch {
                     while (kotlin.coroutines.coroutineContext.isActive) {
+                        if (
+                            preferences.state.value.enabled &&
+                            bleClient.connection.value.ready &&
+                            !connectionInitialized
+                        ) {
+                            delay(INITIALIZATION_RETRY_MS)
+                            decisionMutex.withLock {
+                                if (
+                                    runtimeActive &&
+                                    preferences.state.value.enabled &&
+                                    bleClient.connection.value.ready &&
+                                    !connectionInitialized
+                                ) {
+                                    initializeReadyConnection()
+                                }
+                            }
+                        } else {
+                            delay(ENGINE_TICK_MS)
+                        }
+                    }
+                }
+                launch {
+                    while (kotlin.coroutines.coroutineContext.isActive) {
                         delay(ENGINE_TICK_MS)
                         if (
                             preferences.state.value.enabled &&
@@ -169,6 +204,7 @@ class MafuRuntimeCoordinator @Inject constructor(
         runtimeJob?.cancel()
         runtimeJob = null
         ruleEngine.reset()
+        clearPendingCommands()
         connectionInitialized = false
         resetSignalCaches()
         _runtime.value = MafuRuntimeState()
@@ -242,37 +278,124 @@ class MafuRuntimeCoordinator @Inject constructor(
             .mergeBody(freshSignals(now, latestBodySample, BODY_FRESH_MS))
         logSignalChanges(signals)
         val next = ruleEngine.evaluate(prefs.rules, prefs.remoteModel, signals, now)
-            ?: return@withLock
+        if (next != null) {
+            pendingRemoteKey = next
+            programListResumePending = false
+        } else if (ruleEngine.consumeProgramListResume()) {
+            pendingRemoteKey = null
+            programListResumePending = true
+        }
         val current = _runtime.value.currentRemoteKey
         if (!bleClient.connection.value.ready) return@withLock
 
-        val sent = bleClient.play(next, prefs.remoteModel)
-        _runtime.value = if (sent) {
+        val keyToSend = pendingRemoteKey
+        if (keyToSend != null) {
+            val sent = bleClient.play(keyToSend, prefs.remoteModel)
+            if (sent) pendingRemoteKey = null
+            _runtime.value = if (sent) {
+                _runtime.value.copy(
+                    currentRemoteKey = keyToSend,
+                    lastProgramId = prefs.remoteModel.programId(keyToSend),
+                    lastPresetChangedAt = now,
+                    lastCommandAt = System.currentTimeMillis(),
+                    lastError = null,
+                )
+            } else {
+                _runtime.value.copy(lastError = "马夫 LED 命令发送失败")
+            }
+            WjxFileLogger.i(
+                TAG,
+                "remoteKey $current -> $keyToSend program=${prefs.remoteModel.programId(keyToSend)} " +
+                    "sent=$sent turn=${signals.turnSignalFlash} gear=${signals.gear} " +
+                    "brake=${signals.brakePedalDepth} accel=${signals.accelPedalDepth} " +
+                    "brakeLight=${signals.lightBrake} reverseLight=${signals.lightReversing} " +
+                    "trunk=${signals.trunk}",
+            )
+            return@withLock
+        }
+
+        if (!programListResumePending) return@withLock
+        tryResumeProgramList(now, "condition-ended")
+    }
+
+    private suspend fun initializeReadyConnection(): Boolean {
+        if (
+            !runtimeActive ||
+            !preferences.state.value.enabled ||
+            !bleClient.connection.value.ready
+        ) {
+            connectionInitialized = false
+            return false
+        }
+        val screenPowerApplied = bleClient.setScreenPower(true)
+        val brightnessApplied = screenPowerApplied && bleClient.setBrightness(
+            preferences.state.value.brightness
+        )
+        val programListApplied = brightnessApplied && bleClient.playProgramList()
+        val initialized = programListApplied && bleClient.connection.value.ready
+        connectionInitialized = initialized
+        programListResumePending = false
+        _runtime.value = if (initialized) {
+            MafuRuntimeState(
+                lastCommandAt = System.currentTimeMillis(),
+                lastError = null,
+                screenPowerEnabled = true,
+            )
+        } else {
+            MafuRuntimeState(
+                screenPowerEnabled = screenPowerApplied,
+                lastError = when {
+                    !screenPowerApplied -> "马夫开屏命令发送失败"
+                    !brightnessApplied -> "亮度设置发送失败"
+                    else -> "马夫节目列表恢复失败"
+                }
+            )
+        }
+        WjxFileLogger.i(
+            TAG,
+            "Mafu initialization screenPower=$screenPowerApplied brightness=$brightnessApplied " +
+                "programList=$programListApplied initialized=$initialized",
+        )
+        return initialized
+    }
+
+    private suspend fun restoreProgramListBeforeReset(reason: String) {
+        if (_runtime.value.currentRemoteKey == null || !bleClient.connection.value.ready) return
+        pendingRemoteKey = null
+        programListResumePending = true
+        tryResumeProgramList(System.currentTimeMillis(), reason)
+    }
+
+    private suspend fun tryResumeProgramList(now: Long, reason: String): Boolean {
+        val current = _runtime.value.currentRemoteKey
+        val resumed = bleClient.playProgramList()
+        programListResumePending = !resumed && bleClient.connection.value.ready
+        _runtime.value = if (resumed) {
             _runtime.value.copy(
-                currentRemoteKey = next,
-                lastProgramId = prefs.remoteModel.programId(next),
+                currentRemoteKey = null,
+                lastProgramId = null,
                 lastPresetChangedAt = now,
                 lastCommandAt = System.currentTimeMillis(),
                 lastError = null,
             )
         } else {
-            _runtime.value.copy(lastError = "马夫 LED 命令发送失败")
+            _runtime.value.copy(lastError = "马夫节目列表恢复失败")
         }
-        WjxFileLogger.i(
-            TAG,
-            "remoteKey $current -> $next program=${prefs.remoteModel.programId(next)} sent=$sent " +
-                "turn=${signals.turnSignalFlash} gear=${signals.gear} " +
-                "brake=${signals.brakePedalDepth} accel=${signals.accelPedalDepth} " +
-                "brakeLight=${signals.lightBrake} reverseLight=${signals.lightReversing} " +
-                "trunk=${signals.trunk}",
-        )
+        WjxFileLogger.i(TAG, "resume Mafu program list reason=$reason from=$current sent=$resumed")
+        return resumed
     }
 
     private fun resetRuntimeState() {
         ruleEngine.reset()
+        clearPendingCommands()
         connectionInitialized = false
         resetSignalCaches()
         _runtime.value = MafuRuntimeState()
+    }
+
+    private fun clearPendingCommands() {
+        pendingRemoteKey = null
+        programListResumePending = false
     }
 
     private fun DiParsData.toLedCoreSignals(): LedVehicleSignals = LedVehicleSignals(
@@ -362,6 +485,7 @@ class MafuRuntimeCoordinator @Inject constructor(
         private const val BRAKE_INTERVAL_MS = 200L
         private const val BODY_INTERVAL_MS = 500L
         private const val ENGINE_TICK_MS = 100L
+        private const val INITIALIZATION_RETRY_MS = 2_000L
         private const val MOTION_FRESH_MS = 350L
         private const val BRAKE_FRESH_MS = 700L
         private const val BODY_FRESH_MS = 1_500L

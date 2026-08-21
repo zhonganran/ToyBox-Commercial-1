@@ -17,7 +17,6 @@ internal object IpixelFaLinkageRuleCodec {
                     rule.steps.forEach { step ->
                         put(JSONObject().apply {
                             put("presetId", step.preset.presetId)
-                            put("durationSeconds", step.durationSeconds)
                         })
                     }
                 })
@@ -47,7 +46,6 @@ internal object IpixelFaLinkageRuleCodec {
                         add(
                             IpixelFaLinkageStep(
                                 preset = preset,
-                                durationSeconds = stepJson.optInt("durationSeconds", 5),
                             ).normalized()
                         )
                     }

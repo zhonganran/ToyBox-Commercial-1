@@ -41,11 +41,16 @@ internal object A950Protocol {
         characteristicUuids: Set<UUID>,
     ): Boolean = serviceUuid == this.serviceUuid && writeUuid in characteristicUuids
 
-    fun playPreset(preset: A950Preset): ByteArray = command(
-        command = 0x01,
-        parameter1 = 0x05,
-        parameter2 = preset.commandCode,
+    fun playPreset(preset: A950Preset): ByteArray = remoteControl(
+        commandIndex = preset.commandCode,
+        value = 0x00,
     )
+
+    val enableRemoteControlPacket: ByteArray
+        get() = remoteControl(commandIndex = 0xFF, value = 0x01)
+
+    val resumeProgramListPacket: ByteArray
+        get() = remoteControl(commandIndex = 0xFF, value = 0x00)
 
     fun brightness(percent: Int): ByteArray = command(
         command = 0x01,
@@ -53,22 +58,41 @@ internal object A950Protocol {
         parameter2 = percent.coerceIn(0, 100),
     )
 
+    private fun remoteControl(commandIndex: Int, value: Int): ByteArray {
+        require(commandIndex in 0..0xFF) { "A950 remote command index must fit in one byte" }
+        require(value in 0..0xFF) { "A950 remote command value must fit in one byte" }
+        return checksumPacket(
+            0x4E,
+            0x52,
+            0x04,
+            0x01,
+            0x05,
+            commandIndex,
+            value,
+        )
+    }
+
     fun command(command: Int, parameter1: Int, parameter2: Int): ByteArray {
         require(command in 0..0xFF) { "A950 command must fit in one byte" }
         require(parameter1 in 0..0xFF) { "A950 parameter1 must fit in one byte" }
         require(parameter2 in 0..0xFF) { "A950 parameter2 must fit in one byte" }
-        val packet = byteArrayOf(
+        return checksumPacket(
             0x4E,
             0x52,
             0x04,
-            command.toByte(),
-            parameter1.toByte(),
-            parameter2.toByte(),
-            0x00,
+            command,
+            parameter1,
+            parameter2,
         )
-        packet[6] = packet.take(6)
-            .sumOf { it.toInt() and 0xFF }
-            .toByte()
+    }
+
+    private fun checksumPacket(vararg values: Int): ByteArray {
+        val packet = ByteArray(values.size + 1)
+        values.forEachIndexed { index, value ->
+            require(value in 0..0xFF) { "A950 packet value must fit in one byte" }
+            packet[index] = value.toByte()
+        }
+        packet[packet.lastIndex] = values.sum().toByte()
         return packet
     }
 }

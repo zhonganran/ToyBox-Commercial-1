@@ -95,7 +95,7 @@ class A950LinkageEngineTest {
     }
 
     @Test
-    fun `scene steps play in order and other rules are ignored during playback`() {
+    fun `active scene stays selected while its condition remains true`() {
         val engine = A950LinkageEngine()
         val rules = listOf(
             A950LinkageRule(
@@ -103,8 +103,8 @@ class A950LinkageEngineTest {
                 triggerType = LedLinkageTriggerType.GEAR,
                 conditionValue = "R",
                 steps = listOf(
-                    A950LinkageStep(A950Preset.LEFT_TURN, 1),
-                    A950LinkageStep(A950Preset.RIGHT_TURN, 2),
+                    A950LinkageStep(A950Preset.LEFT_TURN),
+                    A950LinkageStep(A950Preset.RIGHT_TURN),
                 ),
             ),
             rule("hazard", LedLinkageTriggerType.LIGHT, "hazard", A950Preset.HAZARD_WARNING),
@@ -113,17 +113,17 @@ class A950LinkageEngineTest {
         val bothActive = LedVehicleSignals(gear = 2, turnSignalFlash = 6)
         assertEquals(A950Preset.LEFT_TURN, engine.evaluate(rules, bothActive, 0L))
         assertNull(engine.evaluate(rules, bothActive, 500L))
-        assertEquals(A950Preset.RIGHT_TURN, engine.evaluate(rules, bothActive, 1_000L))
-        assertNull(engine.evaluate(rules, bothActive, 3_000L))
-        assertNull(engine.evaluate(rules, LedVehicleSignals(gear = 4, turnSignalFlash = 1), 3_100L))
-        assertEquals(
-            A950Preset.HAZARD_WARNING,
-            engine.evaluate(rules, LedVehicleSignals(gear = 4, turnSignalFlash = 6), 3_200L),
-        )
+        assertNull(engine.evaluate(rules, bothActive, 10_000L))
+        assertNull(engine.evaluate(rules, LedVehicleSignals(gear = 4, turnSignalFlash = 1), 10_100L))
+        assertEquals(A950Preset.HAZARD_WARNING, engine.evaluate(
+            rules,
+            LedVehicleSignals(gear = 4, turnSignalFlash = 6),
+            10_200L,
+        ))
     }
 
     @Test
-    fun `a newly active higher priority rule preempts current playback`() {
+    fun `a newly active higher priority rule preempts the active scene`() {
         val engine = A950LinkageEngine()
         val rules = listOf(
             rule("hazard", LedLinkageTriggerType.LIGHT, "hazard", A950Preset.HAZARD_WARNING),
@@ -144,7 +144,44 @@ class A950LinkageEngineTest {
     }
 
     @Test
-    fun `sequence completion does not emit an implicit fallback scene`() {
+    fun `default A950 safety rules preempt driving and parking scenes`() {
+        val rules = A950LinkageRuleFactory.defaultRules()
+        val drivingEngine = A950LinkageEngine()
+
+        assertEquals(
+            A950Preset.AUTOPILOT,
+            drivingEngine.evaluate(rules, LedVehicleSignals(speed = 31), 0L),
+        )
+        assertEquals(
+            A950Preset.LEFT_TURN,
+            drivingEngine.evaluate(
+                rules,
+                LedVehicleSignals(speed = 31, turnSignalFlash = 2),
+                1L,
+            ),
+        )
+        assertEquals(
+            A950Preset.HAZARD_WARNING,
+            drivingEngine.evaluate(
+                rules,
+                LedVehicleSignals(speed = 31, turnSignalFlash = 6),
+                2L,
+            ),
+        )
+
+        val parkedEngine = A950LinkageEngine()
+        assertEquals(
+            A950Preset.TEMPORARY_STOP,
+            parkedEngine.evaluate(rules, LedVehicleSignals(gear = 1), 0L),
+        )
+        assertEquals(
+            A950Preset.OPEN_DOOR_CAREFULLY,
+            parkedEngine.evaluate(rules, LedVehicleSignals(gear = 1, doorFL = 1), 1L),
+        )
+    }
+
+    @Test
+    fun `condition release requests the device program list once`() {
         val engine = A950LinkageEngine()
         val rules = listOf(rule("left", LedLinkageTriggerType.LIGHT, "left_turn"))
 
@@ -153,7 +190,10 @@ class A950LinkageEngineTest {
             engine.evaluate(rules, LedVehicleSignals(turnSignalFlash = 2), 0L),
         )
         assertNull(engine.evaluate(rules, LedVehicleSignals(turnSignalFlash = 1), 1_000L))
+        assertEquals(true, engine.consumeProgramListResume())
+        assertEquals(false, engine.consumeProgramListResume())
         assertNull(engine.evaluate(rules, LedVehicleSignals(turnSignalFlash = 1), 10_000L))
+        assertEquals(false, engine.consumeProgramListResume())
     }
 
     @Test
@@ -188,6 +228,6 @@ class A950LinkageEngineTest {
         id = id,
         triggerType = type,
         conditionValue = condition,
-        steps = listOf(A950LinkageStep(preset, 1)),
+        steps = listOf(A950LinkageStep(preset)),
     )
 }

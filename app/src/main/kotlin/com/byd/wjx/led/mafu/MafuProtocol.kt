@@ -52,17 +52,21 @@ internal object MafuProtocol {
     fun playVehicleLinkage(slot: MafuVehicleLinkageSlot, sequence: Int): ByteArray =
         playProgram(slot.programId, sequence)
 
+    /** Restores the APK's normal carousel, which enumerates program slots 1 through 60. */
+    fun playProgramList(sequence: Int): ByteArray = playPrograms(
+        model = PROGRAM_PLAY_MODEL_LOOP,
+        index = PROGRAM_PLAY_INDEX_UNSPECIFIED,
+        programIds = NORMAL_PROGRAM_IDS,
+        sequence = sequence,
+    )
+
     fun playProgram(programId: Int, sequence: Int): ByteArray {
         require(programId in 1..255) { "马夫节目槽位必须在 1..255" }
-        return frame(
+        return playPrograms(
+            model = PROGRAM_PLAY_MODEL_SINGLE,
+            index = 0,
+            programIds = listOf(programId),
             sequence = sequence,
-            payload = byteArrayOf(
-                0x36,
-                0x03,
-                0x01,
-                0x00,
-                (programId - 1).toByte(),
-            ),
         )
     }
 
@@ -162,6 +166,28 @@ internal object MafuProtocol {
         return expected == actual
     }
 
+    private fun playPrograms(
+        model: Int,
+        index: Int,
+        programIds: List<Int>,
+        sequence: Int,
+    ): ByteArray {
+        require(model in PROGRAM_PLAY_MODEL_LOOP..PROGRAM_PLAY_MODEL_SINGLE)
+        require(index in 0..255)
+        require(programIds.isNotEmpty() && programIds.size <= MAX_SHORT_TLV_PROGRAMS)
+        require(programIds.all { it in 1..255 }) { "马夫节目槽位必须在 1..255" }
+        val itemLength = PROGRAM_PLAY_HEADER_SIZE + programIds.size
+        val payload = ByteArray(TLV_HEADER_SIZE + itemLength)
+        payload[0] = PROGRAM_PLAY_COMMAND
+        payload[1] = itemLength.toByte()
+        payload[2] = model.toByte()
+        payload[3] = index.toByte()
+        programIds.forEachIndexed { offset, programId ->
+            payload[TLV_HEADER_SIZE + PROGRAM_PLAY_HEADER_SIZE + offset] = (programId - 1).toByte()
+        }
+        return frame(sequence = sequence, payload = payload)
+    }
+
     private fun frame(
         sequence: Int,
         payload: ByteArray,
@@ -192,6 +218,7 @@ internal object MafuProtocol {
         (source[offset].toInt() and 0xFF) or ((source[offset + 1].toInt() and 0xFF) shl 8)
 
     private val DEVICE_NAME_PREFIXES = listOf("YS", "TL")
+    private val NORMAL_PROGRAM_IDS = (1..60).toList()
     private val MAGIC_LOW = 0xAA.toByte()
     private val MAGIC_HIGH = 0x55.toByte()
     private val REQUEST_FLAGS = 0xC1.toByte()
@@ -202,6 +229,13 @@ internal object MafuProtocol {
     private const val RESPONSE_ACK = 0x82
     private const val RESPONSE_DATA = 0x83
     private const val RESPONSE_ACK_ALT = 0x84
+    private const val PROGRAM_PLAY_COMMAND = 0x36.toByte()
+    private const val PROGRAM_PLAY_MODEL_LOOP = 0
+    private const val PROGRAM_PLAY_MODEL_SINGLE = 1
+    private const val PROGRAM_PLAY_INDEX_UNSPECIFIED = 0xFF
+    private const val PROGRAM_PLAY_HEADER_SIZE = 2
+    private const val TLV_HEADER_SIZE = 2
+    private const val MAX_SHORT_TLV_PROGRAMS = 0x7F - PROGRAM_PLAY_HEADER_SIZE
     private const val HEADER_SIZE = 10
     private const val CHECKSUM_SIZE = 2
     private const val INNER_LENGTH_OVERHEAD = 6

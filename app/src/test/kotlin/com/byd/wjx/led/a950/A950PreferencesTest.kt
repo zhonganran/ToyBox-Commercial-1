@@ -29,10 +29,25 @@ class A950PreferencesTest {
     }
 
     @Test
-    fun `fresh A950 settings start with no linkage rules`() {
+    fun `fresh A950 settings include default linkage rules`() {
         val rules = A950Preferences(context).state.value.rules
 
-        assertTrue(rules.isEmpty())
+        assertEquals(9, rules.size)
+        assertEquals(
+            listOf(
+                "default-light-hazard",
+                "default-light-reverse",
+                "default-gear-reverse",
+                "default-light-left-turn",
+                "default-light-right-turn",
+                "default-door-front-left",
+                "default-door-front-right",
+                "default-gear-park",
+                "default-speed-running",
+            ),
+            rules.map { it.id },
+        )
+        assertEquals(A950Preset.OPEN_DOOR_CAREFULLY, rules[5].steps.single().preset)
     }
 
     @Test
@@ -53,18 +68,28 @@ class A950PreferencesTest {
     }
 
     @Test
+    fun `legacy A950 empty rule JSON remains empty without a customization marker`() {
+        context.getSharedPreferences(A950Preferences.PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(A950Preferences.KEY_RULES, "[]")
+            .commit()
+
+        assertTrue(A950Preferences(context).state.value.rules.isEmpty())
+    }
+
+    @Test
     fun `A950 rule edits persist and duplicate conditions are rejected`() {
         val preferences = A950Preferences(context)
         val custom = A950LinkageRule(
             id = "custom",
             triggerType = LedLinkageTriggerType.SPEED,
             conditionValue = "gt_100",
-            steps = listOf(A950LinkageStep(A950Preset.AUTOPILOT, 9)),
+            steps = listOf(A950LinkageStep(A950Preset.AUTOPILOT)),
         )
 
         assertTrue(preferences.saveRule(custom))
         assertFalse(preferences.saveRule(custom.copy(id = "duplicate")))
-        assertEquals(custom, A950Preferences(context).state.value.rules.last())
+        assertEquals(custom.normalized(), A950Preferences(context).state.value.rules.last())
     }
 
     @Test

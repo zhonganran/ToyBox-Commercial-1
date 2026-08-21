@@ -26,7 +26,7 @@ class MafuLinkageEngineTest {
     }
 
     @Test
-    fun `remote key steps play in order`() {
+    fun `remote key remains selected while its condition remains true`() {
         val engine = MafuLinkageEngine()
         val rules = listOf(
             MafuLinkageRule(
@@ -34,22 +34,29 @@ class MafuLinkageEngineTest {
                 triggerType = LedLinkageTriggerType.GEAR,
                 conditionValue = "R",
                 steps = listOf(
-                    MafuLinkageStep(MafuRemoteKey.KEY_2, 1),
-                    MafuLinkageStep(MafuRemoteKey.KEY_3, 2),
+                    MafuLinkageStep(MafuRemoteKey.KEY_2),
+                    MafuLinkageStep(MafuRemoteKey.KEY_3),
                 ),
             )
         )
 
-        assertEquals(
-            MafuRemoteKey.KEY_2,
-            engine.evaluate(rules, MODEL, LedVehicleSignals(gear = 2), 0L),
-        )
+        assertEquals(MafuRemoteKey.KEY_2, engine.evaluate(rules, MODEL, LedVehicleSignals(gear = 2), 0L))
         assertNull(engine.evaluate(rules, MODEL, LedVehicleSignals(gear = 2), 500L))
+        assertNull(engine.evaluate(rules, MODEL, LedVehicleSignals(gear = 2), 10_000L))
+    }
+
+    @Test
+    fun `released condition requests the normal program list exactly once`() {
+        val engine = MafuLinkageEngine()
+        val rules = listOf(rule("speed", "gt_30"))
+
         assertEquals(
-            MafuRemoteKey.KEY_3,
-            engine.evaluate(rules, MODEL, LedVehicleSignals(gear = 2), 1_000L),
+            MafuRemoteKey.KEY_1,
+            engine.evaluate(rules, MODEL, LedVehicleSignals(speed = 31), 0L),
         )
-        assertNull(engine.evaluate(rules, MODEL, LedVehicleSignals(gear = 2), 3_000L))
+        assertNull(engine.evaluate(rules, MODEL, LedVehicleSignals(speed = 20), 1L))
+        assertEquals(true, engine.consumeProgramListResume())
+        assertEquals(false, engine.consumeProgramListResume())
     }
 
     @Test
@@ -71,7 +78,7 @@ class MafuLinkageEngineTest {
         id = id,
         triggerType = LedLinkageTriggerType.SPEED,
         conditionValue = condition,
-        steps = listOf(MafuLinkageStep(MafuRemoteKey.KEY_1, 1)),
+        steps = listOf(MafuLinkageStep(MafuRemoteKey.KEY_1)),
     )
 
     private companion object {

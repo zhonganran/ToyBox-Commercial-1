@@ -275,6 +275,11 @@ class MafuBleClient @Inject constructor(
         description = "remoteKey=${key.keyNumber} program=${model.programId(key)}",
     )
 
+    suspend fun playProgramList(): Boolean = sendCommand(
+        buildPacket = MafuProtocol::playProgramList,
+        description = "programList=1..60 model=loop",
+    )
+
     suspend fun setBrightness(level: Int): Boolean = sendCommand(
         buildPacket = { MafuProtocol.brightness(level, it) },
         description = "brightness=${level.coerceIn(1, 15)}",

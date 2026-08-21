@@ -40,11 +40,8 @@ enum class A950Preset(
 
 data class A950LinkageStep(
     val preset: A950Preset,
-    val durationSeconds: Int = 5,
 ) {
-    fun normalized(): A950LinkageStep = copy(
-        durationSeconds = durationSeconds.coerceIn(1, 60),
-    )
+    fun normalized(): A950LinkageStep = this
 }
 
 data class A950LinkageRule(
@@ -66,7 +63,8 @@ data class A950LinkageRule(
         conditionValue = conditionValue.takeIf { value ->
             LedLinkageCatalog.options(triggerType).any { it.value == value }
         } ?: LedLinkageCatalog.options(triggerType).first().value,
-        steps = steps.take(8).map(A950LinkageStep::normalized)
+        // A linkage is stateful: keep one scene active while its condition is true.
+        steps = steps.take(1).map(A950LinkageStep::normalized)
             .ifEmpty { listOf(A950LinkageStep(A950Preset.TEMPORARY_STOP)) },
     )
 }
@@ -77,6 +75,31 @@ object A950LinkageRuleFactory {
         triggerType = LedLinkageTriggerType.SPEED,
         conditionValue = LedLinkageCatalog.options(LedLinkageTriggerType.SPEED).first().value,
         steps = listOf(A950LinkageStep(A950Preset.TEMPORARY_STOP)),
+    )
+
+    /** Rules used when the A950 protocol has never been configured before. */
+    fun defaultRules(): List<A950LinkageRule> = listOf(
+        rule("light-hazard", LedLinkageTriggerType.LIGHT, "hazard", A950Preset.HAZARD_WARNING),
+        rule("light-reverse", LedLinkageTriggerType.LIGHT, "reverse", A950Preset.REVERSING),
+        rule("gear-reverse", LedLinkageTriggerType.GEAR, "R", A950Preset.REVERSING),
+        rule("light-left-turn", LedLinkageTriggerType.LIGHT, "left_turn", A950Preset.LEFT_TURN),
+        rule("light-right-turn", LedLinkageTriggerType.LIGHT, "right_turn", A950Preset.RIGHT_TURN),
+        rule("door-front-left", LedLinkageTriggerType.DOOR, "front_left", A950Preset.OPEN_DOOR_CAREFULLY),
+        rule("door-front-right", LedLinkageTriggerType.DOOR, "front_right", A950Preset.OPEN_DOOR_CAREFULLY),
+        rule("gear-park", LedLinkageTriggerType.GEAR, "P", A950Preset.TEMPORARY_STOP),
+        rule("speed-running", LedLinkageTriggerType.SPEED, "gt_30", A950Preset.AUTOPILOT),
+    )
+
+    private fun rule(
+        id: String,
+        triggerType: LedLinkageTriggerType,
+        conditionValue: String,
+        preset: A950Preset,
+    ): A950LinkageRule = A950LinkageRule(
+        id = "default-$id",
+        triggerType = triggerType,
+        conditionValue = conditionValue,
+        steps = listOf(A950LinkageStep(preset)),
     )
 }
 

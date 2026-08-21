@@ -270,9 +270,17 @@ class A950BleClient @Inject constructor(
         )
     }
 
-    suspend fun play(preset: A950Preset): Boolean = write(
-        packet = A950Protocol.playPreset(preset),
-        description = "slot=${preset.slotNumber} code=${preset.commandCode}",
+    suspend fun play(preset: A950Preset): Boolean = writeSequence(
+        packets = listOf(
+            A950Protocol.enableRemoteControlPacket to "remote control enabled",
+            A950Protocol.playPreset(preset) to
+                "slot=${preset.slotNumber} code=${preset.commandCode}",
+        ),
+    )
+
+    suspend fun resumeProgramList(): Boolean = write(
+        packet = A950Protocol.resumeProgramListPacket,
+        description = "resume device program list",
     )
 
     suspend fun setBrightness(percent: Int): Boolean = write(
@@ -286,11 +294,29 @@ class A950BleClient @Inject constructor(
         description: String,
         requireReady: Boolean = true,
     ): Boolean = writeMutex.withLock {
+        writeLocked(packet, description, requireReady)
+    }
+
+    private suspend fun writeSequence(
+        packets: List<Pair<ByteArray, String>>,
+        requireReady: Boolean = true,
+    ): Boolean = writeMutex.withLock {
+        packets.all { (packet, description) ->
+            writeLocked(packet, description, requireReady)
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private suspend fun writeLocked(
+        packet: ByteArray,
+        description: String,
+        requireReady: Boolean,
+    ): Boolean {
         val gatt = bluetoothGatt
         val characteristic = writeCharacteristic
         if (gatt == null || characteristic == null || (requireReady && !_connection.value.ready)) {
             WjxFileLogger.w(TAG, "write skipped not ready description=$description")
-            return@withLock false
+            return false
         }
         characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
         val accepted = runCatching {
@@ -306,11 +332,11 @@ class A950BleClient @Inject constructor(
         }.getOrDefault(false)
         if (!accepted) {
             recoverFromWriteFailure(description)
-            return@withLock false
+            return false
         }
         WjxFileLogger.i(TAG, "write queued $description bytes=${packet.toHex()}")
         delay(A950Protocol.WRITE_GAP_MS)
-        true
+        return true
     }
 
     private fun recoverFromWriteFailure(description: String) {

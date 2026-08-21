@@ -39,6 +39,8 @@ class A950RuntimeCoordinator @Inject constructor(
     @Volatile private var latestBrakeSample = TimedSignals()
     @Volatile private var latestBodySample = TimedSignals()
     private var lastSignalLogKey: SignalLogKey? = null
+    private var pendingPreset: A950Preset? = null
+    private var programListResumePending = false
     private var runtimeJob: Job? = null
 
     @Synchronized
@@ -65,13 +67,20 @@ class A950RuntimeCoordinator @Inject constructor(
                                 binding.deviceAddress,
                                 ignoreCase = true,
                             )
-                            if (connectionIsActive && (!binding.enabled || !connectionMatches)) {
+                            val shouldDisconnect = connectionIsActive &&
+                                (!binding.enabled || !connectionMatches)
+                            if (shouldDisconnect) {
+                                decisionMutex.withLock {
+                                    restoreProgramListBeforeReset("binding-change")
+                                    resetRuntimeState()
+                                }
                                 bleClient.disconnect()
-                            }
-                            val bindingChanged = previousBinding != null && previousBinding != binding
-                            val readyForCurrentBinding = connection.ready && connectionMatches
-                            if (!binding.enabled || (bindingChanged && !readyForCurrentBinding)) {
-                                decisionMutex.withLock { resetRuntimeState() }
+                            } else {
+                                val bindingChanged = previousBinding != null && previousBinding != binding
+                                val readyForCurrentBinding = connection.ready && connectionMatches
+                                if (!binding.enabled || (bindingChanged && !readyForCurrentBinding)) {
+                                    decisionMutex.withLock { resetRuntimeState() }
+                                }
                             }
                             previousBinding = binding
                             bleClient.startAutoConnect()
@@ -88,8 +97,20 @@ class A950RuntimeCoordinator @Inject constructor(
                                 return@collect
                             }
                             decisionMutex.withLock {
+                                val hadActiveLinkage = _runtime.value.currentPreset != null
+                                if (hadActiveLinkage && bleClient.connection.value.ready) {
+                                    pendingPreset = null
+                                    programListResumePending = true
+                                    tryResumeProgramList(
+                                        now = System.currentTimeMillis(),
+                                        reason = "rules-changed",
+                                    )
+                                }
                                 ruleEngine.reset()
-                                _runtime.value = A950RuntimeState()
+                                pendingPreset = null
+                                if (!programListResumePending) {
+                                    _runtime.value = A950RuntimeState()
+                                }
                             }
                         }
                 }
@@ -100,27 +121,18 @@ class A950RuntimeCoordinator @Inject constructor(
                             connectionInitialized = false
                             decisionMutex.withLock {
                                 ruleEngine.reset()
+                                clearPendingCommands()
                                 resetSignalCaches()
                                 _runtime.value = A950RuntimeState()
-                                val brightnessApplied = bleClient.setBrightness(
-                                    preferences.state.value.brightness
-                                )
-                                _runtime.value = if (brightnessApplied) {
-                                    A950RuntimeState(
-                                        lastCommandAt = System.currentTimeMillis(),
-                                        lastError = null,
-                                    )
-                                } else {
-                                    A950RuntimeState(lastError = "亮度设置发送失败")
-                                }
-                                connectionInitialized = brightnessApplied && bleClient.connection.value.ready
-                                WjxFileLogger.i(
-                                    TAG,
-                                    "A950 connected; brightness applied=$brightnessApplied",
-                                )
+                                initializeReadyConnection()
                             }
                         }
-                        if (!connection.ready) connectionInitialized = false
+                        if (!connection.ready) {
+                            decisionMutex.withLock {
+                                connectionInitialized = false
+                                clearPendingCommands()
+                            }
+                        }
                         wasReady = connection.ready
                     }
                 }
@@ -147,6 +159,29 @@ class A950RuntimeCoordinator @Inject constructor(
                 }
                 launch {
                     while (kotlin.coroutines.coroutineContext.isActive) {
+                        if (
+                            preferences.state.value.enabled &&
+                            bleClient.connection.value.ready &&
+                            !connectionInitialized
+                        ) {
+                            delay(INITIALIZATION_RETRY_MS)
+                            decisionMutex.withLock {
+                                if (
+                                    runtimeActive &&
+                                    preferences.state.value.enabled &&
+                                    bleClient.connection.value.ready &&
+                                    !connectionInitialized
+                                ) {
+                                    initializeReadyConnection()
+                                }
+                            }
+                        } else {
+                            delay(ENGINE_TICK_MS)
+                        }
+                    }
+                }
+                launch {
+                    while (kotlin.coroutines.coroutineContext.isActive) {
                         delay(ENGINE_TICK_MS)
                         if (
                             preferences.state.value.enabled &&
@@ -168,6 +203,7 @@ class A950RuntimeCoordinator @Inject constructor(
         runtimeJob?.cancel()
         runtimeJob = null
         ruleEngine.reset()
+        clearPendingCommands()
         connectionInitialized = false
         resetSignalCaches()
         _runtime.value = A950RuntimeState()
@@ -232,35 +268,116 @@ class A950RuntimeCoordinator @Inject constructor(
             .mergeBody(body)
         logSignalChanges(signals)
         val next = ruleEngine.evaluate(preferences.state.value.rules, signals, now)
-            ?: return@withLock
+        if (next != null) {
+            pendingPreset = next
+            programListResumePending = false
+        } else if (ruleEngine.consumeProgramListResume()) {
+            pendingPreset = null
+            programListResumePending = true
+        }
         val current = _runtime.value.currentPreset
         if (!bleClient.connection.value.ready) return@withLock
 
-        val sent = bleClient.play(next)
-        _runtime.value = if (sent) {
+        val presetToSend = pendingPreset
+        if (presetToSend != null) {
+            val sent = bleClient.play(presetToSend)
+            if (sent) pendingPreset = null
+            _runtime.value = if (sent) {
+                _runtime.value.copy(
+                    currentPreset = presetToSend,
+                    lastPresetChangedAt = now,
+                    lastCommandAt = System.currentTimeMillis(),
+                    lastError = null,
+                )
+            } else {
+                _runtime.value.copy(lastError = "A950 命令发送失败")
+            }
+            WjxFileLogger.i(
+                TAG,
+                "preset $current -> $presetToSend sent=$sent turn=${signals.turnSignalFlash} " +
+                    "gear=${signals.gear} brake=${signals.brakePedalDepth} " +
+                    "accel=${signals.accelPedalDepth} brakeLight=${signals.lightBrake} " +
+                    "reverseLight=${signals.lightReversing} trunk=${signals.trunk}",
+            )
+            return@withLock
+        }
+
+        if (!programListResumePending) return@withLock
+        tryResumeProgramList(now, "condition-ended")
+    }
+
+    private suspend fun initializeReadyConnection(): Boolean {
+        if (
+            !runtimeActive ||
+            !preferences.state.value.enabled ||
+            !bleClient.connection.value.ready
+        ) {
+            connectionInitialized = false
+            return false
+        }
+        val brightnessApplied = bleClient.setBrightness(preferences.state.value.brightness)
+        val programListResumed = brightnessApplied && bleClient.resumeProgramList()
+        val initialized = programListResumed && bleClient.connection.value.ready
+        connectionInitialized = initialized
+        programListResumePending = false
+        _runtime.value = if (initialized) {
+            A950RuntimeState(
+                lastCommandAt = System.currentTimeMillis(),
+                lastError = null,
+            )
+        } else {
+            A950RuntimeState(
+                lastError = if (brightnessApplied) {
+                    "A950 节目列表恢复失败"
+                } else {
+                    "亮度设置发送失败"
+                }
+            )
+        }
+        WjxFileLogger.i(
+            TAG,
+            "A950 initialization brightness=$brightnessApplied programList=$programListResumed " +
+                "initialized=$initialized",
+        )
+        return initialized
+    }
+
+    private suspend fun restoreProgramListBeforeReset(reason: String) {
+        if (_runtime.value.currentPreset == null || !bleClient.connection.value.ready) return
+        pendingPreset = null
+        programListResumePending = true
+        tryResumeProgramList(System.currentTimeMillis(), reason)
+    }
+
+    private suspend fun tryResumeProgramList(now: Long, reason: String): Boolean {
+        val current = _runtime.value.currentPreset
+        val resumed = bleClient.resumeProgramList()
+        programListResumePending = !resumed && bleClient.connection.value.ready
+        _runtime.value = if (resumed) {
             _runtime.value.copy(
-                currentPreset = next,
+                currentPreset = null,
                 lastPresetChangedAt = now,
                 lastCommandAt = System.currentTimeMillis(),
                 lastError = null,
             )
         } else {
-            _runtime.value.copy(lastError = "A950 命令发送失败")
+            _runtime.value.copy(lastError = "A950 节目列表恢复失败")
         }
-        WjxFileLogger.i(
-            TAG,
-            "preset $current -> $next sent=$sent turn=${signals.turnSignalFlash} " +
-                "gear=${signals.gear} brake=${signals.brakePedalDepth} " +
-                "accel=${signals.accelPedalDepth} brakeLight=${signals.lightBrake} " +
-                "reverseLight=${signals.lightReversing} trunk=${signals.trunk}",
-        )
+        WjxFileLogger.i(TAG, "resume A950 program list reason=$reason from=$current sent=$resumed")
+        return resumed
     }
 
     private fun resetRuntimeState() {
         ruleEngine.reset()
+        clearPendingCommands()
         connectionInitialized = false
         resetSignalCaches()
         _runtime.value = A950RuntimeState()
+    }
+
+    private fun clearPendingCommands() {
+        pendingPreset = null
+        programListResumePending = false
     }
 
     private fun DiParsData.toLedCoreSignals(): LedVehicleSignals = LedVehicleSignals(
@@ -354,6 +471,7 @@ class A950RuntimeCoordinator @Inject constructor(
         private const val BRAKE_INTERVAL_MS = 200L
         private const val BODY_INTERVAL_MS = 500L
         private const val ENGINE_TICK_MS = 100L
+        private const val INITIALIZATION_RETRY_MS = 2_000L
         private const val MOTION_FRESH_MS = 350L
         private const val BRAKE_FRESH_MS = 700L
         private const val BODY_FRESH_MS = 1_500L

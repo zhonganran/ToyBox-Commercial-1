@@ -29,10 +29,25 @@ class IpixelFaPreferencesTest {
     }
 
     @Test
-    fun `fresh FA settings start with no linkage rules`() {
+    fun `fresh FA settings include default linkage rules`() {
         val rules = IpixelFaPreferences(context).state.value.rules
 
-        assertTrue(rules.isEmpty())
+        assertEquals(9, rules.size)
+        assertEquals(
+            listOf(
+                "default-light-hazard",
+                "default-light-reverse",
+                "default-gear-reverse",
+                "default-light-left-turn",
+                "default-light-right-turn",
+                "default-door-front-left",
+                "default-door-front-right",
+                "default-gear-park",
+                "default-speed-running",
+            ),
+            rules.map { it.id },
+        )
+        assertEquals(IpixelFaPreset.GET_OFF, rules[5].steps.single().preset)
     }
 
     @Test
@@ -53,18 +68,28 @@ class IpixelFaPreferencesTest {
     }
 
     @Test
+    fun `legacy FA empty rule JSON remains empty without a customization marker`() {
+        context.getSharedPreferences(IpixelFaPreferences.PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(IpixelFaPreferences.KEY_RULES, "[]")
+            .commit()
+
+        assertTrue(IpixelFaPreferences(context).state.value.rules.isEmpty())
+    }
+
+    @Test
     fun `FA rule edits persist and duplicate conditions are rejected`() {
         val preferences = IpixelFaPreferences(context)
         val custom = IpixelFaLinkageRule(
             id = "custom",
             triggerType = LedLinkageTriggerType.SPEED,
             conditionValue = "gt_100",
-            steps = listOf(IpixelFaLinkageStep(IpixelFaPreset.AUTOPILOT, 9)),
+            steps = listOf(IpixelFaLinkageStep(IpixelFaPreset.AUTOPILOT)),
         )
 
         assertTrue(preferences.saveRule(custom))
         assertFalse(preferences.saveRule(custom.copy(id = "duplicate")))
-        assertEquals(custom, IpixelFaPreferences(context).state.value.rules.last())
+        assertEquals(custom.normalized(), IpixelFaPreferences(context).state.value.rules.last())
     }
 
     @Test

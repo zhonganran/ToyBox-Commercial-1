@@ -15,6 +15,14 @@ internal object IpixelFaProtocol {
 
     fun playPreset(preset: IpixelFaPreset): ByteArray = playRemotePreset(preset.presetId)
 
+    /** Return from a temporary remote preset to the device's stored program list. */
+    fun playProgramList(): ByteArray = byteArrayOf(
+        0x04,
+        0x00,
+        0x03,
+        0x80.toByte(),
+    )
+
     fun playRemotePreset(presetId: Int, language: Int = LANGUAGE_CHINESE): ByteArray {
         require(presetId in 1..20) { "FA remote preset must be in 1..20" }
         require(language == LANGUAGE_ENGLISH || language == LANGUAGE_CHINESE) {

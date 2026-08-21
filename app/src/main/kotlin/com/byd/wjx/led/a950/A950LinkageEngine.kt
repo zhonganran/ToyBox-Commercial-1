@@ -3,12 +3,13 @@ package com.byd.wjx.led.a950
 import com.byd.wjx.led.LedLinkageTriggerType
 import com.byd.wjx.led.LedVehicleSignals
 
-/** Evaluates only A950 rules and emits only A950 firmware presets. */
+/** Keeps the selected A950 preset active while its vehicle condition remains true. */
 class A950LinkageEngine {
     private var boundRules: List<A950LinkageRule> = emptyList()
     private val previousMatches = linkedMapOf<String, Boolean>()
-    private var playback: Playback? = null
+    private var activeRuleId: String? = null
     private var displayedPreset: A950Preset? = null
+    private var resumeProgramListPending = false
 
     fun evaluate(
         rules: List<A950LinkageRule>,
@@ -17,52 +18,51 @@ class A950LinkageEngine {
     ): A950Preset? {
         bindRules(rules)
         val currentMatches = matchesByRule(signals)
-        playback?.let { active ->
-            val activeIndex = boundRules.indexOfFirst { it.id == active.rule.id }
-            val higherPriorityTrigger = boundRules
-                .take(activeIndex.coerceAtLeast(0))
-                .firstOrNull { rule ->
-                    rule.enabled &&
-                        currentMatches[rule.id] == true &&
-                        previousMatches[rule.id] != true
-                }
-            captureMatches(currentMatches)
-            if (higherPriorityTrigger != null) {
-                return startPlayback(higherPriorityTrigger, now)
+        val hadActiveRule = activeRuleId != null
+        val activeRule = activeRuleId?.let { id -> boundRules.firstOrNull { it.id == id } }
+        val activeStillMatches = activeRule?.let { currentMatches[it.id] == true } == true
+        val activeIndex = activeRule?.let { boundRules.indexOf(it) } ?: -1
+        val higherPriorityTrigger = if (activeStillMatches) {
+            boundRules.take(activeIndex.coerceAtLeast(0)).firstOrNull { rule ->
+                rule.enabled &&
+                    currentMatches[rule.id] == true &&
+                    previousMatches[rule.id] != true
             }
-
-            val elapsed = (now - active.startedAt).coerceAtLeast(0L)
-            var stepStart = 0L
-            active.rule.steps.forEachIndexed { index, step ->
-                val stepEnd = stepStart + step.durationSeconds * 1_000L
-                if (elapsed < stepEnd) {
-                    if (index != active.stepIndex) {
-                        playback = active.copy(stepIndex = index)
-                        return dispatch(step.preset, force = true)
-                    }
-                    return null
-                }
-                stepStart = stepEnd
-            }
-
-            playback = null
-            return null
+        } else {
+            null
         }
-
-        val triggered = boundRules.firstOrNull { rule ->
-            rule.enabled &&
-                currentMatches[rule.id] == true &&
-                previousMatches[rule.id] != true
+        val triggered = higherPriorityTrigger ?: if (!activeStillMatches) {
+            boundRules.firstOrNull { rule -> rule.enabled && currentMatches[rule.id] == true }
+        } else {
+            null
         }
         captureMatches(currentMatches)
-        return triggered?.let { startPlayback(it, now) }
+        when {
+            triggered != null -> {
+                activeRuleId = triggered.id
+                resumeProgramListPending = false
+            }
+            !activeStillMatches -> {
+                activeRuleId = null
+                if (hadActiveRule) resumeProgramListPending = true
+            }
+        }
+        return triggered?.let { startPlayback(it) }
+    }
+
+    fun consumeProgramListResume(): Boolean {
+        if (!resumeProgramListPending) return false
+        resumeProgramListPending = false
+        displayedPreset = null
+        return true
     }
 
     fun reset() {
         boundRules = emptyList()
         previousMatches.clear()
-        playback = null
+        activeRuleId = null
         displayedPreset = null
+        resumeProgramListPending = false
     }
 
     private fun bindRules(rules: List<A950LinkageRule>) {
@@ -70,7 +70,8 @@ class A950LinkageEngine {
         if (normalized == boundRules) return
         boundRules = normalized
         previousMatches.clear()
-        playback = null
+        activeRuleId = null
+        resumeProgramListPending = false
     }
 
     private fun matchesByRule(signals: LedVehicleSignals): LinkedHashMap<String, Boolean> =
@@ -81,8 +82,7 @@ class A950LinkageEngine {
         previousMatches.putAll(matches)
     }
 
-    private fun startPlayback(rule: A950LinkageRule, now: Long): A950Preset? {
-        playback = Playback(rule, startedAt = now, stepIndex = 0)
+    private fun startPlayback(rule: A950LinkageRule): A950Preset? {
         return dispatch(rule.steps.first().preset, force = true)
     }
 
@@ -140,9 +140,4 @@ class A950LinkageEngine {
         return this?.let { it > threshold } == true
     }
 
-    private data class Playback(
-        val rule: A950LinkageRule,
-        val startedAt: Long,
-        val stepIndex: Int,
-    )
 }

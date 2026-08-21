@@ -16,8 +16,7 @@ class MafuLinkageRuleCodecTest {
                 triggerType = LedLinkageTriggerType.SPEED,
                 conditionValue = "gt_60",
                 steps = listOf(
-                    MafuLinkageStep(MafuRemoteKey.KEY_4, 3),
-                    MafuLinkageStep(MafuRemoteKey.KEY_20, 7),
+                    MafuLinkageStep(MafuRemoteKey.KEY_4),
                 ),
             )
         )
@@ -33,7 +32,6 @@ class MafuLinkageRuleCodecTest {
         )
 
         assertEquals(MafuRemoteKey.KEY_1, decoded?.single()?.steps?.single()?.remoteKey)
-        assertEquals(60, decoded?.single()?.steps?.single()?.durationSeconds)
     }
 
     @Test
