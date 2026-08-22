@@ -55,8 +55,8 @@ android {
         // on DiLink Android 12 through requestLegacyExternalStorage.
         // targetSdk 30+ would break listFiles() on /storage/emulated/0/energydata/
         targetSdk = 29
-        versionCode = 53
-        versionName = "2.1.13"
+        versionCode = 54
+        versionName = "2.1.14"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "UPDATE_API_URL", "\"$updateApiUrl\"")
@@ -167,6 +167,11 @@ dependencies {
 
     // OkHttp
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // Phone casting receiver. 1.4.1 is the newest Media3 line compatible with compileSdk 34.
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-exoplayer-rtsp:1.4.1")
+    implementation("androidx.media3:media3-ui:1.4.1")
 
     // osmdroid (maps)
     implementation("org.osmdroid:osmdroid-android:6.1.20")

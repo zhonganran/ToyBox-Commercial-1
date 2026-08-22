@@ -205,6 +205,7 @@ internal fun DisplaySection(state: SettingsUiState, viewModel: SettingsViewModel
         onModeSelected = viewModel::setHeadlightMode,
     )
     ElectronicMirrorSettingsCard()
+    PhoneCastSettingsCard()
     SectionHeader(text = "车外音效")
     Card(
         shape = RoundedCornerShape(12.dp),

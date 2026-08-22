@@ -119,6 +119,14 @@
             android:launchMode="singleTop"
             android:theme="@style/Theme.SuperToyBox.VideoFullscreen" />
 
+        <activity
+            android:name=".phonecast.PhoneCastActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.SuperToyBox.VideoFullscreen" />
+
         <service
             android:name=".service.TrackingService"
             android:foregroundServiceType="location"
