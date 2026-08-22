@@ -12,7 +12,6 @@ data class ClusterCardConfig(
     val metricIds: List<String> = emptyList(),
     val scale: Float = 0.65f,
     val widthScale: Float = 1f,
-    val alpha: Float = 0.94f,
     val xPct: Float = 50f,
     val yPct: Float = 50f,
 )
@@ -24,7 +23,6 @@ internal fun sanitizeClusterCardConfig(raw: ClusterCardConfig): ClusterCardConfi
         .take(CLUSTER_CARD_MAX_METRICS),
     scale = raw.scale.coerceIn(0.45f, 1f),
     widthScale = raw.widthScale.coerceIn(0.7f, 1.4f),
-    alpha = raw.alpha.coerceIn(0.4f, 1f),
     xPct = raw.xPct.coerceIn(0f, 100f),
     yPct = raw.yPct.coerceIn(0f, 100f),
 )
@@ -138,14 +136,14 @@ enum class ClusterCardMetric(
         }
 
         fun driveModeText(value: Int): String = when (value) {
-            1 -> "ECO"
-            2 -> "SPORT"
-            3 -> "COMFORT"
-            4 -> "SNOW"
-            5 -> "MUD"
-            6 -> "SAND"
-            7 -> "MOUNTAIN"
-            11 -> "RACING"
+            1 -> "经济"
+            2 -> "运动"
+            3 -> "舒适"
+            4 -> "雪地"
+            5 -> "泥地"
+            6 -> "沙地"
+            7 -> "山地"
+            11 -> "赛道"
             else -> value.toString()
         }
 

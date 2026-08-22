@@ -58,10 +58,6 @@ class ClusterCardController @Inject constructor(
             lp.height = newHeight
             changed = true
         }
-        if (lp.alpha != config.alpha) {
-            lp.alpha = config.alpha
-            changed = true
-        }
         val oldX = lp.x
         val oldY = lp.y
         positionByPercent(lp, config)
@@ -99,7 +95,7 @@ class ClusterCardController @Inject constructor(
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.START or Gravity.TOP
-            alpha = config.alpha
+            alpha = 1f
             positionByPercent(this, config)
         }
         return runCatching {

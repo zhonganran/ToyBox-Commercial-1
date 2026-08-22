@@ -68,7 +68,7 @@ fun DesktopQuickCardContent(
     onSoundClick: (String) -> Unit,
 ) {
     if (!state.expanded) {
-        val iconSize = DESKTOP_QUICK_CARD_COLLAPSED_ICON_DP.dp
+        val iconSize = state.config.floatingIconSizeDp.dp
         Box(
             modifier = Modifier
                 .size(iconSize)
@@ -143,8 +143,12 @@ fun DesktopQuickCardContent(
     val cellSize = layout.cellSizeDp.dp
     val cardGap = layout.gridGapDp.dp
     val maxContentHeight = (configuration.screenHeightDp * 0.62f).dp
-    val cardWidth = DesktopQuickCardLayout.widthForColumns(layout, visibleColumns).dp
-    val expandedIconSize = DESKTOP_QUICK_CARD_EXPANDED_ICON_DP.dp
+    val expandedIconSizeDp = expandedDesktopQuickCardIconSizeDp(state.config.floatingIconSizeDp)
+    val expandedIconSize = expandedIconSizeDp.dp
+    val cardWidth = maxOf(
+        DesktopQuickCardLayout.widthForColumns(layout, visibleColumns),
+        expandedIconSizeDp,
+    ).dp
 
     Box(
         modifier = Modifier.width(cardWidth),

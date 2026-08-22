@@ -23,7 +23,6 @@ class ClusterCardModelsTest {
                 metricIds = listOf(ids[0], ids[0], "missing") + ids.drop(1),
                 scale = 0.1f,
                 widthScale = 2f,
-                alpha = 0f,
                 xPct = -20f,
                 yPct = 140f,
             ),
@@ -32,9 +31,27 @@ class ClusterCardModelsTest {
         assertEquals(ids.take(CLUSTER_CARD_MAX_METRICS), result.metricIds)
         assertEquals(0.45f, result.scale)
         assertEquals(1.4f, result.widthScale)
-        assertEquals(0.4f, result.alpha)
         assertEquals(0f, result.xPct)
         assertEquals(100f, result.yPct)
+    }
+
+    @Test
+    fun `drive modes render in Chinese`() {
+        val modes = mapOf(
+            1 to "经济",
+            2 to "运动",
+            3 to "舒适",
+            4 to "雪地",
+            5 to "泥地",
+            6 to "沙地",
+            7 to "山地",
+            11 to "赛道",
+        )
+
+        modes.forEach { (code, expected) ->
+            val data = diParsData().copy(driveMode = code)
+            assertEquals(expected, ClusterCardMetric.DRIVE_MODE.displayValue(data, null))
+        }
     }
 
     @Test

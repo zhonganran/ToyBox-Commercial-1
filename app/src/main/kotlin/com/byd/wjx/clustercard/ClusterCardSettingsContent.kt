@@ -193,13 +193,6 @@ fun ClusterCardSettingsContent(
             onValueChangeFinished = viewModel::setWidthScale,
         )
         ConfigSlider(
-            title = "透明度",
-            value = state.config.alpha,
-            valueRange = 0.4f..1f,
-            displayValue = "${(state.config.alpha * 100).roundToInt()}%",
-            onValueChangeFinished = viewModel::setAlpha,
-        )
-        ConfigSlider(
             title = "水平位置",
             value = state.config.xPct,
             valueRange = 0f..100f,

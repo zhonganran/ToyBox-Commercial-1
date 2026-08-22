@@ -6,8 +6,10 @@ import kotlin.math.ceil
 import kotlin.math.min
 
 const val DESKTOP_QUICK_CARD_COLUMNS = 4
-const val DESKTOP_QUICK_CARD_COLLAPSED_ICON_DP = 82f
-const val DESKTOP_QUICK_CARD_EXPANDED_ICON_DP = 76f
+const val DESKTOP_QUICK_CARD_DEFAULT_ICON_DP = 82f
+const val DESKTOP_QUICK_CARD_MIN_ICON_DP = 48f
+const val DESKTOP_QUICK_CARD_MAX_ICON_DP = 160f
+private const val DESKTOP_QUICK_CARD_EXPANDED_ICON_SCALE = 76f / 82f
 const val DESKTOP_QUICK_CARD_LEFT_SLIDING_DOOR = "wjx_auto_door_left"
 const val DESKTOP_QUICK_CARD_RIGHT_SLIDING_DOOR = "wjx_auto_door_right"
 const val DESKTOP_QUICK_CARD_REALTIME_HAILING = "wjx_realtime_hailing"
@@ -103,6 +105,7 @@ data class DesktopQuickCardConfig(
     val functionCommands: List<String> = emptyList(),
     val soundPaths: List<String> = emptyList(),
     val floatingIconId: String = DESKTOP_QUICK_CARD_ICON_TOOLBOX,
+    val floatingIconSizeDp: Float = DESKTOP_QUICK_CARD_DEFAULT_ICON_DP,
     val x: Int = 0,
     val y: Int = 0,
     val positionInitialized: Boolean = false,
@@ -128,9 +131,16 @@ internal fun sanitizeDesktopQuickCardConfig(
         },
     floatingIconId = raw.floatingIconId.takeIf(validIconIds::contains)
         ?: DESKTOP_QUICK_CARD_ICON_TOOLBOX,
+    floatingIconSizeDp = raw.floatingIconSizeDp
+        .takeIf(Float::isFinite)
+        ?.coerceIn(DESKTOP_QUICK_CARD_MIN_ICON_DP, DESKTOP_QUICK_CARD_MAX_ICON_DP)
+        ?: DESKTOP_QUICK_CARD_DEFAULT_ICON_DP,
     x = raw.x.coerceAtLeast(0),
     y = raw.y.coerceAtLeast(0),
 )
+
+internal fun expandedDesktopQuickCardIconSizeDp(collapsedSizeDp: Float): Float =
+    collapsedSizeDp * DESKTOP_QUICK_CARD_EXPANDED_ICON_SCALE
 
 object DesktopQuickCardGrid {
     fun rowsFor(itemCount: Int): Int = if (itemCount <= 0) {

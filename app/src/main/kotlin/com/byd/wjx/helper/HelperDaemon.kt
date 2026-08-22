@@ -532,6 +532,25 @@ fun main(args: Array<String>) {
                     reply?.writeInt(-1); reply?.writeInt(0); true
                 }
 
+                HelperBinderProtocol.TX_SET_CLUSTER_MODE -> runCatching {
+                    val enabledValue = data.readInt()
+                    require(enabledValue == 0 || enabledValue == 1) { "invalid enabled=$enabledValue" }
+                    val enabled = enabledValue == 1
+                    val ok = if (enabled) {
+                        autoContainerCall(16)
+                    } else {
+                        val detached = autoContainerCall(18)
+                        Thread.sleep(1_000L)
+                        autoContainerCall(0) && detached
+                    }
+                    helperLog("ElectronicMirror", "cluster compositor enabled=$enabled ok=$ok")
+                    reply?.writeInt(if (ok) 0 else -1); reply?.writeInt(0)
+                    true
+                }.getOrElse {
+                    helperLog("ElectronicMirror", "cluster compositor failed: ${throwableSummary(it)}")
+                    reply?.writeInt(-1); reply?.writeInt(0); true
+                }
+
                 else -> super.onTransact(code, data, reply, flags)
             }
         }

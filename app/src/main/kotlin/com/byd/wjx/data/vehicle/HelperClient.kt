@@ -122,6 +122,8 @@ interface HelperClient {
     suspend fun setHeadlightMode(mode: HeadlightMode): HelperHeadlightReply? = null
     /** Applies BYD's privileged lock-sound playback route state in the helper process. */
     suspend fun setLockSoundPlaybackState(enabled: Boolean): Boolean = false
+    /** Powers the instrument projection compositor for the electronic rearview mirror. */
+    suspend fun setClusterContainerMode(enabled: Boolean): Boolean = false
 }
 
 @Singleton
@@ -342,6 +344,14 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
             data.writeInt(if (enabled) 1 else 0)
         }
 
+    override suspend fun setClusterContainerMode(enabled: Boolean): Boolean =
+        statusOk(
+            HelperBinderProtocol.TX_SET_CLUSTER_MODE,
+            timeoutMs = CLUSTER_MODE_TIMEOUT_MS,
+        ) { data ->
+            data.writeInt(if (enabled) 1 else 0)
+        }
+
     private suspend fun transactHeadlight(
         code: Int,
         writeArgs: (Parcel) -> Unit,
@@ -470,6 +480,7 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
         private const val BATCH_TIMEOUT_MAX_MS = 15000L
         private const val FORCE_TIMEOUT_MS = 15000L
         private const val HEADLIGHT_TIMEOUT_MS = 8000L
+        private const val CLUSTER_MODE_TIMEOUT_MS = 5000L
         private const val DEV_SHELL_TIMEOUT_MS = 620000L
     }
 }

@@ -119,6 +119,22 @@ internal fun execShellRead(command: String): DevShellResult {
     }
 }
 
+/** Narrow gateway to BYD's instrument compositor service. */
+internal fun autoContainerCall(command: Int): Boolean = autoContainerCall(command) { script, argument ->
+    shExec(script, argument).code
+}
+
+internal fun autoContainerCall(command: Int, exec: (String, String) -> Int): Boolean {
+    require(command == 0 || command == 16 || command == 18) {
+        "auto_container command $command is not allowed"
+    }
+    val argument = command.toString()
+    if (exec("service call auto_container 2 i32 1000 i32 \"\$1\" s16 \"\"", argument) == 0) {
+        return true
+    }
+    return exec("service call AutoContainer 2 i32 1000 i32 \"\$1\" s16 \"\"", argument) == 0
+}
+
 internal fun helperLog(tag: String, message: String) {
     val ts = synchronized(HELPER_LOG_DATE) { HELPER_LOG_DATE.format(Date()) }
     val line = "$ts I/$tag $message\n"

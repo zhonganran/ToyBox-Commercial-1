@@ -62,6 +62,7 @@ class TrackingService : Service() {
     @Inject lateinit var activationManager: ActivationManager
     @Inject lateinit var desktopQuickCardRuntime: DesktopQuickCardRuntime
     @Inject lateinit var clusterCardRuntime: ClusterCardRuntime
+    @Inject lateinit var electronicMirrorController: com.byd.wjx.electronicmirror.ElectronicMirrorController
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val helperReadiness = CompletableDeferred<Boolean>()
@@ -128,6 +129,7 @@ class TrackingService : Service() {
         networkAvailableMonitor.start()
         startPolling()
         cameraRuntimeCoordinator.start(serviceScope)
+        electronicMirrorController.start(serviceScope)
         desktopQuickCardRuntime.start(serviceScope)
         clusterCardRuntime.start(serviceScope)
         lyricRuntime.start(cameraRuntimeCoordinator.active)
@@ -185,6 +187,7 @@ class TrackingService : Service() {
         mafuRuntimeCoordinator.stop()
         a950RuntimeCoordinator.stop()
         ipixelFaRuntimeCoordinator.stop()
+        electronicMirrorController.stop()
         cameraRuntimeCoordinator.stop()
         steeringWheelRuntimeCoordinator.stop()
         networkAvailableMonitor.stop()
@@ -266,6 +269,7 @@ class TrackingService : Service() {
 
             launch {
                 sharedAdaptiveLoop.actionFlow.collect { data ->
+                    electronicMirrorController.onVehicleData(data)
                     runCatching { ipixelFaRuntimeCoordinator.onVehicleData(data) }
                         .onFailure { WjxFileLogger.e(TAG, "FA LED linkage tick failed: ${it.message}", it) }
                     runCatching { a950RuntimeCoordinator.onVehicleData(data) }

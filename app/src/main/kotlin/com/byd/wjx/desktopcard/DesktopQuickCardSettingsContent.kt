@@ -38,6 +38,8 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -69,6 +71,7 @@ import com.byd.wjx.ui.theme.CardSurfaceElevated
 import com.byd.wjx.ui.theme.TextMuted
 import com.byd.wjx.ui.theme.TextPrimary
 import com.byd.wjx.ui.theme.TextSecondary
+import kotlin.math.roundToInt
 
 @Composable
 fun DesktopQuickCardSettingsContent(
@@ -127,9 +130,11 @@ fun DesktopQuickCardSettingsContent(
     DesktopQuickCardIconSection(
         icons = state.icons,
         selectedId = state.config.floatingIconId,
+        iconSizeDp = state.config.floatingIconSizeDp,
         importBusy = state.iconImportBusy,
         message = state.iconMessage,
         onSelect = viewModel::setFloatingIconId,
+        onSizeChange = viewModel::setFloatingIconSizeDp,
         onImport = { iconPicker.launch(arrayOf("image/*")) },
         onDelete = viewModel::deleteIcon,
     )
@@ -194,9 +199,11 @@ fun DesktopQuickCardSettingsContent(
 private fun DesktopQuickCardIconSection(
     icons: List<DesktopQuickCardIcon>,
     selectedId: String,
+    iconSizeDp: Float,
     importBusy: Boolean,
     message: String?,
     onSelect: (String) -> Unit,
+    onSizeChange: (Float) -> Unit,
     onImport: () -> Unit,
     onDelete: (String) -> Unit,
 ) {
@@ -279,6 +286,33 @@ private fun DesktopQuickCardIconSection(
                     }
                 }
             }
+        }
+        HorizontalDivider(color = CardBorder)
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("图标大小", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.weight(1f))
+                Text(
+                    "${iconSizeDp.roundToInt()} dp",
+                    color = AccentGreen,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Slider(
+                value = iconSizeDp,
+                onValueChange = onSizeChange,
+                valueRange = DESKTOP_QUICK_CARD_MIN_ICON_DP..DESKTOP_QUICK_CARD_MAX_ICON_DP,
+                steps = (DESKTOP_QUICK_CARD_MAX_ICON_DP - DESKTOP_QUICK_CARD_MIN_ICON_DP).toInt() - 1,
+                colors = SliderDefaults.colors(
+                    thumbColor = AccentGreen,
+                    activeTrackColor = AccentGreen,
+                    inactiveTrackColor = CardBorder,
+                ),
+            )
         }
         message?.let {
             Text(it, color = if (it.contains("失败") || it.contains("无法")) AccentOrange else AccentGreen, fontSize = 12.sp)

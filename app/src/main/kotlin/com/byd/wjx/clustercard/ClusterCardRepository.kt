@@ -36,8 +36,6 @@ class ClusterCardRepository @Inject constructor(
 
     fun setWidthScale(value: Float) = update { copy(widthScale = value) }
 
-    fun setAlpha(value: Float) = update { copy(alpha = value) }
-
     fun setXPct(value: Float) = update { copy(xPct = value) }
 
     fun setYPct(value: Float) = update { copy(yPct = value) }
@@ -63,7 +61,6 @@ class ClusterCardRepository @Inject constructor(
             metricIds = readMetricIds(),
             scale = prefs.getFloat(KEY_SCALE, 0.65f),
             widthScale = prefs.getFloat(KEY_WIDTH_SCALE, 1f),
-            alpha = prefs.getFloat(KEY_ALPHA, 0.94f),
             xPct = prefs.getFloat(KEY_X_PCT, 50f),
             yPct = prefs.getFloat(KEY_Y_PCT, 50f),
         ),
@@ -84,7 +81,6 @@ class ClusterCardRepository @Inject constructor(
             .putString(KEY_METRIC_IDS, metrics.toString())
             .putFloat(KEY_SCALE, value.scale)
             .putFloat(KEY_WIDTH_SCALE, value.widthScale)
-            .putFloat(KEY_ALPHA, value.alpha)
             .putFloat(KEY_X_PCT, value.xPct)
             .putFloat(KEY_Y_PCT, value.yPct)
             .apply()
@@ -96,7 +92,6 @@ class ClusterCardRepository @Inject constructor(
         private const val KEY_METRIC_IDS = "metric_ids"
         private const val KEY_SCALE = "scale"
         private const val KEY_WIDTH_SCALE = "width_scale"
-        private const val KEY_ALPHA = "alpha"
         private const val KEY_X_PCT = "x_pct"
         private const val KEY_Y_PCT = "y_pct"
     }

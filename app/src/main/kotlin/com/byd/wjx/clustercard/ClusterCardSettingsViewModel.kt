@@ -76,8 +76,6 @@ class ClusterCardSettingsViewModel @Inject constructor(
 
     fun setWidthScale(value: Float) = repository.setWidthScale(value)
 
-    fun setAlpha(value: Float) = repository.setAlpha(value)
-
     fun setXPct(value: Float) = repository.setXPct(value)
 
     fun setYPct(value: Float) = repository.setYPct(value)

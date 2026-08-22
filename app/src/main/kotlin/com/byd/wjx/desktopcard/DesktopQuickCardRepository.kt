@@ -44,6 +44,7 @@ class DesktopQuickCardRepository @Inject constructor(
 
     fun setEnabled(value: Boolean) = update { copy(enabled = value) }
     fun setFloatingIconId(value: String) = update { copy(floatingIconId = value) }
+    fun setFloatingIconSizeDp(value: Float) = update { copy(floatingIconSizeDp = value) }
     fun setFunctionCommands(value: List<String>) = update { copy(functionCommands = value) }
     fun setSoundPaths(value: List<String>) = update { copy(soundPaths = value) }
     fun notifyOverlayPermissionChanged() {
@@ -132,6 +133,10 @@ class DesktopQuickCardRepository @Inject constructor(
             soundPaths = readList(KEY_SOUND_PATHS),
             floatingIconId = prefs.getString(KEY_FLOATING_ICON_ID, DESKTOP_QUICK_CARD_ICON_TOOLBOX)
                 ?: DESKTOP_QUICK_CARD_ICON_TOOLBOX,
+            floatingIconSizeDp = prefs.getFloat(
+                KEY_FLOATING_ICON_SIZE_DP,
+                DESKTOP_QUICK_CARD_DEFAULT_ICON_DP,
+            ),
             x = prefs.getInt(KEY_X, 0),
             y = prefs.getInt(KEY_Y, 0),
             positionInitialized = prefs.getBoolean(KEY_POSITION_INITIALIZED, false),
@@ -150,6 +155,7 @@ class DesktopQuickCardRepository @Inject constructor(
             .putString(KEY_FUNCTION_COMMANDS, JSONArray(value.functionCommands).toString())
             .putString(KEY_SOUND_PATHS, JSONArray(value.soundPaths).toString())
             .putString(KEY_FLOATING_ICON_ID, value.floatingIconId)
+            .putFloat(KEY_FLOATING_ICON_SIZE_DP, value.floatingIconSizeDp)
             .putInt(KEY_X, value.x)
             .putInt(KEY_Y, value.y)
             .putBoolean(KEY_POSITION_INITIALIZED, value.positionInitialized)
@@ -225,6 +231,7 @@ class DesktopQuickCardRepository @Inject constructor(
         private const val KEY_FUNCTION_COMMANDS = "function_commands"
         private const val KEY_SOUND_PATHS = "sound_paths"
         private const val KEY_FLOATING_ICON_ID = "floating_icon_id"
+        private const val KEY_FLOATING_ICON_SIZE_DP = "floating_icon_size_dp"
         private const val KEY_CUSTOM_ICONS = "custom_icons"
         private const val KEY_X = "x"
         private const val KEY_Y = "y"

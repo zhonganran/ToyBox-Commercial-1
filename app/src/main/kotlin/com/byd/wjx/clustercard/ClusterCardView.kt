@@ -4,41 +4,26 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.RectF
 import android.view.View
 import com.byd.wjx.data.remote.DiParsData
-import kotlin.math.min
 
 internal class ClusterCardView(context: Context) : View(context) {
     private val density = resources.displayMetrics.density
-    private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(8, 17, 25)
-        style = Paint.Style.FILL
-    }
-    private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.argb(105, 130, 189, 224)
-        style = Paint.Style.STROKE
-        strokeWidth = density * 0.7f
-    }
     private val dividerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.argb(45, 205, 229, 244)
+        color = Color.argb(70, 255, 255, 255)
         style = Paint.Style.STROKE
         strokeWidth = density * 0.6f
     }
-    private val accentPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.rgb(58, 207, 169)
-        style = Paint.Style.FILL
-    }
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.argb(168, 229, 240, 246)
+        color = Color.argb(210, 255, 255, 255)
         typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.NORMAL)
+        setShadowLayer(density * 1.5f, 0f, density * 0.5f, Color.BLACK)
     }
     private val valuePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
         typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        setShadowLayer(density * 2f, 0f, density * 0.7f, Color.BLACK)
     }
-    private val outerRect = RectF()
-    private val accentRect = RectF()
 
     private var metrics: List<ClusterCardMetric> = emptyList()
     private var baseData: DiParsData? = null
@@ -62,20 +47,8 @@ internal class ClusterCardView(context: Context) : View(context) {
         super.onDraw(canvas)
         if (metrics.isEmpty() || width <= 0 || height <= 0) return
 
-        outerRect.set(1f, 1f, width - 1f, height - 1f)
-        val radius = min(width, height) * 0.075f
-        canvas.drawRoundRect(outerRect, radius, radius, backgroundPaint)
-        canvas.drawRoundRect(outerRect, radius, radius, borderPaint)
-        accentRect.set(density * 8f, density * 7f, density * 11f, height - density * 7f)
-        canvas.drawRoundRect(
-            accentRect,
-            density * 1.5f,
-            density * 1.5f,
-            accentPaint,
-        )
-
         val rows = ClusterCardLayout.rowCount(metrics.size)
-        val contentLeft = density * 18f
+        val contentLeft = density * 4f
         val contentRight = width - density * 10f
         val contentTop = density * 6f
         val contentBottom = height - density * 6f

@@ -46,6 +46,7 @@ class SuperToyBoxApp : Application(), Configuration.Provider {
             HiddenApiBypass.addHiddenApiExemptions(
                 "Landroid/os/ServiceManager;",
                 "Landroid/os/SystemProperties;",
+                "Landroid/hardware/",
             )
         }.onFailure {
             WjxFileLogger.w("SuperToyBoxApp", "hidden-api exemption unavailable", it)

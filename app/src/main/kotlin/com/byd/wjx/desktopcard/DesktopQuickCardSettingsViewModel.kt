@@ -75,6 +75,7 @@ class DesktopQuickCardSettingsViewModel @Inject constructor(
 
     fun setEnabled(value: Boolean) = repository.setEnabled(value)
     fun setFloatingIconId(value: String) = repository.setFloatingIconId(value)
+    fun setFloatingIconSizeDp(value: Float) = repository.setFloatingIconSizeDp(value)
 
     fun importIcon(uri: Uri) {
         if (_uiState.value.iconImportBusy) return

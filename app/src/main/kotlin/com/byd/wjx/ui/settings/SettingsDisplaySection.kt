@@ -204,6 +204,7 @@ internal fun DisplaySection(state: SettingsUiState, viewModel: SettingsViewModel
         onRefresh = viewModel::refreshHeadlightControl,
         onModeSelected = viewModel::setHeadlightMode,
     )
+    ElectronicMirrorSettingsCard()
     SectionHeader(text = "车外音效")
     Card(
         shape = RoundedCornerShape(12.dp),

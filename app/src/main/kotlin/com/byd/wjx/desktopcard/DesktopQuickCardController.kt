@@ -159,6 +159,7 @@ class DesktopQuickCardController @Inject constructor(
     fun render(config: DesktopQuickCardConfig, theme: ThemeMode) {
         mainHandler.post {
             val previous = renderState.value
+            val iconSizeChanged = previous.config.floatingIconSizeDp != config.floatingIconSizeDp
             if (shouldStopDesktopQuickCardSound(previous.activeSoundPath, config.soundPaths, config.enabled)) {
                 WjxFileLogger.i(TAG, "stopping removed/disabled sound path=${previous.activeSoundPath}")
                 WjxOutsidePlayService.stop(appContext, owner = OWNER)
@@ -191,6 +192,7 @@ class DesktopQuickCardController @Inject constructor(
                 return@post
             }
             ensureView(config)
+            if (iconSizeChanged) updateLayoutAfterIconResize()
             composeView?.visibility = View.VISIBLE
         }
     }
@@ -488,6 +490,23 @@ class DesktopQuickCardController @Inject constructor(
         }
     }
 
+    private fun updateLayoutAfterIconResize() {
+        if (renderState.value.expanded) {
+            updateLayoutAfterContentResize(restoreCollapsedAnchor = false)
+            return
+        }
+        val view = composeView ?: return
+        view.requestLayout()
+        view.post {
+            view.post {
+                val params = layoutParams ?: return@post
+                clampPosition(params)
+                runCatching { windowManager.updateViewLayout(view, params) }
+                repository.savePosition(params.x, params.y)
+            }
+        }
+    }
+
     private data class CommandExecutionResult(
         val success: Boolean,
         val message: String?,
@@ -568,7 +587,7 @@ class DesktopQuickCardController @Inject constructor(
     }
 
     private fun collapsedIconSizePx(): Int =
-        (DESKTOP_QUICK_CARD_COLLAPSED_ICON_DP * appContext.resources.displayMetrics.density).roundToInt()
+        (renderState.value.config.floatingIconSizeDp * appContext.resources.displayMetrics.density).roundToInt()
 
     private fun clampPosition(params: WindowManager.LayoutParams) {
         val screen = screenSize()

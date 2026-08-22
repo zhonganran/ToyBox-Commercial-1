@@ -15,6 +15,7 @@ class DesktopQuickCardModelsTest {
         assertTrue(config.functionCommands.isEmpty())
         assertTrue(config.soundPaths.isEmpty())
         assertEquals(DESKTOP_QUICK_CARD_ICON_TOOLBOX, config.floatingIconId)
+        assertEquals(DESKTOP_QUICK_CARD_DEFAULT_ICON_DP, config.floatingIconSizeDp, 0f)
     }
 
     @Test
@@ -44,6 +45,7 @@ class DesktopQuickCardModelsTest {
             functionCommands = listOf("a", "a", "bad", "b", "c", "d", "e", "f", "g", "h", "i"),
             soundPaths = listOf("/1", "/1", "/bad", "/2", "/3", "/4", "/5", "/6", "/7", "/8", "/9"),
             floatingIconId = "missing_icon",
+            floatingIconSizeDp = DESKTOP_QUICK_CARD_MAX_ICON_DP + 20f,
             x = -1,
             y = -2,
         )
@@ -57,8 +59,27 @@ class DesktopQuickCardModelsTest {
         assertEquals(listOf("a", "b", "c", "d", "e", "f", "g", "h", "i"), result.functionCommands)
         assertEquals(listOf("/1", "/2", "/3", "/4", "/5", "/6", "/7", "/8", "/9"), result.soundPaths)
         assertEquals(DESKTOP_QUICK_CARD_ICON_TOOLBOX, result.floatingIconId)
+        assertEquals(DESKTOP_QUICK_CARD_MAX_ICON_DP, result.floatingIconSizeDp, 0f)
         assertEquals(0, result.x)
         assertEquals(0, result.y)
+    }
+
+    @Test
+    fun `icon size sanitizes invalid and out of range values`() {
+        val tooSmall = sanitizeDesktopQuickCardConfig(
+            DesktopQuickCardConfig(floatingIconSizeDp = DESKTOP_QUICK_CARD_MIN_ICON_DP - 1f),
+        )
+        val invalid = sanitizeDesktopQuickCardConfig(
+            DesktopQuickCardConfig(floatingIconSizeDp = Float.NaN),
+        )
+
+        assertEquals(DESKTOP_QUICK_CARD_MIN_ICON_DP, tooSmall.floatingIconSizeDp, 0f)
+        assertEquals(DESKTOP_QUICK_CARD_DEFAULT_ICON_DP, invalid.floatingIconSizeDp, 0f)
+        assertEquals(
+            76f,
+            expandedDesktopQuickCardIconSizeDp(DESKTOP_QUICK_CARD_DEFAULT_ICON_DP),
+            0.01f,
+        )
     }
 
     @Test
