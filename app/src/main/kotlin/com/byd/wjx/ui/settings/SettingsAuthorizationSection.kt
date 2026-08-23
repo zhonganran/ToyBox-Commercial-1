@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.QrCode2
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.VerifiedUser
@@ -317,7 +318,7 @@ internal fun AuthorizationRailCard(state: SettingsUiState, viewModel: SettingsVi
 @Composable
 internal fun ActivationPaymentDialog(state: SettingsUiState, viewModel: SettingsViewModel) {
     val order = state.activationPaymentOrder
-    if (!state.activationPaymentLoading && order == null) return
+    if (!shouldShowActivationPaymentDialog(state)) return
     Dialog(onDismissRequest = viewModel::dismissActivationPayment) {
         Card(
             modifier = Modifier.fillMaxWidth().widthIn(max = 760.dp),
@@ -331,13 +332,34 @@ internal fun ActivationPaymentDialog(state: SettingsUiState, viewModel: Settings
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    CircularProgressIndicator(color = AccentGreen)
+                    if (state.activationPaymentLoading) {
+                        CircularProgressIndicator(color = AccentGreen)
+                    } else {
+                        Icon(
+                            Icons.Outlined.ErrorOutline,
+                            contentDescription = null,
+                            tint = SocRed,
+                            modifier = Modifier.size(36.dp),
+                        )
+                    }
                     Text(
                         state.activationPaymentMessage ?: "正在创建安全支付订单",
-                        color = TextPrimary,
+                        color = if (state.activationPaymentLoading) TextPrimary else SocRed,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
+                    if (!state.activationPaymentLoading) {
+                        Button(
+                            onClick = viewModel::dismissActivationPayment,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = CardSurface,
+                                contentColor = TextPrimary,
+                            ),
+                        ) {
+                            Text("关闭")
+                        }
+                    }
                 }
             } else {
                 var nowMillis by remember(order.orderNo) { mutableLongStateOf(System.currentTimeMillis()) }
@@ -451,6 +473,11 @@ internal fun ActivationPaymentDialog(state: SettingsUiState, viewModel: Settings
         }
     }
 }
+
+internal fun shouldShowActivationPaymentDialog(state: SettingsUiState): Boolean =
+    state.activationPaymentLoading ||
+        state.activationPaymentOrder != null ||
+        !state.activationPaymentMessage.isNullOrBlank()
 
 @Composable
 private fun PaymentCheckoutWebView(url: String, modifier: Modifier = Modifier) {

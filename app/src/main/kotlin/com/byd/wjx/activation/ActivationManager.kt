@@ -1,6 +1,7 @@
 package com.byd.wjx.activation
 
 import android.content.Context
+import android.provider.Settings
 import android.util.Base64
 import com.byd.wjx.BuildConfig
 import com.byd.wjx.data.vehicle.HelperBootstrap
@@ -10,6 +11,7 @@ import com.byd.wjx.storage.WjxDirectories
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.security.KeyFactory
+import java.security.MessageDigest
 import java.security.Signature
 import java.security.spec.X509EncodedKeySpec
 import java.time.Instant
@@ -471,7 +473,22 @@ class ActivationManager @Inject constructor(
         put("appVersion", BuildConfig.VERSION_NAME)
         put("packageName", appContext.packageName)
         put("credentialVersion", DEVICE_CREDENTIAL_VERSION)
+        credentialRecoveryProof().takeIf(String::isNotBlank)?.let {
+            put("credentialRecoveryProof", it)
+        }
         readOfflineLicense()?.let { put("deviceProof", it) }
+    }
+
+    private fun credentialRecoveryProof(): String {
+        val androidId = Settings.Secure.getString(
+            appContext.contentResolver,
+            Settings.Secure.ANDROID_ID,
+        ).orEmpty().trim()
+        if (androidId.isBlank()) return ""
+        val source = "wjx-device-credential-v1|${appContext.packageName}|$androidId"
+        return MessageDigest.getInstance("SHA-256")
+            .digest(source.toByteArray(Charsets.UTF_8))
+            .joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xff) }
     }
 
     private fun postJson(path: String, payload: JSONObject): JSONObject {

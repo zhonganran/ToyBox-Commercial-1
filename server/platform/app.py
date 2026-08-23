@@ -375,22 +375,45 @@ def device_token_hash(token):
     return hashlib.sha256(str(token or "").encode("utf-8")).hexdigest()
 
 
+def normalize_credential_recovery_proof(proof):
+    normalized = str(proof or "").strip().lower()
+    if len(normalized) != 64 or any(char not in "0123456789abcdef" for char in normalized):
+        return ""
+    return normalized
+
+
+def credential_recovery_proof_hash(proof):
+    normalized = normalize_credential_recovery_proof(proof)
+    if not normalized:
+        return ""
+    return hashlib.sha256(f"credential-recovery-v1:{normalized}".encode("utf-8")).hexdigest()
+
+
 def device_token_matches(row, token):
     stored = str(row["api_token_hash"] or "") if row is not None else ""
     candidate = device_token_hash(token) if token else ""
     return bool(stored and candidate and secrets.compare_digest(stored, candidate))
 
 
-def issue_device_token(conn, device_codes):
+def issue_device_token(conn, device_codes, credential_recovery_proof=""):
     codes = list(dict.fromkeys(code for code in device_codes if code))
     if not codes:
         return ""
     token = secrets.token_urlsafe(32)
-    conn.execute(
-        f"UPDATE devices SET api_token_hash = ?, api_token_issued_at = ? "
-        f"WHERE device_code IN ({sql_placeholders(codes)})",
-        (device_token_hash(token), utc_now(), *codes),
-    )
+    recovery_hash = credential_recovery_proof_hash(credential_recovery_proof)
+    if recovery_hash:
+        conn.execute(
+            f"UPDATE devices SET api_token_hash = ?, api_token_issued_at = ?, "
+            f"credential_recovery_hash = ? "
+            f"WHERE device_code IN ({sql_placeholders(codes)})",
+            (device_token_hash(token), utc_now(), recovery_hash, *codes),
+        )
+    else:
+        conn.execute(
+            f"UPDATE devices SET api_token_hash = ?, api_token_issued_at = ? "
+            f"WHERE device_code IN ({sql_placeholders(codes)})",
+            (device_token_hash(token), utc_now(), *codes),
+        )
     return token
 
 
@@ -401,6 +424,7 @@ def resolve_device_token(
     allow_initial_issue=False,
     allow_reissue=False,
     rotate=False,
+    credential_recovery_proof="",
 ):
     codes = list(dict.fromkeys(code for code in device_codes if code))
     if not codes:
@@ -409,19 +433,36 @@ def resolve_device_token(
         f"SELECT * FROM devices WHERE device_code IN ({sql_placeholders(codes)})",
         codes,
     ).fetchall()
-    if rotate or allow_reissue:
-        return issue_device_token(conn, codes)
+    recovery_hash = credential_recovery_proof_hash(credential_recovery_proof)
+    recovery_matches = bool(recovery_hash) and any(
+        str(row["credential_recovery_hash"] or "")
+        and secrets.compare_digest(str(row["credential_recovery_hash"]), recovery_hash)
+        for row in rows
+    )
+    if rotate:
+        return issue_device_token(conn, codes, credential_recovery_proof)
     if presented_token and any(device_token_matches(row, presented_token) for row in rows):
-        conn.execute(
-            f"UPDATE devices SET api_token_hash = ?, "
-            f"api_token_issued_at = COALESCE(api_token_issued_at, ?) "
-            f"WHERE device_code IN ({sql_placeholders(codes)})",
-            (device_token_hash(presented_token), utc_now(), *codes),
-        )
+        if recovery_hash:
+            conn.execute(
+                f"UPDATE devices SET api_token_hash = ?, "
+                f"api_token_issued_at = COALESCE(api_token_issued_at, ?), "
+                f"credential_recovery_hash = ? "
+                f"WHERE device_code IN ({sql_placeholders(codes)})",
+                (device_token_hash(presented_token), utc_now(), recovery_hash, *codes),
+            )
+        else:
+            conn.execute(
+                f"UPDATE devices SET api_token_hash = ?, "
+                f"api_token_issued_at = COALESCE(api_token_issued_at, ?) "
+                f"WHERE device_code IN ({sql_placeholders(codes)})",
+                (device_token_hash(presented_token), utc_now(), *codes),
+            )
         return presented_token
+    if allow_reissue or recovery_matches:
+        return issue_device_token(conn, codes, credential_recovery_proof)
     has_existing_token = any(str(row["api_token_hash"] or "") for row in rows)
     if allow_initial_issue and not has_existing_token:
-        return issue_device_token(conn, codes)
+        return issue_device_token(conn, codes, credential_recovery_proof)
     return ""
 
 
@@ -1341,6 +1382,12 @@ def vehicle_detail(device_id):
         ).fetchall()
     auth_category = authorization_category(authorization)
     license_row = authorization["license"]
+    csrf = csrf_input()
+    credential_status = (
+        "已登记恢复证明"
+        if device["credential_recovery_hash"]
+        else ("仅有旧凭证" if device["api_token_hash"] else "等待客户端登记")
+    )
     log_rows = "".join(
         f'<div class="data-row"><span>#{row["id"]}</span><span>{h(row["created_at"])}</span>'
         f'<span>{format_size(row["file_size"])}</span><span><a class="button soft" href="{h(url_for("view_diagnostic_log", log_id=row["id"]))}" target="_blank">查看</a></span></div>'
@@ -1359,7 +1406,12 @@ def vehicle_detail(device_id):
     <span><small>最近连接</small><b>{h(device["last_seen_at"])}</b></span>
     <span><small>应用版本</small><b>{h(device["app_version"] or "-")}</b></span>
     <span><small>应用包名</small><b>{h(device["package_name"] or "-")}</b></span>
+    <span><small>设备凭证</small><b>{h(credential_status)}</b></span>
   </div>
+  <form method="post" action="{h(url_for("reset_vehicle_credential", device_id=device["id"]))}" onsubmit="return confirm('确定重置这台车的设备凭证吗？客户端下次刷新授权状态时会重新登记。')">
+    {csrf}
+    <button class="danger">重置设备凭证</button>
+  </form>
 </section>
 <section class="panel">
   <div class="panel-title"><div><h2>最近诊断日志</h2><p>查看该车主动上传的 wjx.log。</p></div></div>
@@ -1367,6 +1419,37 @@ def vehicle_detail(device_id):
 </section>
 """
     return page("车辆详情", "vehicles", body)
+
+
+@app.post("/vehicles/<int:device_id>/reset-credential")
+def reset_vehicle_credential(device_id):
+    guard = require_login()
+    if guard:
+        return guard
+    with db() as conn:
+        device = conn.execute("SELECT * FROM devices WHERE id = ?", (device_id,)).fetchone()
+        if device is None:
+            abort(404)
+        conditions = ["id = ?"]
+        params = [device_id]
+        if device["api_token_hash"]:
+            conditions.append("api_token_hash = ?")
+            params.append(device["api_token_hash"])
+        if device["credential_recovery_hash"]:
+            conditions.append("credential_recovery_hash = ?")
+            params.append(device["credential_recovery_hash"])
+        cursor = conn.execute(
+            f"UPDATE devices SET api_token_hash = '', api_token_issued_at = NULL, "
+            f"credential_recovery_hash = '' WHERE {' OR '.join(conditions)}",
+            params,
+        )
+        log_event(
+            conn,
+            "credential",
+            f"管理员重置车辆 {device['device_code']} 的设备凭证，共 {cursor.rowcount} 条关联记录",
+        )
+    flash("设备凭证已重置，请在车辆端刷新授权状态以重新登记", "success")
+    return redirect(url_for("vehicle_detail", device_id=device_id))
 
 
 @app.get("/diagnostic-logs")
@@ -1918,6 +2001,7 @@ def device_license_payload(
     presented_token="",
     credential_recovery_authorized=False,
     rotate_credential=False,
+    credential_recovery_proof="",
 ):
     codes = device_codes or [device_code]
     device = upsert_device_group(conn, codes, raw_device_code, app_version, package_name, activated)
@@ -1946,6 +2030,7 @@ def device_license_payload(
             allow_initial_issue=True,
             allow_reissue=credential_recovery_authorized,
             rotate=rotate_credential,
+            credential_recovery_proof=credential_recovery_proof,
         )
         if token:
             result["deviceToken"] = token
@@ -2188,7 +2273,7 @@ def refresh_payment_order_from_provider(out_trade_no, payload_hash=""):
         ).fetchone()
 
 
-def paid_payment_payload(conn, order, presented_token):
+def paid_payment_payload(conn, order, presented_token, credential_recovery_proof=""):
     try:
         aliases = json.loads(order["device_codes_json"] or "[]")
     except (TypeError, ValueError, json.JSONDecodeError):
@@ -2216,6 +2301,7 @@ def paid_payment_payload(conn, order, presented_token):
         device_codes=device_codes,
         credential_requested=True,
         presented_token=presented_token,
+        credential_recovery_proof=credential_recovery_proof,
     )
     activated_at_iso, activated_at_ms = license_row_activated_at(conn, license_row)
     result.update({
@@ -2269,6 +2355,7 @@ def api_license_status():
             credential_requested=credential_requested,
             presented_token=request_device_token(),
             credential_recovery_authorized=credential_recovery_authorized,
+            credential_recovery_proof=payload.get("credentialRecoveryProof", ""),
         )
         if row is not None:
             activated_at_iso, activated_at_ms = license_row_activated_at(conn, row)
@@ -2367,6 +2454,7 @@ def api_license_activate():
             credential_requested=credential_requested,
             presented_token=request_device_token(),
             rotate_credential=credential_requested,
+            credential_recovery_proof=payload.get("credentialRecoveryProof", ""),
         )
         result["activatedAt"] = epoch_millis(now)
         result["activatedAtIso"] = now
@@ -2576,7 +2664,12 @@ def api_payment_status():
             (out_trade_no,),
         ).fetchone()
         if order["status"] == "paid":
-            return jsonify(paid_payment_payload(conn, order, presented_token))
+            return jsonify(paid_payment_payload(
+                conn,
+                order,
+                presented_token,
+                payload.get("credentialRecoveryProof", ""),
+            ))
         result = payment_order_client_payload(order)
         result["message"] = {
             "pending": "等待扫码支付",

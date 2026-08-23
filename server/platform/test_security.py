@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import io
 import os
 import sqlite3
@@ -116,6 +117,7 @@ class PlatformStorageTest(unittest.TestCase):
                 "last_seen_at",
                 "api_token_hash",
                 "api_token_issued_at",
+                "credential_recovery_hash",
             },
             device_columns,
         )
@@ -167,6 +169,58 @@ class PlatformStorageTest(unittest.TestCase):
                 with patch.object(platform_storage, "DB_PATH", Path(legacy_path)):
                     with self.assertRaisesRegex(RuntimeError, "Unsupported platform database"):
                         platform_storage.init_db(force=True)
+            finally:
+                platform_storage._db_initialized = initialized
+
+    def test_version_one_database_is_migrated_without_losing_devices(self):
+        with tempfile.TemporaryDirectory() as directory:
+            legacy_path = os.path.join(directory, "legacy.db")
+            with sqlite3.connect(legacy_path) as conn:
+                conn.executescript(
+                    """
+                    CREATE TABLE platform_schema (
+                        id INTEGER PRIMARY KEY CHECK (id = 1),
+                        schema_version INTEGER NOT NULL
+                    );
+                    INSERT INTO platform_schema VALUES (1, 1);
+                    CREATE TABLE devices (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        device_code TEXT NOT NULL UNIQUE,
+                        raw_device_code TEXT NOT NULL DEFAULT '',
+                        app_version TEXT NOT NULL DEFAULT '',
+                        package_name TEXT NOT NULL DEFAULT '',
+                        activated INTEGER NOT NULL DEFAULT 0,
+                        trial_started_at TEXT,
+                        trial_ends_at TEXT,
+                        first_seen_at TEXT NOT NULL,
+                        last_seen_at TEXT NOT NULL,
+                        api_token_hash TEXT NOT NULL DEFAULT '',
+                        api_token_issued_at TEXT
+                    );
+                    INSERT INTO devices
+                        (device_code, first_seen_at, last_seen_at, api_token_hash)
+                    VALUES
+                        ('LC0FD4C42S7184399', '2026-01-01T00:00:00Z',
+                         '2026-01-02T00:00:00Z', 'existing-token-hash');
+                    """
+                )
+
+            initialized = platform_storage._db_initialized
+            try:
+                platform_storage._db_initialized = False
+                with patch.object(platform_storage, "DB_PATH", Path(legacy_path)):
+                    platform_storage.init_db(force=True)
+                    with platform_storage.db() as conn:
+                        version = conn.execute(
+                            "SELECT schema_version FROM platform_schema WHERE id = 1"
+                        ).fetchone()[0]
+                        device = conn.execute(
+                            "SELECT * FROM devices WHERE device_code = ?",
+                            ("LC0FD4C42S7184399",),
+                        ).fetchone()
+                self.assertEqual(platform_storage.PLATFORM_SCHEMA_VERSION, version)
+                self.assertEqual("existing-token-hash", device["api_token_hash"])
+                self.assertEqual("", device["credential_recovery_hash"])
             finally:
                 platform_storage._db_initialized = initialized
 
@@ -310,6 +364,7 @@ class PlatformWorkflowTest(unittest.TestCase):
     def setUp(self):
         self.client = platform_app.app.test_client()
         self.device_tokens = {}
+        self.device_recovery_proofs = {}
         self.reset_platform_state()
 
     def tearDown(self):
@@ -487,6 +542,7 @@ class PlatformWorkflowTest(unittest.TestCase):
         license_code = "STB-ABCD-EFGH-JKLM-NPQR-STUV"
         vin = "L1234567890123456"
         other_vin = "L6543210987654321"
+        recovery_proof = hashlib.sha256(f"proof:{vin}".encode()).hexdigest()
         now = platform_app.utc_now()
         with platform_app.db() as conn:
             conn.execute(
@@ -504,6 +560,7 @@ class PlatformWorkflowTest(unittest.TestCase):
                 "appVersion": "test",
                 "packageName": "com.example.test",
                 "credentialVersion": 1,
+                "credentialRecoveryProof": recovery_proof,
             },
         )
         self.assertEqual(200, initial_status.status_code)
@@ -519,6 +576,7 @@ class PlatformWorkflowTest(unittest.TestCase):
                 "packageName": "com.example.test",
                 "activationCode": license_code,
                 "credentialVersion": 1,
+                "credentialRecoveryProof": recovery_proof,
             },
             headers={"Authorization": f"Bearer {initial_token}"},
         )
@@ -536,6 +594,7 @@ class PlatformWorkflowTest(unittest.TestCase):
                 "appVersion": "test",
                 "packageName": "com.example.test",
                 "credentialVersion": 1,
+                "credentialRecoveryProof": recovery_proof,
             },
             headers={"Authorization": f"Bearer {activated_token}"},
         )
@@ -557,6 +616,7 @@ class PlatformWorkflowTest(unittest.TestCase):
         self.assertFalse(duplicate_activation.json["activated"])
 
     def register_device(self, vin="L1234567890123456"):
+        recovery_proof = hashlib.sha256(f"proof:{vin}".encode()).hexdigest()
         response = self.client.post(
             "/api/v1/license/status",
             json={
@@ -564,11 +624,13 @@ class PlatformWorkflowTest(unittest.TestCase):
                 "appVersion": "1.9",
                 "packageName": "com.byd.wjx",
                 "credentialVersion": 1,
+                "credentialRecoveryProof": recovery_proof,
             },
         )
         self.assertEqual(200, response.status_code)
         self.assertTrue(response.json["deviceToken"])
         self.device_tokens[vin] = response.json["deviceToken"]
+        self.device_recovery_proofs[vin] = recovery_proof
         return vin
 
     def create_payment(self, vin, token, payment_type="wxpay"):
@@ -604,6 +666,126 @@ class PlatformWorkflowTest(unittest.TestCase):
         self.assertEqual(401, response.status_code)
         with platform_app.db() as conn:
             self.assertEqual(0, conn.execute("SELECT COUNT(*) FROM payment_orders").fetchone()[0])
+
+    def test_unactivated_device_can_recover_a_lost_credential(self):
+        vin = self.register_device("LC0FD4C42S7184308")
+        original_token = self.device_tokens[vin]
+
+        recovered = self.client.post(
+            "/api/v1/license/status",
+            json={
+                "deviceCode": vin,
+                "appVersion": "2.1.18",
+                "packageName": "com.byd.wjx",
+                "credentialVersion": 1,
+                "credentialRecoveryProof": self.device_recovery_proofs[vin],
+            },
+        )
+
+        self.assertEqual(200, recovered.status_code)
+        self.assertFalse(recovered.json["activated"])
+        self.assertTrue(recovered.json["deviceToken"])
+        self.assertNotEqual(original_token, recovered.json["deviceToken"])
+        with patch.object(platform_app, "payment_ready", return_value=True), patch.object(
+            platform_app,
+            "create_provider_order",
+            return_value=self.payment_provider_create_result("PLATFORM-RECOVERED"),
+        ) as create_provider:
+            created = self.create_payment(vin, recovered.json["deviceToken"])
+        self.assertEqual(200, created.status_code)
+        self.assertTrue(created.json["orderNo"].startswith("WJX"))
+        self.assertEqual("weixin://wxpay/test-order", created.json["payUrl"])
+        create_provider.assert_called_once()
+
+    def test_unactivated_device_cannot_recover_with_a_different_proof(self):
+        vin = self.register_device("LC0FD4C42S7184310")
+
+        rejected = self.client.post(
+            "/api/v1/license/status",
+            json={
+                "deviceCode": vin,
+                "appVersion": "2.1.19",
+                "packageName": "com.byd.wjx",
+                "credentialVersion": 1,
+                "credentialRecoveryProof": hashlib.sha256(b"other-device").hexdigest(),
+            },
+        )
+
+        self.assertEqual(200, rejected.status_code)
+        self.assertFalse(rejected.json["activated"])
+        self.assertTrue(rejected.json["deviceCredentialRequired"])
+        self.assertNotIn("deviceToken", rejected.json)
+
+    def test_valid_legacy_token_registers_recovery_proof_before_reinstall(self):
+        vin = self.register_device("LC0FD4C42S7184312")
+        token = self.device_tokens[vin]
+        proof = self.device_recovery_proofs[vin]
+        with platform_app.db() as conn:
+            conn.execute(
+                "UPDATE devices SET credential_recovery_hash = '' WHERE device_code = ?",
+                (vin,),
+            )
+
+        upgraded = self.client.post(
+            "/api/v1/license/status",
+            json={
+                "deviceCode": vin,
+                "appVersion": "2.1.19",
+                "packageName": "com.byd.wjx",
+                "credentialVersion": 1,
+                "credentialRecoveryProof": proof,
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        self.assertEqual(200, upgraded.status_code)
+        self.assertEqual(token, upgraded.json["deviceToken"])
+        with platform_app.db() as conn:
+            stored_hash = conn.execute(
+                "SELECT credential_recovery_hash FROM devices WHERE device_code = ?",
+                (vin,),
+            ).fetchone()["credential_recovery_hash"]
+        self.assertEqual(platform_app.credential_recovery_proof_hash(proof), stored_hash)
+
+        recovered = self.client.post(
+            "/api/v1/license/status",
+            json={
+                "deviceCode": vin,
+                "appVersion": "2.1.19",
+                "packageName": "com.byd.wjx",
+                "credentialVersion": 1,
+                "credentialRecoveryProof": proof,
+            },
+        )
+        self.assertEqual(200, recovered.status_code)
+        self.assertNotEqual(token, recovered.json["deviceToken"])
+
+    def test_activated_device_cannot_recover_without_signed_proof(self):
+        vin = self.register_device("LC0FD4C42S7184309")
+        now = platform_app.utc_now()
+        with platform_app.db() as conn:
+            conn.execute(
+                """
+                INSERT INTO license_codes
+                    (code, device_code, raw_device_code, note, enabled, activated_at, created_at, updated_at)
+                VALUES (?, ?, ?, '', 1, ?, ?, ?)
+                """,
+                ("STB-TEST-NO-RECOVERY", vin, vin, now, now, now),
+            )
+
+        rejected = self.client.post(
+            "/api/v1/license/status",
+            json={
+                "deviceCode": vin,
+                "appVersion": "2.1.18",
+                "packageName": "com.byd.wjx",
+                "credentialVersion": 1,
+            },
+        )
+
+        self.assertEqual(200, rejected.status_code)
+        self.assertTrue(rejected.json["activated"])
+        self.assertTrue(rejected.json["deviceCredentialRequired"])
+        self.assertNotIn("deviceToken", rejected.json)
 
     def test_pending_payment_reuses_order_until_local_expiry(self):
         vin = self.register_device("LC0FD4C42S7184302")
@@ -889,6 +1071,49 @@ class PlatformWorkflowTest(unittest.TestCase):
         self.assertIn("最近诊断日志".encode(), detail.data)
         self.assertNotIn("销售款型".encode(), detail.data)
         self.assertNotIn("车型配置".encode(), detail.data)
+
+    def test_admin_can_reset_a_legacy_device_credential_for_reregistration(self):
+        vin = self.register_device("LC0FD4C42S7184311")
+        old_token = self.device_tokens[vin]
+        with platform_app.db() as conn:
+            device_id = conn.execute(
+                "SELECT id FROM devices WHERE device_code = ?",
+                (vin,),
+            ).fetchone()["id"]
+
+        csrf_token = self.login_and_get_csrf()
+        reset = self.client.post(
+            f"/vehicles/{device_id}/reset-credential",
+            data={"csrf_token": csrf_token},
+            follow_redirects=False,
+        )
+
+        self.assertEqual(302, reset.status_code)
+        with platform_app.db() as conn:
+            device = conn.execute(
+                "SELECT * FROM devices WHERE id = ?",
+                (device_id,),
+            ).fetchone()
+            audit = conn.execute(
+                "SELECT message FROM audit_logs WHERE type = 'credential' ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        self.assertEqual("", device["api_token_hash"])
+        self.assertEqual("", device["credential_recovery_hash"])
+        self.assertIn(vin, audit["message"])
+
+        registered = self.client.post(
+            "/api/v1/license/status",
+            json={
+                "deviceCode": vin,
+                "appVersion": "2.1.19",
+                "packageName": "com.byd.wjx",
+                "credentialVersion": 1,
+                "credentialRecoveryProof": self.device_recovery_proofs[vin],
+            },
+        )
+        self.assertEqual(200, registered.status_code)
+        self.assertTrue(registered.json["deviceToken"])
+        self.assertNotEqual(old_token, registered.json["deviceToken"])
 
     def test_disabling_or_deleting_a_license_immediately_removes_activated_status(self):
         vin = self.register_device("LC0FD4C42S7184345")

@@ -25,7 +25,8 @@ from platform_config import (
 _db_init_lock = threading.Lock()
 _db_initialized = False
 DB_BUSY_TIMEOUT_MS = 10_000
-PLATFORM_SCHEMA_VERSION = 1
+PLATFORM_SCHEMA_VERSION = 2
+MIN_SUPPORTED_SCHEMA_VERSION = 1
 
 
 def utc_datetime():
@@ -116,13 +117,36 @@ def validate_existing_schema(conn):
             "Existing platform database has an invalid schema marker; "
             "start with an empty database"
         ) from exc
-    if marker is None or marker["schema_version"] != PLATFORM_SCHEMA_VERSION:
-        found_version = "missing" if marker is None else marker["schema_version"]
+    if marker is None:
+        raise RuntimeError(
+            "Existing platform database has an invalid schema marker; "
+            "start with an empty database"
+        )
+    found_version = int(marker["schema_version"])
+    if not MIN_SUPPORTED_SCHEMA_VERSION <= found_version <= PLATFORM_SCHEMA_VERSION:
         raise RuntimeError(
             f"Unsupported platform database schema version {found_version}; "
-            f"expected {PLATFORM_SCHEMA_VERSION}. Start with an empty database"
+            f"supported versions are {MIN_SUPPORTED_SCHEMA_VERSION} through "
+            f"{PLATFORM_SCHEMA_VERSION}. Start with an empty database"
         )
-    return True
+    return found_version
+
+
+def migrate_schema(conn, from_version):
+    version = from_version
+    if version < 2:
+        columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(devices)").fetchall()
+        }
+        if "credential_recovery_hash" not in columns:
+            conn.execute(
+                "ALTER TABLE devices ADD COLUMN credential_recovery_hash TEXT NOT NULL DEFAULT ''"
+            )
+        version = 2
+    conn.execute(
+        "UPDATE platform_schema SET schema_version = ? WHERE id = 1",
+        (version,),
+    )
 
 
 def init_db(force=False):
@@ -140,7 +164,7 @@ def init_db(force=False):
         with database_init_file_lock(), db() as conn:
             conn.execute("PRAGMA journal_mode = WAL")
             conn.execute("PRAGMA synchronous = NORMAL")
-            existing_schema = validate_existing_schema(conn)
+            existing_schema_version = validate_existing_schema(conn)
             conn.executescript(
                 """
                 BEGIN IMMEDIATE;
@@ -232,7 +256,8 @@ def init_db(force=False):
                     first_seen_at TEXT NOT NULL,
                     last_seen_at TEXT NOT NULL,
                     api_token_hash TEXT NOT NULL DEFAULT '',
-                    api_token_issued_at TEXT
+                    api_token_issued_at TEXT,
+                    credential_recovery_hash TEXT NOT NULL DEFAULT ''
                 );
                 CREATE TABLE IF NOT EXISTS audit_logs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -290,11 +315,13 @@ def init_db(force=False):
                 );
                 """
             )
-            if not existing_schema:
+            if existing_schema_version is False:
                 conn.execute(
                     "INSERT INTO platform_schema (id, schema_version) VALUES (1, ?)",
                     (PLATFORM_SCHEMA_VERSION,),
                 )
+            elif existing_schema_version < PLATFORM_SCHEMA_VERSION:
+                migrate_schema(conn, existing_schema_version)
             now = utc_now()
             ensure_config_defaults(conn)
             for key, (title, subtitle, description) in SERVICE_QR_TYPES.items():

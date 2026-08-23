@@ -37,6 +37,8 @@ import kotlinx.coroutines.test.setMain
 import okhttp3.OkHttpClient
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import io.mockk.coEvery
@@ -141,6 +143,7 @@ class SettingsViewModelTest {
         settingsDao: FakeSettingsDao = FakeSettingsDao(),
         logUploader: SettingsLogUploader = mockk(relaxed = true),
         headlightController: HeadlightController = mockk(relaxed = true),
+        activationManager: ActivationManager = mockk(relaxed = true),
     ): SettingsViewModel {
         val ctx: Context = ApplicationProvider.getApplicationContext()
 
@@ -169,7 +172,7 @@ class SettingsViewModelTest {
             updateChecker = resolvedUpdateChecker,
             historyImporter = historyImporter,
             backupManager = backupManager,
-            activationManager = mockk<ActivationManager>(relaxed = true),
+            activationManager = activationManager,
             soundLibrary = com.byd.wjx.storage.SoundLibrary(ctx),
             lockSoundConfigSync = mockk<com.byd.wjx.audio.LockSoundConfigSync>(relaxed = true),
             okHttpClient = httpClient,
@@ -259,6 +262,48 @@ class SettingsViewModelTest {
 
         assertEquals(false, vm.uiState.value.isUploadingLogs)
         assertEquals("日志上传失败：车辆尚未登记", vm.uiState.value.logUploadStatus)
+    }
+
+    @Test
+    fun `payment failure remains visible after loading finishes`() = runTest {
+        val activationManager = mockk<ActivationManager>(relaxed = true)
+        coEvery { activationManager.createPayment("alipay") } throws
+            IllegalStateException("设备身份尚未建立，请刷新授权状态后重试")
+        val vm = buildViewModel(activationManager = activationManager)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        vm.startActivationPayment("alipay")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertEquals(false, state.activationPaymentLoading)
+        assertNull(state.activationPaymentOrder)
+        assertEquals("设备身份尚未建立，请刷新授权状态后重试", state.activationPaymentMessage)
+        assertTrue(shouldShowActivationPaymentDialog(state))
+    }
+
+    @Test
+    fun `cancelled payment request cannot overwrite the latest result`() = runTest {
+        val activationManager = mockk<ActivationManager>(relaxed = true)
+        coEvery { activationManager.createPayment("alipay") } coAnswers {
+            delay(10_000L)
+            error("已取消的请求不应继续执行")
+        }
+        coEvery { activationManager.createPayment("wxpay") } throws
+            IllegalStateException("微信支付创建失败")
+        val vm = buildViewModel(activationManager = activationManager)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        vm.startActivationPayment("alipay")
+        testDispatcher.scheduler.runCurrent()
+        vm.startActivationPayment("wxpay")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val state = vm.uiState.value
+        assertEquals(false, state.activationPaymentLoading)
+        assertNull(state.activationPaymentOrder)
+        assertEquals("微信支付创建失败", state.activationPaymentMessage)
+        assertTrue(shouldShowActivationPaymentDialog(state))
     }
 
     @Test

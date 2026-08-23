@@ -81,6 +81,7 @@ class SettingsViewModel @Inject constructor(
     // Tracks the in-flight update download so "Close" can cancel it (issue #23).
     private var downloadJob: Job? = null
     private var activationPaymentJob: Job? = null
+    private var activationPaymentRequestId = 0L
     private var availableUpdate: UpdateChecker.UpdateInfo? = null
 
     private fun getVersion(): String = try {
@@ -388,6 +389,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun startActivationPayment(paymentType: String) {
+        val requestId = ++activationPaymentRequestId
         activationPaymentJob?.cancel()
         activationPaymentJob = viewModelScope.launch {
             _uiState.update {
@@ -397,26 +399,39 @@ class SettingsViewModel @Inject constructor(
                     activationPaymentOrder = null,
                 )
             }
-            val order = runCatching { activationManager.createPayment(paymentType) }
-                .getOrElse { error ->
+            WjxFileLogger.i("SettingsViewModel", "payment order create start type=$paymentType")
+            try {
+                val order = activationManager.createPayment(paymentType)
+                if (requestId != activationPaymentRequestId) return@launch
+                _uiState.update {
+                    it.copy(
+                        activationPaymentOrder = order,
+                        activationPaymentLoading = false,
+                        activationPaymentMessage = "请扫码支付，到账后会自动激活",
+                    )
+                }
+                pollActivationPayment(order)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (requestId == activationPaymentRequestId) {
                     _uiState.update {
                         it.copy(
                             activationPaymentLoading = false,
                             activationPaymentMessage = error.message ?: "创建支付订单失败",
                         )
                     }
-                    activationPaymentJob = null
-                    return@launch
+                    WjxFileLogger.w(
+                        "SettingsViewModel",
+                        "payment order create failed type=$paymentType: ${error.message}",
+                        error,
+                    )
                 }
-            _uiState.update {
-                it.copy(
-                    activationPaymentOrder = order,
-                    activationPaymentLoading = false,
-                    activationPaymentMessage = "请扫码支付，到账后会自动激活",
-                )
+            } finally {
+                if (requestId == activationPaymentRequestId) {
+                    activationPaymentJob = null
+                }
             }
-            pollActivationPayment(order)
-            activationPaymentJob = null
         }
     }
 
@@ -449,6 +464,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun dismissActivationPayment() {
+        activationPaymentRequestId += 1L
         activationPaymentJob?.cancel()
         activationPaymentJob = null
         _uiState.update {
