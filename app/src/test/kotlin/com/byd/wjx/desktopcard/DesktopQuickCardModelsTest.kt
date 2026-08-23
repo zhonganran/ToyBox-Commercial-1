@@ -40,6 +40,28 @@ class DesktopQuickCardModelsTest {
     }
 
     @Test
+    fun `cluster lyrics toggle is available as a desktop card command`() {
+        val item = DesktopQuickCardCommandCatalog.byCommand.getValue(DESKTOP_QUICK_CARD_CLUSTER_LYRICS)
+
+        assertEquals("仪表歌词", item.label)
+        assertEquals("桌面组件", item.category)
+        assertEquals(DesktopQuickCardCommandKind.CLUSTER_LYRICS, item.kind)
+    }
+
+    @Test
+    fun `cluster card and desktop lyrics toggles are available as desktop card commands`() {
+        val clusterCard = DesktopQuickCardCommandCatalog.byCommand.getValue(DESKTOP_QUICK_CARD_CLUSTER_CARD)
+        val desktopLyrics = DesktopQuickCardCommandCatalog.byCommand.getValue(DESKTOP_QUICK_CARD_DESKTOP_LYRICS)
+
+        assertEquals("仪表卡片", clusterCard.label)
+        assertEquals("桌面组件", clusterCard.category)
+        assertEquals(DesktopQuickCardCommandKind.CLUSTER_CARD, clusterCard.kind)
+        assertEquals("桌面歌词", desktopLyrics.label)
+        assertEquals("桌面组件", desktopLyrics.category)
+        assertEquals(DesktopQuickCardCommandKind.DESKTOP_LYRICS, desktopLyrics.kind)
+    }
+
+    @Test
     fun `sanitize removes duplicates and invalid entries without limiting item count`() {
         val raw = DesktopQuickCardConfig(
             functionCommands = listOf("a", "a", "bad", "b", "c", "d", "e", "f", "g", "h", "i"),
@@ -69,16 +91,26 @@ class DesktopQuickCardModelsTest {
         val tooSmall = sanitizeDesktopQuickCardConfig(
             DesktopQuickCardConfig(floatingIconSizeDp = DESKTOP_QUICK_CARD_MIN_ICON_DP - 1f),
         )
+        val largerThanScreen = sanitizeDesktopQuickCardConfig(
+            raw = DesktopQuickCardConfig(floatingIconSizeDp = 900f),
+            maxIconSizeDp = 720f,
+        )
         val invalid = sanitizeDesktopQuickCardConfig(
             DesktopQuickCardConfig(floatingIconSizeDp = Float.NaN),
         )
 
         assertEquals(DESKTOP_QUICK_CARD_MIN_ICON_DP, tooSmall.floatingIconSizeDp, 0f)
+        assertEquals(720f, largerThanScreen.floatingIconSizeDp, 0f)
         assertEquals(DESKTOP_QUICK_CARD_DEFAULT_ICON_DP, invalid.floatingIconSizeDp, 0f)
+        assertEquals(540f, desktopQuickCardMaxIconSizeDp(1920f, 1080f), 0f)
+        assertEquals(360f, desktopQuickCardMaxIconSizeDp(720f, 1280f), 0f)
         assertEquals(
             76f,
             expandedDesktopQuickCardIconSizeDp(DESKTOP_QUICK_CARD_DEFAULT_ICON_DP),
             0.01f,
+        )
+        assertTrue(
+            expandedDesktopQuickCardIconSizeDp(DESKTOP_QUICK_CARD_MAX_ICON_DP) < 160f,
         )
     }
 

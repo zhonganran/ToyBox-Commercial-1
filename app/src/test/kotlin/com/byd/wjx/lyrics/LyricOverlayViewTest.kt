@@ -46,4 +46,37 @@ class LyricOverlayViewTest {
             0.001f,
         )
     }
+
+    @Test
+    fun `vertical edge fade hides text effects before they are clipped`() {
+        assertEquals(
+            0f,
+            LyricOverlayView.verticalEdgeAlpha(10f, 0f, 100f, 10f, 6f),
+            0.001f,
+        )
+        assertEquals(
+            0.5f,
+            LyricOverlayView.verticalEdgeAlpha(13f, 0f, 100f, 10f, 6f),
+            0.001f,
+        )
+        assertEquals(
+            1f,
+            LyricOverlayView.verticalEdgeAlpha(16f, 0f, 100f, 10f, 6f),
+            0.001f,
+        )
+    }
+
+    @Test
+    fun `vertical edge fade is symmetric and clamps outside the viewport`() {
+        assertEquals(
+            LyricOverlayView.verticalEdgeAlpha(14f, 0f, 100f, 10f, 8f),
+            LyricOverlayView.verticalEdgeAlpha(86f, 0f, 100f, 10f, 8f),
+            0.001f,
+        )
+        assertEquals(
+            0f,
+            LyricOverlayView.verticalEdgeAlpha(-5f, 0f, 100f, 10f, 8f),
+            0.001f,
+        )
+    }
 }

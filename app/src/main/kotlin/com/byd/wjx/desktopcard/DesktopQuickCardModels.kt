@@ -8,11 +8,17 @@ import kotlin.math.min
 const val DESKTOP_QUICK_CARD_COLUMNS = 4
 const val DESKTOP_QUICK_CARD_DEFAULT_ICON_DP = 82f
 const val DESKTOP_QUICK_CARD_MIN_ICON_DP = 48f
-const val DESKTOP_QUICK_CARD_MAX_ICON_DP = 160f
+const val DESKTOP_QUICK_CARD_MAX_ICON_DP = 4096f
 private const val DESKTOP_QUICK_CARD_EXPANDED_ICON_SCALE = 76f / 82f
+private const val DESKTOP_QUICK_CARD_EXPANDED_ICON_MAX_DP = 160f * DESKTOP_QUICK_CARD_EXPANDED_ICON_SCALE
+private const val DESKTOP_QUICK_CARD_FALLBACK_SCREEN_MAX_ICON_DP = 160f
+private const val DESKTOP_QUICK_CARD_SCREEN_MAX_FRACTION = 0.5f
 const val DESKTOP_QUICK_CARD_LEFT_SLIDING_DOOR = "wjx_auto_door_left"
 const val DESKTOP_QUICK_CARD_RIGHT_SLIDING_DOOR = "wjx_auto_door_right"
 const val DESKTOP_QUICK_CARD_REALTIME_HAILING = "wjx_realtime_hailing"
+const val DESKTOP_QUICK_CARD_CLUSTER_CARD = "wjx_cluster_card_toggle"
+const val DESKTOP_QUICK_CARD_DESKTOP_LYRICS = "wjx_desktop_lyrics_toggle"
+const val DESKTOP_QUICK_CARD_CLUSTER_LYRICS = "wjx_cluster_lyrics_toggle"
 const val DESKTOP_QUICK_CARD_ICON_TOOLBOX = "builtin_toolbox"
 const val DESKTOP_QUICK_CARD_ICON_SMILE = "builtin_smile"
 
@@ -45,6 +51,9 @@ enum class DesktopQuickCardCommandKind {
     AUTOMATION,
     AUTO_DOOR,
     REALTIME_HAILING,
+    CLUSTER_CARD,
+    DESKTOP_LYRICS,
+    CLUSTER_LYRICS,
 }
 
 data class DesktopQuickCardCommand(
@@ -87,6 +96,30 @@ object DesktopQuickCardCommandCatalog {
         )
         add(
             DesktopQuickCardCommand(
+                command = DESKTOP_QUICK_CARD_CLUSTER_CARD,
+                label = "仪表卡片",
+                category = "桌面组件",
+                kind = DesktopQuickCardCommandKind.CLUSTER_CARD,
+            ),
+        )
+        add(
+            DesktopQuickCardCommand(
+                command = DESKTOP_QUICK_CARD_DESKTOP_LYRICS,
+                label = "桌面歌词",
+                category = "桌面组件",
+                kind = DesktopQuickCardCommandKind.DESKTOP_LYRICS,
+            ),
+        )
+        add(
+            DesktopQuickCardCommand(
+                command = DESKTOP_QUICK_CARD_CLUSTER_LYRICS,
+                label = "仪表歌词",
+                category = "桌面组件",
+                kind = DesktopQuickCardCommandKind.CLUSTER_LYRICS,
+            ),
+        )
+        add(
+            DesktopQuickCardCommand(
                 command = DESKTOP_QUICK_CARD_RIGHT_SLIDING_DOOR,
                 label = "右侧滑门",
                 category = "电滑门",
@@ -116,31 +149,53 @@ internal fun sanitizeDesktopQuickCardConfig(
     validCommands: Set<String> = DesktopQuickCardCommandCatalog.byCommand.keys,
     validSoundPaths: Set<String>? = null,
     validIconIds: Set<String> = DesktopQuickCardIconCatalog.builtInIds,
-): DesktopQuickCardConfig = raw.copy(
-    functionCommands = raw.functionCommands
-        .map(String::trim)
-        .filter(String::isNotBlank)
-        .distinct()
-        .filter(validCommands::contains),
-    soundPaths = raw.soundPaths
-        .map(String::trim)
-        .filter(String::isNotBlank)
-        .distinct()
-        .let { paths ->
-            if (validSoundPaths == null) paths else paths.filter { it in validSoundPaths }
-        },
-    floatingIconId = raw.floatingIconId.takeIf(validIconIds::contains)
-        ?: DESKTOP_QUICK_CARD_ICON_TOOLBOX,
-    floatingIconSizeDp = raw.floatingIconSizeDp
+    maxIconSizeDp: Float = DESKTOP_QUICK_CARD_MAX_ICON_DP,
+): DesktopQuickCardConfig {
+    val effectiveMaxIconSizeDp = maxIconSizeDp
         .takeIf(Float::isFinite)
         ?.coerceIn(DESKTOP_QUICK_CARD_MIN_ICON_DP, DESKTOP_QUICK_CARD_MAX_ICON_DP)
-        ?: DESKTOP_QUICK_CARD_DEFAULT_ICON_DP,
-    x = raw.x.coerceAtLeast(0),
-    y = raw.y.coerceAtLeast(0),
-)
+        ?: DESKTOP_QUICK_CARD_MAX_ICON_DP
+    return raw.copy(
+        functionCommands = raw.functionCommands
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
+            .filter(validCommands::contains),
+        soundPaths = raw.soundPaths
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
+            .let { paths ->
+                if (validSoundPaths == null) paths else paths.filter { it in validSoundPaths }
+            },
+        floatingIconId = raw.floatingIconId.takeIf(validIconIds::contains)
+            ?: DESKTOP_QUICK_CARD_ICON_TOOLBOX,
+        floatingIconSizeDp = raw.floatingIconSizeDp
+            .takeIf(Float::isFinite)
+            ?.coerceIn(DESKTOP_QUICK_CARD_MIN_ICON_DP, effectiveMaxIconSizeDp)
+            ?: DESKTOP_QUICK_CARD_DEFAULT_ICON_DP,
+        x = raw.x.coerceAtLeast(0),
+        y = raw.y.coerceAtLeast(0),
+    )
+}
+
+internal fun desktopQuickCardMaxIconSizeDp(screenWidthDp: Float, screenHeightDp: Float): Float {
+    val halfShortestSideDp = min(screenWidthDp, screenHeightDp) *
+        DESKTOP_QUICK_CARD_SCREEN_MAX_FRACTION
+    return halfShortestSideDp
+        .takeIf { it.isFinite() && it > 0f }
+        ?.coerceIn(DESKTOP_QUICK_CARD_MIN_ICON_DP, DESKTOP_QUICK_CARD_MAX_ICON_DP)
+        ?: DESKTOP_QUICK_CARD_FALLBACK_SCREEN_MAX_ICON_DP
+}
+
+internal fun collapsedDesktopQuickCardIconSizeDp(config: DesktopQuickCardConfig): Float =
+    config.floatingIconSizeDp
 
 internal fun expandedDesktopQuickCardIconSizeDp(collapsedSizeDp: Float): Float =
-    collapsedSizeDp * DESKTOP_QUICK_CARD_EXPANDED_ICON_SCALE
+    min(
+        collapsedSizeDp * DESKTOP_QUICK_CARD_EXPANDED_ICON_SCALE,
+        DESKTOP_QUICK_CARD_EXPANDED_ICON_MAX_DP,
+    )
 
 object DesktopQuickCardGrid {
     fun rowsFor(itemCount: Int): Int = if (itemCount <= 0) {

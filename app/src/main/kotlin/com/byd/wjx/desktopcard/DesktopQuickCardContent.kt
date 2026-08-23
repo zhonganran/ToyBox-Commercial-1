@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.byd.wjx.ui.theme.AccentGreen
 import com.byd.wjx.ui.theme.AccentOrange
+import com.byd.wjx.ui.theme.AccentBlue
 import com.byd.wjx.ui.theme.ThemeMode
 import java.io.File
 
@@ -57,6 +58,9 @@ data class DesktopQuickCardRenderState(
     val activeSoundPath: String? = null,
     val realtimeHailingRunning: Boolean = false,
     val realtimeHailingBusy: Boolean = false,
+    val clusterCardEnabled: Boolean = false,
+    val desktopLyricsEnabled: Boolean = false,
+    val clusterLyricsEnabled: Boolean = false,
 )
 
 @Composable
@@ -68,7 +72,8 @@ fun DesktopQuickCardContent(
     onSoundClick: (String) -> Unit,
 ) {
     if (!state.expanded) {
-        val iconSize = state.config.floatingIconSizeDp.dp
+        val iconSizeDp = collapsedDesktopQuickCardIconSizeDp(state.config)
+        val iconSize = iconSizeDp.dp
         Box(
             modifier = Modifier
                 .size(iconSize)
@@ -77,7 +82,8 @@ fun DesktopQuickCardContent(
         ) {
             DesktopQuickCardIconImage(
                 icon = state.floatingIcon,
-                contentDescription = "展开车辆控制与音效",
+                requestedSizeDp = iconSizeDp,
+                contentDescription = "展开悬浮卡片",
                 modifier = Modifier.size(iconSize),
             )
         }
@@ -94,29 +100,39 @@ fun DesktopQuickCardContent(
     val tiles = buildList {
         commands.forEach { item ->
             val realtimeHailing = item.kind == DesktopQuickCardCommandKind.REALTIME_HAILING
-            val active = if (realtimeHailing) {
-                state.realtimeHailingRunning || state.realtimeHailingBusy
-            } else {
-                state.activeCommand == item.command
+            val clusterCard = item.kind == DesktopQuickCardCommandKind.CLUSTER_CARD
+            val desktopLyrics = item.kind == DesktopQuickCardCommandKind.DESKTOP_LYRICS
+            val clusterLyrics = item.kind == DesktopQuickCardCommandKind.CLUSTER_LYRICS
+            val active = when {
+                realtimeHailing -> state.realtimeHailingRunning || state.realtimeHailingBusy
+                clusterCard -> state.clusterCardEnabled
+                desktopLyrics -> state.desktopLyricsEnabled
+                clusterLyrics -> state.clusterLyricsEnabled
+                else -> state.activeCommand == item.command
             }
-            val subtitle = if (realtimeHailing) {
-                when {
+            val subtitle = when {
+                realtimeHailing -> when {
                     state.realtimeHailingBusy && state.realtimeHailingRunning -> "停止中"
                     state.realtimeHailingBusy -> "启动中"
                     state.realtimeHailingRunning -> "喊话中"
                     else -> item.category
                 }
-            } else if (active) {
-                "执行中"
-            } else {
-                item.category
+                clusterCard -> if (state.clusterCardEnabled) "已开启" else "已关闭"
+                desktopLyrics -> if (state.desktopLyricsEnabled) "已开启" else "已关闭"
+                clusterLyrics -> if (state.clusterLyricsEnabled) "已开启" else "已关闭"
+                active -> "执行中"
+                else -> item.category
             }
             add(
                 DesktopQuickCardTileModel(
                     label = item.label,
                     subtitle = subtitle,
                     icon = commandIcon(item),
-                    accent = if (realtimeHailing) AccentOrange else AccentGreen,
+                    accent = when {
+                        realtimeHailing -> AccentOrange
+                        clusterCard || desktopLyrics || clusterLyrics -> AccentBlue
+                        else -> AccentGreen
+                    },
                     active = active,
                     onClick = { onCommandClick(item.command) },
                 ),
@@ -227,6 +243,7 @@ fun DesktopQuickCardContent(
         ) {
             DesktopQuickCardIconImage(
                 icon = state.floatingIcon,
+                requestedSizeDp = expandedIconSizeDp,
                 contentDescription = "收起车辆控制与音效",
                 modifier = Modifier.size(expandedIconSize),
             )
@@ -336,21 +353,23 @@ private data class DesktopQuickCardTileModel(
 
 private fun stateScale(cellSize: Dp): Float = cellSize.value / 88f
 
-private fun commandIcon(item: DesktopQuickCardCommand): ImageVector = if (
-    item.kind == DesktopQuickCardCommandKind.REALTIME_HAILING
-) {
-    Icons.Outlined.Mic
-} else when (item.category) {
-    "电滑门" -> Icons.Outlined.DirectionsCar
-    "车窗" -> Icons.Outlined.Air
-    "空调" -> Icons.Outlined.AcUnit
-    "座椅" -> Icons.Outlined.DirectionsCar
-    "后视镜" -> Icons.Outlined.WbSunny
-    "灯光" -> Icons.Outlined.LightMode
-    "门锁" -> Icons.Outlined.Lock
-    "天窗" -> Icons.Outlined.WbSunny
-    "车身" -> Icons.Outlined.DirectionsCar
-    else -> Icons.Outlined.Settings
+private fun commandIcon(item: DesktopQuickCardCommand): ImageVector = when (item.kind) {
+    DesktopQuickCardCommandKind.REALTIME_HAILING -> Icons.Outlined.Mic
+    DesktopQuickCardCommandKind.CLUSTER_CARD -> Icons.Outlined.Apps
+    DesktopQuickCardCommandKind.DESKTOP_LYRICS -> Icons.Outlined.MusicNote
+    DesktopQuickCardCommandKind.CLUSTER_LYRICS -> Icons.Outlined.MusicNote
+    else -> when (item.category) {
+        "电滑门" -> Icons.Outlined.DirectionsCar
+        "车窗" -> Icons.Outlined.Air
+        "空调" -> Icons.Outlined.AcUnit
+        "座椅" -> Icons.Outlined.DirectionsCar
+        "后视镜" -> Icons.Outlined.WbSunny
+        "灯光" -> Icons.Outlined.LightMode
+        "门锁" -> Icons.Outlined.Lock
+        "天窗" -> Icons.Outlined.WbSunny
+        "车身" -> Icons.Outlined.DirectionsCar
+        else -> Icons.Outlined.Settings
+    }
 }
 
 private val QUICK_CARD_GLASS_SURFACE = Color(0x8A071018)

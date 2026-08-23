@@ -14,10 +14,6 @@ class LyricSettings(context: Context) {
         get() = prefs.getBoolean(KEY_ALLOW_OTHER_APPS, false)
         set(value) = prefs.edit().putBoolean(KEY_ALLOW_OTHER_APPS, value).apply()
 
-    var desktopTouchThrough: Boolean
-        get() = prefs.getBoolean(KEY_DESKTOP_TOUCH_THROUGH, true)
-        set(value) = prefs.edit().putBoolean(KEY_DESKTOP_TOUCH_THROUGH, value).apply()
-
     var clusterEnabled: Boolean
         get() = prefs.getBoolean(KEY_CLUSTER_ENABLED, false)
         set(value) = prefs.edit().putBoolean(KEY_CLUSTER_ENABLED, value).apply()
@@ -202,7 +198,6 @@ class LyricSettings(context: Context) {
 
         private const val KEY_DESKTOP_ENABLED = "lyric_enabled"
         private const val KEY_ALLOW_OTHER_APPS = "lyric_allow_on_other_apps"
-        private const val KEY_DESKTOP_TOUCH_THROUGH = "lyric_desktop_touch_through"
         private const val KEY_CLUSTER_ENABLED = "lyric_cluster_enabled"
         private const val KEY_DESKTOP_LINE_COUNT = "lyric_desktop_line_count"
         private const val KEY_CLUSTER_LINE_COUNT = "lyric_cluster_line_count"

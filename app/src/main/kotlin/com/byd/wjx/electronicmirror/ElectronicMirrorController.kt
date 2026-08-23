@@ -55,8 +55,8 @@ import kotlinx.coroutines.withContext
 
 /**
  * Turn signal driven electronic rearview mirror using BYD's hidden AVM camera stack.
- * Both camera streams stay warm while the selected destination controls their placement:
- * left/right regions on the cluster, or one shared movable region on the center screen.
+ * Both camera streams stay warm: left turn is shown on the cluster and right turn is shown in
+ * the movable center-screen PiP. Cars without a projection display use mirrored PiP windows.
  */
 @Singleton
 class ElectronicMirrorController @Inject constructor(
@@ -75,9 +75,8 @@ class ElectronicMirrorController @Inject constructor(
     private var compositorJob: Job? = null
     private var leftWindow: PreviewWindow? = null
     private var rightWindow: PreviewWindow? = null
-    private var windowsOnCluster = false
-    private var appliedCenterRect: Rect? = null
-    private var attachedTarget: ElectronicMirrorDisplayTarget? = null
+    private var clusterOnMainScreen = false
+    private var appliedPipRect: Rect? = null
     private val pendingDetach = mutableListOf<PreviewWindow>()
 
     private var shownSide = ElectronicMirrorSide.NONE
@@ -191,11 +190,6 @@ class ElectronicMirrorController @Inject constructor(
             lastRequestedSide = decision.show
         }
 
-        val requestedTarget = preferences.displayTarget
-        if (attachedTarget != null && attachedTarget != requestedTarget) {
-            awaitTeardown("display target changed")
-        }
-
         if (decision.cameraWarm) {
             coolingSince = 0L
             ensureWarm(now)
@@ -206,7 +200,7 @@ class ElectronicMirrorController @Inject constructor(
             }
         }
 
-        applyCenterGeometry()
+        applyPipGeometry()
         applyShow(if (cameraOpen) decision.show else ElectronicMirrorSide.NONE)
         if (glowEnabled && raw != null) {
             leftWindow?.setGlow(
@@ -230,7 +224,7 @@ class ElectronicMirrorController @Inject constructor(
         }
 
         if (leftWindow == null && rightWindow == null) {
-            attachWindows(preferences.displayTarget)
+            attachWindows()
             windowsAttachedAt = now
             if (attachedWindowCount() != REQUIRED_PREVIEW_COUNT) {
                 failCamera("preview windows incomplete", now)
@@ -291,69 +285,26 @@ class ElectronicMirrorController @Inject constructor(
         retryAt = now + RETRY_DELAY_MS
     }
 
-    private fun attachWindows(target: ElectronicMirrorDisplayTarget) {
-        val attached = when (target) {
-            ElectronicMirrorDisplayTarget.CLUSTER -> {
-                val clusterAttached = attachClusterWindows()
-                if (!clusterAttached) {
-                    WjxFileLogger.w(TAG, "cluster unavailable; falling back to center screen")
+    private fun attachWindows() {
+        val display = clusterDisplay()
+        if (display == null) {
+            attachMirrorWindow()
+        } else {
+            clusterGeometry(display)?.let { rect ->
+                val window = PreviewWindow("cluster")
+                val displayContext = context.createDisplayContext(display)
+                if (window.attach(displayContext, windowParams(rect), offscreenX(rect.width()))) {
+                    leftWindow = window
                 }
-                clusterAttached || attachCenterWindows()
             }
-            ElectronicMirrorDisplayTarget.CENTER -> attachCenterWindows()
         }
-        attachedTarget = target.takeIf { attached }
-    }
 
-    private fun attachClusterWindows(): Boolean {
-        val display = clusterDisplay() ?: return false
-        val bounds = clusterGeometry(display) ?: return false
-        val (leftRect, rightRect) = ElectronicMirrorPreferences.clusterSideRects(bounds)
-        val displayContext = context.createDisplayContext(display)
-        val attached = attachWindowPair(displayContext, leftRect, rightRect, "cluster")
-        if (attached) {
-            windowsOnCluster = true
-            appliedCenterRect = null
-        }
-        return attached
-    }
-
-    private fun attachCenterWindows(): Boolean {
         val rect = pipRect()
-        val attached = attachWindowPair(context, rect, rect, "center")
-        if (attached) {
-            windowsOnCluster = false
-            appliedCenterRect = rect
+        val pip = PreviewWindow("pip")
+        if (pip.attach(context, windowParams(rect), offscreenX(rect.width()))) {
+            rightWindow = pip
+            appliedPipRect = rect
         }
-        return attached
-    }
-
-    private fun attachWindowPair(
-        windowContext: Context,
-        leftRect: Rect,
-        rightRect: Rect,
-        label: String,
-    ): Boolean {
-        val left = PreviewWindow("$label-left")
-        val right = PreviewWindow("$label-right")
-        val leftAttached = left.attach(
-            windowContext,
-            windowParams(leftRect),
-            offscreenX(leftRect.width()),
-        )
-        val rightAttached = right.attach(
-            windowContext,
-            windowParams(rightRect),
-            offscreenX(rightRect.width()),
-        )
-        if (!leftAttached || !rightAttached) {
-            if (leftAttached) releaseWindow(left)
-            if (rightAttached) releaseWindow(right)
-            return false
-        }
-        leftWindow = left
-        rightWindow = right
-        return true
     }
 
     private fun clusterGeometry(display: Display): Rect? {
@@ -376,15 +327,34 @@ class ElectronicMirrorController @Inject constructor(
         )
     }
 
-    private fun applyCenterGeometry() {
-        if (windowsOnCluster || attachedTarget == null) return
-        if (leftWindow == null && rightWindow == null) return
+    private fun attachMirrorWindow() {
+        val rect = mirrorRect(pipRect())
+        val window = PreviewWindow("left-pip")
+        if (window.attach(context, windowParams(rect), offscreenX(rect.width()))) {
+            leftWindow = window
+            clusterOnMainScreen = true
+        }
+    }
+
+    private fun applyPipGeometry() {
+        if (rightWindow == null && !clusterOnMainScreen) return
         val rect = pipRect()
-        if (rect == appliedCenterRect) return
+        if (rect == appliedPipRect) return
         var applied = true
-        leftWindow?.let { if (!it.setGeometry(rect, offscreenX(rect.width()))) applied = false }
         rightWindow?.let { if (!it.setGeometry(rect, offscreenX(rect.width()))) applied = false }
-        if (applied) appliedCenterRect = rect
+        if (clusterOnMainScreen) {
+            val mirror = mirrorRect(rect)
+            leftWindow?.let {
+                if (!it.setGeometry(mirror, offscreenX(mirror.width()))) applied = false
+            }
+        }
+        if (applied) appliedPipRect = rect
+    }
+
+    private fun mirrorRect(rect: Rect): Rect {
+        val displayWidth = realMetrics(defaultDisplay()).widthPixels
+        val left = (displayWidth - rect.right).coerceAtLeast(0)
+        return Rect(left, rect.top, left + rect.width(), rect.bottom)
     }
 
     private fun pipRect(): Rect {
@@ -400,8 +370,10 @@ class ElectronicMirrorController @Inject constructor(
             )
         }
         val size = ElectronicMirrorPreferences.pipSize(metrics.widthPixels, widthPct)
-        val maxLeft = ElectronicMirrorPreferences.centerLeftMaxX(metrics.widthPixels, size.width)
-        val left = preferences.pipXPx.coerceIn(0, maxLeft)
+        val left = preferences.pipXPx.coerceIn(
+            0,
+            (metrics.widthPixels - size.width).coerceAtLeast(0),
+        )
         val top = preferences.pipYPx.coerceIn(0, (metrics.heightPixels - size.height).coerceAtLeast(0))
         return Rect(left, top, left + size.width, top + size.height)
     }
@@ -448,18 +420,18 @@ class ElectronicMirrorController @Inject constructor(
         val previous = shownSide
         shownSide = side
         WjxFileLogger.i(TAG, "show $previous -> $side")
-        if (windowsOnCluster && side != ElectronicMirrorSide.NONE) {
+        if (side == ElectronicMirrorSide.LEFT) {
             requestCompositor(true)
         } else {
-            if (previous != ElectronicMirrorSide.NONE) requestCompositor(false)
+            leftWindow?.setGlow(false)
+            if (previous == ElectronicMirrorSide.LEFT) requestCompositor(false)
         }
-        if (side != ElectronicMirrorSide.LEFT) leftWindow?.setGlow(false)
         if (side != ElectronicMirrorSide.RIGHT) rightWindow?.setGlow(false)
     }
 
     private fun requestCompositor(on: Boolean) {
         if (on == compositorTarget) return
-        if (on && (!windowsOnCluster || leftWindow == null || rightWindow == null)) return
+        if (on && (leftWindow == null || clusterOnMainScreen)) return
         compositorTarget = on
         compositorJob?.cancel()
         compositorJob = ownScope.launch { applyCompositor(on) }
@@ -498,11 +470,10 @@ class ElectronicMirrorController @Inject constructor(
             if (compositorMayBeOn) applyCompositor(false)
             releaseWindow(leftWindow)
             leftWindow = null
-            windowsOnCluster = false
+            clusterOnMainScreen = false
             releaseWindow(rightWindow)
             rightWindow = null
-            appliedCenterRect = null
-            attachedTarget = null
+            appliedPipRect = null
         } finally {
             shownSide = ElectronicMirrorSide.NONE
             lastRequestedSide = ElectronicMirrorSide.NONE

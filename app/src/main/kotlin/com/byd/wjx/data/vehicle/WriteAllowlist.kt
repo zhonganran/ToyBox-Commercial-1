@@ -72,8 +72,6 @@ class WriteAllowlist(private val map: Map<String, WriteEntry>) {
             1023 to 1276190752,  // main-driver massage mode
             1023 to 1276190739,  // co-driver massage intensity
             1023 to 1276190756,  // co-driver massage mode
-            1023 to 1312817209,  // main-driver seat welcome enable/disable
-            1023 to 1276248112,  // co-driver seat welcome enable/disable
             1004 to 1125122118,  // DRL (daytime running lights) on/off
             1004 to 871366669,   // hazard lights on/off
         )
@@ -200,13 +198,6 @@ class WriteAllowlist(private val map: Map<String, WriteEntry>) {
          * LIVE_VALIDATED still wins on collision.
          */
         val CANDIDATE_UNVALIDATED: List<WriteEntry> = listOf(
-            // Seat welcome switches from BYD Car Settings 1.7.1.124.
-            // The write and state fids are separate; both use 1=on, 2=off.
-            WriteEntry("driver_seat_welcome_on",  1023, 1312817209, 1228931088, 1, 1, "seats", false, "byd-carsettings-1.7.1.124"),
-            WriteEntry("driver_seat_welcome_off", 1023, 1312817209, 1228931088, 2, 2, "seats", false, "byd-carsettings-1.7.1.124"),
-            WriteEntry("passenger_seat_welcome_on",  1023, 1276248112, 1017118736, 1, 1, "seats", false, "byd-carsettings-1.7.1.124"),
-            WriteEntry("passenger_seat_welcome_off", 1023, 1276248112, 1017118736, 2, 2, "seats", false, "byd-carsettings-1.7.1.124"),
-
             // Seat heat/vent fallback channel. value range 1..6:
             // 1=off, 2=lvl1 ... 6=lvl5.
             WriteEntry("driver_seat_heat_fallback",    1001, 1125122068, null, 1, 6, "seats", false, "validated-v80"),

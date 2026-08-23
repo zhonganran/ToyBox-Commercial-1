@@ -44,7 +44,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.byd.wjx.cluster.ClusterEntryPoint
-import com.byd.wjx.electronicmirror.ElectronicMirrorDisplayTarget
 import com.byd.wjx.electronicmirror.ElectronicMirrorPositionOverlay
 import com.byd.wjx.electronicmirror.ElectronicMirrorPreferences
 import com.byd.wjx.ui.components.bydSwitchColors
@@ -91,13 +90,6 @@ internal fun ElectronicMirrorSettingsCard() {
     }
     var bsdGlow by remember {
         mutableStateOf(prefs.getBoolean(ElectronicMirrorPreferences.KEY_BSD_GLOW, true))
-    }
-    var displayTarget by remember {
-        mutableStateOf(
-            ElectronicMirrorDisplayTarget.fromStored(
-                prefs.getString(ElectronicMirrorPreferences.KEY_DISPLAY_TARGET, null),
-            ),
-        )
     }
     var placing by remember { mutableStateOf(false) }
     val positionOverlay = remember {
@@ -190,51 +182,6 @@ internal fun ElectronicMirrorSettingsCard() {
                 )
             }
 
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text("显示位置", color = TextPrimary, fontSize = 14.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    UnitChip(
-                        label = "仪表",
-                        selected = displayTarget == ElectronicMirrorDisplayTarget.CLUSTER,
-                        enabled = enabled,
-                    ) {
-                        displayTarget = ElectronicMirrorDisplayTarget.CLUSTER
-                        positionOverlay.hide()
-                        prefs.edit()
-                            .putString(
-                                ElectronicMirrorPreferences.KEY_DISPLAY_TARGET,
-                                displayTarget.storedValue,
-                            )
-                            .apply()
-                    }
-                    UnitChip(
-                        label = "中控",
-                        selected = displayTarget == ElectronicMirrorDisplayTarget.CENTER,
-                        enabled = enabled,
-                    ) {
-                        displayTarget = ElectronicMirrorDisplayTarget.CENTER
-                        prefs.edit()
-                            .putString(
-                                ElectronicMirrorPreferences.KEY_DISPLAY_TARGET,
-                                displayTarget.storedValue,
-                            )
-                            .apply()
-                    }
-                }
-                Text(
-                    if (displayTarget == ElectronicMirrorDisplayTarget.CLUSTER) {
-                        "左转显示在仪表左侧，右转显示在仪表右侧"
-                    } else {
-                        "左转和右转都显示在中控左侧同一位置"
-                    },
-                    color = TextSecondary,
-                    fontSize = 12.sp,
-                )
-            }
-
             ElectronicMirrorSlider(
                 label = "触发速度",
                 value = thresholdKmh,
@@ -250,55 +197,53 @@ internal fun ElectronicMirrorSettingsCard() {
                 },
             )
 
-            if (displayTarget == ElectronicMirrorDisplayTarget.CENTER) {
-                ElectronicMirrorSlider(
-                    label = "中控画面宽度",
-                    value = pipWidthPct,
-                    suffix = "%",
-                    enabled = enabled,
-                    range = ElectronicMirrorPreferences.MIN_PIP_WIDTH_PCT..
-                        ElectronicMirrorPreferences.MAX_PIP_WIDTH_PCT,
-                    onChange = {
-                        pipWidthPct = it
-                        prefs.edit()
-                            .putInt(ElectronicMirrorPreferences.KEY_PIP_WIDTH_PCT, pipWidthPct)
-                            .apply()
-                        if (placing) positionOverlay.refreshSize()
-                    },
-                    onFinished = {
-                        prefs.edit()
-                            .putInt(ElectronicMirrorPreferences.KEY_PIP_WIDTH_PCT, pipWidthPct)
-                            .apply()
-                        if (placing) positionOverlay.refreshSize()
-                    },
-                )
+            ElectronicMirrorSlider(
+                label = "中控画面宽度",
+                value = pipWidthPct,
+                suffix = "%",
+                enabled = enabled,
+                range = ElectronicMirrorPreferences.MIN_PIP_WIDTH_PCT..
+                    ElectronicMirrorPreferences.MAX_PIP_WIDTH_PCT,
+                onChange = {
+                    pipWidthPct = it
+                    prefs.edit()
+                        .putInt(ElectronicMirrorPreferences.KEY_PIP_WIDTH_PCT, pipWidthPct)
+                        .apply()
+                    if (placing) positionOverlay.refreshSize()
+                },
+                onFinished = {
+                    prefs.edit()
+                        .putInt(ElectronicMirrorPreferences.KEY_PIP_WIDTH_PCT, pipWidthPct)
+                        .apply()
+                    if (placing) positionOverlay.refreshSize()
+                },
+            )
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("中控画面位置", color = TextPrimary, fontSize = 14.sp)
-                        Text("左右转向共用这个显示位置", color = TextSecondary, fontSize = 12.sp)
-                    }
-                    Button(
-                        enabled = enabled,
-                        onClick = {
-                            if (positionOverlay.isShown) {
-                                positionOverlay.hide()
-                            } else {
-                                prepareOverlay {
-                                    placing = positionOverlay.show(context)
-                                }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("中控画面位置", color = TextPrimary, fontSize = 14.sp)
+                    Text("调整右转画面的位置；无仪表投射屏时左转画面会镜像显示", color = TextSecondary, fontSize = 12.sp)
+                }
+                Button(
+                    enabled = enabled,
+                    onClick = {
+                        if (positionOverlay.isShown) {
+                            positionOverlay.hide()
+                        } else {
+                            prepareOverlay {
+                                placing = positionOverlay.show(context)
                             }
-                        },
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
-                    ) {
-                        Icon(Icons.Outlined.OpenWith, contentDescription = null)
-                        Text(if (placing) "完成" else "调整位置", modifier = Modifier.padding(start = 6.dp))
-                    }
+                        }
+                    },
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
+                ) {
+                    Icon(Icons.Outlined.OpenWith, contentDescription = null)
+                    Text(if (placing) "完成" else "调整位置", modifier = Modifier.padding(start = 6.dp))
                 }
             }
 
@@ -323,7 +268,7 @@ internal fun ElectronicMirrorSettingsCard() {
             }
 
             Text(
-                "需要车辆配备全景影像。选择仪表但车型没有仪表投射屏时，会自动回退到中控左侧。",
+                "需要车辆配备全景影像。左转显示在仪表，右转显示在中控；没有仪表投射屏时，左转画面会回退到中控。",
                 color = TextSecondary,
                 fontSize = 12.sp,
             )

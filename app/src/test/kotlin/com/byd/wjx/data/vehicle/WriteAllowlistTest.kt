@@ -303,33 +303,19 @@ class WriteAllowlistTest {
         assertNull("official SDK exposes only steering heat off/on", allowlist.find("steering_heat_lvl2"))
     }
 
-    @Test fun `seat welcome actions use exact settings fids and state readbacks`() {
-        assertTrue(1023 to 1312817209 in WriteAllowlist.BANNED_DEV_FID_EXCEPTIONS)
-        assertTrue(1023 to 1276248112 in WriteAllowlist.BANNED_DEV_FID_EXCEPTIONS)
+    @Test fun `seat welcome actions and raw fid exceptions are removed`() {
+        assertTrue(1023 to 1312817209 !in WriteAllowlist.BANNED_DEV_FID_EXCEPTIONS)
+        assertTrue(1023 to 1276248112 !in WriteAllowlist.BANNED_DEV_FID_EXCEPTIONS)
 
         val allowlist = WriteAllowlist.loadProduction { "{}" }
-
-        fun assertWelcome(
-            name: String,
-            writeFid: Int,
-            readbackFid: Int,
-            value: Int,
-        ) {
-            val entry = allowlist.find(name)
-            assertNotNull(name, entry)
-            assertEquals("$name dev", 1023, entry!!.dev)
-            assertEquals("$name write fid", writeFid, entry.writeFid)
-            assertEquals("$name readback fid", readbackFid, entry.readbackFid)
-            assertEquals("$name min", value, entry.valueMin)
-            assertEquals("$name max", value, entry.valueMax)
-            assertEquals("$name category", "seats", entry.category)
-            assertTrue("$name must remain unvalidated before an in-vehicle check", !entry.validated)
+        listOf(
+            "driver_seat_welcome_on",
+            "driver_seat_welcome_off",
+            "passenger_seat_welcome_on",
+            "passenger_seat_welcome_off",
+        ).forEach { name ->
+            assertNull("$name must not be writable", allowlist.find(name))
         }
-
-        assertWelcome("driver_seat_welcome_on", 1312817209, 1228931088, 1)
-        assertWelcome("driver_seat_welcome_off", 1312817209, 1228931088, 2)
-        assertWelcome("passenger_seat_welcome_on", 1276248112, 1017118736, 1)
-        assertWelcome("passenger_seat_welcome_off", 1276248112, 1017118736, 2)
     }
 
     // ── Dim 6, Test 6: LIVE_VALIDATED has no duplicate actionName ────────────

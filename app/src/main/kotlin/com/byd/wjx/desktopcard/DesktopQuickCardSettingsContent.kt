@@ -93,8 +93,8 @@ fun DesktopQuickCardSettingsContent(
 
     DesktopQuickCardSettingsPanel {
         DesktopQuickCardToggleRow(
-            title = "启用车辆控制与音效卡片",
-            subtitle = "启用后在所有界面持续显示，不再自动隐藏",
+            title = "显示悬浮图标",
+            subtitle = "控制桌面悬浮图标是否显示",
             checked = state.config.enabled,
             onCheckedChange = viewModel::setEnabled,
         )
@@ -131,6 +131,7 @@ fun DesktopQuickCardSettingsContent(
         icons = state.icons,
         selectedId = state.config.floatingIconId,
         iconSizeDp = state.config.floatingIconSizeDp,
+        maxIconSizeDp = state.maxFloatingIconSizeDp,
         importBusy = state.iconImportBusy,
         message = state.iconMessage,
         onSelect = viewModel::setFloatingIconId,
@@ -140,8 +141,8 @@ fun DesktopQuickCardSettingsContent(
     )
 
     DesktopQuickCardItemSection(
-        title = "车辆控制",
-        subtitle = "车辆控制复用安全写入链路，实时喊话复用现有麦克风与车外通道",
+        title = "快捷功能",
+        subtitle = "可添加车辆控制、仪表卡片、桌面/仪表歌词开关和实时喊话",
         count = state.config.functionCommands.size,
         onAdd = { showCommandPicker = true },
     ) {
@@ -200,6 +201,7 @@ private fun DesktopQuickCardIconSection(
     icons: List<DesktopQuickCardIcon>,
     selectedId: String,
     iconSizeDp: Float,
+    maxIconSizeDp: Float,
     importBusy: Boolean,
     message: String?,
     onSelect: (String) -> Unit,
@@ -252,6 +254,7 @@ private fun DesktopQuickCardIconSection(
                     ) {
                         DesktopQuickCardIconImage(
                             icon = icon,
+                            requestedSizeDp = 60f,
                             contentDescription = icon.label,
                             modifier = Modifier.fillMaxSize(),
                         )
@@ -303,10 +306,9 @@ private fun DesktopQuickCardIconSection(
                 )
             }
             Slider(
-                value = iconSizeDp,
+                value = iconSizeDp.coerceIn(DESKTOP_QUICK_CARD_MIN_ICON_DP, maxIconSizeDp),
                 onValueChange = onSizeChange,
-                valueRange = DESKTOP_QUICK_CARD_MIN_ICON_DP..DESKTOP_QUICK_CARD_MAX_ICON_DP,
-                steps = (DESKTOP_QUICK_CARD_MAX_ICON_DP - DESKTOP_QUICK_CARD_MIN_ICON_DP).toInt() - 1,
+                valueRange = DESKTOP_QUICK_CARD_MIN_ICON_DP..maxIconSizeDp,
                 colors = SliderDefaults.colors(
                     thumbColor = AccentGreen,
                     activeTrackColor = AccentGreen,
@@ -441,7 +443,7 @@ private fun DesktopQuickCardCommandPicker(
     val candidates = DesktopQuickCardCommandCatalog.all.filter { it.category == category && it.command !in selected }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("添加车辆控制", color = TextPrimary, fontWeight = FontWeight.ExtraBold) },
+        title = { Text("添加快捷功能", color = TextPrimary, fontWeight = FontWeight.ExtraBold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {

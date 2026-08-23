@@ -12,7 +12,7 @@ object OverlayDragRules {
 
 /**
  * Shared overlay gesture owner. Child Compose controls receive normal taps; once the finger moves
- * beyond 8dp, the container intercepts the gesture and converts it into raw-screen dragging.
+ * beyond 8dp, the container intercepts the gesture and starts dragging.
  */
 class DraggableOverlayContainer(context: Context) : FrameLayout(context) {
     interface Callbacks {

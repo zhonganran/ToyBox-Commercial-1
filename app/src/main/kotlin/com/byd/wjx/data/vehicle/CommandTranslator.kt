@@ -115,10 +115,6 @@ object CommandTranslator {
         // ── Optional comfort equipment; official Settings values ─────────────
         "方向盘加热" to Resolved("steering_heat_on", 2),
         "关闭方向盘加热" to Resolved("steering_heat_off", 1),
-        "主驾迎宾开启" to Resolved("driver_seat_welcome_on", 1),
-        "主驾迎宾关闭" to Resolved("driver_seat_welcome_off", 2),
-        "副驾迎宾开启" to Resolved("passenger_seat_welcome_on", 1),
-        "副驾迎宾关闭" to Resolved("passenger_seat_welcome_off", 2),
         "主驾按摩关闭" to Resolved("driver_massage_off", 1),
         "副驾按摩关闭" to Resolved("passenger_massage_off", 1),
 

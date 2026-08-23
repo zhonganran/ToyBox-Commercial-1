@@ -7,23 +7,47 @@ import android.view.View
 import android.widget.ImageView
 import androidx.appcompat.widget.AppCompatImageView
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import java.io.File
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 internal fun DesktopQuickCardIconImage(
     icon: DesktopQuickCardIcon,
+    requestedSizeDp: Float,
     modifier: Modifier = Modifier,
     contentDescription: String? = null,
 ) {
     val context = LocalContext.current
-    val drawable = remember(icon.id, icon.drawableRes, icon.filePath) {
-        loadDesktopQuickCardIcon(context, icon)
+    val density = LocalDensity.current
+    val requestedSizePx = with(density) { requestedSizeDp.dp.roundToPx() }
+    val decodeTargetPx = decodeTargetSizePx(requestedSizePx)
+    var drawable by remember(icon.id, icon.drawableRes, icon.filePath) {
+        mutableStateOf<Drawable?>(null)
+    }
+    var decodedSizePx by remember(icon.id, icon.drawableRes, icon.filePath) {
+        mutableIntStateOf(0)
+    }
+    LaunchedEffect(icon.id, icon.drawableRes, icon.filePath, decodeTargetPx) {
+        if (drawable != null && decodedSizePx >= decodeTargetPx) return@LaunchedEffect
+        val loaded = withContext(Dispatchers.IO) {
+            loadDesktopQuickCardIcon(context.applicationContext, icon, decodeTargetPx)
+        }
+        drawable = loaded
+        decodedSizePx = decodeTargetPx
     }
     AndroidView(
         modifier = modifier,
@@ -93,27 +117,54 @@ private class RestartableAnimatedImageView(context: android.content.Context) : A
 private fun loadDesktopQuickCardIcon(
     context: android.content.Context,
     icon: DesktopQuickCardIcon,
+    requestedSizePx: Int,
 ): Drawable? {
     icon.drawableRes?.let { resource ->
-        return ContextCompat.getDrawable(context, resource)
+        return runCatching {
+            decodeDesktopQuickCardDrawable(
+                source = ImageDecoder.createSource(context.resources, resource),
+                requestedSizePx = requestedSizePx,
+            )
+        }.getOrElse { ContextCompat.getDrawable(context, resource) }
     }
     val file = icon.filePath?.let(::File)?.takeIf(File::isFile)
         ?: return ContextCompat.getDrawable(context, DesktopQuickCardIconCatalog.default.drawableRes!!)
     return runCatching {
-        ImageDecoder.decodeDrawable(ImageDecoder.createSource(file)) { decoder, info, _ ->
-            val longestSide = maxOf(info.size.width, info.size.height)
-            if (longestSide > MAX_DECODE_SIZE_PX) {
-                val scale = MAX_DECODE_SIZE_PX.toFloat() / longestSide
-                decoder.setTargetSize(
-                    (info.size.width * scale).roundToInt().coerceAtLeast(1),
-                    (info.size.height * scale).roundToInt().coerceAtLeast(1),
-                )
-            }
-        }
+        decodeDesktopQuickCardDrawable(
+            source = ImageDecoder.createSource(file),
+            requestedSizePx = requestedSizePx,
+        )
     }.getOrElse {
         ContextCompat.getDrawable(context, DesktopQuickCardIconCatalog.default.drawableRes!!)
     }
 }
 
-private const val MAX_DECODE_SIZE_PX = 512
+private fun decodeDesktopQuickCardDrawable(
+    source: ImageDecoder.Source,
+    requestedSizePx: Int,
+): Drawable = ImageDecoder.decodeDrawable(source) { decoder, info, _ ->
+    val longestSide = maxOf(info.size.width, info.size.height)
+    val targetLongestSide = requestedSizePx.coerceIn(
+        MIN_DECODE_SIZE_PX,
+        MAX_DECODE_SIZE_PX,
+    )
+    if (longestSide > targetLongestSide) {
+        val scale = targetLongestSide.toFloat() / longestSide
+        decoder.setTargetSize(
+            (info.size.width * scale).roundToInt().coerceAtLeast(1),
+            (info.size.height * scale).roundToInt().coerceAtLeast(1),
+        )
+    }
+}
+
+private fun decodeTargetSizePx(requestedSizePx: Int): Int = when {
+    requestedSizePx <= 128 -> 128
+    requestedSizePx <= 256 -> 256
+    requestedSizePx <= 512 -> 512
+    requestedSizePx <= 1_024 -> 1_024
+    else -> MAX_DECODE_SIZE_PX
+}
+
+private const val MIN_DECODE_SIZE_PX = 128
+private const val MAX_DECODE_SIZE_PX = 2_048
 private const val ANIMATION_WATCHDOG_INTERVAL_MS = 1_500L

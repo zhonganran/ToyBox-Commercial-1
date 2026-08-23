@@ -101,7 +101,7 @@ class ElectronicMirrorPositionOverlay {
         layout.height = size.height
         layout.x = layout.x.coerceIn(
             0,
-            ElectronicMirrorPreferences.centerLeftMaxX(metrics.widthPixels, size.width),
+            (metrics.widthPixels - size.width).coerceAtLeast(0),
         )
         layout.y = layout.y.coerceIn(0, (metrics.heightPixels - size.height).coerceAtLeast(0))
         runCatching { windowManager?.updateViewLayout(frame, layout) }
@@ -146,7 +146,7 @@ class ElectronicMirrorPositionOverlay {
                 layout.x = (event.rawX - grabX).roundToInt()
                     .coerceIn(
                         0,
-                        ElectronicMirrorPreferences.centerLeftMaxX(metrics.widthPixels, layout.width),
+                        (metrics.widthPixels - layout.width).coerceAtLeast(0),
                     )
                 layout.y = (event.rawY - grabY).roundToInt()
                     .coerceIn(0, (metrics.heightPixels - layout.height).coerceAtLeast(0))
@@ -177,7 +177,7 @@ class ElectronicMirrorPositionOverlay {
         val size = ElectronicMirrorPreferences.pipSize(metrics.widthPixels, widthPct)
         val left = x.coerceIn(
             0,
-            ElectronicMirrorPreferences.centerLeftMaxX(metrics.widthPixels, size.width),
+            (metrics.widthPixels - size.width).coerceAtLeast(0),
         )
         val top = y.coerceIn(0, (metrics.heightPixels - size.height).coerceAtLeast(0))
         return Rect(left, top, left + size.width, top + size.height)

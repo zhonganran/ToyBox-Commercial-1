@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.media3.common.util.UnstableApi
 import com.byd.wjx.phonecast.PhoneCastActivity
 import com.byd.wjx.phonecast.PhoneCastPreferences
 import com.byd.wjx.phonecast.PhoneCastScaleMode
@@ -39,6 +40,7 @@ import com.byd.wjx.ui.theme.CardSurfaceElevated
 import com.byd.wjx.ui.theme.TextPrimary
 import com.byd.wjx.ui.theme.TextSecondary
 
+@androidx.annotation.OptIn(markerClass = [UnstableApi::class])
 @Composable
 internal fun PhoneCastSettingsCard() {
     val context = LocalContext.current

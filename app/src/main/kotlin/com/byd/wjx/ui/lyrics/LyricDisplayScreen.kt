@@ -79,7 +79,6 @@ fun LyricDisplayScreen(
         )
     }
     var allowOtherApps by remember { mutableStateOf(lyricSettings.allowOnOtherApps) }
-    var desktopTouchThrough by remember { mutableStateOf(lyricSettings.desktopTouchThrough) }
     var desktopAdjustment by remember { mutableStateOf(readDesktopAdjustment()) }
     var clusterAdjustment by remember { mutableStateOf(readClusterAdjustment()) }
     var clusterX by remember { mutableFloatStateOf(lyricSettings.clusterXPct.toFloat()) }
@@ -102,7 +101,6 @@ fun LyricDisplayScreen(
         desktopEnabled = lyricSettings.desktopEnabled
         clusterEnabled = lyricSettings.clusterEnabled
         allowOtherApps = lyricSettings.allowOnOtherApps
-        desktopTouchThrough = lyricSettings.desktopTouchThrough
         desktopAdjustment = readDesktopAdjustment()
         clusterAdjustment = readClusterAdjustment()
         clusterX = lyricSettings.clusterXPct.toFloat()
@@ -174,7 +172,6 @@ fun LyricDisplayScreen(
                 clusterActive = featureAllowed && clusterEnabled,
                 expanded = expanded,
                 allowOtherApps = allowOtherApps,
-                desktopTouchThrough = desktopTouchThrough,
                 desktopAdjustment = desktopAdjustment,
                 clusterAdjustment = clusterAdjustment,
                 clusterX = clusterX,
@@ -187,10 +184,6 @@ fun LyricDisplayScreen(
                 onAllowOtherAppsChange = {
                     lyricSettings.allowOnOtherApps = it
                     allowOtherApps = lyricSettings.allowOnOtherApps
-                },
-                onDesktopTouchThroughChange = {
-                    lyricSettings.desktopTouchThrough = it
-                    desktopTouchThrough = lyricSettings.desktopTouchThrough
                 },
                 onOpenPlaybackPermission = {
                     context.startActivity(

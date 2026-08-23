@@ -3,8 +3,10 @@ package com.byd.wjx.desktopcard
 import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.BitmapFactory
+import android.graphics.Point
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.view.WindowManager
 import android.webkit.MimeTypeMap
 import com.byd.wjx.storage.SoundLibrary
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -26,6 +28,7 @@ class DesktopQuickCardRepository @Inject constructor(
     private val appContext = context.applicationContext
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val iconDirectory = File(appContext.filesDir, ICON_DIRECTORY).apply(File::mkdirs)
+    val maxFloatingIconSizeDp: Float = calculateMaxFloatingIconSizeDp()
     private val _icons = MutableStateFlow(loadIconChoices())
     val icons: StateFlow<List<DesktopQuickCardIcon>> = _icons.asStateFlow()
     private val _config = MutableStateFlow(load(validateSounds = true))
@@ -120,7 +123,24 @@ class DesktopQuickCardRepository @Inject constructor(
                 null
             },
             validIconIds = _icons.value.mapTo(linkedSetOf(), DesktopQuickCardIcon::id),
+            maxIconSizeDp = maxFloatingIconSizeDp,
         )
+
+    @Suppress("DEPRECATION")
+    private fun calculateMaxFloatingIconSizeDp(): Float {
+        val size = Point().also {
+            (appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager)
+                .defaultDisplay
+                .getRealSize(it)
+        }
+        val density = appContext.resources.displayMetrics.density
+            .takeIf { it.isFinite() && it > 0f }
+            ?: 1f
+        return desktopQuickCardMaxIconSizeDp(
+            screenWidthDp = size.x / density,
+            screenHeightDp = size.y / density,
+        )
+    }
 
     private fun load(validateSounds: Boolean): DesktopQuickCardConfig {
         val raw = DesktopQuickCardConfig(

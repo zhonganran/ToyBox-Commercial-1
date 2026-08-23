@@ -60,7 +60,6 @@ internal data class LyricPanelState(
     val clusterActive: Boolean,
     val expanded: Boolean,
     val allowOtherApps: Boolean,
-    val desktopTouchThrough: Boolean,
     val desktopAdjustment: LyricAdjustmentState,
     val clusterAdjustment: LyricAdjustmentState,
     val clusterX: Float,
@@ -84,7 +83,6 @@ internal data class LyricPanelActions(
     val onClusterEnabledChange: (Boolean) -> Unit,
     val onExpandedChange: (Boolean) -> Unit,
     val onAllowOtherAppsChange: (Boolean) -> Unit,
-    val onDesktopTouchThroughChange: (Boolean) -> Unit,
     val onOpenPlaybackPermission: () -> Unit,
     val onResetClusterPosition: () -> Unit,
     val onLineCountChange: (LyricAdjustmentTarget, Int) -> Unit,
@@ -153,29 +151,13 @@ internal fun LyricSettingsPanel(
                 )
                 if (state.expanded) {
                     if (state.desktopActive) {
-                        Row(
+                        SwitchRow(
+                            title = "允许显示在其他应用",
+                            subtitle = "关闭时只在桌面和本应用显示；单指拖动可调整歌词位置",
+                            checked = state.allowOtherApps,
+                            onCheckedChange = actions.onAllowOtherAppsChange,
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            SwitchRow(
-                                title = "允许显示在其他应用",
-                                subtitle = "关闭时只在桌面和本应用显示",
-                                checked = state.allowOtherApps,
-                                onCheckedChange = actions.onAllowOtherAppsChange,
-                                modifier = Modifier.weight(1f),
-                            )
-                            SwitchRow(
-                                title = "触摸穿透",
-                                subtitle = if (state.desktopTouchThrough) {
-                                    "已穿透，可操作下方应用"
-                                } else {
-                                    "关闭穿透后可单指拖动"
-                                },
-                                checked = state.desktopTouchThrough,
-                                onCheckedChange = actions.onDesktopTouchThroughChange,
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
+                        )
                     }
 
                     Row(

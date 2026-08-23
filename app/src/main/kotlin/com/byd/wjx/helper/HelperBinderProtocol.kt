@@ -54,7 +54,7 @@ object HelperBinderProtocol {
     const val DESCRIPTOR = "com.byd.wjx.helper.IHelper"
     // Increment whenever the wire contract or helper-resident behavior changes. The helper process
     // can outlive an APK replacement, so the client verifies this marker before using it.
-    const val CURRENT_VERSION = 29
+    const val CURRENT_VERSION = 31
 
     const val TX_PING = IBinder.FIRST_CALL_TRANSACTION       // 1
     const val TX_READ = IBinder.FIRST_CALL_TRANSACTION + 1   // 2

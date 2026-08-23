@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.graphics.PixelFormat
 import android.graphics.Point
@@ -23,14 +24,18 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.byd.wjx.activation.ActivationManager
+import com.byd.wjx.activation.PremiumFeature
 import com.byd.wjx.audio.ExteriorHailingSettings
 import com.byd.wjx.audio.WjxOutsidePlayService
 import com.byd.wjx.audio.WjxRealtimeHailingService
+import com.byd.wjx.clustercard.ClusterCardRepository
 import com.byd.wjx.data.automation.ActionDispatcher
 import com.byd.wjx.data.local.entity.ActionDef
 import com.byd.wjx.data.repository.VehicleStateRepository
 import com.byd.wjx.data.vehicle.AutoDoorController
 import com.byd.wjx.log.WjxFileLogger
+import com.byd.wjx.lyrics.LyricSettings
 import com.byd.wjx.ui.overlay.OverlayLifecycleOwner
 import com.byd.wjx.ui.overlay.DraggableOverlayContainer
 import com.byd.wjx.ui.theme.SuperToyBoxTheme
@@ -42,6 +47,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
@@ -55,12 +61,16 @@ class DesktopQuickCardController @Inject constructor(
     private val autoDoorController: AutoDoorController,
     private val vehicleStateRepository: VehicleStateRepository,
     private val carProfileDetector: CarProfileDetector,
+    private val activationManager: ActivationManager,
+    private val clusterCardRepository: ClusterCardRepository,
 ) {
     private val appContext = context.applicationContext
     private val windowManager = appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val mainHandler = Handler(Looper.getMainLooper())
     private val renderState = MutableStateFlow(DesktopQuickCardRenderState())
     private val exteriorSettings = ExteriorHailingSettings(appContext)
+    private val lyricSettings = LyricSettings(appContext)
+    private val lyricPrefs = appContext.getSharedPreferences(LyricSettings.PREFS_NAME, Context.MODE_PRIVATE)
 
     private var scope: CoroutineScope? = null
     private var composeView: DraggableOverlayContainer? = null
@@ -69,6 +79,8 @@ class DesktopQuickCardController @Inject constructor(
     private var commandSequence = 0L
     private var receiverRegistered = false
     private var hailingReceiverRegistered = false
+    private var lyricPreferenceListenerRegistered = false
+    private var clusterCardStateJob: Job? = null
     private var hailingStartedByCard = false
     private var dragStartRawX = 0f
     private var dragStartRawY = 0f
@@ -77,6 +89,26 @@ class DesktopQuickCardController @Inject constructor(
     private var collapsedAnchorX: Int? = null
     private var collapsedAnchorTopY: Int? = null
     private var horizontalAnchor = DesktopQuickCardHorizontalAnchor.START
+
+    private val lyricPreferenceListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        mainHandler.post {
+            val desktopEnabled = lyricSettings.desktopEnabled
+            val clusterEnabled = lyricSettings.clusterEnabled
+            renderState.update { current ->
+                if (
+                    current.desktopLyricsEnabled == desktopEnabled &&
+                    current.clusterLyricsEnabled == clusterEnabled
+                ) {
+                    current
+                } else {
+                    current.copy(
+                        desktopLyricsEnabled = desktopEnabled,
+                        clusterLyricsEnabled = clusterEnabled,
+                    )
+                }
+            }
+        }
+    }
 
     private val playbackReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -151,22 +183,42 @@ class DesktopQuickCardController @Inject constructor(
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         hailingReceiverRegistered = true
+        lyricPrefs.registerOnSharedPreferenceChangeListener(lyricPreferenceListener)
+        lyricPreferenceListenerRegistered = true
+        clusterCardStateJob = scope.launch {
+            clusterCardRepository.config.collect { config ->
+                renderState.update { current ->
+                    if (current.clusterCardEnabled == config.enabled) {
+                        current
+                    } else {
+                        current.copy(clusterCardEnabled = config.enabled)
+                    }
+                }
+            }
+        }
         renderState.update {
-            it.copy(realtimeHailingRunning = WjxRealtimeHailingService.isActive())
+            it.copy(
+                realtimeHailingRunning = WjxRealtimeHailingService.isActive(),
+                clusterCardEnabled = clusterCardRepository.config.value.enabled,
+                desktopLyricsEnabled = lyricSettings.desktopEnabled,
+                clusterLyricsEnabled = lyricSettings.clusterEnabled,
+            )
         }
     }
 
     fun render(config: DesktopQuickCardConfig, theme: ThemeMode) {
         mainHandler.post {
             val previous = renderState.value
-            val iconSizeChanged = previous.config.floatingIconSizeDp != config.floatingIconSizeDp
-            if (shouldStopDesktopQuickCardSound(previous.activeSoundPath, config.soundPaths, config.enabled)) {
+            val iconSizeChanged = collapsedDesktopQuickCardIconSizeDp(previous.config) !=
+                collapsedDesktopQuickCardIconSizeDp(config)
+            val cardAvailable = config.enabled
+            if (shouldStopDesktopQuickCardSound(previous.activeSoundPath, config.soundPaths, cardAvailable)) {
                 WjxFileLogger.i(TAG, "stopping removed/disabled sound path=${previous.activeSoundPath}")
                 WjxOutsidePlayService.stop(appContext, owner = OWNER)
             }
             if (
                 hailingStartedByCard &&
-                (!config.enabled || DESKTOP_QUICK_CARD_REALTIME_HAILING !in config.functionCommands)
+                (!cardAvailable || DESKTOP_QUICK_CARD_REALTIME_HAILING !in config.functionCommands)
             ) {
                 WjxFileLogger.i(TAG, "stopping removed/disabled realtime hailing")
                 renderState.update { it.copy(realtimeHailingBusy = true) }
@@ -179,6 +231,9 @@ class DesktopQuickCardController @Inject constructor(
                     config = config,
                     themeMode = theme,
                     floatingIcon = repository.iconForId(config.floatingIconId),
+                    clusterCardEnabled = clusterCardRepository.config.value.enabled,
+                    desktopLyricsEnabled = lyricSettings.desktopEnabled,
+                    clusterLyricsEnabled = lyricSettings.clusterEnabled,
                 )
             }
             if (!config.enabled) {
@@ -226,6 +281,12 @@ class DesktopQuickCardController @Inject constructor(
             runCatching { appContext.unregisterReceiver(hailingReceiver) }
             hailingReceiverRegistered = false
         }
+        if (lyricPreferenceListenerRegistered) {
+            lyricPrefs.unregisterOnSharedPreferenceChangeListener(lyricPreferenceListener)
+            lyricPreferenceListenerRegistered = false
+        }
+        clusterCardStateJob?.cancel()
+        clusterCardStateJob = null
         mainHandler.post { removeView() }
         scope = null
     }
@@ -338,6 +399,18 @@ class DesktopQuickCardController @Inject constructor(
             toggleRealtimeHailing()
             return
         }
+        if (item.kind == DesktopQuickCardCommandKind.CLUSTER_CARD) {
+            toggleClusterCard()
+            return
+        }
+        if (item.kind == DesktopQuickCardCommandKind.DESKTOP_LYRICS) {
+            toggleDesktopLyrics()
+            return
+        }
+        if (item.kind == DesktopQuickCardCommandKind.CLUSTER_LYRICS) {
+            toggleClusterLyrics()
+            return
+        }
         val token = ++commandSequence
         renderState.update { it.copy(activeCommand = command) }
         WjxFileLogger.i(TAG, "command start command=$command label=${item.label}")
@@ -359,6 +432,9 @@ class DesktopQuickCardController @Inject constructor(
                 }
 
                 DesktopQuickCardCommandKind.REALTIME_HAILING -> error("handled before command dispatch")
+                DesktopQuickCardCommandKind.CLUSTER_CARD -> error("handled before command dispatch")
+                DesktopQuickCardCommandKind.DESKTOP_LYRICS -> error("handled before command dispatch")
+                DesktopQuickCardCommandKind.CLUSTER_LYRICS -> error("handled before command dispatch")
 
             }
             if (result.success) {
@@ -418,6 +494,75 @@ class DesktopQuickCardController @Inject constructor(
             }
     }
 
+    private fun toggleClusterLyrics() {
+        val enabled = !lyricSettings.clusterEnabled
+        if (enabled && !activationManager.canUse(PremiumFeature.DESKTOP_LYRICS)) {
+            Toast.makeText(appContext, "仪表歌词需要激活后使用", Toast.LENGTH_SHORT).show()
+            WjxFileLogger.w(TAG, "cluster lyrics toggle blocked: activation required")
+            return
+        }
+        if (enabled && !Settings.canDrawOverlays(appContext)) {
+            Toast.makeText(appContext, "请先允许悬浮窗权限", Toast.LENGTH_SHORT).show()
+            WjxFileLogger.w(TAG, "cluster lyrics toggle blocked: overlay permission missing")
+            return
+        }
+
+        lyricSettings.clusterEnabled = enabled
+        renderState.update { it.copy(clusterLyricsEnabled = enabled) }
+        Toast.makeText(
+            appContext,
+            if (enabled) "仪表歌词已开启" else "仪表歌词已关闭",
+            Toast.LENGTH_SHORT,
+        ).show()
+        WjxFileLogger.i(TAG, "cluster lyrics enabled=$enabled from desktop card")
+    }
+
+    private fun toggleDesktopLyrics() {
+        val enabled = !lyricSettings.desktopEnabled
+        if (enabled && !activationManager.canUse(PremiumFeature.DESKTOP_LYRICS)) {
+            Toast.makeText(appContext, "桌面歌词需要激活后使用", Toast.LENGTH_SHORT).show()
+            WjxFileLogger.w(TAG, "desktop lyrics toggle blocked: activation required")
+            return
+        }
+        if (enabled && !Settings.canDrawOverlays(appContext)) {
+            Toast.makeText(appContext, "请先允许悬浮窗权限", Toast.LENGTH_SHORT).show()
+            WjxFileLogger.w(TAG, "desktop lyrics toggle blocked: overlay permission missing")
+            return
+        }
+
+        lyricSettings.desktopEnabled = enabled
+        renderState.update { it.copy(desktopLyricsEnabled = enabled) }
+        Toast.makeText(
+            appContext,
+            if (enabled) "桌面歌词已开启" else "桌面歌词已关闭",
+            Toast.LENGTH_SHORT,
+        ).show()
+        WjxFileLogger.i(TAG, "desktop lyrics enabled=$enabled from desktop card")
+    }
+
+    private fun toggleClusterCard() {
+        val enabled = !clusterCardRepository.config.value.enabled
+        if (enabled && !Settings.canDrawOverlays(appContext)) {
+            Toast.makeText(appContext, "请先允许悬浮窗权限", Toast.LENGTH_SHORT).show()
+            WjxFileLogger.w(TAG, "cluster card toggle blocked: overlay permission missing")
+            return
+        }
+
+        clusterCardRepository.setEnabled(enabled)
+        renderState.update { it.copy(clusterCardEnabled = enabled) }
+        val hasMetrics = clusterCardRepository.config.value.metricIds.isNotEmpty()
+        Toast.makeText(
+            appContext,
+            when {
+                !enabled -> "仪表卡片已关闭"
+                hasMetrics -> "仪表卡片已开启"
+                else -> "仪表卡片已开启，请先添加显示项目"
+            },
+            Toast.LENGTH_SHORT,
+        ).show()
+        WjxFileLogger.i(TAG, "cluster card enabled=$enabled from desktop card")
+    }
+
     private fun requestRealtimeHailingStop(notifyIfIdle: Boolean, showFailure: Boolean): Boolean =
         runCatching {
             WjxRealtimeHailingService.stop(appContext, notifyIfIdle)
@@ -447,7 +592,15 @@ class DesktopQuickCardController @Inject constructor(
             collapsedAnchorX = params.x
             collapsedAnchorTopY = params.y
         }
-        renderState.update { it.copy(expanded = true, horizontalAnchor = horizontalAnchor) }
+        renderState.update {
+            it.copy(
+                expanded = true,
+                horizontalAnchor = horizontalAnchor,
+                clusterCardEnabled = clusterCardRepository.config.value.enabled,
+                desktopLyricsEnabled = lyricSettings.desktopEnabled,
+                clusterLyricsEnabled = lyricSettings.clusterEnabled,
+            )
+        }
         updateLayoutAfterContentResize(restoreCollapsedAnchor = false)
     }
 
@@ -587,7 +740,8 @@ class DesktopQuickCardController @Inject constructor(
     }
 
     private fun collapsedIconSizePx(): Int =
-        (renderState.value.config.floatingIconSizeDp * appContext.resources.displayMetrics.density).roundToInt()
+        (collapsedDesktopQuickCardIconSizeDp(renderState.value.config) *
+            appContext.resources.displayMetrics.density).roundToInt()
 
     private fun clampPosition(params: WindowManager.LayoutParams) {
         val screen = screenSize()

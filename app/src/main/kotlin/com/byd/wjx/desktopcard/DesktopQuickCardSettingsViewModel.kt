@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 
 data class DesktopQuickCardSettingsUiState(
     val config: DesktopQuickCardConfig = DesktopQuickCardConfig(),
+    val maxFloatingIconSizeDp: Float = DESKTOP_QUICK_CARD_DEFAULT_ICON_DP,
     val sounds: List<SoundLibrary.SoundItem> = emptyList(),
     val overlayPermissionGranted: Boolean = false,
     val permissionBusy: Boolean = false,
@@ -42,6 +43,7 @@ class DesktopQuickCardSettingsViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(
         DesktopQuickCardSettingsUiState(
             config = repository.config.value,
+            maxFloatingIconSizeDp = repository.maxFloatingIconSizeDp,
             sounds = soundLibrary.listSounds(),
             overlayPermissionGranted = Settings.canDrawOverlays(appContext),
             icons = repository.icons.value,
@@ -62,6 +64,7 @@ class DesktopQuickCardSettingsViewModel @Inject constructor(
         repository.refresh()
         _uiState.update {
             it.copy(
+                maxFloatingIconSizeDp = repository.maxFloatingIconSizeDp,
                 sounds = soundLibrary.listSounds(),
                 overlayPermissionGranted = Settings.canDrawOverlays(appContext),
             )

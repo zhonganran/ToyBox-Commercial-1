@@ -28,6 +28,7 @@ class DesktopLyricOverlayController(
     private var startX = 0
     private var startY = 0
     private var dragging = false
+    private var multiTouchBlocked = false
     private var lastDesktopPositionInitialized = settings.desktopPositionInitialized
     private var visible = false
 
@@ -84,6 +85,7 @@ class DesktopLyricOverlayController(
         lyricView = null
         lyricParams = null
         dragging = false
+        multiTouchBlocked = false
         visible = false
     }
 
@@ -128,7 +130,7 @@ class DesktopLyricOverlayController(
             lyricParams = lp
             visible = true
             lastDesktopPositionInitialized = settings.desktopPositionInitialized
-            WjxFileLogger.i(TAG, "desktop lyric overlay shown touchThrough=${settings.desktopTouchThrough}")
+            WjxFileLogger.i(TAG, "desktop lyric overlay shown draggable=true")
         }.onFailure {
             WjxFileLogger.w(TAG, "show failed: ${it.message}", it)
             container = null
@@ -146,21 +148,25 @@ class DesktopLyricOverlayController(
     }
 
     private fun onLyricTouch(view: View, event: MotionEvent): Boolean {
-        if (settings.desktopTouchThrough) return false
         val lp = lyricParams ?: return false
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 dragging = false
+                multiTouchBlocked = false
                 startRawX = event.rawX
                 startRawY = event.rawY
                 startX = lp.x
                 startY = lp.y
             }
 
-            MotionEvent.ACTION_POINTER_DOWN -> dragging = false
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                if (dragging) savePosition()
+                dragging = false
+                multiTouchBlocked = true
+            }
 
             MotionEvent.ACTION_MOVE -> {
-                if (event.pointerCount == 1) {
+                if (!multiTouchBlocked && event.pointerCount == 1) {
                     val dx = event.rawX - startRawX
                     val dy = event.rawY - startRawY
                     if (dragging || kotlin.math.hypot(dx, dy) > dragSlop) {
@@ -176,6 +182,7 @@ class DesktopLyricOverlayController(
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 if (dragging) savePosition()
                 dragging = false
+                multiTouchBlocked = false
             }
         }
         view.parent?.requestDisallowInterceptTouchEvent(true)
@@ -223,20 +230,9 @@ class DesktopLyricOverlayController(
         return changed
     }
 
-    private fun windowFlags(): Int = BASE_FLAGS or if (settings.desktopTouchThrough) {
-        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-    } else {
-        0
-    }
+    private fun windowFlags(): Int = BASE_FLAGS
 
-    /** Android 12+ only forwards touches through an app overlay below the obscuring-opacity limit. */
-    private fun windowAlpha(): Float = if (
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && settings.desktopTouchThrough
-    ) {
-        MAX_TOUCH_THROUGH_ALPHA
-    } else {
-        1f
-    }
+    private fun windowAlpha(): Float = 1f
 
     private fun windowWidth(): Int =
         (appContext.resources.displayMetrics.density * WINDOW_WIDTH_DP * settings.desktopFontScale)
@@ -276,7 +272,6 @@ class DesktopLyricOverlayController(
         private const val WINDOW_WIDTH_DP = 420f
         private const val MIN_WINDOW_WIDTH_DP = 280f
         private const val DEFAULT_BOTTOM_MARGIN_DP = 92f
-        private const val MAX_TOUCH_THROUGH_ALPHA = 0.8f
         private const val BASE_FLAGS =
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or

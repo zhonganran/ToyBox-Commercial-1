@@ -65,11 +65,13 @@ class CommandTranslatorTest {
         assertEquals(2, r?.value)
     }
 
-    @Test fun `driver and passenger welcome commands use official on off values`() {
-        assertEquals("driver_seat_welcome_on" to 1, one("主驾迎宾开启")?.let { it.actionName to it.value })
-        assertEquals("driver_seat_welcome_off" to 2, one("主驾迎宾关闭")?.let { it.actionName to it.value })
-        assertEquals("passenger_seat_welcome_on" to 1, one("副驾迎宾开启")?.let { it.actionName to it.value })
-        assertEquals("passenger_seat_welcome_off" to 2, one("副驾迎宾关闭")?.let { it.actionName to it.value })
+    @Test fun `seat welcome commands are no longer exposed or translated`() {
+        val removedCommands = listOf("主驾迎宾开启", "主驾迎宾关闭", "副驾迎宾开启", "副驾迎宾关闭")
+
+        removedCommands.forEach { command ->
+            assertTrue(CommandTranslator.resolve(command).isEmpty())
+            assertTrue(ACTION_COMMANDS.none { it.command == command })
+        }
     }
 
     // ── Test 9: sunroof 50 maps to sunroof_tilt val=3 ────────────────────────

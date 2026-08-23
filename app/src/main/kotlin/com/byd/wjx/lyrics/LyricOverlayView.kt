@@ -258,7 +258,6 @@ class LyricOverlayView constructor(
         val readableSideScale = style.motion.sideScale.coerceAtLeast(0.96f)
         val scale = lerp(readableSideScale, style.motion.currentScale, focus)
         val sideAlpha = style.motion.sideAlpha.coerceIn(0.92f, 1f)
-        val alphaFactor = lerp(sideAlpha, 1f, focus).coerceIn(0f, 1f)
         val colorBase = blend(style.upcomingColor, style.sungColor, 0.28f)
         val colorSung = blend(colorBase, style.sungColor, 0.72f)
         val colorCurrent = if (style.karaokeEnabled) {
@@ -290,6 +289,23 @@ class LyricOverlayView constructor(
                 width - paddingRight - textWidth / 2f,
             )
         textPaint.textSize = fittedSize
+        val fm = textPaint.fontMetrics
+        val effectOutset = dp(
+            maxOf(
+                style.font.shadowRadiusDp + abs(style.font.shadowDyDp),
+                style.motion.glowRadiusDp,
+                style.font.strokeWidthDp / 2f,
+            ),
+        )
+        val edgeAlpha = verticalEdgeAlpha(
+            centerY = lineCenterY,
+            contentTop = paddingTop.toFloat(),
+            contentBottom = (height - paddingBottom).toFloat(),
+            effectHalfExtent = (fm.descent - fm.ascent) / 2f + effectOutset,
+            fadeDistance = dp(EDGE_FADE_DISTANCE_DP),
+        )
+        val alphaFactor = (lerp(sideAlpha, 1f, focus) * edgeAlpha).coerceIn(0f, 1f)
+        if (alphaFactor <= 0f) return
         textPaint.color = color
         textPaint.alpha = (255f * alphaFactor).toInt().coerceIn(0, 255)
         strokePaint.textSize = fittedSize
@@ -297,7 +313,6 @@ class LyricOverlayView constructor(
         strokePaint.color = style.font.strokeColor
         strokePaint.alpha = (255f * alphaFactor).toInt().coerceIn(0, 255)
 
-        val fm = textPaint.fontMetrics
         val baseline = lineCenterY - (fm.ascent + fm.descent) / 2f
         canvas.save()
         val rotate = style.motion.tiltDegrees.coerceIn(-10f, 10f) * signedOffset * sideWeight
@@ -434,6 +449,20 @@ class LyricOverlayView constructor(
             return paddingLeft + safeWidth * pct + textWidth / 2f
         }
 
+        internal fun verticalEdgeAlpha(
+            centerY: Float,
+            contentTop: Float,
+            contentBottom: Float,
+            effectHalfExtent: Float,
+            fadeDistance: Float,
+        ): Float {
+            if (contentBottom <= contentTop) return 0f
+            val nearestEdgeDistance = minOf(centerY - contentTop, contentBottom - centerY)
+            val safeFadeDistance = fadeDistance.coerceAtLeast(1f)
+            return ((nearestEdgeDistance - effectHalfExtent.coerceAtLeast(0f)) / safeFadeDistance)
+                .coerceIn(0f, 1f)
+        }
+
         fun desiredHeightPx(
             textSizeSp: Float,
             style: LyricDisplayStyle,
@@ -449,5 +478,6 @@ class LyricOverlayView constructor(
         private const val MIN_VISIBLE_LINE_COUNT = 1
         private const val MAX_VISIBLE_LINE_COUNT = 5
         private const val DEFAULT_VISIBLE_LINE_COUNT = 5
+        private const val EDGE_FADE_DISTANCE_DP = 6f
     }
 }
