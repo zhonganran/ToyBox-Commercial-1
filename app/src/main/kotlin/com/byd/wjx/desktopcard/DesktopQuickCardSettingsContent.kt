@@ -142,7 +142,7 @@ fun DesktopQuickCardSettingsContent(
 
     DesktopQuickCardItemSection(
         title = "快捷功能",
-        subtitle = "可添加车辆控制、仪表卡片、桌面/仪表歌词开关和实时喊话",
+        subtitle = "可添加车辆控制、仪表卡片1/2、桌面/仪表歌词开关和实时喊话",
         count = state.config.functionCommands.size,
         onAdd = { showCommandPicker = true },
     ) {

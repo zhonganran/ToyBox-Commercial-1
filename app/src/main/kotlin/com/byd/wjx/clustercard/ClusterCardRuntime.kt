@@ -38,20 +38,25 @@ class ClusterCardRuntime @Inject constructor(
         startTelemetry(scope)
         val renderInputs = combine(
             repository.config,
+            repository.config2,
             vehicleStateRepository.state,
             telemetryData,
             repository.runtimeRevision,
-        ) { config, vehicleState, telemetry, _ ->
-            RenderInput(config, vehicleState, telemetry)
+        ) { primaryConfig, secondaryConfig, vehicleState, telemetry, _ ->
+            RenderInput(primaryConfig, secondaryConfig, vehicleState, telemetry)
         }
         renderJob = scope.launch {
             renderInputs.combine(heartbeat()) { input, _ -> input }
                 .collect { input ->
-                    controller.render(
-                        config = input.config,
-                        baseData = input.vehicleState.data.takeIf { input.vehicleState.connected },
-                        telemetryData = input.telemetry.takeIf { input.vehicleState.connected },
-                    )
+                    ClusterCardSlot.entries.forEach { slot ->
+                        controller.render(
+                            slot = slot,
+                            config = input.config(slot),
+                            vehicleConnected = input.vehicleState.connected,
+                            baseData = input.vehicleState.data.takeIf { input.vehicleState.connected },
+                            telemetryData = input.telemetry.takeIf { input.vehicleState.connected },
+                        )
+                    }
                 }
         }
         WjxFileLogger.i(TAG, "started")
@@ -71,10 +76,19 @@ class ClusterCardRuntime @Inject constructor(
     private fun startTelemetry(scope: CoroutineScope) {
         telemetryJob?.cancel()
         telemetryJob = scope.launch {
-            combine(repository.config, vehicleStateRepository.connected) { config, connected ->
+            combine(repository.config, repository.config2, vehicleStateRepository.connected) {
+                    primaryConfig,
+                    secondaryConfig,
+                    connected,
+                ->
+                val activeConfigs = listOf(primaryConfig, secondaryConfig).filter { config ->
+                    config.enabled && config.metricIds.isNotEmpty()
+                }
                 TelemetryRequest(
-                    fields = ClusterCardMetricCatalog.telemetryFields(config),
-                    active = config.enabled && config.metricIds.isNotEmpty() && connected,
+                    fields = activeConfigs.flatMapTo(linkedSetOf()) { config ->
+                        ClusterCardMetricCatalog.telemetryFields(config)
+                    },
+                    active = activeConfigs.isNotEmpty() && connected,
                 )
             }
                 .distinctUntilChanged()
@@ -109,10 +123,16 @@ class ClusterCardRuntime @Inject constructor(
     }
 
     private data class RenderInput(
-        val config: ClusterCardConfig,
+        val primaryConfig: ClusterCardConfig,
+        val secondaryConfig: ClusterCardConfig,
         val vehicleState: VehicleState,
         val telemetry: DiParsData?,
-    )
+    ) {
+        fun config(slot: ClusterCardSlot): ClusterCardConfig = when (slot) {
+            ClusterCardSlot.PRIMARY -> primaryConfig
+            ClusterCardSlot.SECONDARY -> secondaryConfig
+        }
+    }
 
     private data class TelemetryRequest(
         val fields: Set<String>,

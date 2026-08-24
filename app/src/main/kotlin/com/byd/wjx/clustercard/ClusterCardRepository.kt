@@ -15,76 +15,96 @@ class ClusterCardRepository @Inject constructor(
     @ApplicationContext context: Context,
 ) {
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    private val _config = MutableStateFlow(load())
-    val config: StateFlow<ClusterCardConfig> = _config.asStateFlow()
+    private val configFlows = ClusterCardSlot.entries.associateWith { slot -> MutableStateFlow(load(slot)) }
+    private val readOnlyConfigFlows = configFlows.mapValues { (_, flow) -> flow.asStateFlow() }
+    val config: StateFlow<ClusterCardConfig> = config(ClusterCardSlot.PRIMARY)
+    val config2: StateFlow<ClusterCardConfig> = config(ClusterCardSlot.SECONDARY)
     private val _runtimeRevision = MutableStateFlow(0L)
     val runtimeRevision: StateFlow<Long> = _runtimeRevision.asStateFlow()
 
     private val preferenceListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-        _config.value = load()
+        ClusterCardSlot.entries.forEach { slot -> configFlow(slot).value = load(slot) }
     }
 
     init {
         prefs.registerOnSharedPreferenceChangeListener(preferenceListener)
     }
 
-    fun setEnabled(value: Boolean) = update { copy(enabled = value) }
+    fun config(slot: ClusterCardSlot): StateFlow<ClusterCardConfig> = checkNotNull(readOnlyConfigFlows[slot])
 
-    fun setMetricIds(value: List<String>) = update { copy(metricIds = value) }
+    fun current(slot: ClusterCardSlot): ClusterCardConfig = configFlow(slot).value
 
-    fun setScale(value: Float) = update { copy(scale = value) }
+    fun setEnabled(slot: ClusterCardSlot, value: Boolean) = update(slot) { copy(enabled = value) }
 
-    fun setWidthScale(value: Float) = update { copy(widthScale = value) }
+    fun setMetricIds(slot: ClusterCardSlot, value: List<String>) = update(slot) { copy(metricIds = value) }
 
-    fun setXPct(value: Float) = update { copy(xPct = value) }
+    fun setScale(slot: ClusterCardSlot, value: Float) = update(slot) { copy(scale = value) }
 
-    fun setYPct(value: Float) = update { copy(yPct = value) }
+    fun setWidthScale(slot: ClusterCardSlot, value: Float) = update(slot) { copy(widthScale = value) }
 
-    fun resetPosition() = update { copy(xPct = 50f, yPct = 50f) }
+    fun setXPct(slot: ClusterCardSlot, value: Float) = update(slot) { copy(xPct = value) }
+
+    fun setYPct(slot: ClusterCardSlot, value: Float) = update(slot) { copy(yPct = value) }
+
+    fun resetPosition(slot: ClusterCardSlot) = update(slot) {
+        copy(xPct = slot.defaultXPct, yPct = slot.defaultYPct)
+    }
+
+    fun setEnabled(value: Boolean) = setEnabled(ClusterCardSlot.PRIMARY, value)
 
     fun notifyOverlayPermissionChanged() {
         _runtimeRevision.value += 1L
     }
 
-    fun refresh() {
-        val sanitized = sanitizeClusterCardConfig(load())
-        if (sanitized != _config.value) write(sanitized) else _config.value = sanitized
+    fun refresh(slot: ClusterCardSlot? = null) {
+        val slots = slot?.let(::listOf) ?: ClusterCardSlot.entries
+        slots.forEach { target ->
+            val flow = configFlow(target)
+            val sanitized = sanitizeClusterCardConfig(load(target))
+            if (sanitized != flow.value) write(target, sanitized) else flow.value = sanitized
+        }
     }
 
-    private fun update(transform: ClusterCardConfig.() -> ClusterCardConfig) {
-        write(sanitizeClusterCardConfig(_config.value.transform()))
+    private fun update(slot: ClusterCardSlot, transform: ClusterCardConfig.() -> ClusterCardConfig) {
+        val flow = configFlow(slot)
+        write(slot, sanitizeClusterCardConfig(flow.value.transform()))
     }
 
-    private fun load(): ClusterCardConfig = sanitizeClusterCardConfig(
+    private fun load(slot: ClusterCardSlot): ClusterCardConfig = sanitizeClusterCardConfig(
         ClusterCardConfig(
-            enabled = prefs.getBoolean(KEY_ENABLED, false),
-            metricIds = readMetricIds(),
-            scale = prefs.getFloat(KEY_SCALE, 0.65f),
-            widthScale = prefs.getFloat(KEY_WIDTH_SCALE, 1f),
-            xPct = prefs.getFloat(KEY_X_PCT, 50f),
-            yPct = prefs.getFloat(KEY_Y_PCT, 50f),
+            enabled = prefs.getBoolean(key(KEY_ENABLED, slot), false),
+            metricIds = readMetricIds(slot),
+            scale = prefs.getFloat(key(KEY_SCALE, slot), 0.65f),
+            widthScale = prefs.getFloat(key(KEY_WIDTH_SCALE, slot), 1f),
+            xPct = prefs.getFloat(key(KEY_X_PCT, slot), slot.defaultXPct),
+            yPct = prefs.getFloat(key(KEY_Y_PCT, slot), slot.defaultYPct),
         ),
     )
 
-    private fun readMetricIds(): List<String> = runCatching {
-        val array = JSONArray(prefs.getString(KEY_METRIC_IDS, "[]") ?: "[]")
+    private fun readMetricIds(slot: ClusterCardSlot): List<String> = runCatching {
+        val array = JSONArray(prefs.getString(key(KEY_METRIC_IDS, slot), "[]") ?: "[]")
         buildList(array.length()) {
             repeat(array.length()) { index -> add(array.optString(index)) }
         }
     }.getOrDefault(emptyList())
 
-    private fun write(value: ClusterCardConfig) {
-        _config.value = value
+    private fun write(slot: ClusterCardSlot, value: ClusterCardConfig) {
+        configFlow(slot).value = value
         val metrics = JSONArray().apply { value.metricIds.forEach(::put) }
         prefs.edit()
-            .putBoolean(KEY_ENABLED, value.enabled)
-            .putString(KEY_METRIC_IDS, metrics.toString())
-            .putFloat(KEY_SCALE, value.scale)
-            .putFloat(KEY_WIDTH_SCALE, value.widthScale)
-            .putFloat(KEY_X_PCT, value.xPct)
-            .putFloat(KEY_Y_PCT, value.yPct)
+            .putBoolean(key(KEY_ENABLED, slot), value.enabled)
+            .putString(key(KEY_METRIC_IDS, slot), metrics.toString())
+            .putFloat(key(KEY_SCALE, slot), value.scale)
+            .putFloat(key(KEY_WIDTH_SCALE, slot), value.widthScale)
+            .putFloat(key(KEY_X_PCT, slot), value.xPct)
+            .putFloat(key(KEY_Y_PCT, slot), value.yPct)
             .apply()
     }
+
+    private fun configFlow(slot: ClusterCardSlot): MutableStateFlow<ClusterCardConfig> =
+        checkNotNull(configFlows[slot])
+
+    private fun key(base: String, slot: ClusterCardSlot): String = base + slot.preferenceSuffix
 
     companion object {
         const val PREFS_NAME = "wjx_cluster_card"

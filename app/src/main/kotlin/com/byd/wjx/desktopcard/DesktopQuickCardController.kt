@@ -30,6 +30,7 @@ import com.byd.wjx.audio.ExteriorHailingSettings
 import com.byd.wjx.audio.WjxOutsidePlayService
 import com.byd.wjx.audio.WjxRealtimeHailingService
 import com.byd.wjx.clustercard.ClusterCardRepository
+import com.byd.wjx.clustercard.ClusterCardSlot
 import com.byd.wjx.data.automation.ActionDispatcher
 import com.byd.wjx.data.local.entity.ActionDef
 import com.byd.wjx.data.repository.VehicleStateRepository
@@ -50,6 +51,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -186,12 +188,20 @@ class DesktopQuickCardController @Inject constructor(
         lyricPrefs.registerOnSharedPreferenceChangeListener(lyricPreferenceListener)
         lyricPreferenceListenerRegistered = true
         clusterCardStateJob = scope.launch {
-            clusterCardRepository.config.collect { config ->
+            combine(clusterCardRepository.config, clusterCardRepository.config2) { primary, secondary ->
+                primary.enabled to secondary.enabled
+            }.collect { (primaryEnabled, secondaryEnabled) ->
                 renderState.update { current ->
-                    if (current.clusterCardEnabled == config.enabled) {
+                    if (
+                        current.clusterCardEnabled == primaryEnabled &&
+                        current.clusterCard2Enabled == secondaryEnabled
+                    ) {
                         current
                     } else {
-                        current.copy(clusterCardEnabled = config.enabled)
+                        current.copy(
+                            clusterCardEnabled = primaryEnabled,
+                            clusterCard2Enabled = secondaryEnabled,
+                        )
                     }
                 }
             }
@@ -200,6 +210,7 @@ class DesktopQuickCardController @Inject constructor(
             it.copy(
                 realtimeHailingRunning = WjxRealtimeHailingService.isActive(),
                 clusterCardEnabled = clusterCardRepository.config.value.enabled,
+                clusterCard2Enabled = clusterCardRepository.config2.value.enabled,
                 desktopLyricsEnabled = lyricSettings.desktopEnabled,
                 clusterLyricsEnabled = lyricSettings.clusterEnabled,
             )
@@ -232,6 +243,7 @@ class DesktopQuickCardController @Inject constructor(
                     themeMode = theme,
                     floatingIcon = repository.iconForId(config.floatingIconId),
                     clusterCardEnabled = clusterCardRepository.config.value.enabled,
+                    clusterCard2Enabled = clusterCardRepository.config2.value.enabled,
                     desktopLyricsEnabled = lyricSettings.desktopEnabled,
                     clusterLyricsEnabled = lyricSettings.clusterEnabled,
                 )
@@ -400,7 +412,7 @@ class DesktopQuickCardController @Inject constructor(
             return
         }
         if (item.kind == DesktopQuickCardCommandKind.CLUSTER_CARD) {
-            toggleClusterCard()
+            toggleClusterCard(item.payload)
             return
         }
         if (item.kind == DesktopQuickCardCommandKind.DESKTOP_LYRICS) {
@@ -540,27 +552,34 @@ class DesktopQuickCardController @Inject constructor(
         WjxFileLogger.i(TAG, "desktop lyrics enabled=$enabled from desktop card")
     }
 
-    private fun toggleClusterCard() {
-        val enabled = !clusterCardRepository.config.value.enabled
+    private fun toggleClusterCard(payload: String) {
+        val slot = if (payload == "secondary") ClusterCardSlot.SECONDARY else ClusterCardSlot.PRIMARY
+        val currentConfig = clusterCardRepository.current(slot)
+        val enabled = !currentConfig.enabled
         if (enabled && !Settings.canDrawOverlays(appContext)) {
             Toast.makeText(appContext, "请先允许悬浮窗权限", Toast.LENGTH_SHORT).show()
-            WjxFileLogger.w(TAG, "cluster card toggle blocked: overlay permission missing")
+            WjxFileLogger.w(TAG, "${slot.label} toggle blocked: overlay permission missing")
             return
         }
 
-        clusterCardRepository.setEnabled(enabled)
-        renderState.update { it.copy(clusterCardEnabled = enabled) }
-        val hasMetrics = clusterCardRepository.config.value.metricIds.isNotEmpty()
+        clusterCardRepository.setEnabled(slot, enabled)
+        renderState.update {
+            when (slot) {
+                ClusterCardSlot.PRIMARY -> it.copy(clusterCardEnabled = enabled)
+                ClusterCardSlot.SECONDARY -> it.copy(clusterCard2Enabled = enabled)
+            }
+        }
+        val hasMetrics = clusterCardRepository.current(slot).metricIds.isNotEmpty()
         Toast.makeText(
             appContext,
             when {
-                !enabled -> "仪表卡片已关闭"
-                hasMetrics -> "仪表卡片已开启"
-                else -> "仪表卡片已开启，请先添加显示项目"
+                !enabled -> "${slot.label}已关闭"
+                hasMetrics -> "${slot.label}已开启"
+                else -> "${slot.label}已开启，请先添加显示项目"
             },
             Toast.LENGTH_SHORT,
         ).show()
-        WjxFileLogger.i(TAG, "cluster card enabled=$enabled from desktop card")
+        WjxFileLogger.i(TAG, "${slot.label} enabled=$enabled from desktop card")
     }
 
     private fun requestRealtimeHailingStop(notifyIfIdle: Boolean, showFailure: Boolean): Boolean =
@@ -597,6 +616,7 @@ class DesktopQuickCardController @Inject constructor(
                 expanded = true,
                 horizontalAnchor = horizontalAnchor,
                 clusterCardEnabled = clusterCardRepository.config.value.enabled,
+                clusterCard2Enabled = clusterCardRepository.config2.value.enabled,
                 desktopLyricsEnabled = lyricSettings.desktopEnabled,
                 clusterLyricsEnabled = lyricSettings.clusterEnabled,
             )

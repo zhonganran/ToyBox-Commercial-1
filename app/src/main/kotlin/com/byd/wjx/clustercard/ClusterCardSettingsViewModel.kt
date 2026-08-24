@@ -32,67 +32,79 @@ class ClusterCardSettingsViewModel @Inject constructor(
     private val helperClient: HelperClient,
 ) : ViewModel() {
     private val appContext = context.applicationContext
-    private val _uiState = MutableStateFlow(
-        ClusterCardSettingsUiState(
-            config = repository.config.value,
-            overlayPermissionGranted = Settings.canDrawOverlays(appContext),
-        ),
-    )
-    val uiState: StateFlow<ClusterCardSettingsUiState> = _uiState.asStateFlow()
+    private val uiStates = ClusterCardSlot.entries.associateWith { slot ->
+        MutableStateFlow(
+            ClusterCardSettingsUiState(
+                config = repository.current(slot),
+                overlayPermissionGranted = Settings.canDrawOverlays(appContext),
+            ),
+        )
+    }
+    private val readOnlyUiStates = uiStates.mapValues { (_, flow) -> flow.asStateFlow() }
+    val uiState: StateFlow<ClusterCardSettingsUiState> = uiState(ClusterCardSlot.PRIMARY)
 
     init {
-        viewModelScope.launch {
-            repository.config.collect { config -> _uiState.update { it.copy(config = config) } }
+        ClusterCardSlot.entries.forEach { slot ->
+            viewModelScope.launch {
+                repository.config(slot).collect { config ->
+                    uiStateFlow(slot).update { it.copy(config = config) }
+                }
+            }
         }
     }
 
-    fun refresh() {
-        repository.refresh()
+    fun uiState(slot: ClusterCardSlot): StateFlow<ClusterCardSettingsUiState> =
+        checkNotNull(readOnlyUiStates[slot])
+
+    fun refresh(slot: ClusterCardSlot? = null) {
+        repository.refresh(slot)
         refreshOverlayPermission()
     }
 
     fun refreshOverlayPermission() {
-        _uiState.update { it.copy(overlayPermissionGranted = Settings.canDrawOverlays(appContext)) }
+        val granted = Settings.canDrawOverlays(appContext)
+        updateAllStates { it.copy(overlayPermissionGranted = granted) }
         repository.notifyOverlayPermissionChanged()
     }
 
-    fun setEnabled(value: Boolean) = repository.setEnabled(value)
+    fun setEnabled(slot: ClusterCardSlot, value: Boolean) = repository.setEnabled(slot, value)
 
-    fun addMetric(id: String) {
-        val current = repository.config.value.metricIds
+    fun addMetric(slot: ClusterCardSlot, id: String) {
+        val current = repository.current(slot).metricIds
         if (id in current || current.size >= CLUSTER_CARD_MAX_METRICS) return
-        repository.setMetricIds(current + id)
+        repository.setMetricIds(slot, current + id)
     }
 
-    fun removeMetric(id: String) = repository.setMetricIds(
-        repository.config.value.metricIds.filterNot { it == id },
+    fun removeMetric(slot: ClusterCardSlot, id: String) = repository.setMetricIds(
+        slot,
+        repository.current(slot).metricIds.filterNot { it == id },
     )
 
-    fun moveMetric(id: String, offset: Int) {
-        repository.setMetricIds(repository.config.value.metricIds.moved(id, offset))
+    fun moveMetric(slot: ClusterCardSlot, id: String, offset: Int) {
+        repository.setMetricIds(slot, repository.current(slot).metricIds.moved(id, offset))
     }
 
-    fun setScale(value: Float) = repository.setScale(value)
+    fun setScale(slot: ClusterCardSlot, value: Float) = repository.setScale(slot, value)
 
-    fun setWidthScale(value: Float) = repository.setWidthScale(value)
+    fun setWidthScale(slot: ClusterCardSlot, value: Float) = repository.setWidthScale(slot, value)
 
-    fun setXPct(value: Float) = repository.setXPct(value)
+    fun setXPct(slot: ClusterCardSlot, value: Float) = repository.setXPct(slot, value)
 
-    fun setYPct(value: Float) = repository.setYPct(value)
+    fun setYPct(slot: ClusterCardSlot, value: Float) = repository.setYPct(slot, value)
 
-    fun resetPosition() = repository.resetPosition()
+    fun resetPosition(slot: ClusterCardSlot) = repository.resetPosition(slot)
 
     fun requestOverlayPermission() {
-        if (_uiState.value.permissionBusy) return
+        if (uiStates.values.any { it.value.permissionBusy }) return
         viewModelScope.launch {
-            _uiState.update { it.copy(permissionBusy = true) }
+            updateAllStates { it.copy(permissionBusy = true) }
             runCatching {
                 helperBootstrap.ensureCurrent() && helperClient.grantOverlayPermission()
             }
             delay(600L)
             val granted = Settings.canDrawOverlays(appContext)
             if (!granted) openSystemOverlaySettings()
-            _uiState.update {
+            updateAllStates {
                 it.copy(
                     overlayPermissionGranted = granted || Settings.canDrawOverlays(appContext),
                     permissionBusy = false,
@@ -100,6 +112,13 @@ class ClusterCardSettingsViewModel @Inject constructor(
             }
             repository.notifyOverlayPermissionChanged()
         }
+    }
+
+    private fun uiStateFlow(slot: ClusterCardSlot): MutableStateFlow<ClusterCardSettingsUiState> =
+        checkNotNull(uiStates[slot])
+
+    private fun updateAllStates(transform: (ClusterCardSettingsUiState) -> ClusterCardSettingsUiState) {
+        uiStates.values.forEach { state -> state.update(transform) }
     }
 
     private fun openSystemOverlaySettings() {

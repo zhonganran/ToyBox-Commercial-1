@@ -77,4 +77,17 @@ class ElectronicMirrorDecisionTest {
         assertTrue(ElectronicMirrorSample(2, 1f, 4).isValid)
         assertNull(ElectronicMirrorTelemetryGate().apply { reset(0L) }.onSample(null, 1L).lastValid)
     }
+
+    @Test fun `only non disruptive cluster overlay displays are selected`() {
+        val overlayRank = electronicMirrorOverlayDisplayRank("叠加视图 #1")
+        val fissionRank = electronicMirrorOverlayDisplayRank("fission_1")
+        val projectionRank = electronicMirrorOverlayDisplayRank("XDJAScreenProjection_1")
+        val secondaryProjectionRank = electronicMirrorOverlayDisplayRank("XDJAScreenProjection_0")
+
+        assertTrue(overlayRank > fissionRank)
+        assertTrue(fissionRank > projectionRank)
+        assertTrue(projectionRank > secondaryProjectionRank)
+        assertTrue(secondaryProjectionRank > 0)
+        assertEquals(0, electronicMirrorOverlayDisplayRank("Built-in Screen"))
+    }
 }

@@ -65,26 +65,27 @@ import kotlin.math.roundToInt
 
 @Composable
 fun ClusterCardSettingsContent(
+    slot: ClusterCardSlot = ClusterCardSlot.PRIMARY,
     viewModel: ClusterCardSettingsViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val state by viewModel.uiState(slot).collectAsStateWithLifecycle()
     var showMetricPicker by remember { mutableStateOf(false) }
 
-    LifecycleResumeEffect(Unit) {
-        viewModel.refresh()
+    LifecycleResumeEffect(slot) {
+        viewModel.refresh(slot)
         onPauseOrDispose { }
     }
 
     SettingsPanel {
         ToggleRow(
-            title = "启用仪表卡片",
+            title = "启用${slot.label}",
             subtitle = if (state.config.metricIds.isEmpty()) {
                 "请先添加至少一个指标，空卡片不会显示"
             } else {
                 "车辆启动并连接仪表投射屏后自动显示"
             },
             checked = state.config.enabled,
-            onCheckedChange = viewModel::setEnabled,
+            onCheckedChange = { viewModel.setEnabled(slot, it) },
         )
         HorizontalDivider(color = CardBorder)
         Row(
@@ -162,9 +163,9 @@ fun ClusterCardSettingsContent(
                     metric = metric,
                     index = index,
                     count = state.config.metricIds.size,
-                    onUp = { viewModel.moveMetric(id, -1) },
-                    onDown = { viewModel.moveMetric(id, 1) },
-                    onDelete = { viewModel.removeMetric(id) },
+                    onUp = { viewModel.moveMetric(slot, id, -1) },
+                    onDown = { viewModel.moveMetric(slot, id, 1) },
+                    onDelete = { viewModel.removeMetric(slot, id) },
                 )
             }
         }
@@ -183,40 +184,40 @@ fun ClusterCardSettingsContent(
             value = state.config.scale,
             valueRange = 0.45f..1f,
             displayValue = "${(state.config.scale * 100).roundToInt()}%",
-            onValueChangeFinished = viewModel::setScale,
+            onValueChangeFinished = { viewModel.setScale(slot, it) },
         )
         ConfigSlider(
             title = "卡片宽度",
             value = state.config.widthScale,
             valueRange = 0.7f..1.4f,
             displayValue = "${(state.config.widthScale * 100).roundToInt()}%",
-            onValueChangeFinished = viewModel::setWidthScale,
+            onValueChangeFinished = { viewModel.setWidthScale(slot, it) },
         )
         ConfigSlider(
             title = "水平位置",
             value = state.config.xPct,
             valueRange = 0f..100f,
             displayValue = "${state.config.xPct.roundToInt()}%",
-            onValueChangeFinished = viewModel::setXPct,
+            onValueChangeFinished = { viewModel.setXPct(slot, it) },
         )
         ConfigSlider(
             title = "垂直位置",
             value = state.config.yPct,
             valueRange = 0f..100f,
             displayValue = "${state.config.yPct.roundToInt()}%",
-            onValueChangeFinished = viewModel::setYPct,
+            onValueChangeFinished = { viewModel.setYPct(slot, it) },
         )
-        TextButton(onClick = viewModel::resetPosition, modifier = Modifier.align(Alignment.End)) {
+        TextButton(onClick = { viewModel.resetPosition(slot) }, modifier = Modifier.align(Alignment.End)) {
             Icon(Icons.Outlined.MyLocation, contentDescription = null, tint = AccentBlue)
             Spacer(Modifier.padding(horizontal = 3.dp))
-            Text("恢复仪表盘居中", color = AccentBlue)
+            Text("恢复默认位置", color = AccentBlue)
         }
     }
 
     if (showMetricPicker) {
         MetricPicker(
             selected = state.config.metricIds.toSet(),
-            onSelect = viewModel::addMetric,
+            onSelect = { viewModel.addMetric(slot, it) },
             onDismiss = { showMetricPicker = false },
         )
     }

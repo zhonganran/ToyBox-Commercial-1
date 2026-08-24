@@ -25,7 +25,6 @@ import android.widget.FrameLayout
 import androidx.core.content.ContextCompat
 import com.byd.wjx.cluster.CENTER_OFFSET_PCT
 import com.byd.wjx.cluster.ClusterMode
-import com.byd.wjx.cluster.ClusterProjectionManager
 import com.byd.wjx.cluster.ClusterProjectionPreferences
 import com.byd.wjx.cluster.MAX_PROJECTION_PCT
 import com.byd.wjx.cluster.geometryFor
@@ -72,7 +71,6 @@ class ElectronicMirrorController @Inject constructor(
     @Volatile private var fastLoop: Job? = null
 
     private var cameraThread: ExecutorCoroutineDispatcher? = null
-    private var compositorJob: Job? = null
     private var leftWindow: PreviewWindow? = null
     private var rightWindow: PreviewWindow? = null
     private var clusterOnMainScreen = false
@@ -82,8 +80,6 @@ class ElectronicMirrorController @Inject constructor(
     private var shownSide = ElectronicMirrorSide.NONE
     private var lastRequestedSide = ElectronicMirrorSide.NONE
     private var cameraOpen = false
-    private var compositorPowered = false
-    private var compositorTarget = false
     private var discovered = false
     private var overlayPermissionGranted = false
     private var windowsAttachedAt = 0L
@@ -287,9 +283,7 @@ class ElectronicMirrorController @Inject constructor(
 
     private fun attachWindows() {
         val display = clusterDisplay()
-        if (display == null) {
-            attachMirrorWindow()
-        } else {
+        if (display != null) {
             clusterGeometry(display)?.let { rect ->
                 val window = PreviewWindow("cluster")
                 val displayContext = context.createDisplayContext(display)
@@ -297,6 +291,10 @@ class ElectronicMirrorController @Inject constructor(
                     leftWindow = window
                 }
             }
+        }
+        if (leftWindow == null) {
+            WjxFileLogger.i(TAG, "non-disruptive cluster overlay unavailable; using center-screen fallback")
+            attachMirrorWindow()
         }
 
         val rect = pipRect()
@@ -392,10 +390,10 @@ class ElectronicMirrorController @Inject constructor(
 
     private fun clusterDisplay(): Display? {
         val manager = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
-        val displays = manager.displays.filter {
-            it.name.contains(CLUSTER_DISPLAY_NAME, ignoreCase = true)
-        }
-        return displays.firstOrNull { it.name.endsWith("_1") } ?: displays.firstOrNull()
+        return manager.displays
+            .filter { it.displayId != Display.DEFAULT_DISPLAY }
+            .maxByOrNull { electronicMirrorOverlayDisplayRank(it.name) }
+            ?.takeIf { electronicMirrorOverlayDisplayRank(it.name) > 0 }
     }
 
     private fun defaultDisplay(): Display? =
@@ -420,33 +418,10 @@ class ElectronicMirrorController @Inject constructor(
         val previous = shownSide
         shownSide = side
         WjxFileLogger.i(TAG, "show $previous -> $side")
-        if (side == ElectronicMirrorSide.LEFT) {
-            requestCompositor(true)
-        } else {
+        if (side != ElectronicMirrorSide.LEFT) {
             leftWindow?.setGlow(false)
-            if (previous == ElectronicMirrorSide.LEFT) requestCompositor(false)
         }
         if (side != ElectronicMirrorSide.RIGHT) rightWindow?.setGlow(false)
-    }
-
-    private fun requestCompositor(on: Boolean) {
-        if (on == compositorTarget) return
-        if (on && (leftWindow == null || clusterOnMainScreen)) return
-        compositorTarget = on
-        compositorJob?.cancel()
-        compositorJob = ownScope.launch { applyCompositor(on) }
-    }
-
-    private suspend fun applyCompositor(on: Boolean) {
-        if (!on && ClusterProjectionManager.currentMode == ClusterMode.FULLSCREEN) {
-            compositorPowered = false
-            compositorTarget = false
-            WjxFileLogger.i(TAG, "compositor kept on for active cluster projection")
-            return
-        }
-        val ok = runCatching { helper.setClusterContainerMode(on) }.getOrDefault(false)
-        if (ok) compositorPowered = on else compositorTarget = compositorPowered
-        WjxFileLogger.i(TAG, "compositor ${if (on) "on" else "off"} ok=$ok")
     }
 
     private suspend fun awaitTeardown(reason: String) {
@@ -463,11 +438,6 @@ class ElectronicMirrorController @Inject constructor(
                 cameraOpen = false
             }
             applyShow(ElectronicMirrorSide.NONE)
-            val compositorMayBeOn = compositorPowered || compositorTarget
-            compositorJob?.cancel()
-            compositorJob = null
-            compositorTarget = false
-            if (compositorMayBeOn) applyCompositor(false)
             releaseWindow(leftWindow)
             leftWindow = null
             clusterOnMainScreen = false
@@ -499,7 +469,7 @@ class ElectronicMirrorController @Inject constructor(
         (if (leftWindow != null) 1 else 0) + (if (rightWindow != null) 1 else 0)
 
     private fun anythingUp(): Boolean =
-        leftWindow != null || rightWindow != null || cameraOpen || compositorPowered || compositorTarget
+        leftWindow != null || rightWindow != null || cameraOpen
 
     private fun offscreenX(width: Int): Int = -(width + OFFSCREEN_MARGIN_PX)
 
@@ -713,7 +683,6 @@ class ElectronicMirrorController @Inject constructor(
         const val GLOW_STROKE_DP = 12f
         const val GLOW_COLOR = 0xFFFF7A00.toInt()
         const val OFFSCREEN_MARGIN_PX = 100
-        const val CLUSTER_DISPLAY_NAME = "XDJAScreenProjection"
         const val OVERLAY_FLAGS = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
             WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
@@ -729,5 +698,16 @@ class ElectronicMirrorController @Inject constructor(
             ?.takeIf { it.accepted }
             ?.value
             ?.let(SentinelDecoder::parseFloatFromShellInt)
+    }
+}
+
+internal fun electronicMirrorOverlayDisplayRank(name: String): Int {
+    val normalized = name.trim().lowercase()
+    return when {
+        "叠加视图 #1" in normalized -> 40
+        "fission_" in normalized -> 30
+        "xdjascreenprojection" in normalized && normalized.endsWith("_1") -> 20
+        "xdjascreenprojection" in normalized -> 10
+        else -> 0
     }
 }

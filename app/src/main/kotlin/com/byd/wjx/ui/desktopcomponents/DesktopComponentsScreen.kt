@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -53,6 +54,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.byd.wjx.clustercard.ClusterCardSettingsContent
 import com.byd.wjx.clustercard.ClusterCardSettingsViewModel
+import com.byd.wjx.clustercard.ClusterCardSlot
 import com.byd.wjx.desktopcard.DesktopQuickCardSettingsContent
 import com.byd.wjx.desktopcard.DesktopQuickCardSettingsViewModel
 import com.byd.wjx.lyrics.LyricSettings
@@ -88,6 +90,12 @@ private enum class DesktopComponentPage(
         icon = Icons.Outlined.Speed,
         colors = listOf(Color(0xFF8A4B24), Color(0xFF183F58)),
     ),
+    ClusterCard2(
+        label = "仪表卡片2",
+        description = "第二组独立车辆数据",
+        icon = Icons.Outlined.Speed,
+        colors = listOf(Color(0xFF245C4B), Color(0xFF17384F)),
+    ),
 }
 
 @Composable
@@ -97,7 +105,8 @@ fun DesktopComponentsScreen(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val quickCardState by quickCardViewModel.uiState.collectAsStateWithLifecycle()
-    val clusterCardState by clusterCardViewModel.uiState.collectAsStateWithLifecycle()
+    val clusterCardState by clusterCardViewModel.uiState(ClusterCardSlot.PRIMARY).collectAsStateWithLifecycle()
+    val clusterCard2State by clusterCardViewModel.uiState(ClusterCardSlot.SECONDARY).collectAsStateWithLifecycle()
     val lyricSettings = remember(context.applicationContext) { LyricSettings(context.applicationContext) }
     var selectedPage by rememberSaveable { mutableStateOf(DesktopComponentPage.Lyrics) }
     var lyricsEnabled by remember {
@@ -115,6 +124,7 @@ fun DesktopComponentsScreen(
         DesktopComponentPage.Lyrics to lyricsEnabled,
         DesktopComponentPage.QuickCard to quickCardState.config.enabled,
         DesktopComponentPage.ClusterCard to clusterCardState.config.enabled,
+        DesktopComponentPage.ClusterCard2 to clusterCard2State.config.enabled,
     )
 
     Column(
@@ -177,9 +187,23 @@ fun DesktopComponentsScreen(
                     .padding(horizontal = 58.dp, vertical = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                ClusterCardSettingsContent(clusterCardViewModel)
+                ClusterCardSettingsContent(
+                    slot = ClusterCardSlot.PRIMARY,
+                    viewModel = clusterCardViewModel,
+                )
             }
 
+            DesktopComponentPage.ClusterCard2 -> Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 58.dp, vertical = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                ClusterCardSettingsContent(
+                    slot = ClusterCardSlot.SECONDARY,
+                    viewModel = clusterCardViewModel,
+                )
+            }
         }
     }
 }
@@ -192,6 +216,10 @@ private fun DesktopComponentPreviewStage(
     modifier: Modifier = Modifier,
 ) {
     val pages = DesktopComponentPage.entries
+    val selectedIndex = pages.indexOf(selected)
+    val previewCount = minOf(3, pages.size)
+    val previewStart = (selectedIndex - 1).coerceIn(0, pages.size - previewCount)
+    val previewPages = pages.subList(previewStart, previewStart + previewCount)
     var horizontalDrag by remember { mutableFloatStateOf(0f) }
 
     Column(
@@ -221,7 +249,7 @@ private fun DesktopComponentPreviewStage(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            pages.forEach { page ->
+            previewPages.forEach { page ->
                 val isSelected = page == selected
                 DesktopComponentPreviewCard(
                     page = page,
@@ -294,16 +322,20 @@ private fun DesktopComponentPreviewCard(
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     page.label,
+                    modifier = Modifier.weight(1f),
                     color = Color.White,
                     fontSize = if (selected) 18.sp else 15.sp,
                     fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.weight(1f))
                 Text(
                     if (enabled) "已开启" else "未开启",
                     color = if (enabled) Color(0xFF65F0C2) else Color.White.copy(alpha = 0.62f),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             Box(
@@ -313,7 +345,9 @@ private fun DesktopComponentPreviewCard(
                 when (page) {
                     DesktopComponentPage.Lyrics -> CombinedLyricPreview(selected)
                     DesktopComponentPage.QuickCard -> QuickCardPreview(selected)
-                    DesktopComponentPage.ClusterCard -> ClusterCardPreview(selected)
+                    DesktopComponentPage.ClusterCard,
+                    DesktopComponentPage.ClusterCard2,
+                    -> ClusterCardPreview(selected)
                 }
             }
             Text(

@@ -16,6 +16,31 @@ class ClusterCardModelsTest {
     }
 
     @Test
+    fun `two card slots have independent labels and default positions`() {
+        assertEquals("仪表卡片", ClusterCardSlot.PRIMARY.label)
+        assertEquals("仪表卡片2", ClusterCardSlot.SECONDARY.label)
+        assertEquals(50f, ClusterCardSlot.PRIMARY.defaultXPct, 0f)
+        assertEquals(50f, ClusterCardSlot.PRIMARY.defaultYPct, 0f)
+        assertEquals(100f, ClusterCardSlot.SECONDARY.defaultXPct, 0f)
+        assertEquals(50f, ClusterCardSlot.SECONDARY.defaultYPct, 0f)
+    }
+
+    @Test
+    fun `card is hidden until vehicle and all display prerequisites are available`() {
+        val config = ClusterCardConfig(
+            enabled = true,
+            metricIds = listOf(ClusterCardMetric.SPEED.id),
+        )
+
+        assertTrue(ClusterCardVisibility.shouldShow(config, true, true))
+        assertFalse(ClusterCardVisibility.shouldShow(config, false, true))
+        assertFalse(ClusterCardVisibility.shouldShow(config, true, false))
+        assertFalse(ClusterCardVisibility.shouldShow(config.copy(enabled = false), true, true))
+        assertFalse(ClusterCardVisibility.shouldShow(config.copy(metricIds = emptyList()), true, true))
+        assertFalse(ClusterCardVisibility.shouldShow(config.copy(metricIds = listOf("missing")), true, true))
+    }
+
+    @Test
     fun `sanitize removes invalid duplicate and excess metrics`() {
         val ids = ClusterCardMetricCatalog.all.take(CLUSTER_CARD_MAX_METRICS + 1).map(ClusterCardMetric::id)
         val result = sanitizeClusterCardConfig(

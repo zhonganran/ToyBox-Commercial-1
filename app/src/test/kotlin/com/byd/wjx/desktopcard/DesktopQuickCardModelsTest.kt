@@ -51,11 +51,17 @@ class DesktopQuickCardModelsTest {
     @Test
     fun `cluster card and desktop lyrics toggles are available as desktop card commands`() {
         val clusterCard = DesktopQuickCardCommandCatalog.byCommand.getValue(DESKTOP_QUICK_CARD_CLUSTER_CARD)
+        val clusterCard2 = DesktopQuickCardCommandCatalog.byCommand.getValue(DESKTOP_QUICK_CARD_CLUSTER_CARD_2)
         val desktopLyrics = DesktopQuickCardCommandCatalog.byCommand.getValue(DESKTOP_QUICK_CARD_DESKTOP_LYRICS)
 
         assertEquals("仪表卡片", clusterCard.label)
         assertEquals("桌面组件", clusterCard.category)
         assertEquals(DesktopQuickCardCommandKind.CLUSTER_CARD, clusterCard.kind)
+        assertEquals("primary", clusterCard.payload)
+        assertEquals("仪表卡片2", clusterCard2.label)
+        assertEquals("桌面组件", clusterCard2.category)
+        assertEquals(DesktopQuickCardCommandKind.CLUSTER_CARD, clusterCard2.kind)
+        assertEquals("secondary", clusterCard2.payload)
         assertEquals("桌面歌词", desktopLyrics.label)
         assertEquals("桌面组件", desktopLyrics.category)
         assertEquals(DesktopQuickCardCommandKind.DESKTOP_LYRICS, desktopLyrics.kind)

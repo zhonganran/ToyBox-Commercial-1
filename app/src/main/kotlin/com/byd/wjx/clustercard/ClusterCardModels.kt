@@ -7,6 +7,16 @@ import kotlin.math.abs
 
 const val CLUSTER_CARD_MAX_METRICS = 8
 
+enum class ClusterCardSlot(
+    val label: String,
+    internal val preferenceSuffix: String,
+    internal val defaultXPct: Float,
+    internal val defaultYPct: Float,
+) {
+    PRIMARY("仪表卡片", "", 50f, 50f),
+    SECONDARY("仪表卡片2", "_2", 100f, 50f),
+}
+
 data class ClusterCardConfig(
     val enabled: Boolean = false,
     val metricIds: List<String> = emptyList(),
@@ -26,6 +36,17 @@ internal fun sanitizeClusterCardConfig(raw: ClusterCardConfig): ClusterCardConfi
     xPct = raw.xPct.coerceIn(0f, 100f),
     yPct = raw.yPct.coerceIn(0f, 100f),
 )
+
+internal object ClusterCardVisibility {
+    fun shouldShow(
+        config: ClusterCardConfig,
+        vehicleConnected: Boolean,
+        overlayPermissionGranted: Boolean,
+    ): Boolean = config.enabled &&
+        vehicleConnected &&
+        overlayPermissionGranted &&
+        ClusterCardMetricCatalog.selected(config).isNotEmpty()
+}
 
 enum class ClusterCardMetric(
     val id: String,

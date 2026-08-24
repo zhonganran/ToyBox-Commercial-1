@@ -17,6 +17,7 @@ const val DESKTOP_QUICK_CARD_LEFT_SLIDING_DOOR = "wjx_auto_door_left"
 const val DESKTOP_QUICK_CARD_RIGHT_SLIDING_DOOR = "wjx_auto_door_right"
 const val DESKTOP_QUICK_CARD_REALTIME_HAILING = "wjx_realtime_hailing"
 const val DESKTOP_QUICK_CARD_CLUSTER_CARD = "wjx_cluster_card_toggle"
+const val DESKTOP_QUICK_CARD_CLUSTER_CARD_2 = "wjx_cluster_card_2_toggle"
 const val DESKTOP_QUICK_CARD_DESKTOP_LYRICS = "wjx_desktop_lyrics_toggle"
 const val DESKTOP_QUICK_CARD_CLUSTER_LYRICS = "wjx_cluster_lyrics_toggle"
 const val DESKTOP_QUICK_CARD_ICON_TOOLBOX = "builtin_toolbox"
@@ -100,6 +101,16 @@ object DesktopQuickCardCommandCatalog {
                 label = "仪表卡片",
                 category = "桌面组件",
                 kind = DesktopQuickCardCommandKind.CLUSTER_CARD,
+                payload = "primary",
+            ),
+        )
+        add(
+            DesktopQuickCardCommand(
+                command = DESKTOP_QUICK_CARD_CLUSTER_CARD_2,
+                label = "仪表卡片2",
+                category = "桌面组件",
+                kind = DesktopQuickCardCommandKind.CLUSTER_CARD,
+                payload = "secondary",
             ),
         )
         add(

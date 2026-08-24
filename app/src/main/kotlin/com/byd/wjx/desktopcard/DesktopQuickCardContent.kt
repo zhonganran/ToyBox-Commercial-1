@@ -59,6 +59,7 @@ data class DesktopQuickCardRenderState(
     val realtimeHailingRunning: Boolean = false,
     val realtimeHailingBusy: Boolean = false,
     val clusterCardEnabled: Boolean = false,
+    val clusterCard2Enabled: Boolean = false,
     val desktopLyricsEnabled: Boolean = false,
     val clusterLyricsEnabled: Boolean = false,
 )
@@ -101,11 +102,16 @@ fun DesktopQuickCardContent(
         commands.forEach { item ->
             val realtimeHailing = item.kind == DesktopQuickCardCommandKind.REALTIME_HAILING
             val clusterCard = item.kind == DesktopQuickCardCommandKind.CLUSTER_CARD
+            val clusterCardEnabled = if (item.command == DESKTOP_QUICK_CARD_CLUSTER_CARD_2) {
+                state.clusterCard2Enabled
+            } else {
+                state.clusterCardEnabled
+            }
             val desktopLyrics = item.kind == DesktopQuickCardCommandKind.DESKTOP_LYRICS
             val clusterLyrics = item.kind == DesktopQuickCardCommandKind.CLUSTER_LYRICS
             val active = when {
                 realtimeHailing -> state.realtimeHailingRunning || state.realtimeHailingBusy
-                clusterCard -> state.clusterCardEnabled
+                clusterCard -> clusterCardEnabled
                 desktopLyrics -> state.desktopLyricsEnabled
                 clusterLyrics -> state.clusterLyricsEnabled
                 else -> state.activeCommand == item.command
@@ -117,7 +123,7 @@ fun DesktopQuickCardContent(
                     state.realtimeHailingRunning -> "喊话中"
                     else -> item.category
                 }
-                clusterCard -> if (state.clusterCardEnabled) "已开启" else "已关闭"
+                clusterCard -> if (clusterCardEnabled) "已开启" else "已关闭"
                 desktopLyrics -> if (state.desktopLyricsEnabled) "已开启" else "已关闭"
                 clusterLyrics -> if (state.clusterLyricsEnabled) "已开启" else "已关闭"
                 active -> "执行中"

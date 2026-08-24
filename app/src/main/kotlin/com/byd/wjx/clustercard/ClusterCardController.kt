@@ -1,6 +1,7 @@
 package com.byd.wjx.clustercard
 
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.graphics.Point
 import android.hardware.display.DisplayManager
@@ -26,32 +27,37 @@ class ClusterCardController @Inject constructor(
 ) {
     private val appContext = context.applicationContext
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var displayContext: Context? = null
-    private var windowManager: WindowManager? = null
-    private var cardView: ClusterCardView? = null
-    private var params: WindowManager.LayoutParams? = null
-    private var displayId = -1
+    private val windows = ClusterCardSlot.entries.associateWith { CardWindowState() }
     private var clusterWidth = 1280
     private var clusterHeight = 480
     private var lastMissingDisplayLogAt = 0L
 
     suspend fun render(
+        slot: ClusterCardSlot,
         config: ClusterCardConfig,
+        vehicleConnected: Boolean,
         baseData: DiParsData?,
         telemetryData: DiParsData?,
     ) = withContext(Dispatchers.Main.immediate) {
+        val window = window(slot)
         val metrics = ClusterCardMetricCatalog.selected(config)
-        if (!config.enabled || metrics.isEmpty() || !Settings.canDrawOverlays(appContext)) {
-            hideInternal()
+        if (
+            !ClusterCardVisibility.shouldShow(
+                config = config,
+                vehicleConnected = vehicleConnected,
+                overlayPermissionGranted = Settings.canDrawOverlays(appContext),
+            )
+        ) {
+            hideInternal(slot)
             return@withContext
         }
 
-        ensureDisplayStillValid()
-        if (cardView == null && !show(config)) return@withContext
-        val view = cardView ?: return@withContext
-        val lp = params ?: return@withContext
-        val newWidth = windowWidth(config)
-        val newHeight = windowHeight(config)
+        ensureDisplayStillValid(slot)
+        if (window.cardView == null && !show(slot, config)) return@withContext
+        val view = window.cardView ?: return@withContext
+        val lp = window.params ?: return@withContext
+        val newWidth = windowWidth(config, window.displayContext)
+        val newHeight = windowHeight(config, window.displayContext)
         var changed = false
         if (lp.width != newWidth || lp.height != newHeight) {
             lp.width = newWidth
@@ -61,29 +67,32 @@ class ClusterCardController @Inject constructor(
         val oldX = lp.x
         val oldY = lp.y
         positionByPercent(lp, config)
-        view.bind(metrics, baseData, telemetryData, config.scale)
+        val nightMode = view.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
+            Configuration.UI_MODE_NIGHT_YES
+        view.bind(metrics, baseData, telemetryData, config.scale, nightMode)
         if (changed || lp.x != oldX || lp.y != oldY) {
-            runCatching { windowManager?.updateViewLayout(view, lp) }
+            runCatching { window.windowManager?.updateViewLayout(view, lp) }
                 .onFailure {
-                    WjxFileLogger.w(TAG, "update failed; rebuilding: ${it.message}")
-                    hideInternal()
+                    WjxFileLogger.w(TAG, "${slot.label} update failed; rebuilding: ${it.message}")
+                    hideInternal(slot)
                 }
         }
     }
 
     fun stop() {
         if (Looper.myLooper() == Looper.getMainLooper()) {
-            hideInternal()
+            hideAllInternal()
         } else {
-            mainHandler.post(::hideInternal)
+            mainHandler.post(::hideAllInternal)
         }
     }
 
-    private fun show(config: ClusterCardConfig): Boolean {
+    private fun show(slot: ClusterCardSlot, config: ClusterCardConfig): Boolean {
         val display = resolveClusterDisplay() ?: run {
             logMissingDisplay()
             return false
         }
+        val window = window(slot)
         val ctx = appContext.createDisplayContext(display)
         val wm = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val view = ClusterCardView(ctx)
@@ -100,48 +109,51 @@ class ClusterCardController @Inject constructor(
         }
         return runCatching {
             wm.addView(view, lp)
-            displayContext = ctx
-            windowManager = wm
-            cardView = view
-            params = lp
-            displayId = display.displayId
+            window.displayContext = ctx
+            window.windowManager = wm
+            window.cardView = view
+            window.params = lp
+            window.displayId = display.displayId
             WjxFileLogger.i(
                 TAG,
-                "shown display=${display.displayId} size=${lp.width}x${lp.height} metrics=${config.metricIds.joinToString()}",
+                "${slot.label} shown display=${display.displayId} size=${lp.width}x${lp.height} metrics=${config.metricIds.joinToString()}",
             )
             true
         }.getOrElse {
-            WjxFileLogger.w(TAG, "show failed: ${it.message}", it)
-            displayContext = null
-            windowManager = null
-            cardView = null
-            params = null
-            displayId = -1
+            WjxFileLogger.w(TAG, "${slot.label} show failed: ${it.message}", it)
+            window.clear()
             false
         }
     }
 
-    private fun ensureDisplayStillValid() {
-        if (cardView == null || displayId < 0) return
+    private fun ensureDisplayStillValid(slot: ClusterCardSlot) {
+        val window = window(slot)
+        if (window.cardView == null || window.displayId < 0) return
         val display = resolveClusterDisplay()
-        if (display == null || !display.isValid || display.displayId != displayId) {
-            WjxFileLogger.w(TAG, "cluster display changed old=$displayId new=${display?.displayId}; rebuilding")
-            hideInternal()
+        if (display == null || !display.isValid || display.displayId != window.displayId) {
+            WjxFileLogger.w(
+                TAG,
+                "${slot.label} display changed old=${window.displayId} new=${display?.displayId}; rebuilding",
+            )
+            hideInternal(slot)
         }
     }
 
-    private fun hideInternal() {
-        val view = cardView
+    private fun hideInternal(slot: ClusterCardSlot) {
+        val window = window(slot)
+        val view = window.cardView
         if (view != null) {
-            runCatching { windowManager?.removeView(view) }
-                .onFailure { WjxFileLogger.w(TAG, "remove failed: ${it.message}") }
+            runCatching { window.windowManager?.removeView(view) }
+                .onFailure { WjxFileLogger.w(TAG, "${slot.label} remove failed: ${it.message}") }
         }
-        cardView = null
-        params = null
-        windowManager = null
-        displayContext = null
-        displayId = -1
+        window.clear()
     }
+
+    private fun hideAllInternal() {
+        ClusterCardSlot.entries.forEach(::hideInternal)
+    }
+
+    private fun window(slot: ClusterCardSlot): CardWindowState = checkNotNull(windows[slot])
 
     private fun positionByPercent(lp: WindowManager.LayoutParams, config: ClusterCardConfig) {
         val maxX = (clusterWidth - lp.width).coerceAtLeast(0)
@@ -150,12 +162,12 @@ class ClusterCardController @Inject constructor(
         lp.y = (maxY * config.yPct / 100f).roundToInt().coerceIn(0, maxY)
     }
 
-    private fun windowWidth(config: ClusterCardConfig, context: Context? = displayContext): Int {
+    private fun windowWidth(config: ClusterCardConfig, context: Context?): Int {
         val density = context?.resources?.displayMetrics?.density ?: appContext.resources.displayMetrics.density
         return (ClusterCardLayout.widthDp(config) * density).roundToInt().coerceIn(180, clusterWidth)
     }
 
-    private fun windowHeight(config: ClusterCardConfig, context: Context? = displayContext): Int {
+    private fun windowHeight(config: ClusterCardConfig, context: Context?): Int {
         val density = context?.resources?.displayMetrics?.density ?: appContext.resources.displayMetrics.density
         return (ClusterCardLayout.heightDp(config) * density).roundToInt().coerceIn(64, clusterHeight)
     }
@@ -188,6 +200,22 @@ class ClusterCardController @Inject constructor(
         }
     }
 
+    private data class CardWindowState(
+        var displayContext: Context? = null,
+        var windowManager: WindowManager? = null,
+        var cardView: ClusterCardView? = null,
+        var params: WindowManager.LayoutParams? = null,
+        var displayId: Int = -1,
+    ) {
+        fun clear() {
+            displayContext = null
+            windowManager = null
+            cardView = null
+            params = null
+            displayId = -1
+        }
+    }
+
     private companion object {
         const val TAG = "ClusterCard"
         const val CLUSTER_DISPLAY_NAME = "XDJAScreenProjection"
@@ -195,6 +223,7 @@ class ClusterCardController @Inject constructor(
         const val MISSING_DISPLAY_LOG_INTERVAL_MS = 30_000L
         const val CLUSTER_FLAGS =
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
     }
 }
