@@ -1,7 +1,6 @@
 package com.byd.wjx.data.automation
 
 import android.location.Location
-import com.byd.wjx.data.local.entity.PlaceEntity
 import com.byd.wjx.data.local.entity.TriggerDef
 import com.byd.wjx.data.remote.DiParsData
 import java.util.Calendar
@@ -34,7 +33,6 @@ internal class AutomationTriggerEvaluator {
         triggers: List<TriggerDef>,
         data: DiParsData,
         location: Location?,
-        places: Map<Long, PlaceEntity>,
         serviceStartActive: Boolean,
         networkAvailableEdge: Boolean,
         boardVehicleEdge: Boolean,
@@ -42,8 +40,6 @@ internal class AutomationTriggerEvaluator {
         allowIntervalPulse: Boolean,
     ): List<Boolean?> = triggers.mapIndexed { index, trigger ->
         when (trigger.kind) {
-            "place_enter" -> evaluatePlace(trigger, location, places, enterKind = true)
-            "place_exit" -> evaluatePlace(trigger, location, places, enterKind = false)
             "time_of_day" -> evaluateTimeOfDay(trigger, location)
             "time_range" -> evaluateSchedule(trigger)
             "interval" -> evaluateInterval(ruleId, index, trigger, now, allowIntervalPulse)
@@ -125,22 +121,6 @@ internal class AutomationTriggerEvaluator {
             .filterNot { (trigger, _) -> trigger.kind in EVENT_TRIGGER_KINDS }
             .map { (_, result) -> result }
         return if (persistentResults.isEmpty()) false else combineByLogic(persistentResults, "OR")
-    }
-
-    private fun evaluatePlace(
-        trigger: TriggerDef,
-        location: Location?,
-        places: Map<Long, PlaceEntity>,
-        enterKind: Boolean
-    ): Boolean? {
-        if (location == null) return null
-        val placeId = trigger.placeId ?: return false
-        val place = places[placeId] ?: return false
-        val inside = PlaceGeometry.isInside(
-            location.latitude, location.longitude,
-            place.lat, place.lon, place.radiusM
-        )
-        return if (enterKind) inside else !inside
     }
 
     private fun evaluateTimeOfDay(trigger: TriggerDef, location: Location?): Boolean? {
@@ -280,8 +260,6 @@ internal class AutomationTriggerEvaluator {
         val json = JSONObject()
         triggers.forEach { t ->
             when (t.kind) {
-                "place_enter" -> json.put("place_enter", t.placeName ?: "?")
-                "place_exit" -> json.put("place_exit", t.placeName ?: "?")
                 "time_of_day" -> json.put("time_of_day", t.value)
                 "time_range" -> json.put("time_range", t.value)
                 "interval" -> json.put("interval_sec", t.value)

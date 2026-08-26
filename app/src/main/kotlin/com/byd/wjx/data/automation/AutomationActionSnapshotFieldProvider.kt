@@ -42,8 +42,6 @@ private val ACTION_KIND_TO_VEHICLE_FIELDS = mapOf(
 )
 
 private val NON_VEHICLE_TRIGGER_KINDS = setOf(
-    "place_enter",
-    "place_exit",
     "time_of_day",
     "time_range",
     "interval",

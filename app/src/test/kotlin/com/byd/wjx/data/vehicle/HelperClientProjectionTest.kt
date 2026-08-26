@@ -112,30 +112,6 @@ class HelperClientProjectionTest {
     }
 
     @Test
-    fun `setClusterContainerMode sends exact boolean value`() = runBlocking {
-        var enabledValue = -1
-        val enabled = clientWith(
-            capturingFake(
-                status = 0,
-                value = 0,
-                expectedCode = HelperBinderProtocol.TX_SET_CLUSTER_MODE,
-            ) { enabledValue = it.readInt() },
-        ).setClusterContainerMode(true)
-        assertTrue(enabled)
-        assertEquals(1, enabledValue)
-
-        val disabled = clientWith(
-            capturingFake(
-                status = 0,
-                value = 0,
-                expectedCode = HelperBinderProtocol.TX_SET_CLUSTER_MODE,
-            ) { enabledValue = it.readInt() },
-        ).setClusterContainerMode(false)
-        assertTrue(disabled)
-        assertEquals(0, enabledValue)
-    }
-
-    @Test
     fun `launchAndForce sends args and maps status to boolean`() = runBlocking {
         var pkg: String? = null; val nums = IntArray(3)
         val ok = clientWith(capturingFake(status = 0, value = 0) {

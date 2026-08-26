@@ -113,7 +113,6 @@ fun AutomationScreen(
     if (state.showEditor) {
         EditorDialog(
             editing = state.editing,
-            places = state.places,
             editorError = state.editorError,
             onUpdate = { viewModel.updateEditing(it) },
             onSave = { viewModel.saveRule() },

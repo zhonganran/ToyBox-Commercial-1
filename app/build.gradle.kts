@@ -21,6 +21,9 @@ val keystorePropsFile = listOf(
 val keystoreProps = Properties().apply {
     keystorePropsFile?.let { load(FileInputStream(it)) }
 }
+val requireReleaseSigning = providers.gradleProperty("requireReleaseSigning")
+    .map(String::toBoolean)
+    .getOrElse(false)
 fun resolveKeystoreFile(path: String): File {
     val store = File(path)
     if (store.isAbsolute) return store
@@ -29,12 +32,20 @@ fun resolveKeystoreFile(path: String): File {
         File(keystorePropsFile?.parentFile ?: rootProject.projectDir, path),
     ).firstOrNull { it.exists() } ?: rootProject.file(path)
 }
+val releaseStoreFile = keystoreProps.getProperty("storeFile")
+    ?.takeIf(String::isNotBlank)
+    ?.let(::resolveKeystoreFile)
+val releaseSigningReady = releaseStoreFile?.isFile == true &&
+    listOf("storePassword", "keyAlias", "keyPassword")
+        .all { key -> !keystoreProps.getProperty(key).isNullOrBlank() }
+if (requireReleaseSigning && !releaseSigningReady) {
+    throw GradleException(
+        "Release signing is required but keystore.properties or its keystore/credentials are missing",
+    )
+}
 val updateApiUrl: String =
     providers.gradleProperty("superToyBoxUpdateApiUrl").orNull
         ?: "https://api.689588.xyz/api/v1/update/latest"
-val soundApiBaseUrl: String =
-    providers.gradleProperty("superToyBoxSoundApiBaseUrl").orNull
-        ?: "https://api.689588.xyz/api/v1/sounds"
 val activationApiUrl: String =
     providers.gradleProperty("superToyBoxActivationApiUrl").orNull
         ?: "https://api.689588.xyz/api/v1/license"
@@ -60,16 +71,15 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "UPDATE_API_URL", "\"$updateApiUrl\"")
-        buildConfigField("String", "SOUND_API_BASE_URL", "\"$soundApiBaseUrl\"")
         buildConfigField("String", "ACTIVATION_API_URL", "\"$activationApiUrl\"")
         buildConfigField("String", "SERVICE_QR_API_URL", "\"$serviceQrApiUrl\"")
         buildConfigField("String", "LOG_UPLOAD_API_URL", "\"$logUploadApiUrl\"")
     }
 
     signingConfigs {
-        if (keystorePropsFile != null) {
+        if (releaseSigningReady) {
             create("release") {
-                storeFile = resolveKeystoreFile(keystoreProps.getProperty("storeFile"))
+                storeFile = releaseStoreFile
                 storePassword = keystoreProps.getProperty("storePassword")
                 keyAlias = keystoreProps.getProperty("keyAlias")
                 keyPassword = keystoreProps.getProperty("keyPassword")
@@ -167,11 +177,6 @@ dependencies {
 
     // OkHttp
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-
-    // Phone casting receiver. 1.4.1 is the newest Media3 line compatible with compileSdk 34.
-    implementation("androidx.media3:media3-exoplayer:1.4.1")
-    implementation("androidx.media3:media3-exoplayer-rtsp:1.4.1")
-    implementation("androidx.media3:media3-ui:1.4.1")
 
     // osmdroid (maps)
     implementation("org.osmdroid:osmdroid-android:6.1.20")

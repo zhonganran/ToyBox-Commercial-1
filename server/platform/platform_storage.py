@@ -1,6 +1,7 @@
 import fcntl
 import os
 import sqlite3
+import tempfile
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -18,14 +19,13 @@ from platform_config import (
     PASSWORD_HASH_METHOD,
     SERVICE_QR_DIR,
     SERVICE_QR_TYPES,
-    SOUND_DIR,
 )
 
 
 _db_init_lock = threading.Lock()
 _db_initialized = False
 DB_BUSY_TIMEOUT_MS = 10_000
-PLATFORM_SCHEMA_VERSION = 2
+PLATFORM_SCHEMA_VERSION = 3
 MIN_SUPPORTED_SCHEMA_VERSION = 1
 
 
@@ -54,6 +54,27 @@ def db():
         raise
     finally:
         conn.close()
+
+
+def create_database_backup():
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_path = tempfile.mkstemp(
+        prefix="supertoybox-backup-",
+        suffix=".db",
+        dir=DATA_DIR,
+    )
+    os.close(descriptor)
+    backup_path = type(DB_PATH)(temporary_path)
+    try:
+        with sqlite3.connect(DB_PATH, timeout=DB_BUSY_TIMEOUT_MS / 1000) as source:
+            source.execute(f"PRAGMA busy_timeout = {DB_BUSY_TIMEOUT_MS}")
+            with sqlite3.connect(backup_path) as target:
+                source.backup(target)
+        backup_path.chmod(0o600)
+        return backup_path
+    except Exception:
+        backup_path.unlink(missing_ok=True)
+        raise
 
 
 @contextmanager
@@ -135,14 +156,19 @@ def validate_existing_schema(conn):
 def migrate_schema(conn, from_version):
     version = from_version
     if version < 2:
-        columns = {
-            row["name"] for row in conn.execute("PRAGMA table_info(devices)").fetchall()
-        }
-        if "credential_recovery_hash" not in columns:
-            conn.execute(
-                "ALTER TABLE devices ADD COLUMN credential_recovery_hash TEXT NOT NULL DEFAULT ''"
-            )
         version = 2
+    if version < 3:
+        release_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(releases)").fetchall()
+        }
+        for column, definition in (
+            ("apk_sha256", "TEXT NOT NULL DEFAULT ''"),
+            ("package_name", "TEXT NOT NULL DEFAULT ''"),
+            ("certificate_sha256", "TEXT NOT NULL DEFAULT ''"),
+        ):
+            if column not in release_columns:
+                conn.execute(f"ALTER TABLE releases ADD COLUMN {column} {definition}")
+        version = 3
     conn.execute(
         "UPDATE platform_schema SET schema_version = ? WHERE id = 1",
         (version,),
@@ -158,7 +184,6 @@ def init_db(force=False):
             return
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         APK_DIR.mkdir(parents=True, exist_ok=True)
-        SOUND_DIR.mkdir(parents=True, exist_ok=True)
         SERVICE_QR_DIR.mkdir(parents=True, exist_ok=True)
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         with database_init_file_lock(), db() as conn:
@@ -184,24 +209,11 @@ def init_db(force=False):
                     version_code INTEGER NOT NULL DEFAULT 0,
                     apk_filename TEXT NOT NULL,
                     apk_size INTEGER NOT NULL DEFAULT 0,
+                    apk_sha256 TEXT NOT NULL DEFAULT '',
+                    package_name TEXT NOT NULL DEFAULT '',
+                    certificate_sha256 TEXT NOT NULL DEFAULT '',
                     release_notes TEXT NOT NULL DEFAULT '',
                     force_update INTEGER NOT NULL DEFAULT 0,
-                    enabled INTEGER NOT NULL DEFAULT 1,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS sounds (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL,
-                    category TEXT NOT NULL DEFAULT '',
-                    tags TEXT NOT NULL DEFAULT '',
-                    description TEXT NOT NULL DEFAULT '',
-                    filename TEXT NOT NULL,
-                    original_filename TEXT NOT NULL DEFAULT '',
-                    mime_type TEXT NOT NULL DEFAULT '',
-                    file_size INTEGER NOT NULL DEFAULT 0,
-                    duration_ms INTEGER NOT NULL DEFAULT 0,
-                    download_count INTEGER NOT NULL DEFAULT 0,
                     enabled INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -256,8 +268,7 @@ def init_db(force=False):
                     first_seen_at TEXT NOT NULL,
                     last_seen_at TEXT NOT NULL,
                     api_token_hash TEXT NOT NULL DEFAULT '',
-                    api_token_issued_at TEXT,
-                    credential_recovery_hash TEXT NOT NULL DEFAULT ''
+                    api_token_issued_at TEXT
                 );
                 CREATE TABLE IF NOT EXISTS audit_logs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,

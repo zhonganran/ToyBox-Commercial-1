@@ -5,6 +5,7 @@ import com.byd.wjx.log.WjxFileLogger
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.InputStream
+import java.io.OutputStream
 import java.text.DecimalFormat
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -44,8 +45,8 @@ class SoundLibrary @Inject constructor(
     }
 
     fun deleteSound(path: String): Boolean {
-        val file = File(path)
-        if (!file.isFile || file.parentFile?.absolutePath != WjxDirectories.soundDir.absolutePath) return false
+        if (!isManagedSoundFile(path)) return false
+        val file = runCatching { File(path).canonicalFile }.getOrNull() ?: return false
         val deleted = file.delete()
         if (deleted) {
             saveOrder(loadOrder().filterNot { it == file.absolutePath })
@@ -84,7 +85,9 @@ class SoundLibrary @Inject constructor(
         val tmp = File(target.parentFile, "${target.name}.download")
         runCatching { tmp.delete() }
         try {
-            tmp.outputStream().use { output -> input.copyTo(output) }
+            tmp.outputStream().use { output ->
+                copySoundBytes(input, output, MAX_SOUND_BYTES)
+            }
             if (tmp.length() <= 0L) {
                 throw IllegalStateException("下载文件为空")
             }
@@ -111,6 +114,7 @@ class SoundLibrary @Inject constructor(
     companion object {
         private const val TAG = "SoundLibrary"
         val SUPPORTED_EXT = setOf("mp3", "wav", "aac", "m4a", "ogg", "flac")
+        const val MAX_SOUND_BYTES = 50L * 1024L * 1024L
         private const val PREFS_NAME = "sound_library"
         private const val KEY_ORDER = "order"
 
@@ -156,4 +160,25 @@ class SoundLibrary @Inject constructor(
             .apply()
     }
 
+}
+
+internal fun copySoundBytes(
+    input: InputStream,
+    output: OutputStream,
+    maxBytes: Long,
+): Long {
+    require(maxBytes > 0L)
+    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+    var total = 0L
+    while (true) {
+        val read = input.read(buffer)
+        if (read < 0) break
+        if (read == 0) continue
+        if (total + read > maxBytes) {
+            error("音效文件不能超过 ${SoundLibrary.MAX_SOUND_BYTES / 1024L / 1024L} MB")
+        }
+        output.write(buffer, 0, read)
+        total += read
+    }
+    return total
 }

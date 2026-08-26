@@ -225,4 +225,53 @@ class DesktopQuickCardModelsTest {
         assertTrue(shouldStopDesktopQuickCardSound("/a.mp3", listOf("/a.mp3"), enabled = false))
         assertFalse(shouldStopDesktopQuickCardSound(null, emptyList(), enabled = false))
     }
+
+    @Test
+    fun `lyric toggle requires entitlement and overlay only when enabling`() {
+        assertEquals(
+            "桌面歌词需要激活后使用",
+            lyricToggleBlockReason(
+                enabling = true,
+                featureAllowed = false,
+                overlayPermissionGranted = true,
+                label = "桌面歌词",
+            ),
+        )
+        assertEquals(
+            "请先允许悬浮窗权限",
+            lyricToggleBlockReason(
+                enabling = true,
+                featureAllowed = true,
+                overlayPermissionGranted = false,
+                label = "仪表歌词",
+            ),
+        )
+        assertEquals(
+            null,
+            lyricToggleBlockReason(
+                enabling = false,
+                featureAllowed = false,
+                overlayPermissionGranted = false,
+                label = "桌面歌词",
+            ),
+        )
+    }
+
+    @Test
+    fun `only card-owned hailing stops when its entry becomes unavailable`() {
+        val enabled = DesktopQuickCardConfig(
+            enabled = true,
+            functionCommands = listOf(DESKTOP_QUICK_CARD_REALTIME_HAILING),
+        )
+        assertFalse(shouldStopDesktopQuickCardHailing(startedByCard = true, enabled))
+        assertTrue(shouldStopDesktopQuickCardHailing(startedByCard = true, enabled.copy(enabled = false)))
+        assertTrue(shouldStopDesktopQuickCardHailing(startedByCard = true, enabled.copy(functionCommands = emptyList())))
+        assertFalse(shouldStopDesktopQuickCardHailing(startedByCard = false, enabled.copy(enabled = false)))
+    }
+
+    @Test
+    fun `cluster card payload selects the expected slot`() {
+        assertEquals(com.byd.wjx.clustercard.ClusterCardSlot.PRIMARY, clusterCardSlot("primary"))
+        assertEquals(com.byd.wjx.clustercard.ClusterCardSlot.SECONDARY, clusterCardSlot("secondary"))
+    }
 }

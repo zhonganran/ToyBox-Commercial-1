@@ -48,6 +48,8 @@ import java.io.File
 
 @Composable
 internal fun VehicleEventSoundSection(state: SettingsUiState, viewModel: SettingsViewModel) {
+    val soundState = state.vehicleEventSound
+    val premiumAllowed = state.activation.activated || state.activation.trialActive
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) viewModel.importEventSound(uri)
     }
@@ -83,7 +85,8 @@ internal fun VehicleEventSoundSection(state: SettingsUiState, viewModel: Setting
             LockSoundEventRow(
                 event = LockSoundEvent.Lock,
                 subtitle = "车辆锁止并伴随闪灯确认后播放",
-                state = state,
+                state = soundState,
+                premiumAllowed = premiumAllowed,
                 onEnabledChanged = { viewModel.setLockSoundEnabled(LockSoundEvent.Lock, it) },
                 onSoundSelected = { viewModel.setLockSoundPath(LockSoundEvent.Lock, it.path) },
                 onSoundDeleted = viewModel::deleteEventSound,
@@ -91,7 +94,8 @@ internal fun VehicleEventSoundSection(state: SettingsUiState, viewModel: Setting
             LockSoundEventRow(
                 event = LockSoundEvent.Unlock,
                 subtitle = "车辆解锁并伴随闪灯确认后播放",
-                state = state,
+                state = soundState,
+                premiumAllowed = premiumAllowed,
                 onEnabledChanged = { viewModel.setLockSoundEnabled(LockSoundEvent.Unlock, it) },
                 onSoundSelected = { viewModel.setLockSoundPath(LockSoundEvent.Unlock, it.path) },
                 onSoundDeleted = viewModel::deleteEventSound,
@@ -99,15 +103,20 @@ internal fun VehicleEventSoundSection(state: SettingsUiState, viewModel: Setting
             LockSoundEventRow(
                 event = LockSoundEvent.Sentry,
                 subtitle = "哨兵报警上报后播放",
-                state = state,
+                state = soundState,
+                premiumAllowed = premiumAllowed,
                 onEnabledChanged = { viewModel.setLockSoundEnabled(LockSoundEvent.Sentry, it) },
                 onSoundSelected = { viewModel.setLockSoundPath(LockSoundEvent.Sentry, it.path) },
                 onSoundDeleted = viewModel::deleteEventSound,
             )
-            state.lockSoundStatus?.let {
+            soundState.displayStatus?.let { message ->
                 Text(
-                    text = if (state.lockSoundSyncing) "同步中…" else it,
-                    color = if (it.contains("不可用") || it.contains("暂无") || it.contains("不存在")) SocRed else AccentGreen,
+                    text = message,
+                    color = when {
+                        soundState.syncing -> TextMuted
+                        soundState.statusIsError -> SocRed
+                        else -> AccentGreen
+                    },
                     fontSize = 12.sp,
                     lineHeight = 16.sp,
                 )
@@ -120,21 +129,21 @@ internal fun VehicleEventSoundSection(state: SettingsUiState, viewModel: Setting
 private fun LockSoundEventRow(
     event: LockSoundEvent,
     subtitle: String,
-    state: SettingsUiState,
+    state: SettingsVehicleEventSoundUiState,
+    premiumAllowed: Boolean,
     onEnabledChanged: (Boolean) -> Unit,
     onSoundSelected: (LockSoundChoice) -> Unit,
     onSoundDeleted: (String) -> Unit,
 ) {
     var picking by remember(event) { mutableStateOf(false) }
-    val selectedPath = state.lockSound.path(event)
-    val selected = state.lockSoundChoices.firstOrNull { it.path == selectedPath }
-    val enabled = state.lockSound.enabled(event)
-    val premiumAllowed = state.activation.activated || state.activation.trialActive
+    val selectedPath = state.config.path(event)
+    val selected = state.choices.firstOrNull { it.path == selectedPath }
+    val enabled = state.config.enabled(event)
 
     if (picking) {
         LockSoundPickerDialog(
             title = event.title,
-            choices = state.lockSoundChoices,
+            choices = state.choices,
             selectedPath = selectedPath,
             onDismiss = { picking = false },
             onSelect = {
@@ -229,7 +238,7 @@ private fun LockSoundPickerDialog(
         text = {
             if (choices.isEmpty()) {
                 Text(
-                    "WJX 音效库为空。请从在线音效库直接下载，或在这里导入音效。",
+                    "WJX 音效库为空，请在这里导入音效。",
                     color = TextSecondary,
                     fontSize = 13.sp,
                     lineHeight = 18.sp,

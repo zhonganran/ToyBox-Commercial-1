@@ -7,12 +7,14 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.KeyPairGenerator
 
 /**
- * Unit tests for the pure helpers in [AdbProtocolClient].
+ * Unit tests for the pure ADB wire and authentication helpers.
  *
  * Robolectric is used for [android.util.Base64] only (it lives in the Android
  * SDK, but the JVM stub returns null without Robolectric).
@@ -24,8 +26,8 @@ class AdbProtocolClientTest {
     @Test
     fun `packet checksum is unsigned-byte sum of payload`() {
         val payload = byteArrayOf(0x10, 0x20, 0xFF.toByte(), 0x01)
-        val header = AdbProtocolClient.buildHeader(
-            command = AdbProtocolClient.A_OPEN,
+        val header = AdbWire.buildHeader(
+            command = AdbWire.A_OPEN,
             arg0 = 1, arg1 = 0, payload = payload
         )
 
@@ -39,41 +41,55 @@ class AdbProtocolClientTest {
 
     @Test
     fun `packet magic is bitwise inverse of command`() {
-        val header = AdbProtocolClient.buildHeader(
-            command = AdbProtocolClient.A_CNXN,
+        val header = AdbWire.buildHeader(
+            command = AdbWire.A_CNXN,
             arg0 = 0, arg1 = 0, payload = ByteArray(0)
         )
         val buf = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN)
         repeat(5) { buf.int }  // skip command/arg0/arg1/payloadLen/checksum
         val magic = buf.int
 
-        assertEquals(AdbProtocolClient.A_CNXN.inv(), magic)
-        assertEquals(AdbProtocolClient.A_CNXN xor 0xFFFFFFFF.toInt(), magic)
+        assertEquals(AdbWire.A_CNXN.inv(), magic)
+        assertEquals(AdbWire.A_CNXN xor 0xFFFFFFFF.toInt(), magic)
     }
 
     @Test
     fun `packet header is little-endian 24 bytes with correct fields`() {
         val payload = "shell:echo hi ".toByteArray()
-        val header = AdbProtocolClient.buildHeader(
-            command = AdbProtocolClient.A_OPEN,
+        val header = AdbWire.buildHeader(
+            command = AdbWire.A_OPEN,
             arg0 = 42, arg1 = 7, payload = payload
         )
 
         assertEquals(24, header.size)
         val buf = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN)
-        assertEquals(AdbProtocolClient.A_OPEN, buf.int)
+        assertEquals(AdbWire.A_OPEN, buf.int)
         assertEquals(42, buf.int)
         assertEquals(7, buf.int)
         assertEquals(payload.size, buf.int)
         var sum = 0; for (b in payload) sum += (b.toInt() and 0xFF)
         assertEquals(sum, buf.int)
-        assertEquals(AdbProtocolClient.A_OPEN.inv(), buf.int)
+        assertEquals(AdbWire.A_OPEN.inv(), buf.int)
+    }
+
+    @Test
+    fun `packet write and read round trip preserves fields and payload`() {
+        val payload = "shell:echo ready\u0000".toByteArray()
+        val output = ByteArrayOutputStream()
+
+        AdbWire.write(output, AdbWire.A_OPEN, arg0 = 9, arg1 = 4, payload = payload)
+        val packet = AdbWire.read(ByteArrayInputStream(output.toByteArray()))
+
+        assertEquals(AdbWire.A_OPEN, packet.command)
+        assertEquals(9, packet.arg0)
+        assertEquals(4, packet.arg1)
+        assertArrayEquals(payload, packet.payload)
     }
 
     @Test
     fun `publicKey serialization contains base64 of 524 bytes plus null-terminated username`() {
         val keyPair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
-        val encoded = AdbProtocolClient.serializePublicKey(keyPair)
+        val encoded = AdbAuth.serializePublicKey(keyPair)
 
         val asString = String(encoded, Charsets.UTF_8)
         // Tail must contain ' wjx@dilink' (null-terminated C-string id).
@@ -91,13 +107,13 @@ class AdbProtocolClientTest {
     fun `signaturePayload prepends adbAuthPadding`() {
         val keyPair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
         val token = ByteArray(20) { (it + 1).toByte() }  // 20 bytes, like real ADB token
-        val sig = AdbProtocolClient.signAuthToken(token, keyPair)
+        val sig = AdbAuth.signToken(token, keyPair)
 
         // Reconstruct the padded input the helper builds. The padded input must
         // be exactly 35 bytes and start with ADB_AUTH_PADDING.
-        val padded = AdbProtocolClient.ADB_AUTH_PADDING + token
+        val padded = AdbAuth.AUTH_PADDING + token
         assertEquals(35, padded.size)
-        assertArrayEquals(AdbProtocolClient.ADB_AUTH_PADDING, padded.sliceArray(0 until 15))
+        assertArrayEquals(AdbAuth.AUTH_PADDING, padded.sliceArray(0 until 15))
         assertArrayEquals(token, padded.sliceArray(15 until 35))
 
         // RSA 2048-bit signature is exactly 256 bytes.
@@ -113,11 +129,11 @@ class AdbProtocolClientTest {
         fun toLeBytes(v: Int) = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(v).array()
         fun ascii(v: Int) = String(toLeBytes(v), Charsets.US_ASCII)
 
-        assertEquals("CNXN", ascii(AdbProtocolClient.A_CNXN))
-        assertEquals("AUTH", ascii(AdbProtocolClient.A_AUTH))
-        assertEquals("OPEN", ascii(AdbProtocolClient.A_OPEN))
-        assertEquals("OKAY", ascii(AdbProtocolClient.A_OKAY))
-        assertEquals("CLSE", ascii(AdbProtocolClient.A_CLSE))
-        assertEquals("WRTE", ascii(AdbProtocolClient.A_WRTE))
+        assertEquals("CNXN", ascii(AdbWire.A_CNXN))
+        assertEquals("AUTH", ascii(AdbWire.A_AUTH))
+        assertEquals("OPEN", ascii(AdbWire.A_OPEN))
+        assertEquals("OKAY", ascii(AdbWire.A_OKAY))
+        assertEquals("CLSE", ascii(AdbWire.A_CLSE))
+        assertEquals("WRTE", ascii(AdbWire.A_WRTE))
     }
 }

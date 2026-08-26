@@ -24,12 +24,12 @@ class AutomationActionSnapshotFieldProviderTest {
     }
 
     @Test
-    fun `event and location triggers do not expand the vehicle batch`() {
+    fun `event triggers do not expand the vehicle batch`() {
         val fields = requiredAutomationVehicleFields(
             listOf(
                 rule(
                     TriggerDef("", "启动", "==", "1", "服务启动", kind = "service_start"),
-                    TriggerDef("", "到家", "==", "1", "到家", kind = "place_enter", placeId = 1),
+                    TriggerDef("", "夜晚", "==", "NIGHT", "夜晚", kind = "time_of_day"),
                 ),
             ),
         )

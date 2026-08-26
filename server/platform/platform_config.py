@@ -6,7 +6,6 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("WJX_PLATFORM_DATA_DIR", "/var/lib/supertoybox/platform"))
 UPLOAD_DIR = Path(os.environ.get("WJX_PLATFORM_UPLOAD_DIR", DATA_DIR / "uploads"))
 APK_DIR = Path(os.environ.get("WJX_PLATFORM_APK_DIR", UPLOAD_DIR / "apk"))
-SOUND_DIR = Path(os.environ.get("WJX_PLATFORM_SOUND_DIR", UPLOAD_DIR / "sounds"))
 SERVICE_QR_DIR = Path(os.environ.get("WJX_PLATFORM_SERVICE_QR_DIR", UPLOAD_DIR / "service_qrcodes"))
 LOG_DIR = Path(os.environ.get("WJX_PLATFORM_LOG_DIR", UPLOAD_DIR / "diagnostic_logs"))
 DB_PATH = Path(os.environ.get("WJX_PLATFORM_DB", DATA_DIR / "supertoybox.db"))
@@ -55,14 +54,12 @@ PAYMENT_QUERY_INTERVAL_SECONDS = max(
 )
 ADMIN_TITLE = os.environ.get("WJX_PLATFORM_ADMIN_TITLE", "超级玩具箱商业平台")
 MAX_APK_SIZE = int(os.environ.get("WJX_PLATFORM_MAX_APK_SIZE", str(240 * 1024 * 1024)))
-MAX_SOUND_SIZE = int(os.environ.get("WJX_PLATFORM_MAX_SOUND_SIZE", str(80 * 1024 * 1024)))
 MAX_SERVICE_QR_SIZE = int(os.environ.get("WJX_PLATFORM_MAX_SERVICE_QR_SIZE", str(8 * 1024 * 1024)))
 MAX_LOG_SIZE = int(os.environ.get("WJX_PLATFORM_MAX_LOG_SIZE", str(8 * 1024 * 1024)))
-MAX_UPLOAD_SIZE = max(MAX_APK_SIZE, MAX_SOUND_SIZE, MAX_SERVICE_QR_SIZE, MAX_LOG_SIZE)
+MAX_UPLOAD_SIZE = max(MAX_APK_SIZE, MAX_SERVICE_QR_SIZE, MAX_LOG_SIZE)
 PASSWORD_HASH_METHOD = "pbkdf2:sha256"
 INSECURE_ADMIN_PASSWORD = "admin123456"
 MIN_ADMIN_PASSWORD_LENGTH = 8
-ALLOWED_SOUND_EXTENSIONS = {"mp3", "wav", "m4a", "aac", "ogg", "flac"}
 ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
 ALLOWED_LOG_EXTENSIONS = {"log", "txt"}
 LOG_UPLOAD_DEVICE_LIMIT = int(os.environ.get("WJX_PLATFORM_LOG_UPLOAD_DEVICE_LIMIT", "6"))
@@ -86,7 +83,6 @@ DEFAULT_CONFIG = {
     "license_trial_days": str(DEFAULT_TRIAL_DAYS),
     "feature_automation_unlimited": "1",
     "feature_cluster_projection": "1",
-    "sound_library_enabled": "1",
     "update_enabled": "1",
 }
 SERVICE_QR_TYPES = {

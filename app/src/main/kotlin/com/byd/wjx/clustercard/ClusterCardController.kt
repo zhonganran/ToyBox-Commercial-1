@@ -1,7 +1,6 @@
 package com.byd.wjx.clustercard
 
 import android.content.Context
-import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.graphics.Point
 import android.hardware.display.DisplayManager
@@ -67,9 +66,7 @@ class ClusterCardController @Inject constructor(
         val oldX = lp.x
         val oldY = lp.y
         positionByPercent(lp, config)
-        val nightMode = view.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
-            Configuration.UI_MODE_NIGHT_YES
-        view.bind(metrics, baseData, telemetryData, config.scale, nightMode)
+        view.bind(metrics, baseData, telemetryData, config.scale)
         if (changed || lp.x != oldX || lp.y != oldY) {
             runCatching { window.windowManager?.updateViewLayout(view, lp) }
                 .onFailure {

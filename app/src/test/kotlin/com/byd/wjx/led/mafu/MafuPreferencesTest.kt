@@ -22,20 +22,10 @@ class MafuPreferencesTest {
             .edit()
             .clear()
             .commit()
-        context.getSharedPreferences(LEGACY_MIXED_PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .clear()
-            .commit()
     }
 
     @Test
-    fun `fresh Mafu settings use APK defaults without migrating old files`() {
-        context.getSharedPreferences(LEGACY_MIXED_PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean("mafu_enabled", true)
-            .putInt("mafu_brightness", 99)
-            .commit()
-
+    fun `fresh Mafu settings use APK defaults`() {
         val snapshot = MafuPreferences(context).state.value
         assertFalse(snapshot.enabled)
         assertEquals(12, snapshot.brightness)
@@ -55,9 +45,6 @@ class MafuPreferencesTest {
         assertEquals("YS:00", snapshot.deviceAddress)
         assertEquals(15, snapshot.brightness)
         assertEquals(MafuRemoteModel.YS_9_KEY, snapshot.remoteModel)
-        assertTrue(
-            context.getSharedPreferences(LEGACY_MIXED_PREFS, Context.MODE_PRIVATE).all.isEmpty(),
-        )
     }
 
     @Test
@@ -78,7 +65,4 @@ class MafuPreferencesTest {
         assertEquals(MafuRemoteKey.KEY_1, preferences.state.value.rules.single().steps.single().remoteKey)
     }
 
-    private companion object {
-        const val LEGACY_MIXED_PREFS = "wjx_led_link"
-    }
 }

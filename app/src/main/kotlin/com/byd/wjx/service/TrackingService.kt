@@ -5,20 +5,15 @@ import android.content.Context
 import android.content.Intent
 import android.os.IBinder
 import android.util.Log
-import com.byd.wjx.activation.ActivationManager
-import com.byd.wjx.activation.PremiumFeature
 import com.byd.wjx.data.automation.AutomationEngine
 import com.byd.wjx.data.charging.ChargingCatchUpCoordinator
 import com.byd.wjx.data.repository.TrackingStateStore
 import com.byd.wjx.data.repository.VehicleStateRepository
-import com.byd.wjx.clustercard.ClusterCardRuntime
 import com.byd.wjx.domain.calculator.DrivingMetricsCoordinator
 import com.byd.wjx.domain.tracker.DriveSessionCoordinator
 import com.byd.wjx.domain.tracker.TripTracker
-import com.byd.wjx.desktopcard.DesktopQuickCardRuntime
 import com.byd.wjx.log.WjxFileLogger
-import com.byd.wjx.service.runtime.CameraRuntimeCoordinator
-import com.byd.wjx.service.runtime.SteeringWheelRuntimeCoordinator
+import com.byd.wjx.service.runtime.TrackingFeatureRuntimes
 import com.byd.wjx.service.runtime.TrackingLocationCoordinator
 import com.byd.wjx.service.runtime.TrackingNotificationController
 import dagger.hilt.android.AndroidEntryPoint
@@ -41,11 +36,9 @@ class TrackingService : Service() {
     @Inject lateinit var tripTracker: TripTracker
     @Inject lateinit var historyImporter: com.byd.wjx.data.local.HistoryImporter
     @Inject lateinit var automationEngine: AutomationEngine
-    @Inject lateinit var networkAvailableMonitor: com.byd.wjx.data.automation.NetworkAvailableMonitor
     @Inject lateinit var sharedAdaptiveLoop: com.byd.wjx.data.loop.SharedAdaptiveLoop
     @Inject lateinit var tripRecorder: com.byd.wjx.data.trips.TripRecorder
     @Inject lateinit var helperBootstrap: com.byd.wjx.data.vehicle.HelperBootstrap
-    @Inject lateinit var lyricRuntime: com.byd.wjx.lyrics.LyricRuntime
     @Inject lateinit var trackingStateStore: TrackingStateStore
     @Inject lateinit var vehicleStateRepository: VehicleStateRepository
     @Inject lateinit var driveSessionCoordinator: DriveSessionCoordinator
@@ -53,16 +46,8 @@ class TrackingService : Service() {
     @Inject lateinit var chargingCatchUpCoordinator: ChargingCatchUpCoordinator
     @Inject lateinit var energyFlowStatsStore: com.byd.wjx.data.energy.EnergyFlowStatsStore
     @Inject lateinit var locationCoordinator: TrackingLocationCoordinator
-    @Inject lateinit var cameraRuntimeCoordinator: CameraRuntimeCoordinator
-    @Inject lateinit var steeringWheelRuntimeCoordinator: SteeringWheelRuntimeCoordinator
     @Inject lateinit var notificationController: TrackingNotificationController
-    @Inject lateinit var ipixelFaRuntimeCoordinator: com.byd.wjx.led.ipixelfa.IpixelFaRuntimeCoordinator
-    @Inject lateinit var a950RuntimeCoordinator: com.byd.wjx.led.a950.A950RuntimeCoordinator
-    @Inject lateinit var mafuRuntimeCoordinator: com.byd.wjx.led.mafu.MafuRuntimeCoordinator
-    @Inject lateinit var activationManager: ActivationManager
-    @Inject lateinit var desktopQuickCardRuntime: DesktopQuickCardRuntime
-    @Inject lateinit var clusterCardRuntime: ClusterCardRuntime
-    @Inject lateinit var electronicMirrorController: com.byd.wjx.electronicmirror.ElectronicMirrorController
+    @Inject lateinit var featureRuntimes: TrackingFeatureRuntimes
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val helperReadiness = CompletableDeferred<Boolean>()
@@ -122,17 +107,10 @@ class TrackingService : Service() {
         // Keep steering-wheel star control bound across boot and every wake. The bind can lose the
         // boot-time race, so we verify-and-retry here (in its own coroutine, independent of the
         // helper bootstrap above) and re-run on every SCREEN_ON / USER_PRESENT.
-        steeringWheelRuntimeCoordinator.start(serviceScope)
-
-        // Start the network monitor BEFORE polling so the first evaluate() tick
-        // already has access to the latest VALIDATED edge state.
-        networkAvailableMonitor.start()
+        // Steering-wheel and network monitors must be active before the first vehicle tick.
+        featureRuntimes.startBeforePolling(serviceScope)
         startPolling()
-        cameraRuntimeCoordinator.start(serviceScope)
-        electronicMirrorController.start(serviceScope)
-        desktopQuickCardRuntime.start(serviceScope)
-        clusterCardRuntime.start(serviceScope)
-        lyricRuntime.start(cameraRuntimeCoordinator.active)
+        featureRuntimes.startAfterPolling(serviceScope)
         startLedRuntimeGate()
         publishRunning(true)
         ChainLog.append(this, "TrackingService fully started")
@@ -181,16 +159,7 @@ class TrackingService : Service() {
             }
         }
 
-        lyricRuntime.stop()
-        clusterCardRuntime.stop()
-        desktopQuickCardRuntime.stop()
-        mafuRuntimeCoordinator.stop()
-        a950RuntimeCoordinator.stop()
-        ipixelFaRuntimeCoordinator.stop()
-        electronicMirrorController.stop()
-        cameraRuntimeCoordinator.stop()
-        steeringWheelRuntimeCoordinator.stop()
-        networkAvailableMonitor.stop()
+        featureRuntimes.stop()
         // AutomationEngine is @Singleton and outlives this service instance. Cancelling its
         // internal scope here leaves confirm-action callbacks dead after KeepAlive restarts us.
         serviceScope.cancel()
@@ -269,13 +238,7 @@ class TrackingService : Service() {
 
             launch {
                 sharedAdaptiveLoop.actionFlow.collect { data ->
-                    electronicMirrorController.onVehicleData(data)
-                    runCatching { ipixelFaRuntimeCoordinator.onVehicleData(data) }
-                        .onFailure { WjxFileLogger.e(TAG, "FA LED linkage tick failed: ${it.message}", it) }
-                    runCatching { a950RuntimeCoordinator.onVehicleData(data) }
-                        .onFailure { WjxFileLogger.e(TAG, "A950 LED linkage tick failed: ${it.message}", it) }
-                    runCatching { mafuRuntimeCoordinator.onVehicleData(data) }
-                        .onFailure { WjxFileLogger.e(TAG, "Mafu LED linkage tick failed: ${it.message}", it) }
+                    featureRuntimes.onActionData(data)
                 }
             }
 
@@ -320,22 +283,8 @@ class TrackingService : Service() {
     private fun startLedRuntimeGate() {
         ledRuntimeGateJob?.cancel()
         ledRuntimeGateJob = serviceScope.launch {
-            var running = false
             while (isActive) {
-                val allowed = activationManager.canUse(PremiumFeature.LED_LINKAGE)
-                if (allowed && !running) {
-                    ipixelFaRuntimeCoordinator.start(this@TrackingService.serviceScope)
-                    a950RuntimeCoordinator.start(this@TrackingService.serviceScope)
-                    mafuRuntimeCoordinator.start(this@TrackingService.serviceScope)
-                    running = true
-                    WjxFileLogger.i(TAG, "LED runtimes started: activation allowed")
-                } else if (!allowed && running) {
-                    mafuRuntimeCoordinator.stop()
-                    a950RuntimeCoordinator.stop()
-                    ipixelFaRuntimeCoordinator.stop()
-                    running = false
-                    WjxFileLogger.i(TAG, "LED runtimes stopped: activation locked")
-                }
+                featureRuntimes.refreshLedAccess(this@TrackingService.serviceScope)
                 delay(LED_ACTIVATION_CHECK_INTERVAL_MS)
             }
         }

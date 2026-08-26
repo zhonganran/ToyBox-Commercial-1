@@ -78,6 +78,9 @@ class ChargesViewModelTest {
             lastInserted = withId
             return newId
         }
+        override suspend fun insertIgnoringDuplicate(charge: ChargeEntity): Long = insert(charge)
+        override suspend fun findIdBySourceSessionKey(sourceSessionKey: String): Long? = null
+        override suspend fun insertBatterySnapshot(snapshot: BatterySnapshotEntity): Long = 0L
         override suspend fun update(charge: ChargeEntity) {
             chargesFlow.value = chargesFlow.value.map { if (it.id == charge.id) charge else it }
             lastUpdated = charge
@@ -172,12 +175,12 @@ class ChargesViewModelTest {
             every { getString(any(), any()) } returns ""
         }
         return ChargesViewModel(
-            ctx,
             chargeRepo,
             snapshotDao,
             settingsRepo,
             batteryStateRepo,
             FakeChargingTelemetryReader(chargingReading),
+            ChargesGroupBuilder(ctx),
         ) to chargeDao
     }
 
@@ -365,9 +368,6 @@ class ChargesViewModelTest {
 
     @Test
     fun `groupChargesByMonthDay_groupsCorrectly`() = runTest {
-        val vm = buildViewModel()
-        testDispatcher.scheduler.advanceUntilIdle()
-
         val cal = Calendar.getInstance()
         cal.set(2026, Calendar.APRIL, 25, 10, 0, 0)
         val ts1 = cal.timeInMillis
@@ -382,7 +382,7 @@ class ChargesViewModelTest {
             makeCharge(3, ts3, kwhCharged = 15.0)
         )
 
-        val groups = vm.groupChargesByMonthDay(charges)
+        val groups = testGroupBuilder().build(charges)
 
         assertEquals(2, groups.size)
         // Most recent month first
@@ -399,11 +399,16 @@ class ChargesViewModelTest {
 
     @Test
     fun `groupChargesByMonthDay_emptyList_returnsEmpty`() = runTest {
-        val vm = buildViewModel()
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        val result = vm.groupChargesByMonthDay(emptyList())
+        val result = testGroupBuilder().build(emptyList())
         assertTrue(result.isEmpty())
+    }
+
+    private fun testGroupBuilder(): ChargesGroupBuilder {
+        val context = mockk<Context>(relaxed = true) {
+            every { getString(any()) } returns ""
+            every { getString(any(), any()) } returns ""
+        }
+        return ChargesGroupBuilder(context)
     }
 
     @Test

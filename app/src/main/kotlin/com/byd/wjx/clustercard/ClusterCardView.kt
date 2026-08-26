@@ -24,39 +24,27 @@ internal class ClusterCardView(context: Context) : View(context) {
     private var baseData: DiParsData? = null
     private var telemetryData: DiParsData? = null
     private var cardScale: Float = 0.65f
-    private var nightMode: Boolean? = null
 
     fun bind(
         metrics: List<ClusterCardMetric>,
         baseData: DiParsData?,
         telemetryData: DiParsData?,
         scale: Float,
-        nightMode: Boolean,
     ) {
         this.metrics = metrics
         this.baseData = baseData
         this.telemetryData = telemetryData
         cardScale = scale
-        applyNightMode(nightMode)
         invalidate()
     }
 
-    private fun applyNightMode(nightMode: Boolean) {
-        if (this.nightMode == nightMode) return
-        this.nightMode = nightMode
-        if (nightMode) {
-            dividerPaint.color = Color.argb(70, 255, 255, 255)
-            labelPaint.color = Color.argb(210, 255, 255, 255)
-            valuePaint.color = Color.WHITE
-            labelPaint.setShadowLayer(density * 1.5f, 0f, density * 0.5f, Color.BLACK)
-            valuePaint.setShadowLayer(density * 2f, 0f, density * 0.7f, Color.BLACK)
-        } else {
-            dividerPaint.color = Color.argb(70, 0, 0, 0)
-            labelPaint.color = Color.argb(210, 0, 0, 0)
-            valuePaint.color = Color.BLACK
-            labelPaint.setShadowLayer(density * 1.5f, 0f, density * 0.5f, Color.WHITE)
-            valuePaint.setShadowLayer(density * 2f, 0f, density * 0.7f, Color.WHITE)
-        }
+    init {
+        // Instrument cards use a fixed high-contrast palette; system night mode must not alter them.
+        dividerPaint.color = Color.argb(70, 255, 255, 255)
+        labelPaint.color = Color.argb(210, 255, 255, 255)
+        valuePaint.color = Color.WHITE
+        labelPaint.setShadowLayer(density * 1.5f, 0f, density * 0.5f, Color.BLACK)
+        valuePaint.setShadowLayer(density * 2f, 0f, density * 0.7f, Color.BLACK)
     }
 
     override fun onDraw(canvas: Canvas) {

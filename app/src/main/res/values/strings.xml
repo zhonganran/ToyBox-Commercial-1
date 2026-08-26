@@ -63,11 +63,6 @@
     <string name="settings_recalc_confirm_button">重新计算</string>
     <string name="settings_cancel_button">取消</string>
 
-    <!-- 设置：地点 -->
-    <string name="settings_places_section_header">地点</string>
-    <string name="settings_places_entry_title">联动地点</string>
-    <string name="settings_places_entry_description">家、公司、常去地点 - "进入地点" / "离开地点" 触发器</string>
-
     <!-- 设置：应用 -->
     <string name="settings_record_trip_gps_label">记录 GPS 轨迹</string>
     <string name="settings_record_trip_gps_description">开启后行驶时保存轨迹点，并自动绑定到原车行程。关闭后不再写入新轨迹。</string>
@@ -168,12 +163,6 @@
     <string name="automation_save_button">保存</string>
 
     <!-- 条件控件 -->
-    <string name="automation_trigger_place_deleted">地点已删除</string>
-    <string name="automation_trigger_place_enter_label">进入</string>
-    <string name="automation_trigger_place_exit_label">离开</string>
-    <string name="automation_trigger_place_enter_prefix">进入</string>
-    <string name="automation_trigger_place_exit_prefix">离开</string>
-    <string name="automation_trigger_place_deleted_placeholder">&lt;已删除&gt;</string>
     <string name="automation_trigger_time_of_day_label">时段：</string>
     <string name="automation_trigger_day">白天</string>
     <string name="automation_trigger_night">夜晚</string>
@@ -185,8 +174,6 @@
     <!-- 添加条件按钮 -->
     <string name="automation_add_condition_button">+ 添加条件</string>
     <string name="automation_trigger_type_param">车辆数据</string>
-    <string name="automation_trigger_type_place">地点</string>
-    <string name="automation_trigger_type_place_empty_hint">请先在设置中创建地点</string>
     <string name="automation_trigger_type_time_of_day">时段</string>
     <string name="automation_trigger_type_service_start">超级玩具箱 启动</string>
     <string name="automation_trigger_type_internet">网络可用</string>
@@ -265,7 +252,7 @@
     <string name="automation_tap_to_configure">点击配置…</string>
     <string name="automation_tap_to_pick_app">点击选择应用…</string>
     <string name="automation_tap_to_set_phone">点击设置号码…</string>
-    <string name="automation_tap_to_pick_place">点击选择地点…</string>
+    <string name="automation_tap_to_set_destination">点击设置目的地…</string>
     <string name="automation_tap_to_set_url">点击设置链接…</string>
 
     <!-- 通知编辑弹窗 -->
@@ -281,8 +268,9 @@
 
     <!-- 导航编辑弹窗 -->
     <string name="automation_navigate_dialog_title">高德地图路线</string>
-    <string name="automation_navigate_no_places_hint">请先在 设置 → 地点 中添加地点</string>
-    <string name="automation_navigate_pick_place_placeholder">选择地点…</string>
+    <string name="automation_navigate_latitude_label">纬度</string>
+    <string name="automation_navigate_longitude_label">经度</string>
+    <string name="automation_navigate_name_label">目的地名称（可选）</string>
 
     <!-- 链接编辑弹窗 -->
     <string name="automation_url_dialog_title">打开链接</string>
@@ -296,26 +284,6 @@
 
     <!-- 日志相对时间 -->
     <string name="automation_time_yesterday">昨天 %1$s</string>
-
-    <!-- 地点页 -->
-    <string name="places_tab_title">地点</string>
-    <string name="places_back_content_description">返回</string>
-    <string name="places_add_button">+ 添加</string>
-    <string name="places_empty">暂无地点。点击"+ 添加"创建一个。</string>
-    <string name="places_row_coords">%1$.5f, %2$.5f · %3$d 米</string>
-    <string name="places_row_in_use">在 %1$d 条规则中使用</string>
-    <string name="places_edit_content_description">编辑</string>
-    <string name="places_delete_content_description">删除</string>
-    <string name="places_delete_blocked_message">该地点在 %1$d 条智能联动规则中使用。请先删除规则。</string>
-
-    <!-- 地点编辑弹窗 -->
-    <string name="place_edit_dialog_title_new">新建地点</string>
-    <string name="place_edit_dialog_title_edit">编辑地点</string>
-    <string name="place_edit_name_label">名称</string>
-    <string name="place_edit_lat_label">纬度</string>
-    <string name="place_edit_lon_label">经度</string>
-    <string name="place_edit_radius_label">半径（米）</string>
-    <string name="place_edit_error_min_radius">最小半径为 20 米</string>
 
     <!-- 欢迎引导 -->
 
@@ -364,13 +332,10 @@
     <string name="settings_error_prefix">错误</string>
     <string name="settings_diagnostic_log_header">问题诊断</string>
     <string name="settings_diagnostic_log_title">诊断日志</string>
-    <string name="settings_diagnostic_log_description">直接上传 WJX 文件夹中的 wjx.log，后台会按车架号和版本保存。</string>
+    <string name="settings_diagnostic_log_description">直接上传应用生成的 wjx.log，后台会按车架号和版本保存。</string>
     <string name="settings_log_upload_button">上传日志</string>
     <string name="settings_log_uploading_button">上传中</string>
     <string name="settings_log_upload_complete_button">上传完成</string>
-    <string name="settings_update_check_in_progress">检查中…</string>
-    <string name="settings_update_available_short">可更新至 %1$s</string>
-
     <!-- 更新下载进度文本 -->
     <string name="update_downloading_progress">下载中：%1$d%%</string>
     <string name="update_downloading_done">已下载。正在安装…</string>
@@ -399,7 +364,11 @@
     <string name="learn_button_timeout">未识别到按键，可能未传递给系统，请尝试其他按键。</string>
     <string name="learn_button_waiting">请按方向盘按键…</string>
     <string name="settings_config_export_button">导出配置</string>
-    <string name="settings_config_export_done">备份已保存：%1$s</string>
+    <string name="settings_config_export_done">备份已保存到所选位置</string>
+    <string name="settings_config_export_confirm_title">导出敏感数据？</string>
+    <string name="settings_config_export_confirm_body">备份包含行程记录、时间、能耗和可能的 GPS 坐标。请选择可信位置保存，不要上传到公共网盘或转发给他人。</string>
+    <string name="settings_config_export_confirm_ok">选择保存位置</string>
+    <string name="settings_config_export_confirm_cancel">取消</string>
     <string name="settings_config_restore_button">恢复配置</string>
     <string name="settings_config_restore_confirm_body">当前所有数据和设置将被备份内容完全替换，此操作无法撤销。</string>
     <string name="settings_config_restore_confirm_cancel">取消</string>

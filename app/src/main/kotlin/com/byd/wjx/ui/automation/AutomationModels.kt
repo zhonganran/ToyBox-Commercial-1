@@ -1,7 +1,6 @@
 package com.byd.wjx.ui.automation
 
 import com.byd.wjx.data.local.entity.ActionDef
-import com.byd.wjx.data.local.entity.PlaceEntity
 import com.byd.wjx.data.local.entity.RuleEntity
 import com.byd.wjx.data.local.entity.RuleLogEntity
 import com.byd.wjx.data.local.entity.TriggerDef
@@ -62,6 +61,5 @@ data class AutomationUiState(
     val showJournal: Boolean = false,
     val editing: EditingRule = EditingRule(),
     val showDeleteConfirm: Long? = null,
-    val places: List<PlaceEntity> = emptyList(),
     val editorError: String? = null,
 )

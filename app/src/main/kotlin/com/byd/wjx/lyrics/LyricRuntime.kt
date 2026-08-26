@@ -21,6 +21,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -59,7 +60,6 @@ class LyricRuntime @Inject constructor(
     private var lastClusterFrame: LyricFrame? = null
     private var suppressNextFrameAnimation = false
     private var lyricLoadJob: Job? = null
-    private var grantAttempted = false
     private var cachedLyricsAllowed = false
     private var lastLyricsAllowedCheckAt = Long.MIN_VALUE
 
@@ -69,7 +69,7 @@ class LyricRuntime @Inject constructor(
         scope = newScope
         WjxFileLogger.i(TAG, "start")
 
-        newScope.launch(Dispatchers.IO) { ensurePermissionsBestEffort() }
+        newScope.launch(Dispatchers.IO) { ensurePermissionsWithRetry() }
         newScope.launch {
             cameraActive.collectLatest { latestCameraActive = it }
         }
@@ -192,12 +192,28 @@ class LyricRuntime @Inject constructor(
         clusterOverlay.refreshPosition()
     }
 
-    private suspend fun ensurePermissionsBestEffort() {
-        if (grantAttempted) return
-        grantAttempted = true
+    private suspend fun ensurePermissionsWithRetry() {
+        var failedAttempts = 0
+        while (currentCoroutineContext().isActive) {
+            if (ensurePermissionsBestEffort()) return
+            failedAttempts += 1
+            val retryDelayMs = LyricPermissionRetryPolicy.delayAfterFailure(failedAttempts) ?: run {
+                WjxFileLogger.w(TAG, "permission bootstrap unavailable attempts=$failedAttempts")
+                return
+            }
+            WjxFileLogger.i(
+                TAG,
+                "permission bootstrap retryIn=${retryDelayMs}ms attempt=${failedAttempts + 1}",
+            )
+            delay(retryDelayMs)
+        }
+    }
+
+    private suspend fun ensurePermissionsBestEffort(): Boolean {
+        var listenerGranted = false
         runCatching {
             adb.connect()
-            val listenerGranted = adb.grantMusicNotificationListenerAccess()
+            listenerGranted = adb.grantMusicNotificationListenerAccess()
             WjxFileLogger.i(TAG, "notification listener grant=$listenerGranted")
             NotificationListenerService.requestRebind(
                 ComponentName(appContext, MusicNotificationListenerService::class.java),
@@ -205,44 +221,50 @@ class LyricRuntime @Inject constructor(
         }.onFailure {
             WjxFileLogger.w(TAG, "notification listener grant failed: ${it.message}")
         }
-        runCatching {
-            if (helperBootstrap.ensureCurrent()) {
-                val overlayGranted = helperClient.grantOverlayPermission()
+        var overlayGranted = Settings.canDrawOverlays(appContext)
+        if (!overlayGranted) {
+            runCatching {
+                if (helperBootstrap.ensureCurrent()) {
+                    overlayGranted = helperClient.grantOverlayPermission()
+                }
                 WjxFileLogger.i(TAG, "overlay/project-media grant=$overlayGranted")
+            }.onFailure {
+                WjxFileLogger.w(TAG, "overlay/project-media grant failed: ${it.message}")
             }
-        }.onFailure {
-            WjxFileLogger.w(TAG, "overlay/project-media grant failed: ${it.message}")
         }
+        return listenerGranted && overlayGranted
     }
 
     private fun renderTick() {
         val playback = latestPlayback
         val lyricsAllowed = canUseLyrics()
-        val desktopVisible = lyricsAllowed && settings.desktopEnabled &&
-            shouldKeepDesktopLyricsVisible(
-                allowOnOtherApps = settings.allowOnOtherApps,
-                homeForeground = isHomeForeground(),
-                cameraActive = latestCameraActive,
-            )
-        val clusterVisible = lyricsAllowed && settings.clusterEnabled
+        val targets = resolveLyricOverlayTargets(
+            lyricsAllowed = lyricsAllowed,
+            desktopEnabled = settings.desktopEnabled,
+            clusterEnabled = settings.clusterEnabled,
+            allowOnOtherApps = settings.allowOnOtherApps,
+            homeForeground = isHomeForeground(),
+            cameraActive = latestCameraActive,
+        )
         val shouldHideAll = !playback.playing ||
             !playback.hasSong ||
-            (!desktopVisible && !clusterVisible)
-        if (shouldHideAll || !Settings.canDrawOverlays(appContext)) {
-            hideOverlays(hard = !Settings.canDrawOverlays(appContext))
+            !targets.any
+        val overlayPermissionGranted = Settings.canDrawOverlays(appContext)
+        if (shouldHideAll || !overlayPermissionGranted) {
+            hideOverlays(hard = !overlayPermissionGranted)
             return
         }
 
         val animate = !suppressNextFrameAnimation
         suppressNextFrameAnimation = false
-        if (desktopVisible) {
+        if (targets.desktop) {
             val frame = buildFrame(playback, settings.desktopSyncOffsetMs, lastDesktopFrame)
             desktopOverlay.update(frame, animate)
             lastDesktopFrame = frame
         } else {
             desktopOverlay.hideSoft()
         }
-        if (clusterVisible) {
+        if (targets.cluster) {
             val frame = buildFrame(playback, settings.clusterSyncOffsetMs, lastClusterFrame)
             clusterOverlay.update(frame, animate)
             lastClusterFrame = frame
@@ -344,17 +366,4 @@ class LyricRuntime @Inject constructor(
         private const val TRACK_CHANGE_HOLD_MS = 2_500L
         private const val POSITION_DRIFT_RESET_MS = 2_500L
     }
-}
-
-internal fun shouldKeepDesktopLyricsVisible(
-    allowOnOtherApps: Boolean,
-    homeForeground: Boolean,
-    cameraActive: Boolean,
-): Boolean = allowOnOtherApps || homeForeground || cameraActive
-
-internal object LyricLoadRetryPolicy {
-    private val retryDelaysMs = longArrayOf(3_000L, 10_000L, 30_000L, 90_000L)
-
-    fun delayAfterFailure(failedAttempts: Int): Long? =
-        retryDelaysMs.getOrNull(failedAttempts - 1)
 }

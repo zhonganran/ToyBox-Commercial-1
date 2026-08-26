@@ -12,12 +12,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.BatteryChargingFull
 import androidx.compose.material.icons.outlined.BluetoothConnected
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MusicNote
-import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -130,7 +130,6 @@ internal fun SettingsCategoryContent(
     category: SettingsCategory,
     state: SettingsUiState,
     viewModel: SettingsViewModel,
-    onNavigateToPlaces: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         if (category != SettingsCategory.Auth) {
@@ -144,7 +143,6 @@ internal fun SettingsCategoryContent(
             SettingsCategory.Service -> ServiceAuthorizationSection(state, viewModel)
             SettingsCategory.Vehicle -> {
                 BatterySection(state, viewModel)
-                PlacesSection(onNavigateToPlaces)
             }
             SettingsCategory.Control -> DisplaySection(state, viewModel)
             SettingsCategory.Led -> LedLinkSettingsSection(
@@ -171,7 +169,7 @@ private val SettingsCategory.icon: ImageVector
     get() = when (this) {
         SettingsCategory.Auth -> Icons.Outlined.Lock
         SettingsCategory.Service -> Icons.Outlined.VerifiedUser
-        SettingsCategory.Vehicle -> Icons.Outlined.Place
+        SettingsCategory.Vehicle -> Icons.Outlined.BatteryChargingFull
         SettingsCategory.Control -> Icons.Outlined.Key
         SettingsCategory.Led -> Icons.Outlined.BluetoothConnected
         SettingsCategory.EventSound -> Icons.Outlined.MusicNote
@@ -182,7 +180,7 @@ private val SettingsCategory.title: String
     get() = when (this) {
         SettingsCategory.Auth -> "授权激活"
         SettingsCategory.Service -> "服务与授权"
-        SettingsCategory.Vehicle -> "车辆费用与地点"
+        SettingsCategory.Vehicle -> "车辆费用与能耗"
         SettingsCategory.Control -> "按键 / 显示 / 车外通道"
         SettingsCategory.Led -> "LED联动"
         SettingsCategory.EventSound -> "车辆事件音效"
@@ -193,7 +191,7 @@ private val SettingsCategory.subtitle: String
     get() = when (this) {
         SettingsCategory.Auth -> "激活码、车架号、试用状态和授权能力"
         SettingsCategory.Service -> "永久授权 $PERMANENT_AUTH_PRICE、联系客服、售后支持"
-        SettingsCategory.Vehicle -> "电池容量、充电价格、能耗区间和常用地点"
+        SettingsCategory.Vehicle -> "电池容量、充电价格和能耗区间"
         SettingsCategory.Control -> "车外音效通道、方向盘快捷键、仪表盘投射"
         SettingsCategory.Led -> "独立蓝牙协议、屏幕亮度和车辆事件联动"
         SettingsCategory.EventSound -> "锁车、解锁和哨兵的后台车外音效"
@@ -212,10 +210,10 @@ private fun SettingsCategory.status(state: SettingsUiState): String =
             "需激活"
         }
         SettingsCategory.EventSound -> {
-            val count = LockSoundEvent.entries.count { state.lockSound.enabled(it) }
+            val count = LockSoundEvent.entries.count { state.vehicleEventSound.config.enabled(it) }
             if (count > 0) "${count} 项开启" else "未开启"
         }
-        SettingsCategory.Data -> when (state.themeMode) {
+        SettingsCategory.Data -> when (state.appPreferences.themeMode) {
             "light" -> "白天主题"
             "dark" -> "黑暗主题"
             else -> "自适应主题"

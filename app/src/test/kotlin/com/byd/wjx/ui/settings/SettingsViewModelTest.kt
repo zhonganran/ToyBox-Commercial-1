@@ -19,7 +19,6 @@ import com.byd.wjx.data.local.entity.TripEntity
 import com.byd.wjx.data.local.entity.TripPointEntity
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.data.repository.TripRepository
-import com.byd.wjx.data.settings.ServiceQrCache
 import com.byd.wjx.data.vehicle.HeadlightController
 import com.byd.wjx.data.vehicle.HeadlightAvailability
 import com.byd.wjx.data.vehicle.HeadlightControlResult
@@ -43,6 +42,7 @@ import org.junit.Before
 import org.junit.Test
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
 import kotlinx.coroutines.delay
@@ -165,20 +165,47 @@ class SettingsViewModelTest {
         )
         // Stub BackupManager: no AppDatabase available in unit tests, use mockk
         val backupManager = mockk<BackupManager>(relaxed = true)
+        val maintenanceCoordinator = SettingsMaintenanceCoordinator(
+            context = ctx,
+            updateChecker = resolvedUpdateChecker,
+            backupManager = backupManager,
+            logUploader = logUploader,
+        )
+        val lockSoundConfigSync = mockk<com.byd.wjx.audio.LockSoundConfigSync>(relaxed = true)
+        val soundLibrary = com.byd.wjx.storage.SoundLibrary(ctx)
         return SettingsViewModel(
             appContext = ctx,
-            settingsRepository = settingsRepo,
-            tripRepository = tripRepo,
-            updateChecker = resolvedUpdateChecker,
-            historyImporter = historyImporter,
-            backupManager = backupManager,
-            activationManager = activationManager,
-            soundLibrary = com.byd.wjx.storage.SoundLibrary(ctx),
-            lockSoundConfigSync = mockk<com.byd.wjx.audio.LockSoundConfigSync>(relaxed = true),
-            okHttpClient = httpClient,
-            serviceQrCache = ServiceQrCache(ctx),
-            logUploader = logUploader,
-            headlightController = headlightController,
+            preferenceCoordinator = SettingsPreferenceCoordinator(settingsRepo),
+            energyCoordinator = SettingsEnergyCoordinator(
+                settingsRepository = settingsRepo,
+                tripRepository = tripRepo,
+                historyImporter = historyImporter,
+            ),
+            activationCoordinator = SettingsActivationCoordinator(activationManager),
+            vehicleEventSoundCoordinator = VehicleEventSoundCoordinator(
+                context = ctx,
+                activationManager = activationManager,
+                soundLibrary = soundLibrary,
+                localSoundLibraryCoordinator = com.byd.wjx.data.sound.LocalSoundLibraryCoordinator(
+                    ctx,
+                    soundLibrary,
+                    lockSoundConfigSync,
+                ),
+                configSync = lockSoundConfigSync,
+            ),
+            maintenanceCoordinator = maintenanceCoordinator,
+            serviceQrCoordinator = SettingsServiceQrCoordinator(
+                mockk<ServiceQrRepository>().also { repository ->
+                    every { repository.cached() } returns emptyMap()
+                    coEvery { repository.refresh() } returns emptyMap()
+                },
+            ),
+            vehicleControlCoordinator = SettingsVehicleControlCoordinator(
+                headlightController = headlightController,
+                carProfileDetector = com.byd.wjx.vehicle.CarProfileDetector(
+                    propertyReader = { "34" },
+                ),
+            ),
         )
     }
 
@@ -189,7 +216,7 @@ class SettingsViewModelTest {
         val vm = buildViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(SettingsRepository.DEFAULT_BATTERY_CAPACITY, vm.uiState.value.batteryCapacity)
+        assertEquals(SettingsRepository.DEFAULT_BATTERY_CAPACITY, vm.uiState.value.energy.batteryCapacity)
     }
 
     @Test
@@ -206,10 +233,10 @@ class SettingsViewModelTest {
         vm.refreshHeadlightControl()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(HeadlightAvailability.SUPPORTED, vm.uiState.value.headlightAvailability)
-        assertEquals(HeadlightMode.AUTO, vm.uiState.value.headlightMode)
-        assertEquals("当前模式：自动", vm.uiState.value.headlightMessage)
-        assertEquals(false, vm.uiState.value.headlightLoading)
+        assertEquals(HeadlightAvailability.SUPPORTED, vm.uiState.value.vehicleControl.headlightAvailability)
+        assertEquals(HeadlightMode.AUTO, vm.uiState.value.vehicleControl.headlightMode)
+        assertEquals("当前模式：自动", vm.uiState.value.vehicleControl.headlightMessage)
+        assertEquals(false, vm.uiState.value.vehicleControl.headlightLoading)
         coVerify(exactly = 1) { controller.refresh() }
     }
 
@@ -230,9 +257,9 @@ class SettingsViewModelTest {
         vm.setHeadlightMode(HeadlightMode.HIGH_BEAM)
         testDispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(HeadlightMode.AUTO, vm.uiState.value.headlightMode)
-        assertEquals("车辆未切换到远光，当前仍为自动", vm.uiState.value.headlightMessage)
-        assertEquals(false, vm.uiState.value.headlightLoading)
+        assertEquals(HeadlightMode.AUTO, vm.uiState.value.vehicleControl.headlightMode)
+        assertEquals("车辆未切换到远光，当前仍为自动", vm.uiState.value.vehicleControl.headlightMessage)
+        assertEquals(false, vm.uiState.value.vehicleControl.headlightLoading)
     }
 
     @Test
@@ -245,8 +272,8 @@ class SettingsViewModelTest {
         vm.uploadLogs()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(false, vm.uiState.value.isUploadingLogs)
-        assertEquals("日志上传成功，编号 #42", vm.uiState.value.logUploadStatus)
+        assertEquals(false, vm.uiState.value.maintenance.isUploadingLogs)
+        assertEquals("日志上传成功，编号 #42", vm.uiState.value.maintenance.logUploadStatus)
         coVerify(exactly = 1) { uploader.upload() }
     }
 
@@ -260,8 +287,8 @@ class SettingsViewModelTest {
         vm.uploadLogs()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(false, vm.uiState.value.isUploadingLogs)
-        assertEquals("日志上传失败：车辆尚未登记", vm.uiState.value.logUploadStatus)
+        assertEquals(false, vm.uiState.value.maintenance.isUploadingLogs)
+        assertEquals("日志上传失败：车辆尚未登记", vm.uiState.value.maintenance.logUploadStatus)
     }
 
     @Test
@@ -276,9 +303,9 @@ class SettingsViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         val state = vm.uiState.value
-        assertEquals(false, state.activationPaymentLoading)
-        assertNull(state.activationPaymentOrder)
-        assertEquals("设备身份尚未建立，请刷新授权状态后重试", state.activationPaymentMessage)
+        assertEquals(false, state.activationPayment.loading)
+        assertNull(state.activationPayment.order)
+        assertEquals("设备身份尚未建立，请刷新授权状态后重试", state.activationPayment.message)
         assertTrue(shouldShowActivationPaymentDialog(state))
     }
 
@@ -300,9 +327,9 @@ class SettingsViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         val state = vm.uiState.value
-        assertEquals(false, state.activationPaymentLoading)
-        assertNull(state.activationPaymentOrder)
-        assertEquals("微信支付创建失败", state.activationPaymentMessage)
+        assertEquals(false, state.activationPayment.loading)
+        assertNull(state.activationPayment.order)
+        assertEquals("微信支付创建失败", state.activationPayment.message)
         assertTrue(shouldShowActivationPaymentDialog(state))
     }
 
@@ -312,7 +339,7 @@ class SettingsViewModelTest {
         val vm = buildViewModel(settingsDao = settingsDao)
         testDispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(SettingsRepository.DEFAULT_FUEL_TANK_CAPACITY, vm.uiState.value.fuelTankCapacity)
+        assertEquals(SettingsRepository.DEFAULT_FUEL_TANK_CAPACITY, vm.uiState.value.energy.fuelTankCapacity)
 
         vm.updateBatteryCapacity("75.0")
         vm.updateFuelTankCapacity("53")
@@ -323,7 +350,7 @@ class SettingsViewModelTest {
 
         assertEquals("75.0", settingsDao.map[SettingsRepository.KEY_BATTERY_CAPACITY])
         assertEquals("53", settingsDao.map[SettingsRepository.KEY_FUEL_TANK_CAPACITY])
-        assertEquals("53", vm.uiState.value.fuelTankCapacity)
+        assertEquals("53", vm.uiState.value.energy.fuelTankCapacity)
     }
 
     @Test
@@ -331,12 +358,12 @@ class SettingsViewModelTest {
         val vm = buildViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(SettingsRepository.DEFAULT_THEME_MODE, vm.uiState.value.themeMode)
+        assertEquals(SettingsRepository.DEFAULT_THEME_MODE, vm.uiState.value.appPreferences.themeMode)
 
         vm.setThemeMode("dark")
         testDispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals("dark", vm.uiState.value.themeMode)
+        assertEquals("dark", vm.uiState.value.appPreferences.themeMode)
     }
 
     @Test
@@ -344,7 +371,7 @@ class SettingsViewModelTest {
         val vm = buildViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(SettingsRepository.DEFAULT_HOME_TARIFF, vm.uiState.value.homeTariff)
+        assertEquals(SettingsRepository.DEFAULT_HOME_TARIFF, vm.uiState.value.energy.homeTariff)
     }
 
     // Issue #23: pressing "Close" while an update is downloading must cancel the
@@ -378,7 +405,7 @@ class SettingsViewModelTest {
         vm.hideUpdateDialog()
         testDispatcher.scheduler.advanceUntilIdle() // cancelled job must not resurrect state
 
-        assertEquals(UpdateState.Idle, vm.uiState.value.updateDialogState)
+        assertEquals(UpdateState.Idle, vm.uiState.value.maintenance.updateDialogState)
         coVerify(exactly = 1) { uc.checkForUpdate(any(), any()) }
     }
 }

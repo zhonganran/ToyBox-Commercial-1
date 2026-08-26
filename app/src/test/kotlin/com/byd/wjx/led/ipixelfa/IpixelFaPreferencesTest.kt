@@ -22,10 +22,6 @@ class IpixelFaPreferencesTest {
             .edit()
             .clear()
             .commit()
-        context.getSharedPreferences(LEGACY_MIXED_PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .clear()
-            .commit()
     }
 
     @Test
@@ -70,7 +66,7 @@ class IpixelFaPreferencesTest {
     }
 
     @Test
-    fun `legacy FA empty rule JSON remains empty without a customization marker`() {
+    fun `explicit empty rule JSON remains empty`() {
         context.getSharedPreferences(IpixelFaPreferences.PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(IpixelFaPreferences.KEY_RULES, "[]")
@@ -115,29 +111,5 @@ class IpixelFaPreferencesTest {
         assertEquals("FA:00", snapshot.deviceAddress)
         assertEquals("FA LED", snapshot.deviceName)
         assertEquals(35, snapshot.brightness)
-        assertTrue(
-            context.getSharedPreferences(LEGACY_MIXED_PREFS, Context.MODE_PRIVATE)
-                .all
-                .isEmpty(),
-        )
-    }
-
-    @Test
-    fun `legacy mixed LED settings are not migrated into FA`() {
-        context.getSharedPreferences(LEGACY_MIXED_PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean("ipixel_fa_enabled", true)
-            .putString("ipixel_fa_device_address", "OLD:FA")
-            .putInt("ipixel_fa_brightness", 99)
-            .commit()
-
-        val snapshot = IpixelFaPreferences(context).state.value
-        assertFalse(snapshot.enabled)
-        assertTrue(snapshot.deviceAddress.isBlank())
-        assertEquals(70, snapshot.brightness)
-    }
-
-    private companion object {
-        const val LEGACY_MIXED_PREFS = "wjx_led_link"
     }
 }

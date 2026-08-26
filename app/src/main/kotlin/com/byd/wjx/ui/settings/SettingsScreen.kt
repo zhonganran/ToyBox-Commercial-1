@@ -56,7 +56,6 @@ import com.byd.wjx.ui.theme.TextSecondary
 fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
     initialCategory: String? = null,
-    onNavigateToPlaces: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val categories = SettingsCategory.entries
@@ -68,11 +67,12 @@ fun SettingsScreen(
         return
     }
 
-    if (state.showRecalcConfirm) {
-        val tariffLabel = when (state.tripCostTariff) {
-            "home" -> state.homeTariff
-            "dc" -> state.dcTariff
-            else -> state.tripCostTariff
+    if (state.energy.showRecalcConfirm) {
+        val energy = state.energy
+        val tariffLabel = when (energy.tripCostTariff) {
+            "home" -> energy.homeTariff
+            "dc" -> energy.dcTariff
+            else -> energy.tripCostTariff
         }
         AlertDialog(
             onDismissRequest = viewModel::hideRecalcConfirm,
@@ -97,12 +97,12 @@ fun SettingsScreen(
         )
     }
 
-    if (state.showUpdateDialog) {
+    if (state.maintenance.showUpdateDialog) {
         UpdateDialog(
-            currentVersion = state.appVersion,
-            state = state.updateDialogState,
+            currentVersion = state.maintenance.appVersion,
+            state = state.maintenance.updateDialogState,
             onCheck = {
-                when (state.updateDialogState) {
+                when (state.maintenance.updateDialogState) {
                     is UpdateState.Available -> viewModel.downloadUpdate()
                     else -> viewModel.checkForUpdate()
                 }
@@ -149,7 +149,7 @@ fun SettingsScreen(
             }
             Spacer(Modifier.width(10.dp))
             Text(
-                "V${state.appVersion}",
+                "V${state.maintenance.appVersion}",
                 color = TextPrimary,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -211,7 +211,6 @@ fun SettingsScreen(
                             category = activeCategory,
                             state = state,
                             viewModel = viewModel,
-                            onNavigateToPlaces = onNavigateToPlaces,
                         )
                     }
                 }
@@ -249,7 +248,6 @@ fun SettingsScreen(
                             category = activeCategory,
                             state = state,
                             viewModel = viewModel,
-                            onNavigateToPlaces = onNavigateToPlaces,
                         )
                     }
                 }

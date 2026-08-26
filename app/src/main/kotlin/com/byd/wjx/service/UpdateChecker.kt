@@ -24,12 +24,14 @@ import javax.inject.Singleton
 class UpdateChecker @Inject constructor(
     private val httpClient: OkHttpClient
 ) {
+    private val apkVerifier = UpdateApkVerifier()
     companion object {
         private const val TAG = "UpdateChecker"
         private const val PREFS_NAME = "update_prefs"
         private const val KEY_LAST_CHECK = "last_check"
         private const val KEY_AUTO_CHECK = "auto_check_enabled"
         private const val CHECK_INTERVAL_MS = 10 * 60 * 1000L // 10 minutes (protects only against repeated launches within one session)
+        private const val SHA256_HEX_LENGTH = 64
 
         fun isAutoCheckEnabled(context: Context): Boolean =
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -45,7 +47,12 @@ class UpdateChecker @Inject constructor(
         val version: String,
         val downloadUrl: String,
         val releaseNotes: String,
-        val forceUpdate: Boolean = false
+        val forceUpdate: Boolean = false,
+        val versionCode: Long = 0L,
+        val sha256: String = "",
+        val packageName: String = "",
+        val certificateSha256: String = "",
+        val apkSize: Long = 0L,
     )
 
     suspend fun checkForUpdate(context: Context, forceCheck: Boolean = false): UpdateInfo? = withContext(Dispatchers.IO) {
@@ -105,13 +112,30 @@ class UpdateChecker @Inject constructor(
 
         val apkUrl = json.optString("downloadUrl", "")
         if (apkUrl.isBlank()) throw Exception("版本 $remoteVersion 中没有安装包")
+        val sha256 = normalizeSha256(json.optString("sha256", ""))
+        val packageName = json.optString("packageName", "").trim()
+        val certificateSha256 = normalizeSha256(json.optString("certificateSha256", ""))
+        val apkSize = json.optLong("apkSize", 0L)
+        if (remoteVersionCode <= 0L || sha256.length != SHA256_HEX_LENGTH ||
+            certificateSha256.length != SHA256_HEX_LENGTH || apkSize <= 0L
+        ) {
+            throw Exception("版本 $remoteVersion 缺少安装包完整性信息")
+        }
+        if (packageName != context.packageName) {
+            throw Exception("更新包名不匹配")
+        }
 
         WjxFileLogger.i(TAG, "server update available remote=$remoteVersion/$remoteVersionCode force=${json.optBoolean("forceUpdate", false)}")
         return UpdateInfo(
             version = remoteVersion,
             downloadUrl = apkUrl,
             releaseNotes = json.optString("releaseNotes", ""),
-            forceUpdate = json.optBoolean("forceUpdate", false)
+            forceUpdate = json.optBoolean("forceUpdate", false),
+            versionCode = remoteVersionCode,
+            sha256 = sha256,
+            packageName = packageName,
+            certificateSha256 = certificateSha256,
+            apkSize = apkSize,
         )
     }
 
@@ -129,19 +153,18 @@ class UpdateChecker @Inject constructor(
         WjxFileLogger.i(TAG, "download start version=${update.version} url=${update.downloadUrl}")
 
         // Delete old file if exists
-        val destFile = File(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-            "超级玩具箱-${update.version}.apk"
-        )
+        val updateDirectory = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            ?: throw IllegalStateException("更新目录不可用")
+        if (!updateDirectory.isDirectory && !updateDirectory.mkdirs()) {
+            throw IllegalStateException("无法创建更新目录")
+        }
+        val destFile = File(updateDirectory, "超级玩具箱-${update.version}.apk")
         if (destFile.exists()) destFile.delete()
 
         val request = DownloadManager.Request(Uri.parse(update.downloadUrl))
             .setTitle("超级玩具箱 ${update.version}")
             .setDescription(context.getString(R.string.update_download_notification_description))
-            .setDestinationInExternalPublicDir(
-                Environment.DIRECTORY_DOWNLOADS,
-                "超级玩具箱-${update.version}.apk"
-            )
+            .setDestinationUri(Uri.fromFile(destFile))
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
 
         val downloadId = downloadManager.enqueue(request)
@@ -182,6 +205,7 @@ class UpdateChecker @Inject constructor(
                             cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON)
                         )
                         WjxFileLogger.w(TAG, "download failed version=${update.version} reason=$reason")
+                        destFile.delete()
                         throw Exception(context.getString(R.string.update_download_error, reason))
                     }
                     DownloadManager.STATUS_PAUSED -> {
@@ -194,6 +218,7 @@ class UpdateChecker @Inject constructor(
             // forever every 500 ms with no row that could ever flip `finished`.
             if (!rowPresent) {
                 WjxFileLogger.w(TAG, "download row missing version=${update.version} id=$downloadId")
+                destFile.delete()
                 throw Exception(context.getString(R.string.update_download_error, -1))
             }
             if (!finished) {
@@ -201,17 +226,20 @@ class UpdateChecker @Inject constructor(
             }
         }
 
-        // Trigger install
+        try {
+            apkVerifier.verify(context, destFile, update)
+        } catch (error: Exception) {
+            destFile.delete()
+            WjxFileLogger.e(TAG, "download verification failed version=${update.version}", error)
+            throw error
+        }
+
         withContext(Dispatchers.Main) {
-            installApk(context, update.version)
+            installApk(context, destFile, update.version)
         }
     }
 
-    private fun installApk(context: Context, version: String) {
-        val file = File(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-            "超级玩具箱-$version.apk"
-        )
+    private fun installApk(context: Context, file: File, version: String) {
         if (!file.exists()) {
             WjxFileLogger.w(TAG, "install skipped: apk missing version=$version path=${file.absolutePath}")
             return
@@ -261,5 +289,10 @@ class UpdateChecker @Inject constructor(
         }
         return false
     }
+
+    private fun normalizeSha256(value: String): String = value
+        .trim()
+        .lowercase()
+        .filter { it in '0'..'9' || it in 'a'..'f' }
 
 }

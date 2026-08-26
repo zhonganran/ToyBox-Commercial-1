@@ -27,7 +27,10 @@ internal fun IpixelFaPresetPreview(
     val context = LocalContext.current
     val drawable = remember(context, preset) {
         ImageDecoder.decodeDrawable(
-            ImageDecoder.createSource(context.resources, preset.previewResource),
+            ImageDecoder.createSource(
+                context.resources,
+                IpixelFaPresetPreviewCatalog.resourceFor(preset),
+            ),
         )
     }
 
@@ -56,8 +59,9 @@ internal fun IpixelFaPresetPreview(
     }
 }
 
-private val IpixelFaPreset.previewResource: Int
-    @DrawableRes get() = when (this) {
+internal object IpixelFaPresetPreviewCatalog {
+    @DrawableRes
+    fun resourceFor(preset: IpixelFaPreset): Int = when (preset) {
         IpixelFaPreset.EMERGENCY -> R.drawable.ipixel_fa_preset_01
         IpixelFaPreset.TURN_OFF_HIGH_BEAM -> R.drawable.ipixel_fa_preset_02
         IpixelFaPreset.TURN_LEFT -> R.drawable.ipixel_fa_preset_03
@@ -79,3 +83,4 @@ private val IpixelFaPreset.previewResource: Int
         IpixelFaPreset.GET_OFF -> R.drawable.ipixel_fa_preset_19
         IpixelFaPreset.HAZARD_WARNING -> R.drawable.ipixel_fa_preset_20
     }
+}

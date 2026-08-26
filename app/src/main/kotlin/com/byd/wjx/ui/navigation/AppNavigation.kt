@@ -6,12 +6,6 @@ import android.content.ContextWrapper
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.VolumeUp
-import androidx.compose.material.icons.outlined.Apps
-import androidx.compose.material.icons.outlined.Bolt
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -26,7 +20,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import com.byd.wjx.R
 import androidx.compose.ui.platform.LocalContext
@@ -37,7 +30,6 @@ import com.byd.wjx.data.system.AutostartSettingsLauncher
 import com.byd.wjx.service.UpdateChecker
 import com.byd.wjx.ui.automation.AutomationScreen
 import com.byd.wjx.ui.charges.ChargesScreen
-import com.byd.wjx.ui.places.PlacesScreen
 import com.byd.wjx.ui.desktopcomponents.DesktopComponentsScreen
 import com.byd.wjx.ui.home.BatteryHealthScreen
 import com.byd.wjx.ui.home.EnergyRecoveryScreen
@@ -54,14 +46,6 @@ import com.byd.wjx.ui.settings.UpdateState
 import com.byd.wjx.ui.sound.SoundScreen
 import com.byd.wjx.ui.theme.*
 
-enum class Screen(val route: String, val label: String, val icon: ImageVector) {
-    Home("home", "首页", Icons.Outlined.Home),
-    Sound("sound", "个性音效", Icons.AutoMirrored.Outlined.VolumeUp),
-    DesktopComponents("desktop_components", "桌面组件", Icons.Outlined.Apps),
-    Automation("automation", "智能联动", Icons.Outlined.Bolt),
-    Settings("settings", "设置", Icons.Outlined.Settings)
-}
-
 @Composable
 fun AppNavigation(
     updateChecker: UpdateChecker
@@ -77,14 +61,7 @@ fun AppNavigation(
         mutableStateOf<AutostartSettingsLaunchResult?>(null)
     }
 
-    var selectedRoute by rememberSaveable { mutableStateOf(Screen.Home.route) }
-    var showPlaces by rememberSaveable { mutableStateOf(false) }
-    var showTripMap by rememberSaveable { mutableStateOf(false) }
-    var showCharges by rememberSaveable { mutableStateOf(false) }
-    var showEnergyRecovery by rememberSaveable { mutableStateOf(false) }
-    var showVehicleSystem by rememberSaveable { mutableStateOf(false) }
-    var showBatteryHealth by rememberSaveable { mutableStateOf(false) }
-    var showVehicleEnvironment by rememberSaveable { mutableStateOf(false) }
+    var destinationRoute by rememberSaveable { mutableStateOf(AppDestination.HOME.route) }
     var settingsInitialCategory by rememberSaveable { mutableStateOf<String?>(null) }
     val screenStateHolder = rememberSaveableStateHolder()
 
@@ -160,180 +137,77 @@ fun AppNavigation(
         )
     }
 
-    val selectedScreen = Screen.entries.firstOrNull { it.route == selectedRoute } ?: Screen.Home
+    val destination = AppDestination.fromRoute(destinationRoute)
     val navItems = remember {
         Screen.entries.map { ProNavItem(route = it.route, label = it.label, icon = it.icon) }
-    }
-    val scaffoldRoute = when {
-        showPlaces -> Screen.Settings.route
-        showTripMap || showCharges || showEnergyRecovery || showVehicleSystem ||
-            showBatteryHealth || showVehicleEnvironment -> Screen.Home.route
-        else -> selectedRoute
     }
 
     BackHandler(enabled = !disclaimerAccepted) {
         appContext.findActivity()?.finish()
     }
-    BackHandler(enabled = disclaimerAccepted && showPlaces) {
-        showPlaces = false
-    }
-    BackHandler(enabled = disclaimerAccepted && showTripMap) {
-        showTripMap = false
-    }
-    BackHandler(enabled = disclaimerAccepted && showCharges) {
-        showCharges = false
-    }
-    BackHandler(enabled = disclaimerAccepted && showEnergyRecovery) {
-        showEnergyRecovery = false
-    }
-    BackHandler(enabled = disclaimerAccepted && showVehicleSystem) {
-        showVehicleSystem = false
-    }
-    BackHandler(enabled = disclaimerAccepted && showBatteryHealth) {
-        showBatteryHealth = false
-    }
-    BackHandler(enabled = disclaimerAccepted && showVehicleEnvironment) {
-        showVehicleEnvironment = false
+    BackHandler(enabled = disclaimerAccepted && destination.isDetail) {
+        destinationRoute = destination.section.route
     }
     ProAppScaffold(
             navItems = navItems,
-            selectedRoute = scaffoldRoute,
-            animateBackground = selectedRoute == Screen.Home.route &&
-                !showPlaces && !showTripMap && !showCharges && !showEnergyRecovery &&
-                !showVehicleSystem &&
-                !showBatteryHealth && !showVehicleEnvironment,
+            selectedRoute = destination.section.route,
+            animateBackground = destination == AppDestination.HOME,
             onNavigate = { route ->
-                if (selectedRoute != route || showPlaces || showTripMap || showCharges ||
-                    showEnergyRecovery || showVehicleSystem || showBatteryHealth || showVehicleEnvironment
-                ) {
-                    selectedRoute = route
-                    if (route == Screen.Settings.route) settingsInitialCategory = null
-                    showPlaces = false
-                    showTripMap = false
-                    showCharges = false
-                    showEnergyRecovery = false
-                    showVehicleSystem = false
-                    showBatteryHealth = false
-                    showVehicleEnvironment = false
-                }
+                val target = AppDestination.rootForRoute(route)
+                if (target == AppDestination.SETTINGS) settingsInitialCategory = null
+                destinationRoute = target.route
             },
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
-                if (showPlaces) {
-                    screenStateHolder.SaveableStateProvider("places") {
-                        PlacesScreen(onBack = { showPlaces = false })
-                    }
-                } else if (showTripMap) {
-                    screenStateHolder.SaveableStateProvider("trip_map") {
-                        MapScreen(onBack = { showTripMap = false })
-                    }
-                } else if (showCharges) {
-                    screenStateHolder.SaveableStateProvider("charges") {
-                        ChargesScreen(
+                screenStateHolder.SaveableStateProvider(destination.route) {
+                    when (destination) {
+                        AppDestination.TRIP_MAP -> MapScreen(
+                            onBack = { destinationRoute = AppDestination.HOME.route },
+                        )
+                        AppDestination.CHARGES -> ChargesScreen(
                             onNavigateSettings = {
-                                selectedRoute = Screen.Settings.route
-                                showPlaces = false
-                                showTripMap = false
-                                showCharges = false
-                                showEnergyRecovery = false
-                                showVehicleSystem = false
-                                showBatteryHealth = false
-                                showVehicleEnvironment = false
+                                settingsInitialCategory = null
+                                destinationRoute = AppDestination.SETTINGS.route
                             },
                         )
-                    }
-                } else if (showBatteryHealth) {
-                    screenStateHolder.SaveableStateProvider("battery_health") {
-                        BatteryHealthScreen(onBack = { showBatteryHealth = false })
-                    }
-                } else if (showVehicleEnvironment) {
-                    screenStateHolder.SaveableStateProvider("vehicle_environment") {
-                        VehicleEnvironmentScreen(onBack = { showVehicleEnvironment = false })
-                    }
-                } else if (showEnergyRecovery) {
-                    screenStateHolder.SaveableStateProvider("energy_recovery") {
-                        EnergyRecoveryScreen(onBack = { showEnergyRecovery = false })
-                    }
-                } else if (showVehicleSystem) {
-                    screenStateHolder.SaveableStateProvider("vehicle_system") {
-                        VehicleSystemScreen(onBack = { showVehicleSystem = false })
-                    }
-                } else {
-                    screenStateHolder.SaveableStateProvider(selectedScreen.route) {
-                        when (selectedScreen) {
-                            Screen.Home -> ProHomeScreen(
+                        AppDestination.ENERGY_RECOVERY -> EnergyRecoveryScreen(
+                            onBack = { destinationRoute = AppDestination.HOME.route },
+                        )
+                        AppDestination.VEHICLE_SYSTEM -> VehicleSystemScreen(
+                            onBack = { destinationRoute = AppDestination.HOME.route },
+                        )
+                        AppDestination.BATTERY_HEALTH -> BatteryHealthScreen(
+                            onBack = { destinationRoute = AppDestination.HOME.route },
+                        )
+                        AppDestination.VEHICLE_ENVIRONMENT -> VehicleEnvironmentScreen(
+                            onBack = { destinationRoute = AppDestination.HOME.route },
+                        )
+                        AppDestination.HOME -> ProHomeScreen(
                                 onOpenCharges = {
-                                    selectedRoute = Screen.Home.route
-                                    showPlaces = false
-                                    showTripMap = false
-                                    showCharges = true
-                                    showEnergyRecovery = false
-                                    showVehicleSystem = false
-                                    showBatteryHealth = false
-                                    showVehicleEnvironment = false
+                                    destinationRoute = AppDestination.CHARGES.route
                                 },
                                 onOpenEnergyRecovery = {
-                                    selectedRoute = Screen.Home.route
-                                    showPlaces = false
-                                    showTripMap = false
-                                    showCharges = false
-                                    showEnergyRecovery = true
-                                    showVehicleSystem = false
-                                    showBatteryHealth = false
-                                    showVehicleEnvironment = false
+                                    destinationRoute = AppDestination.ENERGY_RECOVERY.route
                                 },
                                 onOpenVehicleSystem = {
-                                    selectedRoute = Screen.Home.route
-                                    showPlaces = false
-                                    showTripMap = false
-                                    showCharges = false
-                                    showEnergyRecovery = false
-                                    showVehicleSystem = true
-                                    showBatteryHealth = false
-                                    showVehicleEnvironment = false
+                                    destinationRoute = AppDestination.VEHICLE_SYSTEM.route
                                 },
                                 onOpenBatteryHealth = {
-                                    selectedRoute = Screen.Home.route
-                                    showPlaces = false
-                                    showTripMap = false
-                                    showCharges = false
-                                    showEnergyRecovery = false
-                                    showVehicleSystem = false
-                                    showBatteryHealth = true
-                                    showVehicleEnvironment = false
+                                    destinationRoute = AppDestination.BATTERY_HEALTH.route
                                 },
                                 onOpenVehicleEnvironment = {
-                                    selectedRoute = Screen.Home.route
-                                    showPlaces = false
-                                    showTripMap = false
-                                    showCharges = false
-                                    showEnergyRecovery = false
-                                    showVehicleSystem = false
-                                    showBatteryHealth = false
-                                    showVehicleEnvironment = true
+                                    destinationRoute = AppDestination.VEHICLE_ENVIRONMENT.route
                                 },
                                 onOpenTripMap = {
-                                    selectedRoute = Screen.Home.route
-                                    showPlaces = false
-                                    showTripMap = true
-                                    showCharges = false
-                                    showEnergyRecovery = false
-                                    showVehicleSystem = false
-                                    showBatteryHealth = false
-                                    showVehicleEnvironment = false
+                                    destinationRoute = AppDestination.TRIP_MAP.route
                                 },
                             )
-                            Screen.Sound -> SoundScreen()
-                            Screen.DesktopComponents -> DesktopComponentsScreen()
-                            Screen.Automation -> AutomationScreen()
-                            Screen.Settings -> SettingsScreen(
-                                initialCategory = settingsInitialCategory,
-                                onNavigateToPlaces = {
-                                    selectedRoute = Screen.Settings.route
-                                    showPlaces = true
-                                },
-                            )
-                        }
+                        AppDestination.SOUND -> SoundScreen()
+                        AppDestination.DESKTOP_COMPONENTS -> DesktopComponentsScreen()
+                        AppDestination.AUTOMATION -> AutomationScreen()
+                        AppDestination.SETTINGS -> SettingsScreen(
+                            initialCategory = settingsInitialCategory,
+                        )
                     }
                 }
             }

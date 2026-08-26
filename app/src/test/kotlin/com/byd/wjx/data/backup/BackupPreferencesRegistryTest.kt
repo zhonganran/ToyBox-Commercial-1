@@ -31,7 +31,6 @@ class BackupPreferencesRegistryTest {
         listOf(
             "wjx_range_prefs",
             "wjx_seat_channel",
-            "wjx_sound_downloads",
         ).forEach { expected ->
             assertTrue("must remain device-local: $expected", expected in BackupPreferencesRegistry.DEVICE_LOCAL_FILES)
         }
@@ -67,9 +66,7 @@ class BackupPreferencesRegistryTest {
         val files = BackupPreferencesRegistry.USER_CONFIGURATION_FILES
 
         assertTrue("wjx_led_ipixel_fa" in files)
-        assertTrue("wjx_led_a950" in files)
         assertTrue("wjx_led_mafu" in files)
-        assertFalse("wjx_led_link" in files)
     }
 
     @Test

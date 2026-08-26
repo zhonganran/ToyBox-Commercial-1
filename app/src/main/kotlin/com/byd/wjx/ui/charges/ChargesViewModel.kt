@@ -1,9 +1,7 @@
 package com.byd.wjx.ui.charges
 
-import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.byd.wjx.R
 import com.byd.wjx.data.autoservice.ChargingReading
 import com.byd.wjx.data.charging.AutoserviceChargingDetector
 import com.byd.wjx.data.charging.ChargingTelemetryReader
@@ -15,7 +13,6 @@ import com.byd.wjx.data.repository.ChargeRepository
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.domain.battery.BatteryStateRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -25,79 +22,16 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
-import java.util.Locale
 import javax.inject.Inject
-
-enum class ChargesPeriod { TODAY, WEEK, MONTH, YEAR, ALL }
-enum class ChargeTypeFilter { ALL, AC, DC }
-
-data class ChargesMonthGroup(
-    val yearMonth: String,
-    val label: String,
-    val totalKwh: Double,
-    val sessionCount: Int,
-    val totalCost: Double,
-    val days: List<ChargesDayGroup>
-)
-
-data class ChargesDayGroup(
-    val date: String,
-    val label: String,
-    val dayOfWeek: String,
-    val totalKwh: Double,
-    val sessionCount: Int,
-    val totalCost: Double,
-    val charges: List<ChargeEntity>
-)
-
-data class ChargesUiState(
-    val period: ChargesPeriod = ChargesPeriod.MONTH,
-    val typeFilter: ChargeTypeFilter = ChargeTypeFilter.ALL,
-    val months: List<ChargesMonthGroup> = emptyList(),
-    val expandedMonths: Set<String> = emptySet(),
-    val expandedDays: Set<String> = emptySet(),
-    val periodSummary: ChargeSummary = ChargeSummary(0, 0.0, 0.0),
-    val currencySymbol: String = "元",
-    val initialAutoserviceCheckDone: Boolean = false,
-    val autoserviceConnected: Boolean = false,
-    val autoserviceAllSentinel: Boolean = false,
-    val lifetimeAcKwh: Double = 0.0,
-    val lifetimeDcKwh: Double = 0.0,
-    val lifetimeTotalKwh: Double = 0.0,
-    val equivCycles: Double = 0.0,
-    val nominalCapacityKwh: Double = 72.9,
-    // BMS-reported SOH as a 0..1 factor; 1.0 when unavailable or implausible (#28)
-    val sohFactor: Double = 1.0,
-    val sohSeries: List<Float> = emptyList(),
-    val capacitySeries: List<Float> = emptyList(),
-    // BMS lifetime from autoservice — distinct from sum across our charge rows
-    val bmsLifetimeKm: Double? = null,
-    val bmsLifetimeKwh: Double? = null,
-    // Snapshot dynamics (collected at vehicle wake-up; populated by Phase 5 write-path)
-    val cellDeltaSeries: List<Float> = emptyList(),
-    val batTempSeries: List<Float> = emptyList(),
-    val selectedChargeForAction: ChargeEntity? = null,
-    val editingCharge: ChargeEntity? = null,
-    val deleteConfirmCharge: ChargeEntity? = null,
-    val homeTariff: Double = 0.60,
-    val dcTariff: Double = 1.20,
-    val liveCharging: ChargingReading? = null,
-) {
-    /** SOC→kWh conversions use the aged capacity, not the nominal one (#28). */
-    val effectiveCapacityKwh: Double get() = nominalCapacityKwh * sohFactor
-}
 
 @HiltViewModel
 class ChargesViewModel @Inject constructor(
-    @ApplicationContext private val appContext: Context,
     private val chargeRepository: ChargeRepository,
     private val batterySnapshotDao: BatterySnapshotDao,
     private val settingsRepository: SettingsRepository,
     private val batteryStateRepository: BatteryStateRepository,
     private val chargingTelemetryReader: ChargingTelemetryReader,
+    private val groupBuilder: ChargesGroupBuilder,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChargesUiState())
@@ -187,7 +121,7 @@ class ChargesViewModel @Inject constructor(
     ) {
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
-            val (from, to) = dateRangeFor(period)
+            val (from, to) = ChargesTimeRanges.forPeriod(period)
 
             chargeRepository.getChargesByDateRange(from, to).collect { rawCharges ->
                 val nonEmpty = rawCharges.filter { (it.kwhCharged ?: 0.0) >= 0.05 }
@@ -200,7 +134,7 @@ class ChargesViewModel @Inject constructor(
                     ChargeTypeFilter.DC -> nonEmpty.filter { it.type == "DC" }
                 }
 
-                val months = groupChargesByMonthDay(filtered)
+                val months = groupBuilder.build(filtered)
 
                 val periodSummary = ChargeSummary(
                     sessionCount = filtered.size,
@@ -223,76 +157,6 @@ class ChargesViewModel @Inject constructor(
                 }
             }
         }
-    }
-
-    internal fun groupChargesByMonthDay(charges: List<ChargeEntity>): List<ChargesMonthGroup> {
-        val ctx = appContext
-        val appLocale = Locale.SIMPLIFIED_CHINESE
-        val monthKeyFmt = SimpleDateFormat("yyyy-MM", Locale.US)
-        val dayKeyFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-        val dayOfWeekFmt = SimpleDateFormat("EEE", appLocale)
-        val monthLabelFmt = SimpleDateFormat("LLLL yyyy", appLocale)
-
-        val todayCal = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-        }
-        val todayKey = dayKeyFmt.format(todayCal.time)
-        val yesterdayCal = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-            add(Calendar.DAY_OF_YEAR, -1)
-        }
-        val yesterdayKey = dayKeyFmt.format(yesterdayCal.time)
-
-        val monthMap = linkedMapOf<String, MutableList<ChargeEntity>>()
-        for (charge in charges) {
-            val key = monthKeyFmt.format(Date(charge.startTs))
-            monthMap.getOrPut(key) { mutableListOf() }.add(charge)
-        }
-
-        return monthMap.entries
-            .sortedByDescending { it.key }
-            .map { (monthKey, monthCharges) ->
-                val dayMap = linkedMapOf<String, MutableList<ChargeEntity>>()
-                for (charge in monthCharges) {
-                    val dk = dayKeyFmt.format(Date(charge.startTs))
-                    dayMap.getOrPut(dk) { mutableListOf() }.add(charge)
-                }
-
-                val days = dayMap.entries
-                    .sortedByDescending { it.key }
-                    .map { (dayKey, dayCharges) ->
-                        val dow = dayOfWeekFmt.format(Date(dayCharges.first().startTs))
-                        val dayLabel = when (dayKey) {
-                            todayKey -> ctx.getString(R.string.charges_day_today, dow)
-                            yesterdayKey -> ctx.getString(R.string.charges_day_yesterday)
-                            else -> {
-                                val ddMmm = SimpleDateFormat("dd MMM", appLocale).format(Date(dayCharges.first().startTs))
-                                "$ddMmm ($dow)"
-                            }
-                        }
-                        ChargesDayGroup(
-                            date = dayKey,
-                            label = dayLabel,
-                            dayOfWeek = dow,
-                            totalKwh = dayCharges.sumOf { it.kwhCharged ?: 0.0 },
-                            sessionCount = dayCharges.size,
-                            totalCost = dayCharges.sumOf { it.cost ?: 0.0 },
-                            charges = dayCharges
-                        )
-                    }
-
-                val firstTs = monthCharges.first().startTs
-                ChargesMonthGroup(
-                    yearMonth = monthKey,
-                    label = monthLabelFmt.format(Date(firstTs)).replaceFirstChar { it.uppercase() },
-                    totalKwh = monthCharges.sumOf { it.kwhCharged ?: 0.0 },
-                    sessionCount = monthCharges.size,
-                    totalCost = monthCharges.sumOf { it.cost ?: 0.0 },
-                    days = days
-                )
-            }
     }
 
     private fun loadAutoserviceState() {
@@ -359,37 +223,6 @@ class ChargesViewModel @Inject constructor(
                     batTempSeries = batTemp,
                 )
             }
-        }
-    }
-
-    private fun dateRangeFor(period: ChargesPeriod): Pair<Long, Long> {
-        val now = System.currentTimeMillis()
-        val cal = Calendar.getInstance()
-        return when (period) {
-            ChargesPeriod.TODAY -> {
-                cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0)
-                cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
-                cal.timeInMillis to now
-            }
-            ChargesPeriod.WEEK -> {
-                cal.add(Calendar.DAY_OF_YEAR, -7)
-                cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0)
-                cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
-                cal.timeInMillis to now
-            }
-            ChargesPeriod.MONTH -> {
-                cal.set(Calendar.DAY_OF_MONTH, 1)
-                cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0)
-                cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
-                cal.timeInMillis to now
-            }
-            ChargesPeriod.YEAR -> {
-                cal.set(Calendar.DAY_OF_YEAR, 1)
-                cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0)
-                cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
-                cal.timeInMillis to now
-            }
-            ChargesPeriod.ALL -> 0L to now
         }
     }
 

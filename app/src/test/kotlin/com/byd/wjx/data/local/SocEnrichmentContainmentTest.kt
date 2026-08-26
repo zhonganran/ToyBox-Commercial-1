@@ -5,24 +5,25 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Unit tests for the SOC enrichment containment check in HistoryImporter.doSync().
- *
- * Logic under test (extracted for isolation):
- *   withinSession = endTsMs in sessionStartTs..(sessionEndTs + 30_000L)
+ * Unit tests for the shared SOC enrichment containment policy.
  *
  * Semantics: a trip is enriched when its endTs falls inside the session window.
  * This is a containment check on endTs, NOT an intersection check.
  */
 class SocEnrichmentContainmentTest {
 
-    // Mirror of the inline check in HistoryImporter.doSync()
     private fun withinSession(
-        tripStartTsMs: Long,
+        @Suppress("UNUSED_PARAMETER") tripStartTsMs: Long,
         tripEndTsMs: Long,
         sessionStartTs: Long,
         sessionEndTs: Long,
         toleranceMs: Long = 30_000L,
-    ): Boolean = tripEndTsMs in sessionStartTs..(sessionEndTs + toleranceMs)
+    ): Boolean = isHistoryTripWithinSession(
+        tripEndTsMs = tripEndTsMs,
+        sessionStartTs = sessionStartTs,
+        sessionEndTs = sessionEndTs,
+        toleranceMs = toleranceMs,
+    )
 
     // Session: 10_000 .. 60_000  (+ 30s tolerance = 90_000)
     private val sessionStart = 10_000L

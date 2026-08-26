@@ -3,8 +3,12 @@ package com.byd.wjx.di
 import com.byd.wjx.data.automation.AutomationActionSnapshotFieldProvider
 import com.byd.wjx.data.automation.AutomationConfirmationPresenter
 import com.byd.wjx.data.automation.AutomationConfigRepository
+import com.byd.wjx.data.automation.AutomationJournalRepository
 import com.byd.wjx.data.automation.AutomationNotificationPresenter
+import com.byd.wjx.data.automation.AutomationRuleRepository
 import com.byd.wjx.data.automation.RoomAutomationConfigRepository
+import com.byd.wjx.data.automation.RoomAutomationJournalRepository
+import com.byd.wjx.data.automation.RoomAutomationRuleRepository
 import com.byd.wjx.data.autoservice.AdbOnDeviceClient
 import com.byd.wjx.data.autoservice.AdbOnDeviceClientImpl
 import com.byd.wjx.data.charging.AutoserviceChargingTelemetryReader
@@ -71,6 +75,16 @@ abstract class AppBindingsModule {
     abstract fun bindAutomationConfigRepository(
         impl: RoomAutomationConfigRepository,
     ): AutomationConfigRepository
+
+    @Binds @Singleton
+    abstract fun bindAutomationRuleRepository(
+        impl: RoomAutomationRuleRepository,
+    ): AutomationRuleRepository
+
+    @Binds @Singleton
+    abstract fun bindAutomationJournalRepository(
+        impl: RoomAutomationJournalRepository,
+    ): AutomationJournalRepository
 
     @Binds @Singleton
     abstract fun bindActionSnapshotFieldProvider(

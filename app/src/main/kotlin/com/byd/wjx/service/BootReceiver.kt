@@ -16,16 +16,7 @@ import com.byd.wjx.log.WjxFileLogger
 class BootReceiver : BroadcastReceiver() {
 
     companion object {
-        private const val TAG = "BootReceiver"
-        private val POWER_EVENTS = setOf(
-            "com.byd.action.ACC_ON",
-            "com.byd.action.ACC_OFF",
-            "com.byd.action.IGN_ON",
-        )
-    }
-
-    override fun onReceive(context: Context, intent: Intent) {
-        val validActions = setOf(
+        internal val SYSTEM_EVENTS = setOf(
             Intent.ACTION_BOOT_COMPLETED,
             "android.intent.action.QUICKBOOT_POWERON",
             "com.htc.intent.action.QUICKBOOT_POWERON",
@@ -36,40 +27,38 @@ class BootReceiver : BroadcastReceiver() {
             Intent.ACTION_USER_UNLOCKED,
             Intent.ACTION_POWER_CONNECTED,
             Intent.ACTION_POWER_DISCONNECTED,
-            "com.byd.action.ACC_ON",
-            "com.byd.action.ACC_OFF",
-            "com.byd.action.IGN_ON",
-            "com.byd.accmode.ACC_MODE_CHANGED",
         )
-        if (intent.action !in validActions) return
+    }
 
-        WjxFileLogger.i(TAG, "Boot/user event: ${intent.action}")
-        ChainLog.append(context, "BootReceiver: ${intent.action}")
-        logBootEvent(context, intent.action ?: "unknown")
-        ProcessRevivalReceiver.schedule(context.applicationContext)
+    override fun onReceive(context: Context, intent: Intent) {
+        val action = intent.action?.takeIf(SYSTEM_EVENTS::contains) ?: return
+        BootStartupCoordinator.handle(context, action, "system")
+    }
+}
+
+internal object BootStartupCoordinator {
+    private const val TAG = "BootReceiver"
+
+    fun handle(context: Context, action: String, source: String) {
+        WjxFileLogger.i(TAG, "boot event source=$source action=$action")
+        ChainLog.append(context, "BootReceiver[$source]: $action")
+        logBootEvent(context, action)
         if (!BootState.isUserUnlocked(context)) {
             updateBootMethod(context, "DirectBootDeferred")
             ChainLog.append(context, "DirectBoot deferred until USER_UNLOCKED")
-            WjxFileLogger.i(TAG, "DirectBoot deferred until USER_UNLOCKED action=${intent.action}")
+            WjxFileLogger.i(TAG, "DirectBoot deferred until USER_UNLOCKED action=$action")
             return
-        }
-
-        if (intent.action in POWER_EVENTS) {
-            runCatching {
-                KeepAliveService.start(context.applicationContext, "power_event:${intent.action}")
-            }.onFailure {
-                WjxFileLogger.w(TAG, "immediate power-event start failed: ${it.message}", it)
-            }
         }
 
         if (!StartupThrottle.shouldStart()) {
-            ChainLog.append(context, "BootReceiver debounced: ${intent.action}")
-            WjxFileLogger.i(TAG, "debounced action=${intent.action}")
+            ChainLog.append(context, "BootReceiver debounced: $action")
+            WjxFileLogger.i(TAG, "debounced source=$source action=$action")
             return
         }
 
+        ProcessRevivalReceiver.schedule(context.applicationContext)
         (context.applicationContext as? SuperToyBoxApp)?.ensureUnlockedRuntime()
-        startFullStack(context, intent.action ?: "unknown")
+        startFullStack(context, action)
     }
 
     private fun startFullStack(context: Context, action: String) {
@@ -109,5 +98,4 @@ class BootReceiver : BroadcastReceiver() {
             WjxFileLogger.w(TAG, "Failed to update boot method")
         }
     }
-
 }

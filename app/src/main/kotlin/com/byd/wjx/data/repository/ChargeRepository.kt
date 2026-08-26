@@ -1,6 +1,7 @@
 package com.byd.wjx.data.repository
 
 import com.byd.wjx.data.local.dao.ChargeDao
+import com.byd.wjx.data.local.entity.BatterySnapshotEntity
 import com.byd.wjx.data.local.entity.ChargeEntity
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
@@ -18,6 +19,11 @@ class ChargeRepository @Inject constructor(
     private val chargeDao: ChargeDao,
 ) {
     suspend fun insertCharge(charge: ChargeEntity): Long = chargeDao.insert(charge)
+
+    suspend fun insertCatchUpCharge(
+        charge: ChargeEntity,
+        batterySnapshot: BatterySnapshotEntity?,
+    ): Long = chargeDao.insertCatchUpSession(charge, batterySnapshot)
 
     suspend fun updateCharge(charge: ChargeEntity) = chargeDao.update(charge)
 

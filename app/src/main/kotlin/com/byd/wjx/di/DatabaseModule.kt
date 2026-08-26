@@ -7,7 +7,6 @@ import com.byd.wjx.data.local.dao.ChargeDao
 import com.byd.wjx.data.local.dao.IdleDrainDao
 import com.byd.wjx.data.local.dao.LastStateDao
 import com.byd.wjx.data.local.dao.OdometerSampleDao
-import com.byd.wjx.data.local.dao.PlaceDao
 import com.byd.wjx.data.local.dao.RuleDao
 import com.byd.wjx.data.local.dao.RuleLogDao
 import com.byd.wjx.data.local.dao.SettingsDao
@@ -30,7 +29,6 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "wjx.db")
-            .addMigrations(AppDatabase.MIGRATION_20_21)
             .build()
 
     @Provides fun provideTripDao(db: AppDatabase): TripDao = db.tripDao()
@@ -41,7 +39,6 @@ object DatabaseModule {
     @Provides fun provideBatterySnapshotDao(db: AppDatabase): BatterySnapshotDao = db.batterySnapshotDao()
     @Provides fun provideRuleDao(db: AppDatabase): RuleDao = db.ruleDao()
     @Provides fun provideRuleLogDao(db: AppDatabase): RuleLogDao = db.ruleLogDao()
-    @Provides fun providePlaceDao(db: AppDatabase): PlaceDao = db.placeDao()
     @Provides fun provideOdometerSampleDao(db: AppDatabase): OdometerSampleDao = db.odometerSampleDao()
     @Provides fun provideLastStateDao(db: AppDatabase): LastStateDao = db.lastStateDao()
     @Provides fun provideVehicleWriteLogDao(db: AppDatabase): VehicleWriteLogDao = db.vehicleWriteLogDao()

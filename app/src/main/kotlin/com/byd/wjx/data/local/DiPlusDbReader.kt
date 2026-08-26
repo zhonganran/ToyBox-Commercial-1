@@ -71,15 +71,18 @@ open class DiPlusDbReader @Inject constructor(
             return@withContext emptyList()
         }
 
-        runCatching {
-            SQLiteDatabase.openDatabase(file.absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { db ->
+        try {
+            val records = SQLiteDatabase.openDatabase(
+                file.absolutePath,
+                null,
+                SQLiteDatabase.OPEN_READONLY,
+            ).use { db ->
                 val hasTripInfo = db.rawQuery(
                     "SELECT name FROM sqlite_master WHERE type='table' AND name='TripInfo'",
                     null,
                 ).use { it.moveToFirst() }
                 if (!hasTripInfo) {
-                    WjxFileLogger.w(TAG, "TripInfo table missing path=${file.absolutePath}")
-                    return@use emptyList()
+                    throw EnergyDataException("系统行程数据库缺少 TripInfo 表")
                 }
 
                 db.rawQuery(
@@ -113,13 +116,18 @@ open class DiPlusDbReader @Inject constructor(
                     }
                 }
             }
-        }.onSuccess { records ->
             Log.i(TAG, "readTripInfo: ${records.size} records from ${file.absolutePath}")
             WjxFileLogger.i(TAG, "readTripInfo rows=${records.size} size=${file.length()}")
-        }.onFailure { error ->
+            records
+        } catch (error: Exception) {
             Log.e(TAG, "readTripInfo failed", error)
             WjxFileLogger.e(TAG, "readTripInfo failed: ${error.message}", error)
-        }.getOrDefault(emptyList())
+            if (error is EnergyDataException) throw error
+            throw EnergyDataException(
+                "读取系统行程数据库失败：${error.message ?: "未知错误"}",
+                error,
+            )
+        }
     }
 }
 

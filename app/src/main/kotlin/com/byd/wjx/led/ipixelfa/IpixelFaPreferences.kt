@@ -77,7 +77,6 @@ class IpixelFaPreferences @Inject constructor(
 
     private fun setRules(rules: List<IpixelFaLinkageRule>) = update {
         putString(KEY_RULES, IpixelFaLinkageRuleCodec.encode(rules))
-        putBoolean(KEY_RULES_CUSTOMIZED, true)
     }
 
     private fun update(block: android.content.SharedPreferences.Editor.() -> Unit) {
@@ -101,7 +100,6 @@ class IpixelFaPreferences @Inject constructor(
     companion object {
         const val PREFS_NAME = "wjx_led_ipixel_fa"
         internal const val KEY_RULES = "rules"
-        private const val KEY_RULES_CUSTOMIZED = "rules_customized"
 
         private const val KEY_ENABLED = "enabled"
         private const val KEY_DEVICE_ADDRESS = "device_address"

@@ -29,4 +29,36 @@ class AutoDoorSpeedRuleTest {
         assertEquals(1, resolveAutoDoorToggleCommand(action = null, percent = 2, fallbackCommand = 2))
         assertEquals(3, resolveAutoDoorToggleCommand(action = null, percent = 50, fallbackCommand = 3))
     }
+
+    @Test
+    fun `safety checks fail closed in vehicle order`() {
+        assertEquals(
+            "无法确认车速",
+            autoDoorSafetyBlockReason(1, null, slideReady = 1, coverState = 1, defaultLimitKmh = 3f),
+        )
+        assertEquals(
+            "开门要求车速低于 1km/h（当前 1.00km/h）",
+            autoDoorSafetyBlockReason(1, 1f, slideReady = 1, coverState = 1, defaultLimitKmh = 3f),
+        )
+        assertEquals(
+            "无法确认电滑门准备状态",
+            autoDoorSafetyBlockReason(2, 0f, slideReady = null, coverState = 1, defaultLimitKmh = 3f),
+        )
+        assertEquals(
+            "电滑门未就绪，官方要求 BODYWORK_ELEC_SLIDE_STATE=1",
+            autoDoorSafetyBlockReason(2, 0f, slideReady = 0, coverState = 1, defaultLimitKmh = 3f),
+        )
+        assertEquals(
+            "无法确认同侧充电口盖状态",
+            autoDoorSafetyBlockReason(2, 0f, slideReady = 1, coverState = null, defaultLimitKmh = 3f),
+        )
+        assertEquals(
+            "同侧充电口盖未关闭，官方会拦截",
+            autoDoorSafetyBlockReason(2, 0f, slideReady = 1, coverState = 0, defaultLimitKmh = 3f),
+        )
+        assertEquals(
+            null,
+            autoDoorSafetyBlockReason(2, 0f, slideReady = 1, coverState = 1, defaultLimitKmh = 3f),
+        )
+    }
 }

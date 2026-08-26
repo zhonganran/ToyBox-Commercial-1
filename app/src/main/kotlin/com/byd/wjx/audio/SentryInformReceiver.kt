@@ -27,9 +27,13 @@ class SentryInformReceiver : BroadcastReceiver() {
             WjxFileLogger.i(TAG, "skip sentry broadcast: disabled")
             return
         }
+        if (!dispatchGate.tryAcquire()) {
+            WjxFileLogger.i(TAG, "skip sentry broadcast: throttled or already running")
+            return
+        }
 
         val pending = goAsync()
-        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+        receiverScope.launch {
             try {
                 val entryPoint = EntryPointAccessors.fromApplication(appContext, ClusterEntryPoint::class.java)
                 val activationManager = entryPoint.activationManager()
@@ -53,6 +57,7 @@ class SentryInformReceiver : BroadcastReceiver() {
             } catch (e: Exception) {
                 WjxFileLogger.w(TAG, "sentry helper play failed: ${e.message}", e)
             } finally {
+                dispatchGate.release()
                 pending.finish()
             }
         }
@@ -96,5 +101,28 @@ class SentryInformReceiver : BroadcastReceiver() {
         private const val ACTION_INFORM = "com.byd.sentrymode.action_inform"
         private const val WARN_ALARM = 2
         private const val ACTIVATION_RESTORE_REFRESH_MS = 30_000L
+        private val receiverScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        private val dispatchGate = SentryDispatchGate()
+    }
+}
+
+internal class SentryDispatchGate(
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val minimumIntervalMs: Long = 10_000L,
+) {
+    private val lock = Any()
+    private var inFlight = false
+    private var lastAcceptedAt = 0L
+
+    fun tryAcquire(): Boolean = synchronized(lock) {
+        val now = clock()
+        if (inFlight || now - lastAcceptedAt < minimumIntervalMs) return@synchronized false
+        inFlight = true
+        lastAcceptedAt = now
+        true
+    }
+
+    fun release() = synchronized(lock) {
+        inFlight = false
     }
 }

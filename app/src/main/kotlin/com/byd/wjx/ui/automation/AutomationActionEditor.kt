@@ -1,29 +1,16 @@
 package com.byd.wjx.ui.automation
 
-import android.content.Context
-import android.content.Intent
-import android.media.AudioManager
-import android.provider.OpenableColumns
-import android.provider.Settings
-import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -32,19 +19,13 @@ import androidx.compose.ui.unit.sp
 import com.byd.wjx.R
 import com.byd.wjx.data.local.entity.ActionDef
 import com.byd.wjx.domain.vehicle.VehicleCommandSyntax
-import com.byd.wjx.data.local.entity.PlaceEntity
-import com.byd.wjx.storage.SoundLibrary
-import com.byd.wjx.ui.components.AppLaunchPickerDialog
-import com.byd.wjx.ui.components.bydSwitchColors
 import com.byd.wjx.ui.theme.*
 import kotlin.math.roundToInt
-import org.json.JSONObject
 
 @Composable
 internal fun ActionRow(
     index: Int,
     action: ActionDef,
-    places: List<PlaceEntity>,
     onUpdate: (ActionDef) -> Unit,
     onTest: (ActionDef) -> Unit,
     onMoveUp: (() -> Unit)?,
@@ -70,7 +51,7 @@ internal fun ActionRow(
             "call" ->
                 CallActionControls(action = action, onUpdate = onUpdate, modifier = Modifier.weight(1f))
             "navigate" ->
-                NavigateActionControls(action = action, places = places, onUpdate = onUpdate, modifier = Modifier.weight(1f))
+                NavigateActionControls(action = action, onUpdate = onUpdate, modifier = Modifier.weight(1f))
             "url" ->
                 UrlActionControls(action = action, onUpdate = onUpdate, modifier = Modifier.weight(1f))
             "delay" ->
@@ -118,7 +99,6 @@ private fun ParamActionControls(
     onUpdate: (ActionDef) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
     val numericSpec = remember(action.command) { vehicleNumericActionSpec(action.command) }
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         CatalogDropdown(
@@ -454,250 +434,3 @@ private fun HttpActionControls(
         )
     }
 }
-
-// --- Catalog Dropdown (with category headers) ---
-
-@Composable
-internal fun CatalogDropdown(
-    selected: String,
-    items: List<String>,
-    categories: List<String>,
-    modifier: Modifier = Modifier,
-    onSelect: (Int) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-    Box(modifier = modifier) {
-        Text(
-            selected,
-            fontSize = 13.sp, color = TextPrimary,
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(CardSurface, RoundedCornerShape(10.dp))
-                .border(1.dp, CardBorder, RoundedCornerShape(10.dp))
-                .clickable { expanded = true }
-                .padding(8.dp, 7.dp),
-            maxLines = 1
-        )
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.fillMaxHeight(0.5f)
-        ) {
-            var lastCat = ""
-            items.forEachIndexed { idx, item ->
-                val cat = categories[idx]
-                if (cat != lastCat) {
-                    lastCat = cat
-                    DropdownMenuItem(
-                        text = { Text(cat, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TextMuted) },
-                        onClick = {},
-                        enabled = false
-                    )
-                }
-                DropdownMenuItem(
-                    text = { Text(item, fontSize = 13.sp) },
-                    onClick = { expanded = false; onSelect(idx) }
-                )
-            }
-        }
-    }
-}
-
-// --- Journal Dialog ---
-
-
-@Composable
-internal fun AddActionButton(
-    onAdd: (ActionDef) -> Unit,
-) {
-    val context = LocalContext.current
-    var menuExpanded by remember { mutableStateOf(false) }
-    var showOverlayPrompt by remember { mutableStateOf(false) }
-
-    Box {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(CardSurfaceElevated.copy(alpha = 0.62f), RoundedCornerShape(14.dp))
-                .border(1.dp, AccentTeal.copy(alpha = 0.25f), RoundedCornerShape(14.dp))
-                .clickable { menuExpanded = true }
-                .padding(12.dp, 10.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(stringResource(R.string.automation_add_action_button), fontSize = 12.sp, color = TextMuted)
-        }
-        DropdownMenu(
-            expanded = menuExpanded,
-            onDismissRequest = { menuExpanded = false },
-            modifier = Modifier.fillMaxHeight(0.72f),
-        ) {
-            AutomationMenuGroupHeader(
-                stringResource(R.string.automation_action_group_vehicle),
-                AccentTeal,
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_dplus_command), fontSize = 13.sp) },
-                onClick = {
-                    menuExpanded = false
-                    val action = ACTION_COMMANDS.first()
-                    onAdd(ActionDef(action.command, action.name))
-                }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_sentry_mode), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAdd(newSentryModeAction()) }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_auto_door), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAdd(newAutoDoorAction()) }
-            )
-
-            AutomationMenuGroupHeader(
-                stringResource(R.string.automation_action_group_media),
-                AccentTeal,
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_inside_sound), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAdd(newInsideSoundAction(context)) }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_stop_inside_sound), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAdd(newStopInsideSoundAction()) }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_outside_sound), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAdd(newOutsideSoundAction(context)) }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_stop_outside_sound), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAdd(newStopOutsideSoundAction()) }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_play_music), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAdd(newPlayMusicAction()) }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_stop_music), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAdd(newStopMusicAction()) }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_play_video), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAdd(newPlayVideoAction()) }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_stop_video), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAdd(newStopVideoAction()) }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_media_volume), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAdd(newMediaVolumeAction(context)) }
-            )
-
-            AutomationMenuGroupHeader(
-                stringResource(R.string.automation_action_group_apps),
-                AccentTeal,
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_app_launch), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAdd(newAppLaunchAction(context)) }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_go_home), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAdd(newGoHomeAction()) }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_delay), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAdd(newDelayAction(context)) }
-            )
-
-            AutomationMenuGroupHeader(
-                stringResource(R.string.automation_action_group_notifications),
-                AccentTeal,
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_notification_silent), fontSize = 13.sp) },
-                onClick = {
-                    menuExpanded = false
-                    onAdd(newNotificationAction(silent = true, context = context))
-                }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_notification_sound), fontSize = 13.sp) },
-                onClick = {
-                    menuExpanded = false
-                    onAdd(newNotificationAction(silent = false, context = context))
-                    if (!android.provider.Settings.canDrawOverlays(context)) {
-                        showOverlayPrompt = true
-                    }
-                }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_call), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAdd(newCallAction(context)) }
-            )
-
-            AutomationMenuGroupHeader(
-                stringResource(R.string.automation_action_group_network),
-                AccentTeal,
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_http), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAdd(newHttpAction()) }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_url), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAdd(newUrlAction(context)) }
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_navigate), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAdd(newNavigateAction(context)) }
-            )
-        }
-    }
-
-    if (showOverlayPrompt) {
-        AlertDialog(
-            onDismissRequest = { showOverlayPrompt = false },
-            containerColor = CardSurface,
-            title = { Text(stringResource(R.string.automation_overlay_permission_title), color = TextPrimary, fontSize = 16.sp) },
-            text = {
-                Text(
-                    stringResource(R.string.automation_overlay_permission_text),
-                    fontSize = 13.sp,
-                    color = TextPrimary
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    showOverlayPrompt = false
-                    val intent = android.content.Intent(
-                        android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        android.net.Uri.parse("package:${context.packageName}")
-                    ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    try { context.startActivity(intent) } catch (_: Exception) {}
-                }) {
-                    Text(stringResource(R.string.automation_overlay_open_settings), color = AccentGreen)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showOverlayPrompt = false }) {
-                    Text(stringResource(R.string.automation_overlay_later), color = TextSecondary)
-                }
-            }
-        )
-    }
-}
-
-internal fun newDelayAction(context: android.content.Context): ActionDef = ActionDef(
-    command = "delay_1000",
-    displayName = "延迟 1 秒",
-    kind = "delay",
-    payload = "1000"
-)
-
-internal fun newMediaVolumeAction(context: android.content.Context): ActionDef = ActionDef(
-    command = "media_volume",
-    displayName = "媒体音量：2",
-    kind = "media_volume",
-    payload = "2"
-)

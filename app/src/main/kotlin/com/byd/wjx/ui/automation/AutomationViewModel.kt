@@ -6,13 +6,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.byd.wjx.activation.ActivationManager
 import com.byd.wjx.activation.PremiumFeature
-import com.byd.wjx.data.local.dao.RuleDao
-import com.byd.wjx.data.local.dao.RuleLogDao
+import com.byd.wjx.data.automation.AutomationJournalRepository
+import com.byd.wjx.data.automation.AutomationRuleRepository
 import com.byd.wjx.data.local.entity.ActionDef
 import com.byd.wjx.data.local.entity.RuleEntity
 import com.byd.wjx.data.local.entity.TriggerDef
 import com.byd.wjx.data.automation.ActionDispatcher
-import com.byd.wjx.data.repository.PlaceRepository
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.data.vehicle.VehicleApi
 import com.byd.wjx.log.WjxFileLogger
@@ -27,9 +26,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class AutomationViewModel @Inject constructor(
-    private val ruleDao: RuleDao,
-    private val ruleLogDao: RuleLogDao,
-    private val placeRepository: PlaceRepository,
+    private val ruleRepository: AutomationRuleRepository,
+    private val journalRepository: AutomationJournalRepository,
     private val settingsRepository: SettingsRepository,
     private val vehicleApi: VehicleApi,
     private val actionDispatcher: ActionDispatcher,
@@ -44,25 +42,20 @@ class AutomationViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 seedDefaultAutomationPresets(
-                    ruleDao = ruleDao,
+                    ruleRepository = ruleRepository,
                     settingsRepository = settingsRepository,
                     outsideSoundAction = newOutsideSoundAction(context),
                 )
             } catch (e: Exception) {
                 WjxFileLogger.e("AutomationViewModel", "default automation preset initialization failed", e)
             }
-            ruleDao.getAll().collect { rules ->
+            ruleRepository.observeAll().collect { rules ->
                 _uiState.update { it.copy(rules = rules) }
             }
         }
         viewModelScope.launch {
-            ruleLogDao.getRecent(100).collect { logs ->
+            journalRepository.observeRecent(100).collect { logs ->
                 _uiState.update { it.copy(logs = logs) }
-            }
-        }
-        viewModelScope.launch {
-            placeRepository.getAll().collect { places ->
-                _uiState.update { it.copy(places = places) }
             }
         }
     }
@@ -81,7 +74,7 @@ class AutomationViewModel @Inject constructor(
                     return@launch
                 }
             }
-            ruleDao.setEnabled(rule.id, enabling)
+            ruleRepository.setEnabled(rule.id, enabling)
         }
     }
 
@@ -250,20 +243,20 @@ class AutomationViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(editorError = null)
 
         viewModelScope.launch {
-            if (e.isNew && !activationManager.canCreateAutomation(ruleDao.getCount())) {
+            if (e.isNew && !activationManager.canCreateAutomation(ruleRepository.count())) {
                 _uiState.update { it.copy(editorError = "试用已结束，未激活最多创建 3 条智能联动") }
                 return@launch
             }
-            val existing = if (e.isNew) null else ruleDao.getById(e.id)
+            val existing = if (e.isNew) null else ruleRepository.find(e.id)
             if (!e.isNew && existing == null) {
                 _uiState.update { it.copy(editorError = "规则已被删除，无法保存") }
                 return@launch
             }
             val entity = e.toRuleEntity(existing)
             val savedId = if (e.isNew) {
-                ruleDao.insert(entity)
+                ruleRepository.create(entity)
             } else {
-                ruleDao.update(entity)
+                ruleRepository.save(entity)
                 entity.id
             }
             WjxFileLogger.i(
@@ -280,15 +273,16 @@ class AutomationViewModel @Inject constructor(
 
     fun duplicateRule(rule: RuleEntity) {
         viewModelScope.launch {
-            if (ruleDao.getCount() >= AUTOMATION_RULE_LIMIT) {
+            val ruleCount = ruleRepository.count()
+            if (ruleCount >= AUTOMATION_RULE_LIMIT) {
                 Toast.makeText(context, "智能联动最多创建 $AUTOMATION_RULE_LIMIT 条", Toast.LENGTH_SHORT).show()
                 return@launch
             }
-            if (!activationManager.canCreateAutomation(ruleDao.getCount())) {
+            if (!activationManager.canCreateAutomation(ruleCount)) {
                 Toast.makeText(context, "试用已结束，未激活最多创建 3 条智能联动", Toast.LENGTH_SHORT).show()
                 return@launch
             }
-            ruleDao.insert(
+            ruleRepository.create(
                 rule.copy(
                     id = 0,
                     name = "${rule.name} (${"副本"})",
@@ -312,7 +306,7 @@ class AutomationViewModel @Inject constructor(
     fun confirmDelete() {
         val ruleId = _uiState.value.showDeleteConfirm ?: return
         viewModelScope.launch {
-            ruleDao.getById(ruleId)?.let { ruleDao.delete(it) }
+            ruleRepository.find(ruleId)?.let { ruleRepository.remove(it) }
         }
         _uiState.update { it.copy(showDeleteConfirm = null) }
     }

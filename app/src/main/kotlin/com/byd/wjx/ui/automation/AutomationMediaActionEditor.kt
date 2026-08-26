@@ -31,7 +31,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.byd.wjx.R
 import com.byd.wjx.data.local.entity.ActionDef
-import com.byd.wjx.data.local.entity.PlaceEntity
 import com.byd.wjx.storage.SoundLibrary
 import com.byd.wjx.ui.components.AppLaunchPickerDialog
 import com.byd.wjx.ui.components.bydSwitchColors

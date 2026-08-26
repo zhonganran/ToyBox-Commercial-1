@@ -1,6 +1,6 @@
 package com.byd.wjx.ui.automation
 
-import com.byd.wjx.data.local.dao.RuleDao
+import com.byd.wjx.data.automation.AutomationRuleRepository
 import com.byd.wjx.data.local.entity.ActionDef
 import com.byd.wjx.data.local.entity.TriggerDef
 import com.byd.wjx.data.repository.SettingsRepository
@@ -72,7 +72,7 @@ internal fun AutomationPreset.toEditingRule(outsideSoundAction: ActionDef): Edit
 }
 
 internal suspend fun seedDefaultAutomationPresets(
-    ruleDao: RuleDao,
+    ruleRepository: AutomationRuleRepository,
     settingsRepository: SettingsRepository,
     outsideSoundAction: ActionDef,
     now: Long = System.currentTimeMillis(),
@@ -81,18 +81,18 @@ internal suspend fun seedDefaultAutomationPresets(
         return@withLock 0
     }
 
-    var ruleCount = ruleDao.getCount()
+    var ruleCount = ruleRepository.count()
     var insertedCount = 0
     var completed = true
 
     for (preset in AutomationPreset.entries) {
-        if (ruleDao.getByName(preset.label) != null) continue
+        if (ruleRepository.findByName(preset.label) != null) continue
         if (ruleCount >= AUTOMATION_RULE_LIMIT) {
             completed = false
             break
         }
 
-        ruleDao.insert(
+        ruleRepository.create(
             preset.toEditingRule(outsideSoundAction)
                 .toRuleEntity()
                 .copy(

@@ -21,7 +21,6 @@ data class PreferenceFilePolicy(
 object BackupPreferencesRegistry {
     val FILE_POLICIES: List<PreferenceFilePolicy> = listOf(
         PreferenceFilePolicy("cluster_projection", "ClusterProjectionPreferences", PreferenceBackupPolicy.USER_CONFIGURATION),
-        PreferenceFilePolicy("phone_cast", "PhoneCastPreferences", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("update_prefs", "UpdateChecker", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("wjx_range_prefs", "SocInterpolatorPrefsImpl", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy("wjx_lyrics", "LyricSettings", PreferenceBackupPolicy.USER_CONFIGURATION),
@@ -31,15 +30,9 @@ object BackupPreferencesRegistry {
         PreferenceFilePolicy("wjx_seat_channel", "SeatChannelStorePrefs", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy("lyric_display_controls", "LyricDisplayPanelPreferences", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("sound_library", "SoundLibrary", PreferenceBackupPolicy.USER_CONFIGURATION),
-        PreferenceFilePolicy("wjx_sound_downloads", "SoundDownloadStore", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy(
             "wjx_led_ipixel_fa",
             "IpixelFaPreferences",
-            PreferenceBackupPolicy.USER_CONFIGURATION,
-        ),
-        PreferenceFilePolicy(
-            "wjx_led_a950",
-            "A950Preferences",
             PreferenceBackupPolicy.USER_CONFIGURATION,
         ),
         PreferenceFilePolicy(

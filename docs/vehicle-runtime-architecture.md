@@ -63,9 +63,10 @@ read vehicle FIDs.
   serializes an eight-FID ADAS profile every 2 seconds and an eight-FID tire temperature/status
   profile every 10 seconds. The vehicle-data page owns the eight-FID powertrain profile at 2 seconds.
   LED reads are split by response requirement and run only while linkage is enabled, connected and
-  initialized: stable turn enum + gear at 100 ms, brake depth + actual brake lamp at 200 ms, four
-  doors + automatic parking at 500 ms, and six assisted-driving state fields at 1 second. This caps
-  the dedicated LED budget at roughly 46 FID reads per second instead of the previous 80. Turn
+  initialized. FA and Mafu use the same sampling implementation and freshness rules: stable turn
+  enum + gear at 100 ms, brake depth + actual brake lamp at 200 ms, four doors + automatic parking
+  at 500 ms, and six assisted-driving state fields at 1 second. This caps each active runtime's
+  dedicated LED budget at roughly 46 FID reads per second instead of the previous 80. Turn
   scenes use no blinking-lamp fallback; reverse parking is driven by reverse gear or active
   automatic parking. ACC mode uses raw states 3/4/6/7, LCC/NCA and MNOA use raw state 2, and
   execution speed remains diagnostic telemetry rather than an independent proof that automation is
@@ -77,6 +78,13 @@ read vehicle FIDs.
 - Every first connection or reconnection resets the LED arbiter and sends the default smile before
   current vehicle conditions may select another scene. When no scene condition remains, the same
   default smile is always restored.
+- Mafu BLE keeps Android GATT discovery, notification subscription, MTU negotiation and chunked
+  writes inside `MafuGattTransport`. `MafuBleClient` owns connection state and initialization only;
+  notification stream framing, command ACK matching, sequence rollover and reconnect eligibility
+  remain process-neutral boundaries with unit coverage.
+- Standard FA BLE keeps GATT discovery and write acknowledgements inside `IpixelFaGattTransport`.
+  `IpixelFaBleClient` owns connection state and write-failure recovery, while advertisement
+  matching and capped reconnect backoff remain pure policies with unit coverage.
 - Charging current/power, BMS maximum charge/discharge power, insulation resistance and stop SOC
   belong to a separate UI-owned telemetry path. The ordinary catch-up snapshot does not read them;
   the charging page first reads its base metadata and adds the six diagnostic FIDs only after AC/DC
@@ -151,8 +159,8 @@ automation and overlays must not call autoservice or shell commands directly.
 - `LyricDisplayScreen.kt` owns the desktop and instrument-cluster lyric state plus service
   callbacks. `LyricDisplaySettingsPanels.kt` contains lyric settings UI, while
   `LyricDisplayControls.kt` owns lyric previews and shared controls.
-- `SoundScreen.kt` is the page shell. Local-library and online-catalog behavior live in
-  `SoundLocalTab.kt` and `SoundOnlineTab.kt`.
+- `SoundScreen.kt` is the page shell for the local sound library. Local playback, import, sorting
+  and deletion behavior live in `SoundLocalTab.kt`.
 - Android Services remain lifecycle shells. Realtime hailing capture/playback lives in
   `RealtimeHailingEngine`, while sample conversion and framing live in `HailingAudioProcessor`.
 
@@ -187,9 +195,11 @@ branches. This does not authorize replacing BYD private APIs or fixed vehicle st
 - SharedPreferences schemas with multiple runtime consumers use a single typed owner. Cluster
   projection reads one `ClusterProjectionPreferenceSnapshot`, and grouped geometry writes are
   committed through `ClusterProjectionPreferences` rather than duplicating keys and defaults.
-- The helper Binder entry stays in `HelperDaemon.kt`; shell execution, task/display reflection,
-  VIN platform access and helper-side file logging live in `HelperDaemonPlatform.kt`. Protocol
-  changes must not be hidden inside platform utility code.
+- `HelperDaemon.kt` is only the stable app_process entry and service-registration lifecycle.
+  `HelperBinderService` owns caller UID and descriptor enforcement, while
+  `HelperTransactionDispatcher` routes each published transaction to exactly one vehicle-I/O,
+  projection, system or vehicle-feature handler. Shell execution, autoservice transport,
+  task/display reflection, VIN platform access and helper logging remain separate owners.
 - Compressed lock-sound decoding and PCM sample-format conversion live in `HelperPcmDecoder`.
   Decoder utilities must not acquire vehicle or audio-route state.
 - `HelperLockSoundRuntime.kt` owns configuration plus lock, unlock and sentry detection. It decides
@@ -211,4 +221,5 @@ branches. This does not authorize replacing BYD private APIs or fixed vehicle st
   directly.
 - `HelperDaemon.kt` remains the app_process/Binder entry only. Keeping the entry class small
   protects the externally referenced `com.byd.wjx.helper.HelperDaemon` launch name from feature
-  churn.
+  churn. Reserved transaction codes fall through to Binder, and virtual displays use an
+  idempotent ownership registry so a repeated release cannot release the same resource twice.

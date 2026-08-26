@@ -47,15 +47,16 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
-        private const val PERMISSION_REQUEST_CODE = 1001
-        private const val BACKGROUND_LOCATION_REQUEST_CODE = 1002
+        private const val NOTIFICATION_PERMISSION_REQUEST_CODE = 1001
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WjxFileLogger.i(TAG, "onCreate")
         configureSystemBars()
-        requestPermissionsIfNeeded()
+        requestNotificationPermissionIfNeeded()
+        ensureWjxDirectory()
+        startBackgroundStack()
 
         setContent {
             val storedThemeMode by produceState(initialValue = SettingsRepository.DEFAULT_THEME_MODE) {
@@ -108,60 +109,15 @@ class MainActivity : AppCompatActivity() {
             .show(WindowInsetsCompat.Type.systemBars())
     }
 
-    private fun requestPermissionsIfNeeded() {
-        val permissions = mutableListOf<String>()
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            permissions.add(Manifest.permission.ACCESS_FINE_LOCATION)
-        }
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-        }
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-        }
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            permissions.add(Manifest.permission.RECORD_AUDIO)
-        }
+    private fun requestNotificationPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
             != PackageManager.PERMISSION_GRANTED
         ) {
-            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
-        }
-
-        if (permissions.isNotEmpty()) {
-            WjxFileLogger.d(TAG, "Requesting permissions: $permissions")
-            ActivityCompat.requestPermissions(this, permissions.toTypedArray(), PERMISSION_REQUEST_CODE)
-        } else {
-            ensureWjxDirectory()
-            // Base permissions granted, check background location
-            requestBackgroundLocationIfNeeded()
-            startBackgroundStack()
-        }
-    }
-
-    /**
-     * On Android 10+ (API 29+), ACCESS_BACKGROUND_LOCATION must be requested
-     * SEPARATELY after ACCESS_FINE_LOCATION is granted. Without it, the
-     * foreground service GPS does not work when the activity is not visible.
-     */
-    private fun requestBackgroundLocationIfNeeded() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            WjxFileLogger.d(TAG, "Requesting ACCESS_BACKGROUND_LOCATION separately")
             ActivityCompat.requestPermissions(
                 this,
-                arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION),
-                BACKGROUND_LOCATION_REQUEST_CODE
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                NOTIFICATION_PERMISSION_REQUEST_CODE,
             )
         }
     }
@@ -173,34 +129,9 @@ class MainActivity : AppCompatActivity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        when (requestCode) {
-            PERMISSION_REQUEST_CODE -> {
-                val denied = mutableListOf<String>()
-                permissions.forEachIndexed { index, permission ->
-                    if (grantResults.getOrNull(index) == PackageManager.PERMISSION_GRANTED) {
-                        WjxFileLogger.i(TAG, "Permission granted: $permission")
-                    } else {
-                        WjxFileLogger.w(TAG, "Permission denied: $permission")
-                        denied.add(permission)
-                    }
-                }
-                if (denied.isNotEmpty()) {
-                    WjxFileLogger.w(TAG, "Starting TrackingService with denied permissions: $denied")
-                }
-                ensureWjxDirectory()
-                // Now request background location (must be after fine location)
-                requestBackgroundLocationIfNeeded()
-                startBackgroundStack()
-                syncVehicleHistory("permission_result")
-            }
-            BACKGROUND_LOCATION_REQUEST_CODE -> {
-                val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
-                if (granted) {
-                    WjxFileLogger.i(TAG, "Background location granted; GPS will work in background")
-                } else {
-                    WjxFileLogger.w(TAG, "Background location denied; GPS may not work when app is hidden")
-                }
-            }
+        if (requestCode == NOTIFICATION_PERMISSION_REQUEST_CODE) {
+            val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
+            WjxFileLogger.i(TAG, "Notification permission granted=$granted")
         }
     }
 

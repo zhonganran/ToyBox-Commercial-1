@@ -25,3 +25,10 @@ internal fun decimateTripPoints(
     }
     return result
 }
+
+internal fun formatTripDuration(durationMs: Long): String {
+    val totalMinutes = (durationMs.coerceAtLeast(0L) / 60_000L).toInt()
+    val hours = totalMinutes / 60
+    val minutes = totalMinutes % 60
+    return if (hours > 0) "${hours}小时${minutes}分" else "${minutes}分钟"
+}

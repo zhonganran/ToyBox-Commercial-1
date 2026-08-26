@@ -111,4 +111,12 @@ class SystemMetricsReaderTest {
         assertEquals(0.5, mmc.readMbPerSec ?: -1.0, 0.0001)
         assertEquals(1.0, mmc.writeMbPerSec ?: -1.0, 0.0001)
     }
+
+    @Test
+    fun `hardware units normalize common kernel scales`() {
+        assertEquals(1800, normalizeCpuFrequencyMhz(1_800_000L))
+        assertEquals("600 MHz", formatGpuValue("GPU 频率", "600000000"))
+        assertEquals(42.0f, normalizeTemperature(42_000L) ?: -1f, 0.001f)
+        assertNull(normalizeTemperature(999_999L))
+    }
 }

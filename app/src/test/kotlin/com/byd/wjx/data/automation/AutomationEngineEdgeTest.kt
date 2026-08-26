@@ -3,8 +3,6 @@ package com.byd.wjx.data.automation
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.byd.wjx.activation.ActivationManager
-import com.byd.wjx.data.local.dao.RuleDao
-import com.byd.wjx.data.local.dao.RuleLogDao
 import com.byd.wjx.data.local.entity.ActionDef
 import com.byd.wjx.data.local.entity.RuleEntity
 import com.byd.wjx.data.local.entity.TriggerDef
@@ -72,13 +70,13 @@ class AutomationEngineEdgeTest {
         confirmBeforeExecute = confirmBeforeExecute,
     )
 
-    private fun setup(rulesProvider: () -> List<RuleEntity>): Pair<AutomationEngine, RuleDao> {
-        val ruleDao = mockk<RuleDao>(relaxed = true) {
-            coEvery { getEnabled() } answers { rulesProvider() }
-        }
+    private fun setup(
+        rulesProvider: () -> List<RuleEntity>,
+    ): Pair<AutomationEngine, AutomationRuleRepository> {
+        val ruleRepository = mockk<AutomationRuleRepository>(relaxed = true)
         val engine = AutomationEngine(
-            ruleDao = ruleDao,
-            ruleLogDao = mockk<RuleLogDao>(relaxed = true),
+            ruleRepository = ruleRepository,
+            journalRepository = mockk<AutomationJournalRepository>(relaxed = true),
             actionDispatcher = mockk(relaxed = true),
             automationConfigRepository = object : AutomationConfigRepository {
                 override suspend fun current() = AutomationConfigSnapshot(
@@ -96,51 +94,51 @@ class AutomationEngineEdgeTest {
             confirmationPresenter = mockk(relaxed = true),
             context = ApplicationProvider.getApplicationContext<Context>(),
         )
-        return engine to ruleDao
+        return engine to ruleRepository
     }
 
     @Test fun `editing rule triggers reseeds edge state instead of firing`() = runBlocking {
         var current = rule(1, listOf(paramTrigger("Speed", ">", "40")))
-        val (engine, ruleDao) = setup { listOf(current) }
+        val (engine, ruleRepository) = setup { listOf(current) }
 
         engine.evaluate(diParsData(speed = 10), null)  // seed: false under OLD triggers
 
         // User edits the rule: condition is now instantly true. Must reseed, not fire.
         current = current.copy(triggers = TriggerDef.listToJson(listOf(paramTrigger("ExtTemp", ">", "20"))))
         engine.evaluate(diParsData(exteriorTemp = 25), null)
-        coVerify(exactly = 0) { ruleDao.updateLastTriggered(any(), any()) }
+        coVerify(exactly = 0) { ruleRepository.markTriggered(any(), any()) }
 
         // A genuine front after the reseed still fires.
         engine.evaluate(diParsData(exteriorTemp = 10), null)
         engine.evaluate(diParsData(exteriorTemp = 10), null)
         engine.evaluate(diParsData(exteriorTemp = 25), null)
         engine.evaluate(diParsData(exteriorTemp = 25), null)
-        coVerify(exactly = 1) { ruleDao.updateLastTriggered(1, any()) }
+        coVerify(exactly = 1) { ruleRepository.markTriggered(1, any()) }
     }
 
     @Test fun `cold start rule already matched executes immediately`() = runBlocking {
         val r = rule(1, listOf(paramTrigger("ExtTemp", ">", "20")))
-        val (engine, ruleDao) = setup { listOf(r) }
+        val (engine, ruleRepository) = setup { listOf(r) }
 
         engine.evaluate(diParsData(exteriorTemp = 25), null)
 
-        coVerify(exactly = 1) { ruleDao.updateLastTriggered(1, any()) }
+        coVerify(exactly = 1) { ruleRepository.markTriggered(1, any()) }
     }
 
     @Test fun `front while park-gated is consumed, not deferred until parked`() = runBlocking {
         val r = rule(1, listOf(paramTrigger("ExtTemp", ">", "23")), requirePark = true)
-        val (engine, ruleDao) = setup { listOf(r) }
+        val (engine, ruleRepository) = setup { listOf(r) }
 
         engine.evaluate(diParsData(gear = 1, exteriorTemp = 10), null)  // parked, cold: seed false
         engine.evaluate(diParsData(gear = 4, exteriorTemp = 25), null)  // front happens while driving
         engine.evaluate(diParsData(gear = 1, exteriorTemp = 25), null)  // parked again, still hot
 
-        coVerify(exactly = 0) { ruleDao.updateLastTriggered(any(), any()) }
+        coVerify(exactly = 0) { ruleRepository.markTriggered(any(), any()) }
     }
 
     @Test fun `front during cooldown is consumed, not deferred until cooldown expires`() = runBlocking {
         var r = rule(1, listOf(paramTrigger("ExtTemp", ">", "23")), cooldown = 600)
-        val (engine, ruleDao) = setup { listOf(r) }
+        val (engine, ruleRepository) = setup { listOf(r) }
 
         engine.evaluate(diParsData(exteriorTemp = 10), null)  // seed false, no cooldown yet
 
@@ -150,27 +148,27 @@ class AutomationEngineEdgeTest {
         r = r.copy(lastTriggeredAt = System.currentTimeMillis() - 700_000)  // cooldown over
         engine.evaluate(diParsData(exteriorTemp = 25), null)      // still true, no NEW front
 
-        coVerify(exactly = 0) { ruleDao.updateLastTriggered(any(), any()) }
+        coVerify(exactly = 0) { ruleRepository.markTriggered(any(), any()) }
     }
 
     @Test fun `service_start AND-rule fires when param warms up on a later tick`() = runBlocking {
         val r = rule(1, listOf(serviceStartTrigger(), paramTrigger("ExtTemp", ">", "22")), logic = "AND")
-        val (engine, ruleDao) = setup { listOf(r) }
+        val (engine, ruleRepository) = setup { listOf(r) }
 
         engine.evaluate(diParsData(exteriorTemp = null), null)  // first tick: data still cold
         engine.evaluate(diParsData(exteriorTemp = 25), null)    // within start window: must fire
 
-        coVerify(exactly = 1) { ruleDao.updateLastTriggered(1, any()) }
+        coVerify(exactly = 1) { ruleRepository.markTriggered(1, any()) }
     }
 
     @Test fun `service_start fires exactly once per rule`() = runBlocking {
         val r = rule(1, listOf(serviceStartTrigger()))
-        val (engine, ruleDao) = setup { listOf(r) }
+        val (engine, ruleRepository) = setup { listOf(r) }
 
         engine.evaluate(diParsData(soc = 50), null)
         engine.evaluate(diParsData(soc = 50), null)
 
-        coVerify(exactly = 1) { ruleDao.updateLastTriggered(1, any()) }
+        coVerify(exactly = 1) { ruleRepository.markTriggered(1, any()) }
     }
 
     @Test fun `event OR persistent condition does not double fire on following tick`() = runBlocking {
@@ -179,24 +177,24 @@ class AutomationEngineEdgeTest {
             triggers = listOf(serviceStartTrigger(), paramTrigger("Speed", ">", "40")),
             logic = "OR",
         )
-        val (engine, ruleDao) = setup { listOf(r) }
+        val (engine, ruleRepository) = setup { listOf(r) }
 
         engine.evaluate(diParsData(speed = 50), null)
         engine.evaluate(diParsData(speed = 50), null)
         engine.evaluate(diParsData(speed = 50), null)
 
-        coVerify(exactly = 1) { ruleDao.updateLastTriggered(1, any()) }
+        coVerify(exactly = 1) { ruleRepository.markTriggered(1, any()) }
     }
 
     @Test fun `single transient sample does not fire a stable state rule`() = runBlocking {
         val r = rule(1, listOf(paramTrigger("ExtTemp", ">", "23")))
-        val (engine, ruleDao) = setup { listOf(r) }
+        val (engine, ruleRepository) = setup { listOf(r) }
 
         engine.evaluate(diParsData(exteriorTemp = 10), null)
         engine.evaluate(diParsData(exteriorTemp = 25), null)
         engine.evaluate(diParsData(exteriorTemp = 10), null)
 
-        coVerify(exactly = 0) { ruleDao.updateLastTriggered(any(), any()) }
+        coVerify(exactly = 0) { ruleRepository.markTriggered(any(), any()) }
     }
 
     @Test fun `missing telemetry does not execute exit or reenter after recovery`() = runBlocking {
@@ -206,8 +204,8 @@ class AutomationEngineEdgeTest {
             triggers = listOf(paramTrigger("ExtTemp", ">", "23")),
             exitActions = listOf(ActionDef("notify", "exit", "notification_silent")),
         )
-        val ruleDao = mockk<RuleDao>(relaxed = true)
-        val engine = engineFor(listOf(r), ruleDao, dispatcher)
+        val ruleRepository = mockk<AutomationRuleRepository>(relaxed = true)
+        val engine = engineFor(listOf(r), ruleRepository, dispatcher)
 
         engine.evaluate(diParsData(exteriorTemp = 25), null)
         engine.evaluate(diParsData(exteriorTemp = null), null)
@@ -215,7 +213,7 @@ class AutomationEngineEdgeTest {
         engine.evaluate(diParsData(exteriorTemp = 25), null)
         engine.evaluate(diParsData(exteriorTemp = 25), null)
 
-        coVerify(timeout = 2_000, exactly = 1) { ruleDao.updateLastTriggered(1, any()) }
+        coVerify(timeout = 2_000, exactly = 1) { ruleRepository.markTriggered(1, any()) }
         coVerify(timeout = 2_000, exactly = 0) {
             dispatcher.dispatch(match { it.displayName == "exit" }, any(), any())
         }
@@ -223,7 +221,7 @@ class AutomationEngineEdgeTest {
 
     @Test fun `action execution uses latest fast snapshot`() = runBlocking {
         val dispatcher = mockk<ActionDispatcher>(relaxed = true)
-        val ruleDao = mockk<RuleDao>(relaxed = true)
+        val ruleRepository = mockk<AutomationRuleRepository>(relaxed = true)
         val latestAction = MutableStateFlow<VehicleSnapshot?>(
             snapshot(diParsData(speed = 95, exteriorTemp = 25)),
         )
@@ -235,7 +233,7 @@ class AutomationEngineEdgeTest {
             triggers = listOf(paramTrigger("ExtTemp", ">", "23")),
             actions = listOf(ActionDef("车窗全开", "打开所有车窗")),
         )
-        val engine = engineFor(listOf(r), ruleDao, dispatcher, vehicleRepository)
+        val engine = engineFor(listOf(r), ruleRepository, dispatcher, vehicleRepository)
 
         engine.evaluate(diParsData(speed = 0, exteriorTemp = 25), null)
 
@@ -310,18 +308,18 @@ class AutomationEngineEdgeTest {
             }
         }
         val dispatcher = mockk<ActionDispatcher>(relaxed = true)
-        val logDao = mockk<RuleLogDao>(relaxed = true)
+        val journalRepository = mockk<AutomationJournalRepository>(relaxed = true)
         var currentRule = rule(
             id = 1,
             triggers = listOf(paramTrigger("ExtTemp", ">", "23")),
             confirmBeforeExecute = true,
         )
-        val ruleDao = mockk<RuleDao>(relaxed = true) {
-            coEvery { getById(1) } answers { currentRule }
+        val ruleRepository = mockk<AutomationRuleRepository>(relaxed = true) {
+            coEvery { find(1) } answers { currentRule }
         }
         val engine = AutomationEngine(
-            ruleDao = ruleDao,
-            ruleLogDao = logDao,
+            ruleRepository = ruleRepository,
+            journalRepository = journalRepository,
             actionDispatcher = dispatcher,
             automationConfigRepository = object : AutomationConfigRepository {
                 override suspend fun current() = AutomationConfigSnapshot(
@@ -346,7 +344,7 @@ class AutomationEngineEdgeTest {
 
         coVerify(timeout = 2_000, exactly = 0) { dispatcher.dispatch(any(), any(), any()) }
         coVerify(timeout = 2_000, exactly = 1) {
-            logDao.insert(match { it.actionsResult.contains("stale_confirmation") })
+            journalRepository.record(match { it.actionsResult.contains("stale_confirmation") })
         }
     }
 
@@ -450,28 +448,28 @@ class AutomationEngineEdgeTest {
             triggers = listOf(paramTrigger("ExtTemp", ">", "23")),
             repeatIntervalSeconds = 2,
         )
-        val (engine, ruleDao) = setup { listOf(r) }
+        val (engine, ruleRepository) = setup { listOf(r) }
         var now = 100_000L
         engine.nowProvider = { now }
 
         engine.evaluate(diParsData(exteriorTemp = 25), null)
         now += 1_999L
         engine.evaluate(diParsData(exteriorTemp = 25), null)
-        coVerify(exactly = 1) { ruleDao.updateLastTriggered(1, any()) }
+        coVerify(exactly = 1) { ruleRepository.markTriggered(1, any()) }
 
         now += 1L
         engine.evaluate(diParsData(exteriorTemp = 25), null)
-        coVerify(exactly = 2) { ruleDao.updateLastTriggered(1, any()) }
+        coVerify(exactly = 2) { ruleRepository.markTriggered(1, any()) }
     }
 
     private fun engineFor(
         rules: List<RuleEntity>,
-        ruleDao: RuleDao,
+        ruleRepository: AutomationRuleRepository,
         dispatcher: ActionDispatcher,
         vehicleRepository: VehicleStateRepository = emptyVehicleRepository(),
     ) = AutomationEngine(
-        ruleDao = ruleDao,
-        ruleLogDao = mockk<RuleLogDao>(relaxed = true),
+        ruleRepository = ruleRepository,
+        journalRepository = mockk<AutomationJournalRepository>(relaxed = true),
         actionDispatcher = dispatcher,
         automationConfigRepository = object : AutomationConfigRepository {
             override suspend fun current() = AutomationConfigSnapshot(

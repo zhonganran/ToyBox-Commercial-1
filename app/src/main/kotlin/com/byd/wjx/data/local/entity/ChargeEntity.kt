@@ -9,7 +9,8 @@ import androidx.room.PrimaryKey
     tableName = "charges",
     indices = [
         Index(value = ["start_ts"]),
-        Index(value = ["status"])
+        Index(value = ["status"]),
+        Index(value = ["source_session_key"], unique = true),
     ]
 )
 data class ChargeEntity(
@@ -36,5 +37,6 @@ data class ChargeEntity(
     @ColumnInfo(name = "exterior_temp") val exteriorTemp: Int? = null,
     @ColumnInfo(name = "merged_count") val mergedCount: Int = 0,
     @ColumnInfo(name = "gun_state") val gunState: Int? = null,
-    @ColumnInfo(name = "detection_source") val detectionSource: String? = null
+    @ColumnInfo(name = "detection_source") val detectionSource: String? = null,
+    @ColumnInfo(name = "source_session_key") val sourceSessionKey: String? = null,
 )

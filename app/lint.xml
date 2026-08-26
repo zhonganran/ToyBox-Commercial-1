@@ -7,4 +7,13 @@
     <issue id="ObsoleteSdkInt">
         <ignore path="src/main/res/mipmap-anydpi-v26" />
     </issue>
+
+    <!--
+      These 96x16 files are the firmware-authored FA preset animations. Lossless animated WebP
+      increased their combined size by 13%, while lossy conversion damages the pixel preview.
+      Keep this exception limited to the exact 01..20 asset set.
+    -->
+    <issue id="GifUsage">
+        <ignore regexp=".*drawable-nodpi/ipixel_fa_preset_(0[1-9]|1[0-9]|20)\.gif" />
+    </issue>
 </lint>

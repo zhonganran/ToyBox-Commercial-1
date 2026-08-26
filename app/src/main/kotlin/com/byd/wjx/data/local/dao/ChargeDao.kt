@@ -2,8 +2,11 @@ package com.byd.wjx.data.local.dao
 
 import androidx.room.Dao
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
+import com.byd.wjx.data.local.entity.BatterySnapshotEntity
 import com.byd.wjx.data.local.entity.ChargeEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -11,6 +14,31 @@ import kotlinx.coroutines.flow.Flow
 interface ChargeDao {
     @Insert
     suspend fun insert(charge: ChargeEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnoringDuplicate(charge: ChargeEntity): Long
+
+    @Query("SELECT id FROM charges WHERE source_session_key = :sourceSessionKey LIMIT 1")
+    suspend fun findIdBySourceSessionKey(sourceSessionKey: String): Long?
+
+    @Insert
+    suspend fun insertBatterySnapshot(snapshot: BatterySnapshotEntity): Long
+
+    @Transaction
+    suspend fun insertCatchUpSession(
+        charge: ChargeEntity,
+        batterySnapshot: BatterySnapshotEntity?,
+    ): Long {
+        require(!charge.sourceSessionKey.isNullOrBlank()) { "补录充电记录缺少来源会话键" }
+        val insertedId = insertIgnoringDuplicate(charge)
+        if (insertedId != -1L) {
+            batterySnapshot?.let { insertBatterySnapshot(it.copy(chargeId = insertedId)) }
+            return insertedId
+        }
+        return requireNotNull(findIdBySourceSessionKey(charge.sourceSessionKey)) {
+            "补录充电记录幂等冲突后未找到原记录"
+        }
+    }
 
     @Update
     suspend fun update(charge: ChargeEntity)

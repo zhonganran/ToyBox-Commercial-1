@@ -1,7 +1,6 @@
 package com.byd.wjx.ui.settings
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,7 +12,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -43,6 +41,7 @@ import com.byd.wjx.ui.theme.TextSecondary
 
 @Composable
 internal fun BatterySection(state: SettingsUiState, viewModel: SettingsViewModel) {
+    val energy = state.energy
     SectionHeader(text = stringResource(R.string.settings_battery_section_header))
     Card(
         shape = RoundedCornerShape(12.dp),
@@ -60,21 +59,21 @@ internal fun BatterySection(state: SettingsUiState, viewModel: SettingsViewModel
             ) {
                 SettingsTextField(
                     label = stringResource(R.string.settings_battery_capacity_label),
-                    value = state.batteryCapacity,
+                    value = energy.batteryCapacity,
                     onValueChange = viewModel::updateBatteryCapacity,
                     keyboardType = KeyboardType.Decimal,
                     modifier = Modifier.weight(1f),
                 )
                 SettingsTextField(
                     label = stringResource(R.string.settings_fuel_tank_capacity_label),
-                    value = state.fuelTankCapacity,
+                    value = energy.fuelTankCapacity,
                     onValueChange = viewModel::updateFuelTankCapacity,
                     keyboardType = KeyboardType.Decimal,
                     modifier = Modifier.weight(1f),
                 )
                 SettingsSaveButton(onClick = viewModel::saveEnergyCapacities)
             }
-            state.capacitySaveStatus?.let {
+            energy.capacitySaveStatus?.let {
                 Text(
                     text = it,
                     color = if (it == stringResource(R.string.settings_saved)) AccentGreen else AccentOrange,
@@ -93,14 +92,14 @@ internal fun BatterySection(state: SettingsUiState, viewModel: SettingsViewModel
             ) {
                 SettingsTextField(
                     label = stringResource(R.string.settings_tariff_home_label, state.currencySymbol),
-                    value = state.homeTariff,
+                    value = energy.homeTariff,
                     onValueChange = viewModel::updateHomeTariff,
                     keyboardType = KeyboardType.Decimal,
                     modifier = Modifier.weight(1f),
                 )
                 SettingsTextField(
                     label = stringResource(R.string.settings_tariff_dc_label, state.currencySymbol),
-                    value = state.dcTariff,
+                    value = energy.dcTariff,
                     onValueChange = viewModel::updateDcTariff,
                     keyboardType = KeyboardType.Decimal,
                     modifier = Modifier.weight(1f),
@@ -113,7 +112,7 @@ internal fun BatterySection(state: SettingsUiState, viewModel: SettingsViewModel
             ) {
                 SettingsTextField(
                     label = stringResource(R.string.settings_fuel_price_label, state.currencySymbol),
-                    value = state.fuelPricePerLiter,
+                    value = energy.fuelPricePerLiter,
                     onValueChange = viewModel::updateFuelPricePerLiter,
                     keyboardType = KeyboardType.Decimal,
                     modifier = Modifier.weight(1f),
@@ -121,24 +120,24 @@ internal fun BatterySection(state: SettingsUiState, viewModel: SettingsViewModel
                 Spacer(Modifier.weight(1f))
                 SettingsSaveButton(onClick = viewModel::saveTariffs)
             }
-            state.tariffSaveStatus?.let {
+            energy.tariffSaveStatus?.let {
                 Text(it, color = AccentGreen, fontSize = 12.sp)
             }
             Text(stringResource(R.string.settings_tariff_trip_label), color = TextSecondary, fontSize = 14.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                UnitChip("慢充", state.tripCostTariff == "home") { viewModel.saveTripCostTariff("home") }
-                UnitChip("快充", state.tripCostTariff == "dc") { viewModel.saveTripCostTariff("dc") }
+                UnitChip("慢充", energy.tripCostTariff == "home") { viewModel.saveTripCostTariff("home") }
+                UnitChip("快充", energy.tripCostTariff == "dc") { viewModel.saveTripCostTariff("dc") }
                 UnitChip(
                     stringResource(R.string.settings_tariff_trip_custom_chip),
-                    state.tripCostTariff != "home" && state.tripCostTariff != "dc",
+                    energy.tripCostTariff != "home" && energy.tripCostTariff != "dc",
                 ) {
-                    viewModel.saveTripCostTariff(state.homeTariff)
+                    viewModel.saveTripCostTariff(energy.homeTariff)
                 }
             }
-            if (state.tripCostTariff != "home" && state.tripCostTariff != "dc") {
+            if (energy.tripCostTariff != "home" && energy.tripCostTariff != "dc") {
                 SettingsTextField(
                     label = stringResource(R.string.settings_tariff_custom_label, state.currencySymbol),
-                    value = state.tripCostTariff,
+                    value = energy.tripCostTariff,
                     onValueChange = viewModel::saveTripCostTariff,
                     keyboardType = KeyboardType.Decimal,
                 )
@@ -162,7 +161,7 @@ internal fun BatterySection(state: SettingsUiState, viewModel: SettingsViewModel
             ) {
                 Text(stringResource(R.string.settings_recalc_all_button), fontSize = 14.sp, fontWeight = FontWeight.Medium)
             }
-            state.recalcStatus?.let {
+            energy.recalcStatus?.let {
                 Text(it, color = AccentGreen, fontSize = 12.sp)
             }
             Text(
@@ -186,54 +185,16 @@ internal fun BatterySection(state: SettingsUiState, viewModel: SettingsViewModel
         ) {
             SettingsTextField(
                 label = stringResource(R.string.settings_consumption_good_label),
-                value = state.consumptionGood,
+                value = energy.consumptionGood,
                 onValueChange = viewModel::saveConsumptionGood,
                 keyboardType = KeyboardType.Decimal,
             )
             SettingsTextField(
                 label = stringResource(R.string.settings_consumption_bad_label),
-                value = state.consumptionBad,
+                value = energy.consumptionBad,
                 onValueChange = viewModel::saveConsumptionBad,
                 keyboardType = KeyboardType.Decimal,
             )
-        }
-    }
-}
-
-@Composable
-internal fun PlacesSection(onNavigateToPlaces: () -> Unit) {
-    SectionHeader(text = stringResource(R.string.settings_places_section_header))
-    Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = CardSurfaceElevated),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onNavigateToPlaces)
-                .padding(horizontal = 12.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Place,
-                contentDescription = null,
-                tint = AccentGreen,
-            )
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    stringResource(R.string.settings_places_entry_title),
-                    color = TextPrimary,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                )
-                Text(
-                    stringResource(R.string.settings_places_entry_description),
-                    color = TextSecondary,
-                    fontSize = 12.sp,
-                )
-            }
         }
     }
 }

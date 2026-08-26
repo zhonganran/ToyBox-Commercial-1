@@ -17,14 +17,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.QrCode2
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.VerifiedUser
@@ -32,19 +29,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -56,11 +46,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.viewinterop.AndroidView
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import com.byd.wjx.ui.theme.*
 
 internal const val PERMANENT_AUTH_PRICE = "15.9 元"
@@ -238,7 +223,7 @@ internal fun AuthorizationRailCard(state: SettingsUiState, viewModel: SettingsVi
                     ) {
                         Button(
                             onClick = { viewModel.startActivationPayment("alipay") },
-                            enabled = !state.activationPaymentLoading && activation.deviceCode.isNotBlank(),
+                            enabled = !state.activationPayment.loading && activation.deviceCode.isNotBlank(),
                             modifier = Modifier.weight(1f).height(50.dp),
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = AccentBlue, contentColor = Color.White),
@@ -249,7 +234,7 @@ internal fun AuthorizationRailCard(state: SettingsUiState, viewModel: SettingsVi
                         }
                         Button(
                             onClick = { viewModel.startActivationPayment("wxpay") },
-                            enabled = !state.activationPaymentLoading && activation.deviceCode.isNotBlank(),
+                            enabled = !state.activationPayment.loading && activation.deviceCode.isNotBlank(),
                             modifier = Modifier.weight(1f).height(50.dp),
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = AccentGreen, contentColor = AccentContent),
@@ -259,8 +244,8 @@ internal fun AuthorizationRailCard(state: SettingsUiState, viewModel: SettingsVi
                             Text("微信扫码购买", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                         }
                     }
-                    state.activationPaymentMessage
-                        ?.takeIf { state.activationPaymentOrder == null }
+                    state.activationPayment.message
+                        ?.takeIf { state.activationPayment.order == null }
                         ?.let { message ->
                             Text(
                                 message,
@@ -316,202 +301,6 @@ internal fun AuthorizationRailCard(state: SettingsUiState, viewModel: SettingsVi
 }
 
 @Composable
-internal fun ActivationPaymentDialog(state: SettingsUiState, viewModel: SettingsViewModel) {
-    val order = state.activationPaymentOrder
-    if (!shouldShowActivationPaymentDialog(state)) return
-    Dialog(onDismissRequest = viewModel::dismissActivationPayment) {
-        Card(
-            modifier = Modifier.fillMaxWidth().widthIn(max = 760.dp),
-            shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(containerColor = CardSurfaceElevated),
-            border = BorderStroke(1.dp, CardBorder),
-        ) {
-            if (order == null) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(40.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    if (state.activationPaymentLoading) {
-                        CircularProgressIndicator(color = AccentGreen)
-                    } else {
-                        Icon(
-                            Icons.Outlined.ErrorOutline,
-                            contentDescription = null,
-                            tint = SocRed,
-                            modifier = Modifier.size(36.dp),
-                        )
-                    }
-                    Text(
-                        state.activationPaymentMessage ?: "正在创建安全支付订单",
-                        color = if (state.activationPaymentLoading) TextPrimary else SocRed,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    if (!state.activationPaymentLoading) {
-                        Button(
-                            onClick = viewModel::dismissActivationPayment,
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = CardSurface,
-                                contentColor = TextPrimary,
-                            ),
-                        ) {
-                            Text("关闭")
-                        }
-                    }
-                }
-            } else {
-                var nowMillis by remember(order.orderNo) { mutableLongStateOf(System.currentTimeMillis()) }
-                LaunchedEffect(order.orderNo, order.expiresAt) {
-                    while (true) {
-                        nowMillis = System.currentTimeMillis()
-                        kotlinx.coroutines.delay(1000)
-                    }
-                }
-                val remainingSeconds = ((order.expiresAt - nowMillis) / 1000L).coerceAtLeast(0L)
-                val remainingLabel = "%02d:%02d".format(remainingSeconds / 60, remainingSeconds % 60)
-                val paymentExpired = remainingSeconds <= 0L || state.activationPaymentMessage?.contains("过期") == true
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(24.dp),
-                    horizontalArrangement = Arrangement.spacedBy(28.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    PaymentCheckoutWebView(
-                        url = order.payUrl,
-                        modifier = Modifier
-                            .width(390.dp)
-                            .height(620.dp)
-                            .background(Color.White, RoundedCornerShape(8.dp)),
-                    )
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(
-                                    "${order.paymentName}扫码支付",
-                                    color = TextPrimary,
-                                    fontSize = 22.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                )
-                                Text("永久授权 · 绑定当前车辆", color = TextSecondary, fontSize = 12.sp)
-                            }
-                            Button(
-                                onClick = viewModel::dismissActivationPayment,
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = CardSurface,
-                                    contentColor = TextPrimary,
-                                ),
-                            ) {
-                                Icon(Icons.Outlined.Close, contentDescription = "关闭", modifier = Modifier.size(18.dp))
-                            }
-                        }
-                        Text(
-                            "¥${order.amount}",
-                            color = AccentOrange,
-                            fontSize = 32.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                        )
-                        Text(
-                            if (paymentExpired) "订单已过期" else "订单有效期剩余 $remainingLabel",
-                            color = if (paymentExpired) SocRed else AccentOrange,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text(
-                            state.activationPaymentMessage ?: "请扫码支付，到账后会自动激活",
-                            color = if (state.activation.activated) AccentGreen else TextPrimary,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            if (state.activation.activated) {
-                                "当前车辆已经获得永久授权，可以关闭此窗口。"
-                            } else if (paymentExpired) {
-                                "订单已过期，请点击下方重新生成订单。"
-                            } else {
-                                "请用手机支付宝扫描当前页面中的二维码，支付完成后本页面会自动更新。"
-                            },
-                            color = TextSecondary,
-                            fontSize = 12.sp,
-                            lineHeight = 17.sp,
-                        )
-                        if (paymentExpired) {
-                            Button(
-                                onClick = { viewModel.startActivationPayment(order.paymentType) },
-                                enabled = !state.activationPaymentLoading,
-                                modifier = Modifier.fillMaxWidth().height(46.dp),
-                                shape = RoundedCornerShape(10.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = AccentOrange,
-                                    contentColor = Color.White,
-                                ),
-                            ) {
-                                Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(7.dp))
-                                Text("重新生成订单", fontWeight = FontWeight.Bold)
-                            }
-                        }
-                        Text(
-                            "订单号 ${order.orderNo}",
-                            color = TextMuted,
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-internal fun shouldShowActivationPaymentDialog(state: SettingsUiState): Boolean =
-    state.activationPaymentLoading ||
-        state.activationPaymentOrder != null ||
-        !state.activationPaymentMessage.isNullOrBlank()
-
-@Composable
-private fun PaymentCheckoutWebView(url: String, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val webView = remember(url) {
-        WebView(context).apply {
-            webViewClient = WebViewClient()
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            settings.cacheMode = WebSettings.LOAD_NO_CACHE
-            settings.useWideViewPort = true
-            settings.loadWithOverviewMode = true
-            settings.builtInZoomControls = false
-            settings.displayZoomControls = false
-            setBackgroundColor(android.graphics.Color.WHITE)
-            loadUrl(url)
-        }
-    }
-    DisposableEffect(webView) {
-        onDispose {
-            webView.stopLoading()
-            webView.destroy()
-        }
-    }
-    AndroidView(
-        factory = { webView },
-        modifier = modifier,
-        update = { view ->
-            if (view.url != url) view.loadUrl(url)
-        },
-    )
-}
-
-@Composable
 private fun AuthorizationValue(
     label: String,
     value: String,
@@ -547,63 +336,5 @@ private fun ActivationMetricPill(
     ) {
         Text(label, color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Medium)
         Text(value, color = color, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
-    }
-}
-
-@Composable
-internal fun SettingsCapabilityCard(state: SettingsUiState) {
-    val activation = state.activation
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = CardSurface.copy(alpha = 0.88f)),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text("授权能力", color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
-            CapabilityRow("基础功能", "音效播放、歌词显示、常用设置", "可用", AccentGreen)
-            CapabilityRow(
-                "高级功能",
-                "解锁/锁车/哨兵音效、按键快捷操作、仪表投射、LED 联动",
-                if (activation.activated || activation.trialActive) "可用" else "需激活",
-                if (activation.activated || activation.trialActive) AccentBlue else SocRed,
-            )
-            CapabilityRow(
-                "云端恢复",
-                if (activation.activated) "重装或更新后按车架号恢复授权" else "激活后自动绑定当前车架号",
-                if (activation.activated) "已开启" else "待激活",
-                if (activation.activated) AccentGreen else TextMuted,
-            )
-        }
-    }
-}
-
-@Composable
-private fun CapabilityRow(
-    title: String,
-    subtitle: String,
-    status: String,
-    color: Color,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-            Text(subtitle, color = TextSecondary, fontSize = 11.sp, lineHeight = 15.sp)
-        }
-        Text(
-            status,
-            color = color,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier
-                .background(color.copy(alpha = 0.10f), RoundedCornerShape(999.dp))
-                .padding(horizontal = 9.dp, vertical = 5.dp),
-        )
     }
 }

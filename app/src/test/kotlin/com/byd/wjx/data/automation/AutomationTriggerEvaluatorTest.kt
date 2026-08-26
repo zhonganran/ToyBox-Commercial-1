@@ -111,7 +111,6 @@ class AutomationTriggerEvaluatorTest {
         triggers = triggers,
         data = data,
         location = null,
-        places = emptyMap(),
         serviceStartActive = serviceStartActive,
         networkAvailableEdge = false,
         boardVehicleEdge = false,

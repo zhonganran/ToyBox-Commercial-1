@@ -26,7 +26,9 @@ class AutoserviceChargingDetectorTest {
 
     // --- fakes ---
 
-    private class RecordingDao : ChargeDao {
+    private class RecordingDao(
+        private val snapshotDao: RecordingBatterySnapshotDao,
+    ) : ChargeDao {
         val inserted = mutableListOf<ChargeEntity>()
         var nextId: Long = 1
         override suspend fun insert(charge: ChargeEntity): Long {
@@ -34,6 +36,15 @@ class AutoserviceChargingDetectorTest {
             inserted += withId
             return withId.id
         }
+        override suspend fun insertIgnoringDuplicate(charge: ChargeEntity): Long {
+            if (inserted.any { it.sourceSessionKey == charge.sourceSessionKey }) return -1L
+            return insert(charge)
+        }
+        override suspend fun findIdBySourceSessionKey(sourceSessionKey: String): Long? =
+            inserted.firstOrNull { it.sourceSessionKey == sourceSessionKey }?.id
+        override suspend fun insertBatterySnapshot(
+            snapshot: com.byd.wjx.data.local.entity.BatterySnapshotEntity,
+        ): Long = snapshotDao.insert(snapshot)
         override suspend fun update(charge: ChargeEntity) {}
         override fun getAll(): Flow<List<ChargeEntity>> = flowOf(inserted.toList())
         override fun getByDateRange(from: Long, to: Long): Flow<List<ChargeEntity>> = flowOf(emptyList())
@@ -111,9 +122,9 @@ class AutoserviceChargingDetectorTest {
         diParsData: DiParsData? = null
     ): TestSetup {
         val auto = FakeVehicleGateway(battery, charging, autoserviceAvailable)
-        val dao = RecordingDao()
-        val chargeRepo = ChargeRepository(dao)
         val snapshotDao = RecordingBatterySnapshotDao()
+        val dao = RecordingDao(snapshotDao)
+        val chargeRepo = ChargeRepository(dao)
         val healthRepo = BatteryHealthRepository(snapshotDao)
 
         val initialMap = buildMap {

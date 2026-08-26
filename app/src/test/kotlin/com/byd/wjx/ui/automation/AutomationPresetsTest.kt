@@ -1,6 +1,6 @@
 package com.byd.wjx.ui.automation
 
-import com.byd.wjx.data.local.dao.RuleDao
+import com.byd.wjx.data.automation.AutomationRuleRepository
 import com.byd.wjx.data.local.entity.ActionDef
 import com.byd.wjx.data.local.entity.RuleEntity
 import com.byd.wjx.data.local.entity.TriggerDef
@@ -60,20 +60,20 @@ class AutomationPresetsTest {
     @Test
     fun `first initialization inserts all presets once and records completion`() = runBlocking {
         val insertedRules = mutableListOf<RuleEntity>()
-        val ruleDao = mockk<RuleDao>()
+        val ruleRepository = mockk<AutomationRuleRepository>()
         val settingsRepository = mockk<SettingsRepository>()
         coEvery {
             settingsRepository.getString(DEFAULT_AUTOMATION_PRESETS_INITIALIZED_KEY, "false")
         } returns "false"
-        coEvery { ruleDao.getCount() } returns 0
-        coEvery { ruleDao.getByName(any()) } returns null
-        coEvery { ruleDao.insert(capture(insertedRules)) } returns 1L
+        coEvery { ruleRepository.count() } returns 0
+        coEvery { ruleRepository.findByName(any()) } returns null
+        coEvery { ruleRepository.create(capture(insertedRules)) } returns 1L
         coEvery {
             settingsRepository.setString(DEFAULT_AUTOMATION_PRESETS_INITIALIZED_KEY, "true")
         } returns Unit
 
         val inserted = seedDefaultAutomationPresets(
-            ruleDao = ruleDao,
+            ruleRepository = ruleRepository,
             settingsRepository = settingsRepository,
             outsideSoundAction = outsideSoundAction,
             now = 1_000L,
@@ -90,20 +90,20 @@ class AutomationPresetsTest {
 
     @Test
     fun `completed initialization does not recreate deleted presets`() = runBlocking {
-        val ruleDao = mockk<RuleDao>()
+        val ruleRepository = mockk<AutomationRuleRepository>()
         val settingsRepository = mockk<SettingsRepository>()
         coEvery {
             settingsRepository.getString(DEFAULT_AUTOMATION_PRESETS_INITIALIZED_KEY, "false")
         } returns "true"
 
         val inserted = seedDefaultAutomationPresets(
-            ruleDao = ruleDao,
+            ruleRepository = ruleRepository,
             settingsRepository = settingsRepository,
             outsideSoundAction = outsideSoundAction,
         )
 
         assertEquals(0, inserted)
-        coVerify(exactly = 0) { ruleDao.getCount() }
-        coVerify(exactly = 0) { ruleDao.insert(any()) }
+        coVerify(exactly = 0) { ruleRepository.count() }
+        coVerify(exactly = 0) { ruleRepository.create(any()) }
     }
 }

@@ -16,6 +16,7 @@ import com.byd.wjx.data.local.entity.SettingEntity
 import com.byd.wjx.data.local.entity.TripEntity
 import com.byd.wjx.data.local.entity.TripPointEntity
 import com.byd.wjx.data.energy.EnergyFlowStatsRepository
+import com.byd.wjx.data.dashboard.DashboardLiveDataCoordinator
 import com.byd.wjx.data.repository.ChargeRepository
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.data.repository.FakeTrackingStateRepository
@@ -182,6 +183,9 @@ class DashboardViewModelTest {
     private class StubChargeDao(initialLastCharge: ChargeEntity? = null) : ChargeDao {
         private val lastCharge = MutableStateFlow(initialLastCharge)
         override suspend fun insert(charge: ChargeEntity): Long = 0L
+        override suspend fun insertIgnoringDuplicate(charge: ChargeEntity): Long = insert(charge)
+        override suspend fun findIdBySourceSessionKey(sourceSessionKey: String): Long? = null
+        override suspend fun insertBatterySnapshot(snapshot: BatterySnapshotEntity): Long = 0L
         override suspend fun update(charge: ChargeEntity) {}
         override fun getAll(): Flow<List<ChargeEntity>> = flowOf(emptyList())
         override fun getByDateRange(from: Long, to: Long): Flow<List<ChargeEntity>> = flowOf(emptyList())
@@ -235,6 +239,13 @@ class DashboardViewModelTest {
         val batterySnapshotDao = StubBatterySnapshotDao()
 
         val trackingStateRepository = FakeTrackingStateRepository()
+        val liveDataCoordinator = DashboardLiveDataCoordinator(
+            vehicleStateRepository = vehicleStateRepository,
+            trackingStateRepository = trackingStateRepository,
+            consumptionAggregator = ConsumptionAggregator(),
+            energyFlowStatsRepository = FakeEnergyFlowStatsRepository(),
+            settingsRepository = settingsRepo,
+        )
         val localInsightStatsAggregator = LocalInsightStatsAggregator(
             tripDao = tripDao,
             chargeDao = chargeDao,
@@ -248,14 +259,11 @@ class DashboardViewModelTest {
             chargeRepository = chargeRepo,
             settingsRepository = settingsRepo,
             idleDrainDao = idleDrainDao,
-            vehicleStateRepository = vehicleStateRepository,
-            trackingStateRepository = trackingStateRepository,
-            consumptionAggregator = ConsumptionAggregator(),
             localInsightStatsAggregator = localInsightStatsAggregator,
             localInsightEngine = LocalInsightEngine(),
             onDemandTelemetryReader = onDemandTelemetryReader,
-            energyFlowStatsRepository = FakeEnergyFlowStatsRepository(),
             systemMetricsReader = SystemMetricsReader(HelperClientImpl()),
+            liveDataCoordinator = liveDataCoordinator,
         )
     }
 
