@@ -56,6 +56,7 @@ internal class BackupPreferenceStore(
             if (!editor.commit()) {
                 Log.w(TAG, "Failed to commit prefs file during restore: $fileName")
                 WjxFileLogger.w(TAG, "Failed to commit prefs file during restore: $fileName")
+                throw IllegalStateException("配置恢复写入失败：$fileName")
             }
         }
     }

@@ -3,31 +3,26 @@ package com.byd.wjx.ui.settings
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,12 +32,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import com.byd.wjx.ui.theme.AccentBlue
 import com.byd.wjx.ui.theme.AccentGreen
 import com.byd.wjx.ui.theme.AccentPurple
 import com.byd.wjx.ui.theme.CardSurface
-import com.byd.wjx.ui.theme.CardSurfaceElevated
 import com.byd.wjx.ui.theme.SocRed
 import com.byd.wjx.ui.theme.TextMuted
 import com.byd.wjx.ui.theme.TextPrimary
@@ -56,12 +49,11 @@ internal fun ServiceQrSupportPanel(
     onRefresh: () -> Unit,
     imageUpdates: (String, String) -> Flow<ServiceQrImageUpdate>,
 ) {
-    var activeTarget by remember { mutableStateOf<ServiceQrTarget?>(null) }
     val wechatTarget = serviceQrTarget(
         state.codes,
         "wechat",
         "微信客服",
-        "点击查看二维码",
+        "扫码添加客服",
         "待配置微信二维码",
         AccentGreen,
     )
@@ -69,18 +61,10 @@ internal fun ServiceQrSupportPanel(
         state.codes,
         "wechat_group",
         "微信交流群",
-        "点击查看二维码",
+        "扫码加入交流群",
         "待配置微信交流群二维码",
         AccentPurple,
     )
-
-    activeTarget?.let { target ->
-        ServiceQrDialog(
-            target = target,
-            imageUpdates = imageUpdates,
-            onDismiss = { activeTarget = null },
-        )
-    }
 
     ServicePanel(
         title = "官方客服",
@@ -113,9 +97,18 @@ internal fun ServiceQrSupportPanel(
                 Text(if (state.loading) "读取中" else "刷新", fontSize = 12.sp)
             }
         }
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ServiceQrEntryCard(wechatTarget, Modifier.weight(1f)) { activeTarget = it }
-            ServiceQrEntryCard(groupTarget, Modifier.weight(1f)) { activeTarget = it }
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            if (maxWidth < 520.dp) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ServiceQrInlineItem(wechatTarget, imageUpdates, Modifier.fillMaxWidth())
+                    ServiceQrInlineItem(groupTarget, imageUpdates, Modifier.fillMaxWidth())
+                }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ServiceQrInlineItem(wechatTarget, imageUpdates, Modifier.weight(1f))
+                    ServiceQrInlineItem(groupTarget, imageUpdates, Modifier.weight(1f))
+                }
+            }
         }
     }
 }
@@ -140,10 +133,12 @@ private fun serviceQrTarget(
     accent: Color,
 ): ServiceQrTarget {
     val remote = codes[key]
+    val remoteSubtitle = remote?.subtitle
+        ?.takeUnless { it.isBlank() || it == "点击查看二维码" }
     return ServiceQrTarget(
         key = key,
         title = remote?.title?.ifBlank { fallbackTitle } ?: fallbackTitle,
-        subtitle = remote?.subtitle?.ifBlank { fallbackSubtitle } ?: fallbackSubtitle,
+        subtitle = remoteSubtitle ?: fallbackSubtitle,
         placeholder = if (remote?.imageUrl.isNullOrBlank()) fallbackPlaceholder else "正在加载二维码",
         imageUrl = remote?.imageUrl.orEmpty(),
         expiresAt = remote?.expiresAt.orEmpty(),
@@ -153,72 +148,32 @@ private fun serviceQrTarget(
 }
 
 @Composable
-private fun ServiceQrEntryCard(
+private fun ServiceQrInlineItem(
     target: ServiceQrTarget,
+    imageUpdates: (String, String) -> Flow<ServiceQrImageUpdate>,
     modifier: Modifier = Modifier,
-    onClick: (ServiceQrTarget) -> Unit,
 ) {
     Column(
         modifier = modifier
             .background(target.accent.copy(alpha = 0.10f), RoundedCornerShape(14.dp))
-            .clickable { onClick(target) }
-            .padding(horizontal = 10.dp, vertical = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
-        Text(target.title, color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
-        Text(
-            "点击查看二维码",
-            color = target.accent,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            lineHeight = 14.sp,
-            maxLines = 1,
-            modifier = Modifier
-                .background(CardSurfaceElevated.copy(alpha = 0.86f), RoundedCornerShape(999.dp))
-                .padding(horizontal = 10.dp, vertical = 6.dp),
-        )
-    }
-}
-
-@Composable
-private fun ServiceQrDialog(
-    target: ServiceQrTarget,
-    imageUpdates: (String, String) -> Flow<ServiceQrImageUpdate>,
-    onDismiss: () -> Unit,
-) {
-    Dialog(onDismissRequest = onDismiss) {
-        Card(
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = CardSurfaceElevated),
-        ) {
-            Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text(target.title, color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
-                        Text(target.subtitle, color = TextSecondary, fontSize = 12.sp)
-                    }
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Outlined.Close, contentDescription = "关闭", tint = TextPrimary)
-                    }
-                }
-                Column(
-                    modifier = Modifier
-                        .size(230.dp)
-                        .background(Color.White, RoundedCornerShape(18.dp))
-                        .padding(18.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    RemoteQrImage(target, imageUpdates)
-                }
-                Text(serviceQrDialogNote(target), color = TextSecondary, fontSize = 12.sp, lineHeight = 17.sp)
-            }
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(target.title, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
+            Text(target.subtitle, color = target.accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
         }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .background(Color.White, RoundedCornerShape(10.dp))
+                .padding(12.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            RemoteQrImage(target, imageUpdates)
+        }
+        Text(serviceQrNote(target), color = TextSecondary, fontSize = 11.sp, lineHeight = 16.sp)
     }
 }
 
@@ -253,18 +208,24 @@ private fun RemoteQrImage(
             contentScale = ContentScale.Fit,
         )
     } else {
-        QrPlaceholderPattern()
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            if (loadFailed || imageBytes != null) "二维码加载失败" else target.placeholder,
-            color = Color(0xFF424750),
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            QrPlaceholderPattern()
+            Spacer(modifier = Modifier.size(10.dp))
+            Text(
+                if (loadFailed || imageBytes != null) "二维码加载失败" else target.placeholder,
+                color = Color(0xFF424750),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
     }
 }
 
-private fun serviceQrDialogNote(target: ServiceQrTarget): String {
+private fun serviceQrNote(target: ServiceQrTarget): String {
     val description = target.description.ifBlank { "二维码由后台动态更新，过期后无需更新 APK。" }
     return if (target.expiresAt.isNotBlank()) "$description\n有效期：${target.expiresAt}" else description
 }
@@ -273,7 +234,7 @@ private fun serviceQrDialogNote(target: ServiceQrTarget): String {
 private fun QrPlaceholderPattern() {
     Column(
         modifier = Modifier
-            .size(132.dp)
+            .size(104.dp)
             .background(Color(0xFFF7F8FA), RoundedCornerShape(8.dp))
             .padding(8.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp),
@@ -285,7 +246,7 @@ private fun QrPlaceholderPattern() {
                     val filled = finder || ((row * 7 + col * 5) % 4 == 0)
                     Spacer(
                         modifier = Modifier
-                            .size(10.dp)
+                            .size(7.dp)
                             .background(if (filled) Color(0xFF111318) else Color.White),
                     )
                 }

@@ -1,5 +1,33 @@
 import os
 from pathlib import Path
+from urllib.parse import unquote, urlsplit, urlunsplit
+
+
+def validated_https_base_url(name, raw_value, *, allow_path):
+    value = str(raw_value or "").strip()
+    try:
+        parsed = urlsplit(value)
+        hostname = parsed.hostname
+        parsed.port
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be a valid HTTPS URL") from exc
+    decoded_path = unquote(parsed.path or "")
+    path_segments = decoded_path.split("/")
+    if (
+        parsed.scheme.lower() != "https"
+        or not hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or "\\" in value
+        or any(ord(char) < 32 for char in value)
+        or any(segment in {".", ".."} for segment in path_segments)
+        or (not allow_path and decoded_path not in {"", "/"})
+    ):
+        raise RuntimeError(f"{name} must be credential-free HTTPS without URL pollution")
+    normalized_path = parsed.path.rstrip("/") if allow_path else ""
+    return urlunsplit(("https", parsed.netloc, normalized_path, "", ""))
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -9,18 +37,16 @@ APK_DIR = Path(os.environ.get("WJX_PLATFORM_APK_DIR", UPLOAD_DIR / "apk"))
 SERVICE_QR_DIR = Path(os.environ.get("WJX_PLATFORM_SERVICE_QR_DIR", UPLOAD_DIR / "service_qrcodes"))
 LOG_DIR = Path(os.environ.get("WJX_PLATFORM_LOG_DIR", UPLOAD_DIR / "diagnostic_logs"))
 DB_PATH = Path(os.environ.get("WJX_PLATFORM_DB", DATA_DIR / "supertoybox.db"))
-PUBLIC_API_BASE_URL = os.environ.get(
-    "WJX_PLATFORM_PUBLIC_API_BASE_URL",
-    "https://api.689588.xyz",
-).rstrip("/")
-PUBLIC_CDN_BASE_URL = os.environ.get(
-    "WJX_PLATFORM_PUBLIC_CDN_BASE_URL",
-    "https://cdn.689588.xyz",
-).rstrip("/")
-PAYMENT_GATEWAY_BASE_URL = os.environ.get(
+PUBLIC_BASE_URL = validated_https_base_url(
+    "WJX_PLATFORM_PUBLIC_BASE_URL",
+    os.environ.get("WJX_PLATFORM_PUBLIC_BASE_URL", "https://wjx.689588.xyz"),
+    allow_path=False,
+)
+PAYMENT_GATEWAY_BASE_URL = validated_https_base_url(
     "WJX_PAYMENT_GATEWAY_BASE_URL",
-    "https://mzf.mapay.cc/xpay/epayn",
-).rstrip("/")
+    os.environ.get("WJX_PAYMENT_GATEWAY_BASE_URL", "https://mzf.mapay.cc/xpay/epayn"),
+    allow_path=True,
+)
 PAYMENT_PID = os.environ.get("WJX_PAYMENT_PID", "").strip()
 PAYMENT_MERCHANT_PRIVATE_KEY_PEM = os.environ.get(
     "WJX_PAYMENT_MERCHANT_PRIVATE_KEY_PEM",
@@ -52,6 +78,18 @@ PAYMENT_QUERY_INTERVAL_SECONDS = max(
     2,
     min(int(os.environ.get("WJX_PAYMENT_QUERY_INTERVAL_SECONDS", "4")), 30),
 )
+PAYMENT_CREATE_DEVICE_LIMIT = max(
+    1,
+    min(int(os.environ.get("WJX_PAYMENT_CREATE_DEVICE_LIMIT", "6")), 100),
+)
+PAYMENT_CREATE_IP_LIMIT = max(
+    1,
+    min(int(os.environ.get("WJX_PAYMENT_CREATE_IP_LIMIT", "60")), 1000),
+)
+PAYMENT_CREATE_WINDOW_SECONDS = max(
+    60,
+    min(int(os.environ.get("WJX_PAYMENT_CREATE_WINDOW_SECONDS", "3600")), 86400),
+)
 ADMIN_TITLE = os.environ.get("WJX_PLATFORM_ADMIN_TITLE", "超级玩具箱商业平台")
 MAX_APK_SIZE = int(os.environ.get("WJX_PLATFORM_MAX_APK_SIZE", str(240 * 1024 * 1024)))
 MAX_SERVICE_QR_SIZE = int(os.environ.get("WJX_PLATFORM_MAX_SERVICE_QR_SIZE", str(8 * 1024 * 1024)))
@@ -66,11 +104,6 @@ LOG_UPLOAD_DEVICE_LIMIT = int(os.environ.get("WJX_PLATFORM_LOG_UPLOAD_DEVICE_LIM
 LOG_UPLOAD_IP_LIMIT = int(os.environ.get("WJX_PLATFORM_LOG_UPLOAD_IP_LIMIT", "20"))
 LICENSE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 DEFAULT_TRIAL_DAYS = int(os.environ.get("WJX_PLATFORM_TRIAL_DAYS", "7"))
-OFFLINE_LICENSE_PRIVATE_KEY_PEM = os.environ.get("WJX_OFFLINE_LICENSE_PRIVATE_KEY_PEM", "")
-OFFLINE_LICENSE_PRIVATE_KEY_FILE = os.environ.get(
-    "WJX_OFFLINE_LICENSE_PRIVATE_KEY_FILE",
-    str(DATA_DIR / "offline_license_private.pem"),
-)
 LOGIN_MAX_FAILURES = int(os.environ.get("WJX_PLATFORM_LOGIN_MAX_FAILURES", "5"))
 LOGIN_LOCK_SECONDS = int(os.environ.get("WJX_PLATFORM_LOGIN_LOCK_SECONDS", "600"))
 LICENSE_MAX_FAILURES = int(os.environ.get("WJX_PLATFORM_LICENSE_MAX_FAILURES", "8"))
@@ -81,18 +114,9 @@ TRUSTED_PROXY_COUNT = max(
 )
 DEFAULT_CONFIG = {
     "license_trial_days": str(DEFAULT_TRIAL_DAYS),
-    "feature_automation_unlimited": "1",
-    "feature_cluster_projection": "1",
     "update_enabled": "1",
 }
 SERVICE_QR_TYPES = {
-    "wechat": ("微信客服", "点击查看二维码", "微信群二维码 7 天失效时，只需要在后台重新上传"),
-    "wechat_group": ("微信交流群", "点击查看二维码", "微信群二维码过期后重新上传，客户端会自动显示最新图"),
+    "wechat": ("微信客服", "扫码添加客服", "客服二维码变更时，只需要在后台重新上传"),
+    "wechat_group": ("微信交流群", "扫码加入交流群", "微信群二维码过期后重新上传，客户端会自动显示最新图"),
 }
-OFFLINE_LICENSE_FEATURES = [
-    "VEHICLE_EVENT_SOUNDS",
-    "AUTOMATION_UNLIMITED",
-    "CLUSTER_PROJECTION",
-    "KEY_SHORTCUT_ACTIONS",
-    "DESKTOP_LYRICS",
-]

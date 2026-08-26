@@ -1,4 +1,5 @@
 import hashlib
+import re
 from dataclasses import dataclass
 
 from androguard.core.apk import APK
@@ -6,6 +7,9 @@ from loguru import logger
 
 
 EXPECTED_PACKAGE_NAME = "com.byd.wjx"
+RELEASE_VERSION = re.compile(
+    r"[0-9]+(?:\.[0-9]+){1,3}(?:[-+][0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?"
+)
 
 
 class ApkValidationError(ValueError):
@@ -21,12 +25,17 @@ class ApkMetadata:
     certificate_sha256: str
 
 
+def is_valid_release_version(value):
+    text = str(value or "")
+    return 3 <= len(text) <= 64 and RELEASE_VERSION.fullmatch(text) is not None
+
+
 def inspect_apk(path):
     try:
         logger.disable("androguard")
         apk = APK(str(path), testzip=True)
         package_name = str(apk.get_package() or "").strip()
-        version_name = str(apk.get_androidversion_name() or "").strip().lstrip("v")
+        version_name = str(apk.get_androidversion_name() or "").strip().removeprefix("v")
         version_code = int(str(apk.get_androidversion_code() or "0"))
         if not (apk.is_signed_v2() or apk.is_signed_v3()):
             raise ApkValidationError("APK 必须包含 v2 或 v3 签名")
@@ -42,7 +51,7 @@ def inspect_apk(path):
 
     if package_name != EXPECTED_PACKAGE_NAME:
         raise ApkValidationError(f"APK 包名必须是 {EXPECTED_PACKAGE_NAME}")
-    if not version_name or version_code <= 0:
+    if not is_valid_release_version(version_name) or version_code <= 0:
         raise ApkValidationError("APK 缺少有效版本信息")
     if len(certificate_der) != 1:
         raise ApkValidationError("APK 必须包含且仅包含一个签名证书")

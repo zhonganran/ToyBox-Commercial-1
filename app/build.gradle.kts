@@ -43,18 +43,15 @@ if (requireReleaseSigning && !releaseSigningReady) {
         "Release signing is required but keystore.properties or its keystore/credentials are missing",
     )
 }
-val updateApiUrl: String =
-    providers.gradleProperty("superToyBoxUpdateApiUrl").orNull
-        ?: "https://api.689588.xyz/api/v1/update/latest"
-val activationApiUrl: String =
-    providers.gradleProperty("superToyBoxActivationApiUrl").orNull
-        ?: "https://api.689588.xyz/api/v1/license"
-val serviceQrApiUrl: String =
-    providers.gradleProperty("superToyBoxServiceQrApiUrl").orNull
-        ?: "https://api.689588.xyz/api/v1/service/qrcodes"
-val logUploadApiUrl: String =
-    providers.gradleProperty("superToyBoxLogUploadApiUrl").orNull
-        ?: "https://api.689588.xyz/api/v1/logs/upload"
+val serviceBaseUrl: String = providers.gradleProperty("superToyBoxServiceBaseUrl").orNull
+    ?.trim()
+    ?.trimEnd('/')
+    ?.takeIf(String::isNotBlank)
+    ?: "https://wjx.689588.xyz"
+val updateApiUrl = "$serviceBaseUrl/api/v1/update/latest"
+val activationApiUrl = "$serviceBaseUrl/api/v1/license"
+val serviceQrApiUrl = "$serviceBaseUrl/api/v1/service/qrcodes"
+val logUploadApiUrl = "$serviceBaseUrl/api/v1/logs/upload"
 android {
     namespace = "com.byd.wjx"
     compileSdk = 34

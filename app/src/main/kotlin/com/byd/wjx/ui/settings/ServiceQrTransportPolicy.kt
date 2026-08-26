@@ -1,26 +1,22 @@
 package com.byd.wjx.ui.settings
 
 import android.graphics.BitmapFactory
+import com.byd.wjx.security.isSameDeploymentOrigin
+import com.byd.wjx.security.isSecureDeploymentEndpoint
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.security.MessageDigest
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 internal fun isAllowedServiceQrMetadataUrl(url: String, originUrl: String? = null): Boolean {
-    val parsed = url.toHttpUrlOrNull() ?: return false
-    if (!parsed.isHttps || parsed.username.isNotEmpty() || parsed.password.isNotEmpty()) return false
-    val origin = originUrl?.toHttpUrlOrNull() ?: return originUrl == null
-    return parsed.host == origin.host && parsed.port == origin.port
+    return if (originUrl == null) {
+        isSecureDeploymentEndpoint(url)
+    } else {
+        isSameDeploymentOrigin(url, originUrl)
+    }
 }
 
 internal fun isAllowedServiceQrImageUrl(imageUrl: String, metadataUrl: String): Boolean {
-    val image = imageUrl.toHttpUrlOrNull() ?: return false
-    val metadata = metadataUrl.toHttpUrlOrNull() ?: return false
-    return image.isHttps &&
-        image.username.isEmpty() &&
-        image.password.isEmpty() &&
-        image.host == metadata.host &&
-        image.port == metadata.port
+    return isSameDeploymentOrigin(imageUrl, metadataUrl)
 }
 
 internal fun serviceQrImageCacheName(key: String, imageUrl: String): String {

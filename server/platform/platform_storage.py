@@ -25,8 +25,8 @@ from platform_config import (
 _db_init_lock = threading.Lock()
 _db_initialized = False
 DB_BUSY_TIMEOUT_MS = 10_000
-PLATFORM_SCHEMA_VERSION = 3
-MIN_SUPPORTED_SCHEMA_VERSION = 1
+PLATFORM_SCHEMA_VERSION = 7
+PREVIOUS_PLATFORM_SCHEMA_VERSIONS = {3, 4, 5, 6}
 
 
 def utc_datetime():
@@ -144,34 +144,109 @@ def validate_existing_schema(conn):
             "start with an empty database"
         )
     found_version = int(marker["schema_version"])
-    if not MIN_SUPPORTED_SCHEMA_VERSION <= found_version <= PLATFORM_SCHEMA_VERSION:
+    if found_version not in PREVIOUS_PLATFORM_SCHEMA_VERSIONS | {PLATFORM_SCHEMA_VERSION}:
         raise RuntimeError(
             f"Unsupported platform database schema version {found_version}; "
-            f"supported versions are {MIN_SUPPORTED_SCHEMA_VERSION} through "
-            f"{PLATFORM_SCHEMA_VERSION}. Start with an empty database"
+            f"this release accepts versions {sorted(PREVIOUS_PLATFORM_SCHEMA_VERSIONS)} "
+            f"for a one-time upgrade to version {PLATFORM_SCHEMA_VERSION}. "
+            "Start with an empty database"
         )
     return found_version
 
 
-def migrate_schema(conn, from_version):
-    version = from_version
-    if version < 2:
-        version = 2
-    if version < 3:
-        release_columns = {
-            row["name"] for row in conn.execute("PRAGMA table_info(releases)").fetchall()
-        }
-        for column, definition in (
-            ("apk_sha256", "TEXT NOT NULL DEFAULT ''"),
-            ("package_name", "TEXT NOT NULL DEFAULT ''"),
-            ("certificate_sha256", "TEXT NOT NULL DEFAULT ''"),
-        ):
-            if column not in release_columns:
-                conn.execute(f"ALTER TABLE releases ADD COLUMN {column} {definition}")
-        version = 3
+def migrate_schema_3_to_4(conn):
+    conn.execute("ALTER TABLE devices RENAME TO devices_v3")
+    conn.execute(
+        """
+        CREATE TABLE devices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            device_code TEXT NOT NULL UNIQUE,
+            raw_device_code TEXT NOT NULL DEFAULT '',
+            app_version TEXT NOT NULL DEFAULT '',
+            package_name TEXT NOT NULL DEFAULT '',
+            activated INTEGER NOT NULL DEFAULT 0,
+            trial_started_at TEXT,
+            trial_ends_at TEXT,
+            first_seen_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO devices
+            (id, device_code, raw_device_code, app_version, package_name, activated,
+             trial_started_at, trial_ends_at, first_seen_at, last_seen_at)
+        SELECT id, device_code, raw_device_code, app_version, package_name, activated,
+               trial_started_at, trial_ends_at, first_seen_at, last_seen_at
+        FROM devices_v3
+        """
+    )
+    conn.execute("DROP TABLE devices_v3")
     conn.execute(
         "UPDATE platform_schema SET schema_version = ? WHERE id = 1",
-        (version,),
+        (4,),
+    )
+
+
+def migrate_schema_4_to_5(conn):
+    for column in (
+        "vehicle_display_name TEXT NOT NULL DEFAULT ''",
+        "vin_year INTEGER",
+        "model_variant TEXT NOT NULL DEFAULT ''",
+        "car_series TEXT NOT NULL DEFAULT ''",
+        "vehicle_type TEXT NOT NULL DEFAULT ''",
+        "controller_version TEXT NOT NULL DEFAULT ''",
+        "controller_series INTEGER NOT NULL DEFAULT 0",
+    ):
+        conn.execute(f"ALTER TABLE devices ADD COLUMN {column}")
+    conn.execute(
+        "UPDATE platform_schema SET schema_version = ? WHERE id = 1",
+        (5,),
+    )
+
+
+def migrate_schema_5_to_6(conn):
+    for column in (
+        "apk_sha256 TEXT NOT NULL DEFAULT ''",
+        "package_name TEXT NOT NULL DEFAULT ''",
+        "certificate_sha256 TEXT NOT NULL DEFAULT ''",
+    ):
+        try:
+            conn.execute(f"ALTER TABLE releases ADD COLUMN {column}")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise
+    conn.execute("DROP TABLE IF EXISTS sounds")
+    conn.execute("DROP TABLE IF EXISTS vehicle_profiles")
+    conn.execute(
+        "DELETE FROM config WHERE key IN (?, ?, ?)",
+        (
+            "feature_automation_unlimited",
+            "feature_cluster_projection",
+            "sound_library_enabled",
+        ),
+    )
+    conn.execute(
+        "UPDATE platform_schema SET schema_version = ? WHERE id = 1",
+        (6,),
+    )
+
+
+def migrate_schema_6_to_7(conn):
+    for column in (
+        "apk_sha256 TEXT NOT NULL DEFAULT ''",
+        "package_name TEXT NOT NULL DEFAULT ''",
+        "certificate_sha256 TEXT NOT NULL DEFAULT ''",
+    ):
+        try:
+            conn.execute(f"ALTER TABLE releases ADD COLUMN {column}")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise
+    conn.execute(
+        "UPDATE platform_schema SET schema_version = ? WHERE id = 1",
+        (PLATFORM_SCHEMA_VERSION,),
     )
 
 
@@ -262,13 +337,18 @@ def init_db(force=False):
                     raw_device_code TEXT NOT NULL DEFAULT '',
                     app_version TEXT NOT NULL DEFAULT '',
                     package_name TEXT NOT NULL DEFAULT '',
+                    vehicle_display_name TEXT NOT NULL DEFAULT '',
+                    vin_year INTEGER,
+                    model_variant TEXT NOT NULL DEFAULT '',
+                    car_series TEXT NOT NULL DEFAULT '',
+                    vehicle_type TEXT NOT NULL DEFAULT '',
+                    controller_version TEXT NOT NULL DEFAULT '',
+                    controller_series INTEGER NOT NULL DEFAULT 0,
                     activated INTEGER NOT NULL DEFAULT 0,
                     trial_started_at TEXT,
                     trial_ends_at TEXT,
                     first_seen_at TEXT NOT NULL,
-                    last_seen_at TEXT NOT NULL,
-                    api_token_hash TEXT NOT NULL DEFAULT '',
-                    api_token_issued_at TEXT
+                    last_seen_at TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS audit_logs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -331,8 +411,20 @@ def init_db(force=False):
                     "INSERT INTO platform_schema (id, schema_version) VALUES (1, ?)",
                     (PLATFORM_SCHEMA_VERSION,),
                 )
-            elif existing_schema_version < PLATFORM_SCHEMA_VERSION:
-                migrate_schema(conn, existing_schema_version)
+            elif existing_schema_version == 3:
+                migrate_schema_3_to_4(conn)
+                migrate_schema_4_to_5(conn)
+                migrate_schema_5_to_6(conn)
+                migrate_schema_6_to_7(conn)
+            elif existing_schema_version == 4:
+                migrate_schema_4_to_5(conn)
+                migrate_schema_5_to_6(conn)
+                migrate_schema_6_to_7(conn)
+            elif existing_schema_version == 5:
+                migrate_schema_5_to_6(conn)
+                migrate_schema_6_to_7(conn)
+            elif existing_schema_version == 6:
+                migrate_schema_6_to_7(conn)
             now = utc_now()
             ensure_config_defaults(conn)
             for key, (title, subtitle, description) in SERVICE_QR_TYPES.items():

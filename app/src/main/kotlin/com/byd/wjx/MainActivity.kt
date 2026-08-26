@@ -1,18 +1,17 @@
 package com.byd.wjx
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
-import android.util.Log
-import androidx.appcompat.app.AppCompatActivity
+import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -20,6 +19,7 @@ import androidx.lifecycle.lifecycleScope
 import com.byd.wjx.data.local.HistoryImporter
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.log.WjxFileLogger
+import com.byd.wjx.security.EndpointPrivacy
 import com.byd.wjx.service.KeepAliveService
 import com.byd.wjx.service.UpdateChecker
 import com.byd.wjx.storage.WjxDirectories
@@ -44,17 +44,34 @@ class MainActivity : AppCompatActivity() {
     @Inject lateinit var updateChecker: UpdateChecker
     @Inject lateinit var historyImporter: HistoryImporter
     private var historySyncJob: Job? = null
+    private var pendingInstallJob: Job? = null
+    private lateinit var permissionCoordinator: FirstLaunchPermissionCoordinator
+    private val runtimePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { result ->
+        permissionCoordinator.onRuntimePermissionsResult(result)
+    }
+    private val backgroundLocationLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        permissionCoordinator.onBackgroundLocationResult(granted)
+    }
 
     companion object {
         private const val TAG = "MainActivity"
-        private const val NOTIFICATION_PERMISSION_REQUEST_CODE = 1001
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WjxFileLogger.i(TAG, "onCreate")
+        permissionCoordinator = FirstLaunchPermissionCoordinator(
+            context = this,
+            launchRuntimePermissions = runtimePermissionLauncher::launch,
+            launchBackgroundLocation = backgroundLocationLauncher::launch,
+            launchSpecialPermissionSettings = ::openSpecialPermissionSettings,
+            log = { message -> WjxFileLogger.i(TAG, message) },
+        )
         configureSystemBars()
-        requestNotificationPermissionIfNeeded()
         ensureWjxDirectory()
         startBackgroundStack()
 
@@ -87,6 +104,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+        window.decorView.post(permissionCoordinator::start)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -96,8 +114,53 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (::permissionCoordinator.isInitialized) {
+            permissionCoordinator.onActivityResumed()
+        }
+        resumePendingUpdateInstall()
         syncVehicleHistory("activity_resume")
     }
+
+    private fun resumePendingUpdateInstall() {
+        pendingInstallJob?.cancel()
+        pendingInstallJob = lifecycleScope.launch {
+            delay(300L)
+            runCatching { updateChecker.resumePendingInstall(this@MainActivity) }
+                .onSuccess { resumed ->
+                    if (resumed) WjxFileLogger.i(TAG, "pending update install resumed")
+                }
+                .onFailure { error ->
+                    WjxFileLogger.e(TAG, "pending update install failed", error)
+                    Toast.makeText(
+                        this@MainActivity,
+                        "更新安装失败：${EndpointPrivacy.userMessage(error, "安装包无效")}",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
+        }
+    }
+
+    private fun openSpecialPermissionSettings(permission: FirstLaunchSpecialPermission): Boolean =
+        runCatching {
+            val intent = when (permission) {
+                FirstLaunchSpecialPermission.LOCATION_SERVICES ->
+                    Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                FirstLaunchSpecialPermission.BLUETOOTH ->
+                    Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
+                FirstLaunchSpecialPermission.OVERLAY -> Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName"),
+                )
+                FirstLaunchSpecialPermission.NOTIFICATION_LISTENER ->
+                    Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                FirstLaunchSpecialPermission.ACCESSIBILITY ->
+                    Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            }
+            startActivity(intent)
+            true
+        }.onFailure { error ->
+            WjxFileLogger.w(TAG, "Unable to open ${permission.name} settings: ${error.message}", error)
+        }.getOrDefault(false)
 
     private fun configureSystemBars() {
         WindowCompat.setDecorFitsSystemWindows(window, true)
@@ -107,32 +170,6 @@ class MainActivity : AppCompatActivity() {
     private fun showSystemBars() {
         WindowInsetsControllerCompat(window, window.decorView)
             .show(WindowInsetsCompat.Type.systemBars())
-    }
-
-    private fun requestNotificationPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
-                NOTIFICATION_PERMISSION_REQUEST_CODE,
-            )
-        }
-    }
-
-    @Suppress("DEPRECATION")
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == NOTIFICATION_PERMISSION_REQUEST_CODE) {
-            val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
-            WjxFileLogger.i(TAG, "Notification permission granted=$granted")
-        }
     }
 
     private fun startBackgroundStack() {

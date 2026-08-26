@@ -1,6 +1,7 @@
 package com.byd.wjx.helper
 
 import android.os.Parcel
+import com.byd.wjx.BuildConfig
 
 internal fun HelperDaemonRuntime.handleVehicleIoTransaction(
     code: Int,
@@ -10,10 +11,14 @@ internal fun HelperDaemonRuntime.handleVehicleIoTransaction(
     HelperBinderProtocol.TX_PING -> runCatching {
         reply?.writeInt(0)
         reply?.writeInt(HelperBinderProtocol.CURRENT_VERSION)
+        reply?.writeInt(BuildConfig.VERSION_CODE)
+        reply?.writeString(installIdentity)
         true
     }.getOrElse {
         reply?.writeInt(-1)
         reply?.writeInt(0)
+        reply?.writeInt(0)
+        reply?.writeString("")
         true
     }
 

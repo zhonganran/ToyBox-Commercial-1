@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.net.Uri
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -115,26 +114,6 @@ class SoundViewModel @Inject constructor(
                     realtimeNoiseSuppressionPercent = hailingSettings.realtimeNoiseSuppressionPercent,
                 ).withRealtimeHailingSnapshot(hailingState)
             }
-        }
-    }
-
-    fun importSound(uri: Uri) {
-        viewModelScope.launch {
-            localSoundLibraryCoordinator.importSound(uri).fold(
-                onSuccess = { saved ->
-                    _uiState.update {
-                        it.copy(
-                            sounds = localSoundLibraryCoordinator.listSounds(),
-                            message = "已导入：${saved.file.name}",
-                        )
-                    }
-                },
-                onFailure = { error ->
-                    _uiState.update {
-                        it.copy(message = "导入失败：${error.message ?: "文件不可用"}")
-                    }
-                },
-            )
         }
     }
 

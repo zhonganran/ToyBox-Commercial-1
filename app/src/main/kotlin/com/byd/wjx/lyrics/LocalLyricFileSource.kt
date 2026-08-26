@@ -9,7 +9,7 @@ internal class LocalLyricFileSource {
     fun load(snapshot: MusicPlaybackSnapshot, key: String): LyricsResult? {
         val songFile = resolveMediaFile(snapshot.mediaUri) ?: return null
         val lyricFile = findSiblingLrc(songFile) ?: return null
-        val bytes = runCatching { lyricFile.readBytes() }.getOrNull() ?: return null
+        val bytes = readBoundedFile(lyricFile, MAX_LOCAL_LYRIC_BYTES) ?: return null
         val utf8 = runCatching { bytes.toString(Charsets.UTF_8) }.getOrNull()
         val raw = if (utf8?.contains("[") == true) {
             utf8
@@ -46,5 +46,6 @@ internal class LocalLyricFileSource {
 
     private companion object {
         const val TAG = "LocalLyricFileSource"
+        const val MAX_LOCAL_LYRIC_BYTES = 2L * 1024L * 1024L
     }
 }

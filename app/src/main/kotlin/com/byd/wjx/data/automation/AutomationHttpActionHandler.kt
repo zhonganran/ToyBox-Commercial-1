@@ -2,6 +2,7 @@ package com.byd.wjx.data.automation
 
 import com.byd.wjx.data.local.entity.ActionDef
 import com.byd.wjx.log.WjxFileLogger
+import com.byd.wjx.security.EndpointPrivacy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -41,7 +42,7 @@ internal class AutomationHttpActionHandler(
                 }
             }.getOrElse { error ->
                 WjxFileLogger.w(TAG, "http action failed: ${error.message}", error)
-                DispatchResult(false, error.message ?: "HTTP 请求失败")
+                DispatchResult(false, EndpointPrivacy.userMessage(error, "HTTP 请求失败"))
             }
         }
     }

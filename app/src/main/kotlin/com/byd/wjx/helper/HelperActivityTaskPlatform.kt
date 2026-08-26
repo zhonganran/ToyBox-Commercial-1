@@ -22,6 +22,7 @@ private fun fieldByName(target: Any, name: String): java.lang.reflect.Field? {
 }
 
 internal fun findTaskId(packageName: String): Int {
+    requireValidAndroidPackageName(packageName)
     val service = activityTaskManager()
     val getTasks = service.javaClass.getMethod(
         "getTasks",
@@ -97,19 +98,33 @@ internal fun setFocusedTaskReflect(taskId: Int) {
 }
 
 internal fun launchApp(packageName: String): Boolean {
-    val resolve = execShell(
-        "cmd package resolve-activity --brief -c android.intent.category.LAUNCHER $packageName",
-    )
+    requireValidAndroidPackageName(packageName)
+    val resolve = shExec(
+        "cmd package resolve-activity --brief -c android.intent.category.LAUNCHER \"\$1\"",
+        packageName,
+    ).stdout
     val component = resolve.lineSequence()
         .firstOrNull { it.contains("/") && !it.startsWith("No ") }
         ?.trim()
-    if (component != null && !execShell("am start -n $component").contains("Error")) return true
-    if (!execShell("am start -a android.intent.action.MAIN $packageName").contains("Error")) return true
-    val monkey = execShell("monkey -p $packageName -c android.intent.category.LAUNCHER 1")
-    return !monkey.contains("Error") && !monkey.contains("error")
+        ?.takeIf { isLaunchComponentForPackage(it, packageName) }
+    if (component != null && shExec("am start -n \"\$1\"", component).isSuccessfulShellResult()) {
+        return true
+    }
+    if (shExec(
+            "am start -a android.intent.action.MAIN \"\$1\"",
+            packageName,
+        ).isSuccessfulShellResult()
+    ) {
+        return true
+    }
+    return shExec(
+        "monkey -p \"\$1\" -c android.intent.category.LAUNCHER 1",
+        packageName,
+    ).isSuccessfulShellResult()
 }
 
 internal fun launchAndForce(packageName: String, displayId: Int, width: Int, height: Int): Boolean {
+    requireValidAndroidPackageName(packageName)
     var taskId = findTaskId(packageName)
     if (taskId <= 0) {
         launchApp(packageName)
@@ -131,3 +146,25 @@ internal fun launchAndForce(packageName: String, displayId: Int, width: Int, hei
     }
     return true
 }
+
+internal fun isValidAndroidPackageName(value: String): Boolean =
+    value.length in 3..255 && ANDROID_PACKAGE_NAME.matches(value)
+
+private fun requireValidAndroidPackageName(value: String) {
+    require(isValidAndroidPackageName(value)) { "invalid Android package name" }
+}
+
+private fun isLaunchComponentForPackage(component: String, packageName: String): Boolean {
+    val separator = component.indexOf('/')
+    if (separator <= 0 || separator != component.lastIndexOf('/')) return false
+    if (component.substring(0, separator) != packageName) return false
+    return component.substring(separator + 1).matches(ANDROID_COMPONENT_CLASS)
+}
+
+private fun CmdResult.isSuccessfulShellResult(): Boolean =
+    code == 0 && !stdout.contains("error", ignoreCase = true)
+
+private val ANDROID_PACKAGE_NAME = Regex(
+    "[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)+",
+)
+private val ANDROID_COMPONENT_CLASS = Regex("[A-Za-z_.$][A-Za-z0-9_.$]*")

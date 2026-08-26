@@ -37,10 +37,7 @@ internal fun helperTransactionGroup(code: Int): HelperTransactionGroup? = when (
     HelperBinderProtocol.TX_SYNC_LOCK_SOUND_CONFIG,
     HelperBinderProtocol.TX_DEBUG_PLAY_LOCK_SOUND,
     HelperBinderProtocol.TX_STOP_LOCK_SOUND,
-    HelperBinderProtocol.TX_HEADLIGHT_QUERY_SUPPORT,
-    HelperBinderProtocol.TX_HEADLIGHT_GET_MODE,
     HelperBinderProtocol.TX_PLAY_SENTRY_EVENT,
-    HelperBinderProtocol.TX_HEADLIGHT_SET_MODE,
     HelperBinderProtocol.TX_SET_LOCK_SOUND_PLAYBACK_STATE,
     -> HelperTransactionGroup.VEHICLE_FEATURE
 

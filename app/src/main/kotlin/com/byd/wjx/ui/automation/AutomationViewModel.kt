@@ -12,7 +12,6 @@ import com.byd.wjx.data.local.entity.ActionDef
 import com.byd.wjx.data.local.entity.RuleEntity
 import com.byd.wjx.data.local.entity.TriggerDef
 import com.byd.wjx.data.automation.ActionDispatcher
-import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.data.vehicle.VehicleApi
 import com.byd.wjx.log.WjxFileLogger
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -28,7 +27,6 @@ import javax.inject.Inject
 class AutomationViewModel @Inject constructor(
     private val ruleRepository: AutomationRuleRepository,
     private val journalRepository: AutomationJournalRepository,
-    private val settingsRepository: SettingsRepository,
     private val vehicleApi: VehicleApi,
     private val actionDispatcher: ActionDispatcher,
     private val activationManager: ActivationManager,
@@ -40,15 +38,6 @@ class AutomationViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            try {
-                seedDefaultAutomationPresets(
-                    ruleRepository = ruleRepository,
-                    settingsRepository = settingsRepository,
-                    outsideSoundAction = newOutsideSoundAction(context),
-                )
-            } catch (e: Exception) {
-                WjxFileLogger.e("AutomationViewModel", "default automation preset initialization failed", e)
-            }
             ruleRepository.observeAll().collect { rules ->
                 _uiState.update { it.copy(rules = rules) }
             }

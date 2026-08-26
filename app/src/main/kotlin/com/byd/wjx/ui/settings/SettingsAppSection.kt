@@ -16,6 +16,11 @@ internal fun AppSection(state: SettingsUiState, viewModel: SettingsViewModel) {
         onExportConfig = viewModel::exportConfig,
         onRestoreConfig = viewModel::restoreConfig,
     )
+    SettingsPermissionHealthSection(
+        maintenance = state.maintenance,
+        onRefresh = viewModel::refreshPermissionHealth,
+        onRepair = viewModel::repairPermissions,
+    )
     SettingsDiagnosticLogSection(
         maintenance = state.maintenance,
         onUploadLogs = viewModel::uploadLogs,

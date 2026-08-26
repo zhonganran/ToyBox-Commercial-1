@@ -12,7 +12,8 @@
 - 包名：com.byd.wjx
 - 项目名：SuperToyBox
 - APK 命名：超级玩具箱-V版本号.apk
-- 更新后台：https://api.689588.xyz/api/v1/update/latest
+- 统一商业服务：https://wjx.689588.xyz
+- 更新后台：https://wjx.689588.xyz/api/v1/update/latest
 
 ## 构建
 
@@ -28,18 +29,17 @@
 
 ## 说明
 
-更新检查已从原始仓库解绑，当前默认走香港服务器更新后台：
+客户端的更新、激活、服务二维码、诊断日志上传全部从同一个商业服务域名派生：
 
 ```properties
-superToyBoxUpdateApiUrl=https://api.689588.xyz/api/v1/update/latest
+superToyBoxServiceBaseUrl=https://wjx.689588.xyz
 ```
 
 应用内会读取后台返回的 `versionCode`、`version`、`downloadUrl` 和 `releaseNotes`，并下载后台指定的 APK。
-客户端只使用统一商业平台更新源。
+API、APK 和二维码地址必须保持在该 HTTPS 域名下，不接受跨域重定向。
 
 当前项目以 Room Schema 21 创建全新数据库，只识别当前偏好键和当前格式的备份。
-仅保留 Schema 20 到 21 的发布修复迁移，用于修复 2.0 构建 38 已发布的数据库结构冲突；
-不包含更早版本的数据库、偏好设置、文件路径或后台表结构迁移逻辑。
+客户端不保留旧数据库、偏好设置、文件路径或备份格式迁移逻辑，发布前按全新安装验证。
 
 ## 商业平台部署
 
@@ -49,6 +49,7 @@ superToyBoxUpdateApiUrl=https://api.689588.xyz/api/v1/update/latest
 export WJX_PLATFORM_ADMIN_USER=admin
 export WJX_PLATFORM_ADMIN_PASSWORD='replace-with-a-strong-password'
 export WJX_PLATFORM_SECRET_KEY='replace-with-a-persistent-random-secret'
+export WJX_PLATFORM_PUBLIC_BASE_URL='https://wjx.689588.xyz'
 ```
 
 后台默认不信任客户端提交的代理 IP 请求头。仅当 Gunicorn 只能通过受信任的反向代理访问时，

@@ -36,19 +36,21 @@ class ServiceQrRepositoryTest {
     }
 
     @Test
-    fun `remote payload and image URLs require secure same-origin transport`() {
-        val metadata = "https://api.example.test/api/v1/service/qrcodes"
+    fun `remote payload and images stay on the single service origin`() {
+        val metadata = "https://wjx.example.test/api/v1/service/qrcodes"
 
         assertTrue(isValidServiceQrPayload("{\"items\":[]}"))
         assertFalse(isValidServiceQrPayload("{}"))
         assertTrue(isAllowedServiceQrMetadataUrl(metadata))
-        assertFalse(isAllowedServiceQrMetadataUrl("http://api.example.test/qrcodes"))
-        assertTrue(isAllowedServiceQrMetadataUrl("https://api.example.test/redirected", metadata))
+        assertFalse(isAllowedServiceQrMetadataUrl("http://wjx.example.test/qrcodes"))
+        assertTrue(isAllowedServiceQrMetadataUrl("https://wjx.example.test/redirected", metadata))
         assertFalse(isAllowedServiceQrMetadataUrl("https://other.example.test/redirected", metadata))
-        assertTrue(isAllowedServiceQrImageUrl("https://api.example.test/cdn/qr.png", metadata))
-        assertFalse(isAllowedServiceQrImageUrl("http://api.example.test/cdn/qr.png", metadata))
-        assertFalse(isAllowedServiceQrImageUrl("https://other.example.test/qr.png", metadata))
-        assertFalse(isAllowedServiceQrImageUrl("https://user:pass@api.example.test/qr.png", metadata))
+        assertTrue(isAllowedServiceQrImageUrl("https://wjx.example.test/cdn/qr.png", metadata))
+        assertFalse(isAllowedServiceQrImageUrl("https://cdn.example.test/qr.png", metadata))
+        assertFalse(isAllowedServiceQrImageUrl("http://wjx.example.test/cdn/qr.png", metadata))
+        assertFalse(isAllowedServiceQrImageUrl("https://evil.test/qr.png", metadata))
+        assertFalse(isAllowedServiceQrImageUrl("https://wjx.example.test:8443/qr.png", metadata))
+        assertFalse(isAllowedServiceQrImageUrl("https://user:pass@wjx.example.test/qr.png", metadata))
     }
 
     @Test

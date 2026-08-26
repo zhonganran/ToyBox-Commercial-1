@@ -104,6 +104,7 @@ fun SettingsScreen(
             onCheck = {
                 when (state.maintenance.updateDialogState) {
                     is UpdateState.Available -> viewModel.downloadUpdate()
+                    is UpdateState.InstallPermissionRequired -> viewModel.continuePendingInstall()
                     else -> viewModel.checkForUpdate()
                 }
             },

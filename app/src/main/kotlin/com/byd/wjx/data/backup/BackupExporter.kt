@@ -1,10 +1,10 @@
 package com.byd.wjx.data.backup
 
 import android.content.Context
-import android.net.Uri
 import com.byd.wjx.data.local.database.AppDatabase
 import com.byd.wjx.log.WjxFileLogger
 import java.io.File
+import java.io.FileOutputStream
 import java.util.UUID
 
 internal class BackupExporter(
@@ -13,8 +13,14 @@ internal class BackupExporter(
     private val preferenceStore: BackupPreferenceStore,
     private val backupFormatVersion: Int,
 ) {
-    fun export(destination: Uri) {
+    fun export(destination: File) {
+        val parent = destination.parentFile
+            ?: throw IllegalStateException("备份文件没有有效的保存目录")
+        check(parent.isDirectory || parent.mkdirs()) {
+            "无法创建备份目录：${parent.absolutePath}"
+        }
         val databaseSnapshot = createDatabaseSnapshot()
+        val pendingFile = File(parent, ".${destination.name}.${UUID.randomUUID()}.tmp")
         val preferencesJson = BackupPreferencesCodec.serialize(preferenceStore.collectNonEmpty())
         val manifest = BackupManifest(
             backupFormatVersion = backupFormatVersion,
@@ -25,9 +31,7 @@ internal class BackupExporter(
         )
         val manifestJson = BackupManifestCodec.serialize(manifest)
         try {
-            val output = context.contentResolver.openOutputStream(destination, "wt")
-                ?: throw IllegalStateException("无法打开所选备份文件")
-            output.use {
+            FileOutputStream(pendingFile).buffered().use {
                 BackupArchiveWriter.write(
                     output = it,
                     databaseFile = databaseSnapshot,
@@ -35,12 +39,19 @@ internal class BackupExporter(
                     manifestJson = manifestJson,
                 )
             }
+            check(pendingFile.isFile && pendingFile.length() > 0L) {
+                "生成的备份文件为空"
+            }
+            check(pendingFile.renameTo(destination)) {
+                "无法保存备份文件：${destination.absolutePath}"
+            }
         } finally {
             databaseSnapshot.delete()
+            pendingFile.delete()
         }
         WjxFileLogger.i(
             TAG,
-            "backup exported uriScheme=${destination.scheme.orEmpty()} schema=${manifest.dbSchemaVersion}",
+            "backup exported path=${destination.absolutePath} schema=${manifest.dbSchemaVersion}",
         )
     }
 

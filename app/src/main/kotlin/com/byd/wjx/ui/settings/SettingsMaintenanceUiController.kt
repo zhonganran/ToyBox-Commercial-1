@@ -61,10 +61,10 @@ internal class SettingsMaintenanceUiController(
         }
     }
 
-    fun exportConfig(destination: Uri) {
+    fun exportConfig() {
         scope.launch {
             updateState { it.copy(configStatus = context.getString(R.string.settings_export_in_progress)) }
-            val result = coordinator.exportConfig(destination)
+            val result = coordinator.exportConfig()
             updateState { it.copy(configStatus = result.message) }
         }
     }
@@ -89,6 +89,13 @@ internal class SettingsMaintenanceUiController(
             } finally {
                 downloadJob = null
             }
+        }
+    }
+
+    fun continuePendingInstall() {
+        scope.launch {
+            val update = coordinator.continuePendingInstall()
+            updateState { it.copy(updateDialogState = update) }
         }
     }
 

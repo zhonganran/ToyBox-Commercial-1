@@ -4,7 +4,6 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -40,7 +39,6 @@ internal fun LocalSoundTab(
     onDelete: (SoundLibrary.SoundItem) -> Unit,
     onMove: (String, String) -> Unit,
     onRefresh: () -> Unit,
-    onImport: () -> Unit,
 ) {
     if (state.isLoading) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -57,7 +55,6 @@ internal fun LocalSoundTab(
                 onDelete = onDelete,
                 onMove = onMove,
                 onRefresh = onRefresh,
-                onImport = onImport,
             )
         } else {
             CompactSoundGrid(
@@ -66,7 +63,6 @@ internal fun LocalSoundTab(
                 onDelete = onDelete,
                 onMove = onMove,
                 onRefresh = onRefresh,
-                onImport = onImport,
             )
         }
     }
@@ -99,13 +95,12 @@ private fun WideSoundMosaic(
     onDelete: (SoundLibrary.SoundItem) -> Unit,
     onMove: (String, String) -> Unit,
     onRefresh: () -> Unit,
-    onImport: () -> Unit,
 ) {
     val density = LocalDensity.current
     var draggingPath by remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
     var dragOffset by remember { androidx.compose.runtime.mutableStateOf(Offset.Zero) }
     var dragIndex by remember { androidx.compose.runtime.mutableIntStateOf(-1) }
-    val entryCount = state.sounds.size + 1
+    val entryCount = state.sounds.size
     val pageCount = ((entryCount + soundMosaicSlots.lastIndex) / soundMosaicSlots.size).coerceAtLeast(1)
 
     LazyColumn(
@@ -114,10 +109,7 @@ private fun WideSoundMosaic(
     ) {
         if (state.sounds.isEmpty()) {
             item(key = "empty-sound-library") {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    EmptySoundState(onRefresh = onRefresh)
-                    ImportSoundCard(onClick = onImport, modifier = Modifier.fillMaxWidth().height(112.dp))
-                }
+                EmptySoundState(onRefresh = onRefresh)
             }
         } else {
             items(pageCount, key = { "sound-mosaic-page-$it" }) { pageIndex ->
@@ -198,14 +190,6 @@ private fun WideSoundMosaic(
                                         )
                                     },
                             )
-                        } else {
-                            ImportSoundCard(
-                                onClick = onImport,
-                                modifier = Modifier
-                                    .width(maxWidth * slot.widthFraction)
-                                    .height(slot.height)
-                                    .offset(x = maxWidth * slot.xFraction, y = slot.y),
-                            )
                         }
                     }
                 }
@@ -221,7 +205,6 @@ private fun CompactSoundGrid(
     onDelete: (SoundLibrary.SoundItem) -> Unit,
     onMove: (String, String) -> Unit,
     onRefresh: () -> Unit,
-    onImport: () -> Unit,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val columns = when {
@@ -311,12 +294,6 @@ private fun CompactSoundGrid(
                                     },
                                 )
                             },
-                    )
-                }
-                item {
-                    ImportSoundCard(
-                        onClick = onImport,
-                        modifier = Modifier.height(114.dp),
                     )
                 }
             }

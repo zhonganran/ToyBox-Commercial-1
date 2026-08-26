@@ -34,6 +34,7 @@ class SuperToyBoxApp : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
+        WjxFileLogger.sanitizeStoredLog()
         installUnifiedCrashLogger()
         registerForegroundLifecycleCallbacks()
         WjxFileLogger.i("SuperToyBoxApp", "application onCreate package=$packageName version=${BuildConfig.VERSION_NAME}/${BuildConfig.VERSION_CODE}")

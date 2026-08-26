@@ -142,6 +142,40 @@ class HelperClientBinderTest {
     }
 
     @Test
+    fun `runtimeVersionCode reads apk build identity from ping`() = runBlocking {
+        val binder = object : FakeIBinder() {
+            override fun transact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+                reply!!.writeInt(0)
+                reply.writeInt(HelperBinderProtocol.CURRENT_VERSION)
+                reply.writeInt(60)
+                reply.writeString("123e4567-e89b-42d3-a456-426614174000")
+                reply.setDataPosition(0)
+                return true
+            }
+        }
+
+        assertEquals(60, clientWith(binder).runtimeVersionCode())
+        assertNull(clientWith(liveFake(0, HelperBinderProtocol.CURRENT_VERSION)).runtimeVersionCode())
+    }
+
+    @Test
+    fun `runtimeInstallIdentity reads owning app installation from ping`() = runBlocking {
+        val expected = "123e4567-e89b-42d3-a456-426614174000"
+        val binder = object : FakeIBinder() {
+            override fun transact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+                reply!!.writeInt(0)
+                reply.writeInt(HelperBinderProtocol.CURRENT_VERSION)
+                reply.writeInt(60)
+                reply.writeString(expected)
+                reply.setDataPosition(0)
+                return true
+            }
+        }
+
+        assertEquals(expected, clientWith(binder).runtimeInstallIdentity())
+    }
+
+    @Test
     fun `sentry write operation preserves restricted op and assignment`() = runBlocking {
         val binder = object : FakeIBinder() {
             override fun transact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
@@ -201,55 +235,6 @@ class HelperClientBinderTest {
         assertTrue(client.setLockSoundPlaybackState(true))
         assertTrue(client.setLockSoundPlaybackState(false))
         assertEquals(listOf(1, 0), values)
-    }
-
-    @Test
-    fun `headlight capability and mode replies preserve service diagnostics`() = runBlocking {
-        val binder = object : FakeIBinder() {
-            override fun transact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
-                when (code) {
-                    HelperBinderProtocol.TX_HEADLIGHT_QUERY_SUPPORT -> {
-                        reply!!.writeInt(0)
-                        reply.writeInt(0)
-                        reply.writeInt(1)
-                    }
-                    HelperBinderProtocol.TX_HEADLIGHT_GET_MODE -> {
-                        reply!!.writeInt(0)
-                        reply.writeInt(11_003)
-                        reply.writeInt(-1)
-                    }
-                    else -> error("unexpected code=$code")
-                }
-                reply.setDataPosition(0)
-                return true
-            }
-        }
-        val client = clientWith(binder)
-
-        assertEquals(HelperHeadlightReply(0, 0, 1), client.queryHeadlightSupport())
-        assertEquals(HelperHeadlightReply(0, 11_003, -1), client.getHeadlightMode())
-    }
-
-    @Test
-    fun `headlight set sends official mode and returns actual readback`() = runBlocking {
-        val binder = object : FakeIBinder() {
-            override fun transact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
-                assertEquals(HelperBinderProtocol.TX_HEADLIGHT_SET_MODE, code)
-                data.setDataPosition(0)
-                data.enforceInterface(HelperBinderProtocol.DESCRIPTOR)
-                assertEquals(HeadlightMode.HIGH_BEAM.serviceValue, data.readInt())
-                reply!!.writeInt(0)
-                reply.writeInt(0)
-                reply.writeInt(HeadlightMode.HIGH_BEAM.serviceValue)
-                reply.setDataPosition(0)
-                return true
-            }
-        }
-
-        assertEquals(
-            HelperHeadlightReply(0, 0, HeadlightMode.HIGH_BEAM.serviceValue),
-            clientWith(binder).setHeadlightMode(HeadlightMode.HIGH_BEAM),
-        )
     }
 
     /** TC-6: transact returning false yields null for read and false for write */

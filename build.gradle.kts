@@ -31,7 +31,7 @@ tasks.register("verifySourceHealth") {
             "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsVehicleUiController.kt" to 115,
             "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsEnergyCoordinator.kt" to 145,
             "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsPreferenceCoordinator.kt" to 60,
-            "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsVehicleControlCoordinator.kt" to 55,
+            "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsVehicleProfileCoordinator.kt" to 55,
             "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsUiState.kt" to 125,
             "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsVehicleEventSoundState.kt" to 40,
             "app/src/main/kotlin/com/byd/wjx/ui/settings/VehicleEventSoundCoordinator.kt" to 195,
@@ -56,7 +56,6 @@ tasks.register("verifySourceHealth") {
             "app/src/main/kotlin/com/byd/wjx/activation/ActivationApiClient.kt" to 220,
             "app/src/main/kotlin/com/byd/wjx/activation/ActivationDeviceIdentityProvider.kt" to 190,
             "app/src/main/kotlin/com/byd/wjx/activation/ActivationEntitlementStore.kt" to 190,
-            "app/src/main/kotlin/com/byd/wjx/activation/OfflineLicenseStore.kt" to 220,
             "app/src/main/kotlin/com/byd/wjx/activation/ActivationPaymentCheckoutPolicy.kt" to 100,
             "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsAuthorizationSection.kt" to 350,
             "app/src/main/kotlin/com/byd/wjx/ui/settings/ActivationPaymentDialog.kt" to 240,
@@ -158,7 +157,6 @@ tasks.register("verifySourceHealth") {
             "app/src/main/kotlin/com/byd/wjx/ui/pro/ProBottomNavigation.kt" to 115,
             "app/src/main/kotlin/com/byd/wjx/ui/pro/ProComponents.kt" to 135,
             "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsDisplaySection.kt" to 55,
-            "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsHeadlightControlSection.kt" to 115,
             "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsExteriorSoundChannelSection.kt" to 105,
             "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsKeyShortcutCoordinator.kt" to 155,
             "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsClusterProjectionSection.kt" to 420,
@@ -286,7 +284,6 @@ tasks.register("verifySourceHealth") {
             "app/src/main/kotlin/com/byd/wjx/ui/charges/ChargeEditDialog.kt" to 340,
             "app/src/main/kotlin/com/byd/wjx/desktopcard/DesktopQuickCardModels.kt" to 325,
             "app/src/main/kotlin/com/byd/wjx/data/vehicle/WriteAllowlist.kt" to 320,
-            "app/src/main/kotlin/com/byd/wjx/helper/BydHeadlightBinderClient.kt" to 310,
             "app/src/main/kotlin/com/byd/wjx/ui/dashboard/DashboardViewModel.kt" to 290,
             "app/src/main/kotlin/com/byd/wjx/ui/dashboard/DashboardModels.kt" to 160,
             "app/src/main/kotlin/com/byd/wjx/ui/dashboard/DashboardTimeRanges.kt" to 60,
@@ -361,6 +358,53 @@ tasks.register("verifySourceHealth") {
             removedFeatureTokens.firstOrNull(sourceText::contains)?.let { token ->
                 violations +=
                     "${source.relativeTo(rootDir)} restores removed feature token $token"
+            }
+        }
+        val removedCommercialFiles = listOf(
+            "app/src/main/kotlin/com/byd/wjx/activation/OfflineLicenseStore.kt",
+            "app/src/main/kotlin/com/byd/wjx/ui/automation/AutomationPresets.kt",
+            "app/src/test/kotlin/com/byd/wjx/activation/OfflineLicenseVerifierTest.kt",
+            "app/src/test/kotlin/com/byd/wjx/ui/automation/AutomationPresetsTest.kt",
+        )
+        removedCommercialFiles.filter { file(it).exists() }.forEach { path ->
+            violations += "$path restores removed commercial compatibility code"
+        }
+        val activationCredentialSources =
+            fileTree("app/src/main/kotlin/com/byd/wjx/activation") { include("**/*.kt") }.files +
+            listOf(
+                file("server/platform/app.py"),
+                file("server/platform/platform_config.py"),
+                file("server/platform/platform_license.py"),
+                file("server/platform/platform_storage.py"),
+            )
+        val removedActivationCredentialTokens = listOf(
+            "deviceToken",
+            "credentialVersion",
+            "deviceProof",
+            "offlineLicense",
+            "api_token_hash",
+            "api_token_issued_at",
+            "OFFLINE_LICENSE",
+        )
+        activationCredentialSources.forEach { source ->
+            val sourceText = source.readText()
+            removedActivationCredentialTokens.firstOrNull(sourceText::contains)?.let { token ->
+                violations +=
+                    "${source.relativeTo(rootDir)} restores removed activation credential $token"
+            }
+        }
+        val mySoundSources = listOf(
+            file("app/src/main/kotlin/com/byd/wjx/ui/sound/SoundScreen.kt"),
+            file("app/src/main/kotlin/com/byd/wjx/ui/sound/SoundLocalTab.kt"),
+            file("app/src/main/kotlin/com/byd/wjx/ui/sound/SoundLocalCards.kt"),
+            file("app/src/main/kotlin/com/byd/wjx/ui/sound/SoundViewModel.kt"),
+        )
+        val removedMySoundImportTokens = listOf("ImportSoundCard", "importSound(", "OpenDocument")
+        mySoundSources.forEach { source ->
+            val sourceText = source.readText()
+            removedMySoundImportTokens.firstOrNull(sourceText::contains)?.let { token ->
+                violations +=
+                    "${source.relativeTo(rootDir)} restores My Sounds import entry $token"
             }
         }
         val schemaDirectory =
@@ -552,7 +596,6 @@ tasks.register("verifySourceHealth") {
             file("app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsDisplaySection.kt")
         val settingsDisplayText = settingsDisplay.readText()
         listOf(
-            "HeadlightControlSection(",
             "ExteriorSoundChannelSection(",
             "SettingsKeyShortcutCoordinator(",
             "ClusterProjectionSettingsSection(",
@@ -716,10 +759,24 @@ tasks.register("verifySourceHealth") {
         val backupExporter = file(
             "app/src/main/kotlin/com/byd/wjx/data/backup/BackupExporter.kt",
         )
-        listOf("VACUUM INTO", "contentResolver.openOutputStream", "databaseSnapshot.delete()")
+        listOf(
+            "VACUUM INTO",
+            "FileOutputStream(pendingFile)",
+            "pendingFile.renameTo(destination)",
+            "databaseSnapshot.delete()",
+            "pendingFile.delete()",
+        )
             .firstOrNull { it !in backupExporter.readText() }?.let { guard ->
                 violations +=
-                    "${backupExporter.relativeTo(rootDir)} is missing consistent SAF export guard: $guard"
+                    "${backupExporter.relativeTo(rootDir)} is missing atomic file export guard: $guard"
+            }
+        val backupDestinationProvider = file(
+            "app/src/main/kotlin/com/byd/wjx/data/backup/BackupDestinationProvider.kt",
+        )
+        listOf("WjxDirectories.ensureBaseDirs()", "WjxDirectories.baseDir", "ToyBox_backup_")
+            .firstOrNull { it !in backupDestinationProvider.readText() }?.let { guard ->
+                violations +=
+                    "${backupDestinationProvider.relativeTo(rootDir)} is missing WJX destination guard: $guard"
             }
 
         val outsidePlaybackService = file(
@@ -990,17 +1047,27 @@ tasks.register("verifySourceHealth") {
                 "${activationManager.relativeTo(rootDir)} accesses entitlement preferences directly"
         }
 
+        val deviceBindingOwner = file(
+            "app/src/main/kotlin/com/byd/wjx/data/system/AppScopedDeviceBindingProvider.kt",
+        )
         val androidIdReaders = mainSources.files.filter { source ->
+            source != deviceBindingOwner &&
             "Settings.Secure.ANDROID_ID" in source.readText()
         }
         if (androidIdReaders.isNotEmpty()) {
-            violations += "Settings.Secure.ANDROID_ID must not be used for activation identity"
+            violations += "Settings.Secure.ANDROID_ID must remain inside AppScopedDeviceBindingProvider"
+        }
+        if (!deviceBindingOwner.exists() ||
+            "Settings.Secure.ANDROID_ID" !in deviceBindingOwner.readText()
+        ) {
+            violations += "AppScopedDeviceBindingProvider must own the app-scoped device binding"
         }
         val hardwareIdSuppressions = mainSources.files.filter { source ->
+            source != deviceBindingOwner &&
             "@SuppressLint(\"HardwareIds\")" in source.readText()
         }
         if (hardwareIdSuppressions.isNotEmpty()) {
-            violations += "HardwareIds lint suppression must not be used"
+            violations += "HardwareIds suppression must remain inside AppScopedDeviceBindingProvider"
         }
 
         val settingsViewModel =
@@ -1012,7 +1079,6 @@ tasks.register("verifySourceHealth") {
         }
         val forbiddenSettingsCoordinatorDependencies = listOf(
             "import com.byd.wjx.data.repository.SettingsRepository",
-            "import com.byd.wjx.data.vehicle.HeadlightController",
             "import com.byd.wjx.vehicle.CarProfileDetector",
             "ServiceQrRepository",
         )
@@ -1075,7 +1141,7 @@ tasks.register("verifySourceHealth") {
             ".copy(appPreferences =",
             ".copy(energy =",
             ".copy(maintenance =",
-            ".copy(vehicleControl =",
+            ".copy(vehicleProfile =",
             ".copy(vehicleEventSound =",
         )
         forbiddenSettingsViewModelImplementation
@@ -1132,8 +1198,6 @@ tasks.register("verifySourceHealth") {
         listOf(
             "eventSoundCoordinator.setEnabled(event, enabled)",
             "eventSoundCoordinator.sync(reason)",
-            "vehicleControlCoordinator.refreshHeadlight()",
-            "vehicleControlCoordinator.setHeadlightMode(mode)",
             "vehicleEventSound = it.vehicleEventSound.merge(eventSound, syncing)",
         ).firstOrNull { guard -> guard !in settingsVehicleUiControllerText }?.let { guard ->
             violations +=

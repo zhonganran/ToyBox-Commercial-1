@@ -1,7 +1,9 @@
 package com.byd.wjx.log
 
 import android.util.Log
+import com.byd.wjx.security.EndpointPrivacy
 import com.byd.wjx.storage.WjxDirectories
+import java.io.RandomAccessFile
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -25,43 +27,49 @@ object WjxFileLogger {
         get() = WjxDirectories.appLog.absolutePath
 
     fun d(tag: String, message: String) {
-        Log.d(tag, message)
-        writeAsync("D", tag, message)
+        val safeMessage = EndpointPrivacy.redact(message)
+        Log.d(tag, safeMessage)
+        writeAsync("D", tag, safeMessage)
     }
 
     fun i(tag: String, message: String) {
-        Log.i(tag, message)
-        writeAsync("I", tag, message)
+        val safeMessage = EndpointPrivacy.redact(message)
+        Log.i(tag, safeMessage)
+        writeAsync("I", tag, safeMessage)
     }
 
     fun w(tag: String, message: String) {
-        Log.w(tag, message)
-        writeAsync("W", tag, message)
+        val safeMessage = EndpointPrivacy.redact(message)
+        Log.w(tag, safeMessage)
+        writeAsync("W", tag, safeMessage)
     }
 
     fun w(tag: String, message: String, throwable: Throwable) {
-        Log.w(tag, message, throwable)
-        writeSync("W", tag, "$message\n${throwable.stackTraceToString()}")
+        val safeDetails = EndpointPrivacy.redact("$message\n${throwable.stackTraceToString()}")
+        Log.w(tag, safeDetails)
+        writeSync("W", tag, safeDetails)
     }
 
     fun e(tag: String, message: String) {
-        Log.e(tag, message)
-        writeAsync("E", tag, message)
+        val safeMessage = EndpointPrivacy.redact(message)
+        Log.e(tag, safeMessage)
+        writeAsync("E", tag, safeMessage)
     }
 
     fun e(tag: String, message: String, throwable: Throwable) {
-        Log.e(tag, message, throwable)
-        writeSync("E", tag, "$message\n${throwable.stackTraceToString()}")
+        val safeDetails = EndpointPrivacy.redact("$message\n${throwable.stackTraceToString()}")
+        Log.e(tag, safeDetails)
+        writeSync("E", tag, safeDetails)
     }
 
     fun tail(maxLines: Int = 80): List<String> {
         flush()
         return synchronized(lock) {
             runCatching {
-                WjxDirectories.appLog
-                    .takeIf { it.exists() }
+                WjxDirectories.appLog.takeIf { it.exists() }?.also(::trimIfNeeded)
                     ?.readLines()
                     ?.takeLast(maxLines)
+                    ?.map(EndpointPrivacy::redact)
                     ?: emptyList()
             }.getOrDefault(emptyList())
         }
@@ -80,7 +88,10 @@ object WjxFileLogger {
 
     fun appendSection(title: String, body: String) {
         runBlockingOnWriter {
-            writeSectionInternal(title, body)
+            writeSectionInternal(
+                EndpointPrivacy.redact(title),
+                EndpointPrivacy.redact(body),
+            )
         }
     }
 
@@ -90,7 +101,22 @@ object WjxFileLogger {
                 WjxDirectories.ensureBaseDirs()
                 val file = WjxDirectories.appLog
                 trimIfNeeded(file)
-                file.appendText("${dateFormat.format(Date())} L/logcat $line\n")
+                file.appendText("${dateFormat.format(Date())} L/logcat ${EndpointPrivacy.redact(line)}\n")
+            }
+        }
+    }
+
+    fun sanitizeStoredLog() {
+        runBlockingOnWriter {
+            synchronized(lock) {
+                runCatching {
+                    val file = WjxDirectories.appLog
+                    if (!file.isFile || file.length() <= 0L) return@runCatching
+                    trimIfNeeded(file)
+                    val original = file.readText()
+                    val redacted = EndpointPrivacy.redact(original)
+                    if (redacted != original) file.writeText(redacted)
+                }
             }
         }
     }
@@ -113,7 +139,9 @@ object WjxFileLogger {
                 WjxDirectories.ensureBaseDirs()
                 val file = WjxDirectories.appLog
                 trimIfNeeded(file)
-                file.appendText("${dateFormat.format(Date())} $level/$tag $message\n")
+                file.appendText(
+                    "${dateFormat.format(Date())} $level/$tag ${EndpointPrivacy.redact(message)}\n",
+                )
             }
         }
     }
@@ -155,9 +183,22 @@ object WjxFileLogger {
 
     private fun trimIfNeeded(file: java.io.File) {
         if (file.exists() && file.length() > MAX_LOG_BYTES) {
-            file.writeText(file.readLines().takeLast(MAX_KEEP_LINES).joinToString("\n", postfix = "\n"))
+            val length = file.length()
+            val start = (length - MAX_TRIM_READ_BYTES).coerceAtLeast(0L)
+            val bytes = ByteArray((length - start).toInt())
+            RandomAccessFile(file, "r").use { input ->
+                input.seek(start)
+                input.readFully(bytes)
+            }
+            val tail = bytes.toString(Charsets.UTF_8)
+                .let { text -> if (start > 0L) text.substringAfter('\n', "") else text }
+                .lines()
+                .takeLast(MAX_KEEP_LINES)
+                .joinToString("\n", postfix = "\n")
+            file.writeText(tail)
         }
     }
 
     private const val MAX_KEEP_LINES = 8_000
+    private const val MAX_TRIM_READ_BYTES = 4 * 1024 * 1024L
 }

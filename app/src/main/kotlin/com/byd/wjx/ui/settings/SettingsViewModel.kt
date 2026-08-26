@@ -5,7 +5,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.byd.wjx.audio.LockSoundEvent
-import com.byd.wjx.data.vehicle.HeadlightMode
+import com.byd.wjx.data.system.SettingsPermissionHealthCoordinator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -26,8 +26,9 @@ class SettingsViewModel @Inject constructor(
     activationCoordinator: SettingsActivationCoordinator,
     vehicleEventSoundCoordinator: VehicleEventSoundCoordinator,
     maintenanceCoordinator: SettingsMaintenanceCoordinator,
+    permissionHealthCoordinator: SettingsPermissionHealthCoordinator,
     private val serviceQrCoordinator: SettingsServiceQrCoordinator,
-    vehicleControlCoordinator: SettingsVehicleControlCoordinator,
+    vehicleProfileCoordinator: SettingsVehicleProfileCoordinator,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(
         SettingsUiState(
@@ -50,7 +51,7 @@ class SettingsViewModel @Inject constructor(
         scope = viewModelScope,
         state = _uiState,
         eventSoundCoordinator = vehicleEventSoundCoordinator,
-        vehicleControlCoordinator = vehicleControlCoordinator,
+        vehicleProfileCoordinator = vehicleProfileCoordinator,
     )
     private val activationUi = SettingsActivationUiController(
         scope = viewModelScope,
@@ -65,11 +66,17 @@ class SettingsViewModel @Inject constructor(
         state = _uiState,
         coordinator = maintenanceCoordinator,
     )
+    private val permissionHealthUi = SettingsPermissionHealthUiController(
+        scope = viewModelScope,
+        state = _uiState,
+        coordinator = permissionHealthCoordinator,
+    )
 
     init {
         energyUi.load()
         vehicleUi.load()
         maintenanceUi.loadDiagnostics()
+        permissionHealthUi.refresh()
         refreshActivation(refreshDeviceCode = true)
         refreshServiceQrCodes()
     }
@@ -87,10 +94,6 @@ class SettingsViewModel @Inject constructor(
     fun deleteEventSound(path: String) = vehicleUi.deleteEventSound(path)
 
     fun syncLockSoundNow(reason: String) = vehicleUi.syncEventSoundNow(reason)
-
-    fun refreshHeadlightControl() = vehicleUi.refreshHeadlightControl()
-
-    fun setHeadlightMode(mode: HeadlightMode) = vehicleUi.setHeadlightMode(mode)
 
     fun refreshServiceQrCodes() {
         if (_uiState.value.serviceQr.loading) return
@@ -147,20 +150,21 @@ class SettingsViewModel @Inject constructor(
     fun saveConsumptionGood(value: String) = energyUi.saveConsumptionGood(value)
 
     fun saveConsumptionBad(value: String) = energyUi.saveConsumptionBad(value)
-
     fun uploadLogs() = maintenanceUi.uploadLogs()
-
+    fun refreshPermissionHealth() = permissionHealthUi.refresh()
+    fun repairPermissions() = permissionHealthUi.repair()
     fun showUpdateDialog() = maintenanceUi.showUpdateDialog()
-
     fun hideUpdateDialog() = maintenanceUi.hideUpdateDialog()
 
     fun setAutoCheckUpdates(enabled: Boolean) = maintenanceUi.setAutoCheckUpdates(enabled)
 
     fun checkForUpdate() = maintenanceUi.checkForUpdate()
 
-    fun exportConfig(destination: Uri) = maintenanceUi.exportConfig(destination)
+    fun exportConfig() = maintenanceUi.exportConfig()
 
     fun restoreConfig(uri: Uri) = maintenanceUi.restoreConfig(uri)
 
     fun downloadUpdate() = maintenanceUi.downloadUpdate()
+
+    fun continuePendingInstall() = maintenanceUi.continuePendingInstall()
 }

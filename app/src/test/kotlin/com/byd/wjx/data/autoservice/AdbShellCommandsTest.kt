@@ -26,6 +26,7 @@ class AdbShellCommandsTest {
         val command = AdbShellCommands.spawnHelper(
             packageCodePath = "/data/app/com.byd.wjx/base.apk",
             callerUid = 10_123,
+            installIdentity = "123e4567-e89b-42d3-a456-426614174000",
             helperLogPath = "/sdcard/WJX/wjx.log",
             helperLogDirectory = "/sdcard/WJX",
         )

@@ -2,6 +2,7 @@ package com.byd.wjx.activation
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.byd.wjx.vehicle.VehicleInfo
 import java.util.concurrent.atomic.AtomicReference
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -31,7 +32,7 @@ class ActivationApiClientTest {
     }
 
     @Test
-    fun `status request includes only the primary identity and signed device proof`() {
+    fun `status request uses VIN identity without device credentials`() {
         val capturedRequest = AtomicReference<Request>()
         val client = apiClient(capturedRequest) {
             """{"activated":false,"deviceCode":"$VIN_ONE"}"""
@@ -41,14 +42,23 @@ class ActivationApiClientTest {
 
         val request = capturedRequest.get()
         assertEquals("/api/status", request.url.encodedPath)
-        assertEquals("Bearer device-token", request.header("Authorization"))
+        assertEquals(null, request.header("Authorization"))
         val payload = request.bodyJson()
         assertEquals(VIN_ONE, payload.getString("deviceCode"))
         assertEquals(VIN_ONE.lowercase(), payload.getString("rawDeviceCode"))
         assertEquals(false, payload.has("deviceCodes"))
         assertEquals(false, payload.has("rawDeviceCodes"))
         assertEquals(false, payload.has("credentialRecoveryProof"))
-        assertEquals("signed-proof", payload.getJSONObject("deviceProof").getString("signature"))
+        assertEquals(false, payload.has("credentialVersion"))
+        assertEquals(false, payload.has("deviceProof"))
+        val profile = payload.getJSONObject("vehicleProfile")
+        assertEquals(2025, profile.getInt("vinYear"))
+        assertEquals("宋 PLUS DM-i", profile.getString("displayName"))
+        assertEquals("SA3HEV", profile.getString("modelVariant"))
+        assertEquals("SONG_PLUS", profile.getString("carSeries"))
+        assertEquals("PHEV", profile.getString("vehicleType"))
+        assertEquals("57.1.3.2501010.1", profile.getString("controllerVersion"))
+        assertEquals(57, profile.getInt("controllerSeries"))
     }
 
     @Test
@@ -76,14 +86,31 @@ class ActivationApiClientTest {
     @Test
     fun `http error exposes server message`() {
         val client = apiClient(AtomicReference(), responseCode = 403) {
-            """{"message":"设备凭证无效"}"""
+            """{"message":"车架号查询失败"}"""
         }
 
         val error = assertThrows(IllegalStateException::class.java) {
             client.requestStatus(VIN_ONE)
         }
 
-        assertEquals("设备凭证无效", error.message)
+        assertEquals("车架号查询失败", error.message)
+    }
+
+    @Test
+    fun `http error hides deployment endpoint details`() {
+        val client = apiClient(AtomicReference(), responseCode = 503) {
+            """{"message":"https://wjx.689588.xyz failed at 203.0.113.8:443"}"""
+        }
+
+        val error = assertThrows(IllegalStateException::class.java) {
+            client.requestStatus(VIN_ONE)
+        }
+
+        assertEquals(
+            "${com.byd.wjx.security.EndpointPrivacy.HIDDEN_ENDPOINT} failed at " +
+                com.byd.wjx.security.EndpointPrivacy.HIDDEN_ENDPOINT,
+            error.message,
+        )
     }
 
     private fun apiClient(
@@ -107,9 +134,19 @@ class ActivationApiClientTest {
         return ActivationApiClient(
             context = context,
             okHttpClient = okHttpClient,
-            deviceTokenProvider = { "device-token" },
-            deviceProofProvider = { JSONObject().put("signature", "signed-proof") },
             apiBaseUrl = "https://activation.example/api/",
+            vehicleInfoProvider = {
+                VehicleInfo(
+                    vin = VIN_ONE,
+                    vinYear = 2025,
+                    displayName = "宋 PLUS DM-i",
+                    modelVariant = "SA3HEV",
+                    carSeries = "SONG_PLUS",
+                    vehicleType = "PHEV",
+                    controllerVersion = "57.1.3.2501010.1",
+                    controllerSeries = 57,
+                )
+            },
         )
     }
 

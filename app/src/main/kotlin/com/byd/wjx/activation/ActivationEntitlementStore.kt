@@ -8,7 +8,6 @@ import org.json.JSONObject
 internal data class AppliedServerEntitlement(
     val activated: Boolean,
     val boundActivationCode: String,
-    val hasDeviceToken: Boolean,
     val serverTrialEndsAt: Long,
 )
 
@@ -18,16 +17,10 @@ internal class ActivationEntitlementStore(
 ) {
     fun ensureStarted(): Long = ensureTrialStarted(currentTimeMillis())
 
-    fun currentDeviceToken(): String =
-        preferences.getString(KEY_DEVICE_API_TOKEN, "").orEmpty()
-
     fun shouldRefresh(forceAfterMs: Long): Boolean {
         val now = currentTimeMillis()
         val lastCheckedAt = preferences.getLong(KEY_LAST_CHECKED_AT, 0L)
-        val missingCredential = currentDeviceToken().isBlank() &&
-            !preferences.getBoolean(KEY_DEVICE_CREDENTIAL_REQUIRES_ACTIVATION, false)
-        return missingCredential ||
-            forceAfterMs <= 0L ||
+        return forceAfterMs <= 0L ||
             lastCheckedAt <= 0L ||
             now - lastCheckedAt >= forceAfterMs
     }
@@ -84,45 +77,19 @@ internal class ActivationEntitlementStore(
         } else {
             ""
         }
-        val deviceToken = json.optString("deviceToken", "").trim()
-        val editor = preferences.edit()
+        preferences.edit()
             .putBoolean(KEY_ACTIVATED, activated)
             .putString(KEY_ACTIVATED_DEVICE_CODE, if (activated) normalizedDevice else "")
             .putString(KEY_BOUND_ACTIVATION_CODE, boundActivationCode)
             .putLong(KEY_ACTIVATED_AT, activatedAt)
             .putLong(KEY_SERVER_TRIAL_ENDS_AT, serverTrialEndsAt)
             .putLong(KEY_LAST_CHECKED_AT, now)
-        if (deviceToken.isNotBlank()) {
-            editor
-                .putString(KEY_DEVICE_API_TOKEN, deviceToken)
-                .putBoolean(KEY_DEVICE_CREDENTIAL_REQUIRES_ACTIVATION, false)
-        } else if (json.optBoolean("deviceCredentialRequired", false)) {
-            editor
-                .remove(KEY_DEVICE_API_TOKEN)
-                .putBoolean(KEY_DEVICE_CREDENTIAL_REQUIRES_ACTIVATION, true)
-        } else if (!activated) {
-            editor
-                .remove(KEY_DEVICE_API_TOKEN)
-                .putBoolean(KEY_DEVICE_CREDENTIAL_REQUIRES_ACTIVATION, false)
-        }
-        editor.apply()
+            .apply()
         return AppliedServerEntitlement(
             activated = activated,
             boundActivationCode = boundActivationCode,
-            hasDeviceToken = deviceToken.isNotBlank(),
             serverTrialEndsAt = serverTrialEndsAt,
         )
-    }
-
-    fun restoreOfflineLicense(deviceCode: String, license: JSONObject) {
-        val now = currentTimeMillis()
-        preferences.edit()
-            .putBoolean(KEY_ACTIVATED, true)
-            .putString(KEY_ACTIVATED_DEVICE_CODE, deviceCode)
-            .putString(KEY_BOUND_ACTIVATION_CODE, license.optString("licenseCodeMasked", ""))
-            .putLong(KEY_ACTIVATED_AT, license.optLong("activatedAt", now))
-            .putLong(KEY_LAST_CHECKED_AT, now)
-            .apply()
     }
 
     private fun ensureTrialStarted(now: Long): Long {
@@ -163,8 +130,5 @@ internal class ActivationEntitlementStore(
         private const val KEY_ACTIVATED_AT = "activated_at"
         private const val KEY_SERVER_TRIAL_ENDS_AT = "server_trial_ends_at"
         private const val KEY_LAST_CHECKED_AT = "last_checked_at"
-        private const val KEY_DEVICE_API_TOKEN = "device_api_token"
-        private const val KEY_DEVICE_CREDENTIAL_REQUIRES_ACTIVATION =
-            "device_credential_requires_activation"
     }
 }

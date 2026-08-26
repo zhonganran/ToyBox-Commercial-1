@@ -82,6 +82,25 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
             version.takeIf { readAccepted(status) }
         }
 
+    override suspend fun runtimeVersionCode(): Int? =
+        transactParsed(HelperBinderProtocol.TX_PING, { }) { reply ->
+            val status = if (reply.dataAvail() >= 4) reply.readInt() else return@transactParsed null
+            if (reply.dataAvail() < 4) return@transactParsed null
+            reply.readInt()
+            val versionCode = if (reply.dataAvail() >= 4) reply.readInt() else return@transactParsed null
+            versionCode.takeIf { readAccepted(status) && it > 0 }
+        }
+
+    override suspend fun runtimeInstallIdentity(): String? =
+        transactParsed(HelperBinderProtocol.TX_PING, { }) { reply ->
+            val status = if (reply.dataAvail() >= 4) reply.readInt() else return@transactParsed null
+            if (reply.dataAvail() < 8) return@transactParsed null
+            reply.readInt()
+            reply.readInt()
+            val identity = if (reply.dataAvail() > 0) reply.readString().orEmpty() else ""
+            identity.takeIf { readAccepted(status) && it.isNotBlank() }
+        }
+
     override suspend fun createVirtualDisplay(
         name: String, width: Int, height: Int, density: Int, flags: Int, surface: Surface,
     ): Int? = transactParsed(HelperBinderProtocol.TX_CREATE_VIRTUAL_DISPLAY, { d ->
@@ -206,37 +225,10 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
     override suspend fun execShell(command: String): String? =
         execShellResult(command)?.takeIf { it.status == 0 }?.output
 
-    override suspend fun queryHeadlightSupport(): HelperHeadlightReply? =
-        transactHeadlight(HelperBinderProtocol.TX_HEADLIGHT_QUERY_SUPPORT) { }
-
-    override suspend fun getHeadlightMode(): HelperHeadlightReply? =
-        transactHeadlight(HelperBinderProtocol.TX_HEADLIGHT_GET_MODE) { }
-
-    override suspend fun setHeadlightMode(mode: HeadlightMode): HelperHeadlightReply? =
-        transactHeadlight(HelperBinderProtocol.TX_HEADLIGHT_SET_MODE) { data ->
-            data.writeInt(mode.serviceValue)
-        }
-
     override suspend fun setLockSoundPlaybackState(enabled: Boolean): Boolean =
         statusOk(HelperBinderProtocol.TX_SET_LOCK_SOUND_PLAYBACK_STATE) { data ->
             data.writeInt(if (enabled) 1 else 0)
         }
-
-    private suspend fun transactHeadlight(
-        code: Int,
-        writeArgs: (Parcel) -> Unit,
-    ): HelperHeadlightReply? = transactParsed(
-        code = code,
-        writeArgs = writeArgs,
-        timeoutMs = HEADLIGHT_TIMEOUT_MS,
-    ) { reply ->
-        if (reply.dataAvail() < 12) return@transactParsed null
-        HelperHeadlightReply(
-            transportStatus = reply.readInt(),
-            serviceCode = reply.readInt(),
-            value = reply.readInt(),
-        )
-    }
 
     /** (status,value) reply; true iff status == 0. Shared by the boolean projection ops. */
     private suspend fun statusOk(
@@ -309,7 +301,6 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
         private const val BATCH_TIMEOUT_PER_READ_MS = 50L
         private const val BATCH_TIMEOUT_MAX_MS = 15000L
         private const val FORCE_TIMEOUT_MS = 15000L
-        private const val HEADLIGHT_TIMEOUT_MS = 8000L
         private const val DEV_SHELL_TIMEOUT_MS = 620000L
     }
 }

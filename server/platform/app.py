@@ -1,5 +1,6 @@
 import os
 import hashlib
+import io
 import json
 import secrets
 import sqlite3
@@ -31,7 +32,6 @@ from platform_config import (
     ALLOWED_IMAGE_EXTENSIONS,
     ALLOWED_LOG_EXTENSIONS,
     APK_DIR,
-    DB_PATH,
     DEFAULT_CONFIG,
     DEFAULT_TRIAL_DAYS,
     LICENSE_LOCK_SECONDS,
@@ -46,34 +46,30 @@ from platform_config import (
     MAX_UPLOAD_SIZE,
     PASSWORD_HASH_METHOD,
     PAYMENT_ACTIVATION_PRICE,
+    PAYMENT_CREATE_DEVICE_LIMIT,
+    PAYMENT_CREATE_IP_LIMIT,
+    PAYMENT_CREATE_WINDOW_SECONDS,
     PAYMENT_ORDER_TTL_SECONDS,
     PAYMENT_PID,
     PAYMENT_QUERY_INTERVAL_SECONDS,
     PAYMENT_SITE_NAME,
-    PUBLIC_API_BASE_URL,
-    PUBLIC_CDN_BASE_URL,
+    PUBLIC_BASE_URL,
     SERVICE_QR_DIR,
     SERVICE_QR_TYPES,
     TRUSTED_PROXY_COUNT,
 )
 from platform_identity import extract_valid_vin, normalize_device_code
-from platform_apk import ApkValidationError, inspect_apk
+from platform_apk import ApkValidationError, inspect_apk, is_valid_release_version
 from platform_license import (
     add_days_from_iso,
     add_days_iso,
-    build_offline_license,
     epoch_millis,
     format_license_code,
     generate_license_code,
     is_valid_license_code,
     license_row_activated_at,
-    load_offline_license_private_key,
     mask_license_code,
-    normalize_license_code,
-    offline_license_private_key_status,
     parse_utc,
-    sign_offline_license,
-    verify_offline_license_proof,
 )
 from platform_payment import (
     PaymentConfigurationError,
@@ -83,8 +79,8 @@ from platform_payment import (
     query_order as query_provider_order,
     verify_params as verify_payment_params,
 )
+from platform_privacy import redact_endpoint_bytes, redact_endpoint_text
 from platform_storage import (
-    configured_admin_credentials,
     create_database_backup,
     db,
     init_db,
@@ -109,6 +105,23 @@ app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.environ.get("WJX_PLATFORM_COOKIE_SECURE", "1") != "0"
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=12)
+
+
+@app.after_request
+def apply_security_headers(response):
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; "
+        "object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+    )
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "camera=(), geolocation=(), microphone=(), payment=(), usb=()",
+    )
+    return response
 
 def config_get(conn, key, default=""):
     row = conn.execute("SELECT value FROM config WHERE key = ?", (key,)).fetchone()
@@ -217,6 +230,32 @@ def record_api_failure(conn, key, max_failures=LICENSE_MAX_FAILURES, lock_second
     return max(0, locked_until - now_epoch)
 
 
+def consume_api_rate_slot(conn, key, max_requests, window_seconds):
+    now = utc_datetime()
+    row = conn.execute(
+        "SELECT fail_count, updated_at FROM api_attempts WHERE client_key = ?",
+        (key,),
+    ).fetchone()
+    updated_at = parse_utc(row["updated_at"]) if row else None
+    within_window = bool(updated_at and updated_at > now - timedelta(seconds=window_seconds))
+    count = int(row["fail_count"]) if row and within_window else 0
+    if count >= max_requests:
+        reset_at = updated_at + timedelta(seconds=window_seconds)
+        return max(1, int((reset_at - now).total_seconds()) + 1)
+    conn.execute(
+        """
+        INSERT INTO api_attempts (client_key, fail_count, locked_until, updated_at)
+        VALUES (?, ?, 0, ?)
+        ON CONFLICT(client_key) DO UPDATE SET
+            fail_count = excluded.fail_count,
+            locked_until = 0,
+            updated_at = excluded.updated_at
+        """,
+        (key, count + 1, utc_now()),
+    )
+    return 0
+
+
 def config_bool(conn, key, default=True):
     value = config_get(conn, key, "1" if default else "0").strip().lower()
     return value in {"1", "true", "yes", "on", "enabled"}
@@ -227,14 +266,6 @@ def config_int(conn, key, default):
         return int(config_get(conn, key, str(default)).strip())
     except ValueError:
         return default
-
-
-def bounded_int(value, default, minimum, maximum):
-    try:
-        parsed = int(str(value).strip())
-    except (TypeError, ValueError):
-        return default
-    return max(minimum, min(parsed, maximum))
 
 
 def log_event(conn, kind, message, remote_addr=None):
@@ -282,9 +313,7 @@ def safe_next_target(value):
 
 
 def public_url(path):
-    if path.startswith("/cdn/"):
-        return f"{PUBLIC_CDN_BASE_URL}{path}"
-    return f"{PUBLIC_API_BASE_URL}{path}"
+    return f"{PUBLIC_BASE_URL}{path}"
 
 
 def allowed_image_file(filename):
@@ -297,22 +326,39 @@ def allowed_log_file(filename):
     return suffix in ALLOWED_LOG_EXTENSIONS
 
 
+def detect_image_type(path):
+    with open(path, "rb") as source:
+        header = source.read(12)
+        source.seek(0, os.SEEK_END)
+        size = source.tell()
+        tail = b""
+        if size >= 2:
+            source.seek(-2, os.SEEK_END)
+            tail = source.read(2)
+    if header.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png", "png"
+    if header.startswith(b"\xff\xd8\xff") and tail == b"\xff\xd9":
+        return "image/jpeg", "jpg"
+    if len(header) >= 12 and header[:4] == b"RIFF" and header[8:12] == b"WEBP":
+        return "image/webp", "webp"
+    raise ValueError("二维码文件内容不是有效的 PNG、JPEG 或 WebP 图片")
+
+
 def save_limited_log(upload, target, max_size):
-    total = 0
+    payload = bytearray()
     try:
-        with target.open("xb") as output:
-            while True:
-                chunk = upload.stream.read(64 * 1024)
-                if not chunk:
-                    break
-                total += len(chunk)
-                if total > max_size:
-                    raise ValueError(f"日志不能超过 {max_size // 1024 // 1024} MB")
-                output.write(chunk)
-        if total <= 0:
+        while True:
+            chunk = upload.stream.read(64 * 1024)
+            if not chunk:
+                break
+            payload.extend(chunk)
+            if len(payload) > max_size:
+                raise ValueError(f"日志不能超过 {max_size // 1024 // 1024} MB")
+        if not payload:
             raise ValueError("日志文件为空")
+        target.write_bytes(redact_endpoint_bytes(bytes(payload)))
         target.chmod(0o640)
-        return total
+        return target.stat().st_size
     except Exception:
         target.unlink(missing_ok=True)
         raise
@@ -329,76 +375,45 @@ def collect_device_codes(payload):
     return []
 
 
-DEVICE_CREDENTIAL_VERSION = 1
+def vehicle_profile_from_payload(payload):
+    raw = payload.get("vehicleProfile")
+    if not isinstance(raw, dict):
+        raw = {}
+
+    def text_value(key, limit):
+        value = raw.get(key)
+        if not isinstance(value, str):
+            return ""
+        return "".join(char for char in value.strip() if char >= " " and char != "\x7f")[:limit]
+
+    def int_value(key, minimum, maximum):
+        try:
+            value = int(str(raw.get(key, "")).strip())
+        except (TypeError, ValueError):
+            return None
+        return value if minimum <= value <= maximum else None
+
+    return {
+        "vehicle_display_name": text_value("displayName", 120),
+        "vin_year": int_value("vinYear", 1980, 2200),
+        "model_variant": text_value("modelVariant", 120),
+        "car_series": text_value("carSeries", 120),
+        "vehicle_type": text_value("vehicleType", 120),
+        "controller_version": text_value("controllerVersion", 160),
+        "controller_series": int_value("controllerSeries", 1, 999) or 0,
+    }
 
 
-def requested_device_credential(payload):
-    return bounded_int(
-        payload.get("credentialVersion"),
-        default=0,
-        minimum=0,
-        maximum=DEVICE_CREDENTIAL_VERSION,
-    ) >= DEVICE_CREDENTIAL_VERSION
+def vehicle_display_label(device):
+    name = str(device["vehicle_display_name"] or "").strip()
+    year = device["vin_year"]
+    if name and year and not name.startswith(f"{year}款"):
+        return f"{year}款 {name}"
+    return name or str(device["model_variant"] or device["car_series"] or "").strip()
 
 
-def request_device_token():
-    authorization = request.headers.get("Authorization", "").strip()
-    scheme, separator, token = authorization.partition(" ")
-    if not separator or scheme.lower() != "bearer":
-        return ""
-    return token.strip()[:256]
-
-
-def device_token_hash(token):
-    return hashlib.sha256(str(token or "").encode("utf-8")).hexdigest()
-
-
-def device_token_matches(row, token):
-    stored = str(row["api_token_hash"] or "") if row is not None else ""
-    candidate = device_token_hash(token) if token else ""
-    return bool(stored and candidate and secrets.compare_digest(stored, candidate))
-
-
-def issue_device_token(conn, device_codes):
-    codes = list(dict.fromkeys(code for code in device_codes if code))
-    if not codes:
-        return ""
-    token = secrets.token_urlsafe(32)
-    conn.execute(
-        f"UPDATE devices SET api_token_hash = ?, api_token_issued_at = ? "
-        f"WHERE device_code IN ({sql_placeholders(codes)})",
-        (device_token_hash(token), utc_now(), *codes),
-    )
-    return token
-
-
-def resolve_device_token(
-    conn,
-    device_codes,
-    presented_token,
-    allow_reissue=False,
-    rotate=False,
-):
-    codes = list(dict.fromkeys(code for code in device_codes if code))
-    if not codes:
-        return ""
-    rows = conn.execute(
-        f"SELECT * FROM devices WHERE device_code IN ({sql_placeholders(codes)})",
-        codes,
-    ).fetchall()
-    if rotate:
-        return issue_device_token(conn, codes)
-    if presented_token and any(device_token_matches(row, presented_token) for row in rows):
-        conn.execute(
-            f"UPDATE devices SET api_token_hash = ?, "
-            f"api_token_issued_at = COALESCE(api_token_issued_at, ?) "
-            f"WHERE device_code IN ({sql_placeholders(codes)})",
-            (device_token_hash(presented_token), utc_now(), *codes),
-        )
-        return presented_token
-    if allow_reissue:
-        return issue_device_token(conn, codes)
-    return ""
+def hash_secret(value):
+    return hashlib.sha256(str(value or "").encode("utf-8")).hexdigest()
 
 
 def sql_placeholders(values):
@@ -527,6 +542,7 @@ def page(title, active, body):
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{h(title)} - {h(ADMIN_TITLE)}</title>
   <link rel="stylesheet" href="{h(url_for('static', filename='platform.css'))}">
+  <script src="{h(url_for('static', filename='platform.js'))}" defer></script>
 </head>
 <body>
   <aside class="sidebar">
@@ -661,13 +677,16 @@ def updates():
     if guard:
         return guard
     if request.method == "POST":
-        version = request.form.get("version", "").strip().lstrip("v")
+        version = request.form.get("version", "").strip().removeprefix("v")
         version_code_raw = request.form.get("version_code", "").strip()
         notes = request.form.get("release_notes", "").strip()
         force = 1 if request.form.get("force_update") == "on" else 0
         file = request.files.get("apk")
         if not version or not version_code_raw:
             flash("请填写版本号和版本码", "error")
+            return redirect(url_for("updates"))
+        if not is_valid_release_version(version):
+            flash("版本号格式无效，请使用 2.1.20 或 2.1.20-rc.1 这类格式", "error")
             return redirect(url_for("updates"))
         try:
             version_code = int(version_code_raw)
@@ -739,7 +758,7 @@ def updates():
   <span>{status_badge("强制" if row["force_update"] else "普通", "orange" if row["force_update"] else "blue")} {status_badge("启用" if row["enabled"] else "停用", "green" if row["enabled"] else "gray")}</span>
   <span class="actions"><a class="button soft" href="{h(url_for("download_apk", filename=row["apk_filename"]))}">下载</a>
   <form method="post" action="{h(url_for("toggle_release", release_id=row["id"]))}">{csrf}<button>{"停用" if row["enabled"] else "启用"}</button></form>
-  <form method="post" action="{h(url_for("delete_release", release_id=row["id"]))}" onsubmit="return confirm('确定删除这个版本吗？')">{csrf}<button class="danger">删除</button></form></span>
+  <form method="post" action="{h(url_for("delete_release", release_id=row["id"]))}" data-confirm="确定删除这个版本吗？">{csrf}<button class="danger">删除</button></form></span>
 </div>"""
         for row in rows
     ) or '<p class="empty">暂无历史版本</p>'
@@ -829,18 +848,24 @@ def service_qrcodes():
                 flash("二维码只支持 png、jpg、jpeg、webp", "error")
                 return redirect(url_for("service_qrcodes"))
             original = file.filename
-            safe_name = secure_filename(original) or f"{key}.png"
-            suffix = safe_name.rsplit(".", 1)[-1].lower()
-            new_filename = f"{key}-{utc_datetime().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(4)}.{suffix}"
-            target = SERVICE_QR_DIR / new_filename
+            upload_id = f"{key}-{utc_datetime().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(4)}"
+            target = SERVICE_QR_DIR / f"{upload_id}.upload"
             file.save(target)
             file_size = target.stat().st_size
             if file_size <= 0 or file_size > MAX_SERVICE_QR_SIZE:
                 target.unlink(missing_ok=True)
                 flash(f"二维码图片不能超过 {format_size(MAX_SERVICE_QR_SIZE)}", "error")
                 return redirect(url_for("service_qrcodes"))
-            target.chmod(0o644)
-            mime_type = file.mimetype or ""
+            try:
+                mime_type, suffix = detect_image_type(target)
+            except ValueError as exc:
+                target.unlink(missing_ok=True)
+                flash(str(exc), "error")
+                return redirect(url_for("service_qrcodes"))
+            new_filename = f"{upload_id}.{suffix}"
+            final_target = SERVICE_QR_DIR / new_filename
+            target.replace(final_target)
+            final_target.chmod(0o644)
         with db() as conn:
             row = conn.execute("SELECT * FROM service_qrcodes WHERE key = ?", (key,)).fetchone()
             old_filename = row["filename"] if row else ""
@@ -964,12 +989,12 @@ def licenses():
     license_rows = "".join(
         f"""
 <div class="data-row license-row">
-  <span class="code" onclick='navigator.clipboard.writeText({h(json.dumps(row["code"], ensure_ascii=False))})'>{h(row["code"])}</span>
+  <span class="code" role="button" tabindex="0" data-copy-value="{h(row["code"])}">{h(row["code"])}</span>
   <span class="mono">{h(row["device_code"] or "未绑定")}</span>
   <span>{status_badge("已绑定" if row["device_code"] else "未使用", "green" if row["device_code"] else "blue")} {status_badge("启用" if row["enabled"] else "停用", "green" if row["enabled"] else "gray")}</span>
   <span>{h(row["note"] or "-")}</span>
   <span class="actions"><form method="post" action="{h(url_for("toggle_license", code_id=row["id"]))}">{csrf}<button>{"停用" if row["enabled"] else "启用"}</button></form>
-  <form method="post" action="{h(url_for("delete_license", code_id=row["id"]))}" onsubmit="return confirm('确定删除这个激活码？')">{csrf}<button class="danger">删除</button></form></span>
+  <form method="post" action="{h(url_for("delete_license", code_id=row["id"]))}" data-confirm="确定删除这个激活码？">{csrf}<button class="danger">删除</button></form></span>
 </div>"""
         for row in rows
     ) or '<p class="empty">暂无激活码</p>'
@@ -1102,8 +1127,12 @@ def vehicles():
     params = []
     if keyword:
         like = f"%{keyword}%"
-        conditions.append("(device_code LIKE ? OR app_version LIKE ?)")
-        params += [like, like]
+        conditions.append(
+            "(device_code LIKE ? OR app_version LIKE ? OR vehicle_display_name LIKE ? "
+            "OR model_variant LIKE ? OR car_series LIKE ? OR vehicle_type LIKE ? "
+            "OR controller_version LIKE ?)"
+        )
+        params += [like] * 7
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     with db() as conn:
         matched = conn.execute(
@@ -1126,6 +1155,7 @@ def vehicles():
         f"""
 <div class="data-row vehicle-row">
   <span><a class="mono" href="{h(url_for("vehicle_detail", device_id=item["id"]))}"><b>{h(item["device_code"])}</b></a></span>
+  <span>{h(vehicle_display_label(item) or "-")}<small>{h(item["model_variant"] or item["car_series"] or "未上报车型代码")}</small></span>
   <span>{status_badge(category[1], category[2])}</span>
   <span>{h(item["app_version"] or "-")}</span>
   <span>{h(item["last_seen_at"])}</span>
@@ -1142,9 +1172,9 @@ def vehicles():
     )
     body = f"""
 <section class="panel">
-  <div class="panel-title"><div><h2>车辆列表</h2><p>按授权状态查看已登记的车辆设备。</p></div><div class="chip-list">{category_tabs}</div></div>
-  <form method="get" class="toolbar"><input type="hidden" name="status" value="{h(selected_category)}"><input name="q" value="{h(keyword)}" placeholder="搜索 VIN 或应用版本"><button>搜索</button></form>
-  <div class="data-table vehicles-table detailed"><div class="data-row table-head"><span>VIN</span><span>授权</span><span>版本</span><span>最近连接</span></div>{vehicle_rows}</div>
+  <div class="panel-title"><div><h2>车辆列表</h2><p>按授权状态查看已登记车辆及其主动上报的车型配置。</p></div><div class="chip-list">{category_tabs}</div></div>
+  <form method="get" class="toolbar"><input type="hidden" name="status" value="{h(selected_category)}"><input name="q" value="{h(keyword)}" placeholder="搜索 VIN、车型、车系或版本"><button>搜索</button></form>
+  <div class="data-table vehicles-table detailed"><div class="data-row table-head"><span>VIN</span><span>车型</span><span>授权</span><span>版本</span><span>最近连接</span></div>{vehicle_rows}</div>
 </section>
 """
     return page("车辆设备", "vehicles", body)
@@ -1166,8 +1196,10 @@ def vehicle_detail(device_id):
         ).fetchall()
     auth_category = authorization_category(authorization)
     license_row = authorization["license"]
-    csrf = csrf_input()
-    credential_status = "已签发" if device["api_token_hash"] else "未签发"
+    vehicle_name = vehicle_display_label(device) or "未上报"
+    controller_series = (
+        f"{device['controller_series']} 控" if int(device["controller_series"] or 0) > 0 else "未上报"
+    )
     log_rows = "".join(
         f'<div class="data-row"><span>#{row["id"]}</span><span>{h(row["created_at"])}</span>'
         f'<span>{format_size(row["file_size"])}</span><span><a class="button soft" href="{h(url_for("view_diagnostic_log", log_id=row["id"]))}" target="_blank">查看</a></span></div>'
@@ -1178,6 +1210,19 @@ def vehicle_detail(device_id):
   <article class="metric"><span>授权</span><b>{h(auth_category[1])}</b><small>{h((license_row["code"] + " · " + (license_row["activated_at"] or "未记录激活时间")) if license_row else (device["trial_ends_at"] or "无激活码"))}</small></article>
   <article class="metric"><span>应用版本</span><b>{h(device["app_version"] or "-")}</b><small>{h(device["last_seen_at"])}</small></article>
   <article class="metric"><span>应用包名</span><b>{h(device["package_name"] or "-")}</b><small>车辆端身份</small></article>
+  <article class="metric"><span>车型</span><b>{h(vehicle_name)}</b><small>{h(device["model_variant"] or device["car_series"] or "等待车辆上报")}</small></article>
+</section>
+<section class="panel">
+  <div class="panel-title"><div><h2>车型配置</h2><p>以下字段由车机系统属性主动上报，不通过 VIN 猜测销售款型。</p></div></div>
+  <div class="detail-grid">
+    <span><small>车辆名称</small><b>{h(vehicle_name)}</b></span>
+    <span><small>VIN 年款</small><b>{h(device["vin_year"] or "未上报")}</b></span>
+    <span><small>车型变体</small><b>{h(device["model_variant"] or "未上报")}</b></span>
+    <span><small>车系代码</small><b>{h(device["car_series"] or "未上报")}</b></span>
+    <span><small>动力类型</small><b>{h(device["vehicle_type"] or "未上报")}</b></span>
+    <span><small>控制器系列</small><b>{h(controller_series)}</b></span>
+    <span class="span-all"><small>控制器完整版本</small><b class="wrap">{h(device["controller_version"] or "未上报")}</b></span>
+  </div>
 </section>
 <section class="panel">
   <div class="panel-title"><div><h2>车辆身份</h2><p class="mono">VIN {h(device["device_code"])}</p></div></div>
@@ -1186,12 +1231,7 @@ def vehicle_detail(device_id):
     <span><small>最近连接</small><b>{h(device["last_seen_at"])}</b></span>
     <span><small>应用版本</small><b>{h(device["app_version"] or "-")}</b></span>
     <span><small>应用包名</small><b>{h(device["package_name"] or "-")}</b></span>
-    <span><small>设备凭证</small><b>{h(credential_status)}</b></span>
   </div>
-  <form method="post" action="{h(url_for("reset_vehicle_credential", device_id=device["id"]))}" onsubmit="return confirm('确定重置这台车的设备凭证吗？之后只能通过激活码、已支付订单或签名离线许可证重新签发。')">
-    {csrf}
-    <button class="danger">重置设备凭证</button>
-  </form>
 </section>
 <section class="panel">
   <div class="panel-title"><div><h2>最近诊断日志</h2><p>查看该车主动上传的 wjx.log。</p></div></div>
@@ -1199,28 +1239,6 @@ def vehicle_detail(device_id):
 </section>
 """
     return page("车辆详情", "vehicles", body)
-
-
-@app.post("/vehicles/<int:device_id>/reset-credential")
-def reset_vehicle_credential(device_id):
-    guard = require_login()
-    if guard:
-        return guard
-    with db() as conn:
-        device = conn.execute("SELECT * FROM devices WHERE id = ?", (device_id,)).fetchone()
-        if device is None:
-            abort(404)
-        cursor = conn.execute(
-            "UPDATE devices SET api_token_hash = '', api_token_issued_at = NULL WHERE id = ?",
-            (device_id,),
-        )
-        log_event(
-            conn,
-            "credential",
-            f"管理员重置车辆 {device['device_code']} 的设备凭证，共 {cursor.rowcount} 条关联记录",
-        )
-    flash("设备凭证已重置；车辆端需凭激活码、支付订单或签名离线许可证重新签发", "success")
-    return redirect(url_for("vehicle_detail", device_id=device_id))
 
 
 @app.get("/diagnostic-logs")
@@ -1259,7 +1277,7 @@ def diagnostic_logs():
   <span class="actions">
     <a class="button soft" target="_blank" rel="noopener" href="{h(url_for("view_diagnostic_log", log_id=row["id"]))}">查看</a>
     <a class="button soft" href="{h(url_for("download_diagnostic_log", log_id=row["id"]))}">下载</a>
-    <form method="post" action="{h(url_for("delete_diagnostic_log", log_id=row["id"]))}" onsubmit="return confirm('确定删除这份诊断日志吗？')">{csrf}<button class="danger">删除</button></form>
+    <form method="post" action="{h(url_for("delete_diagnostic_log", log_id=row["id"]))}" data-confirm="确定删除这份诊断日志吗？">{csrf}<button class="danger">删除</button></form>
   </span>
 </div>"""
         for row in rows
@@ -1287,6 +1305,13 @@ def diagnostic_log_row(log_id):
         return conn.execute("SELECT * FROM diagnostic_logs WHERE id = ?", (log_id,)).fetchone()
 
 
+def redacted_diagnostic_log(row):
+    path = LOG_DIR / Path(row["filename"]).name
+    if not path.is_file():
+        abort(404)
+    return io.BytesIO(redact_endpoint_bytes(path.read_bytes()))
+
+
 @app.get("/diagnostic-logs/<int:log_id>/view")
 def view_diagnostic_log(log_id):
     guard = require_login()
@@ -1295,9 +1320,8 @@ def view_diagnostic_log(log_id):
     row = diagnostic_log_row(log_id)
     if row is None:
         abort(404)
-    return send_from_directory(
-        LOG_DIR,
-        Path(row["filename"]).name,
+    return send_file(
+        redacted_diagnostic_log(row),
         as_attachment=False,
         mimetype="text/plain; charset=utf-8",
     )
@@ -1312,9 +1336,8 @@ def download_diagnostic_log(log_id):
     if row is None:
         abort(404)
     download_name = f"wjx-{row['device_code']}-{row['id']}.log"
-    return send_from_directory(
-        LOG_DIR,
-        Path(row["filename"]).name,
+    return send_file(
+        redacted_diagnostic_log(row),
         as_attachment=True,
         download_name=download_name,
         mimetype="text/plain; charset=utf-8",
@@ -1360,10 +1383,8 @@ def settings():
     with db() as conn:
         logs = conn.execute("SELECT * FROM audit_logs ORDER BY id DESC LIMIT 120").fetchall()
         cfg = {key: config_get(conn, key, value) for key, value in DEFAULT_CONFIG.items()}
-    offline_key_ok, offline_key_detail = offline_license_private_key_status()
     csrf = csrf_input()
     checked = lambda key: "checked" if cfg.get(key) == "1" else ""
-    offline_key_badge = status_badge("已配置", "green") if offline_key_ok else status_badge("未配置", "red")
     log_rows = "".join(
         f'<div class="data-row log-row"><span>{h(item["created_at"])}</span><span>{status_badge(item["type"], "blue")}</span><span>{h(item["message"])}</span><span>{h(item["remote_addr"])}</span></div>'
         for item in logs
@@ -1385,13 +1406,10 @@ def settings():
   </article>
 </section>
 <section class="panel">
-  <div class="panel-title"><div><h2>配置中心</h2><p>控制客户端试用期、付费功能和在线服务开关。</p></div></div>
+  <div class="panel-title"><div><h2>配置中心</h2><p>控制客户端试用期和在线更新服务。</p></div></div>
   <form method="post" action="{h(url_for("save_config"))}" class="settings-grid">
     {csrf}
     <label class="setting-card"><span>试用天数</span><input name="license_trial_days" type="number" min="0" max="30" value="{h(cfg.get("license_trial_days", "7"))}"><small>未激活用户的全功能试用期</small></label>
-    <div class="setting-card"><span>离线授权私钥</span>{offline_key_badge}<small>{h(offline_key_detail)}</small></div>
-    <label class="setting-card toggle"><input name="feature_automation_unlimited" type="checkbox" {checked("feature_automation_unlimited")}><span>自动化高级功能</span><small>超过免费规则数后需要授权</small></label>
-    <label class="setting-card toggle"><input name="feature_cluster_projection" type="checkbox" {checked("feature_cluster_projection")}><span>按键映射到仪表盘</span><small>授权功能开关</small></label>
     <label class="setting-card toggle"><input name="update_enabled" type="checkbox" {checked("update_enabled")}><span>更新推送</span><small>关闭后客户端显示无新版本</small></label>
     <button class="primary span-all" type="submit">保存配置</button>
   </form>
@@ -1415,12 +1433,7 @@ def save_config():
         trial_days = DEFAULT_TRIAL_DAYS
     with db() as conn:
         config_set(conn, "license_trial_days", str(trial_days))
-        for key in (
-            "feature_automation_unlimited",
-            "feature_cluster_projection",
-            "update_enabled",
-        ):
-            config_set(conn, key, "1" if request.form.get(key) == "on" else "0")
+        config_set(conn, "update_enabled", "1" if request.form.get("update_enabled") == "on" else "0")
         log_event(conn, "system", "配置中心已更新")
     flash("配置已保存", "success")
     return redirect(url_for("settings"))
@@ -1498,8 +1511,6 @@ def api_upload_log():
         ).fetchone()
         if device is None:
             return reject("车辆尚未在平台登记，请先刷新授权状态", 403)
-        if not device_token_matches(device, request_device_token()):
-            return reject("设备凭证无效，请刷新授权状态", 401)
         if upload is None or not upload.filename:
             return reject("请选择日志文件")
         if not allowed_log_file(upload.filename):
@@ -1589,23 +1600,11 @@ def service_qr_image(key):
         row = conn.execute("SELECT * FROM service_qrcodes WHERE key = ?", (key,)).fetchone()
     if row is None or not row["enabled"] or not row["filename"]:
         abort(404)
-    return send_from_directory(SERVICE_QR_DIR, row["filename"], as_attachment=False)
-
-
-@app.get("/api/v1/config")
-def api_config():
-    with db() as conn:
-        values = {key: config_get(conn, key, value) for key, value in DEFAULT_CONFIG.items()}
-    return jsonify(
-        {
-            "success": True,
-            "trialDays": int(values.get("license_trial_days") or DEFAULT_TRIAL_DAYS),
-            "features": {
-                "automationUnlimited": values.get("feature_automation_unlimited") == "1",
-                "clusterProjection": values.get("feature_cluster_projection") == "1",
-                "update": values.get("update_enabled") == "1",
-            },
-        }
+    return send_from_directory(
+        SERVICE_QR_DIR,
+        row["filename"],
+        as_attachment=False,
+        mimetype=row["mime_type"] or None,
     )
 
 
@@ -1662,20 +1661,46 @@ def trial_anchor_for_codes(conn, device_codes):
     }
 
 
-def upsert_device(conn, device_code, raw_device_code, app_version, package_name, activated, trial_anchor=None):
+def upsert_device(
+    conn,
+    device_code,
+    raw_device_code,
+    app_version,
+    package_name,
+    activated,
+    trial_anchor=None,
+    vehicle_profile=None,
+):
     now = utc_now()
     anchor = trial_anchor or trial_anchor_for_codes(conn, [device_code])
+    profile = vehicle_profile or vehicle_profile_from_payload({})
     trial_started = anchor.get("trial_started_at") or now
     trial_ends = anchor.get("trial_ends_at") or add_days_iso(config_int(conn, "license_trial_days", DEFAULT_TRIAL_DAYS))
     conn.execute(
         """
         INSERT INTO devices
-            (device_code, raw_device_code, app_version, package_name, activated, trial_started_at, trial_ends_at, first_seen_at, last_seen_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (device_code, raw_device_code, app_version, package_name,
+             vehicle_display_name, vin_year, model_variant, car_series, vehicle_type,
+             controller_version, controller_series, activated, trial_started_at,
+             trial_ends_at, first_seen_at, last_seen_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(device_code) DO UPDATE SET
             raw_device_code = excluded.raw_device_code,
             app_version = excluded.app_version,
             package_name = excluded.package_name,
+            vehicle_display_name = CASE WHEN excluded.vehicle_display_name != ''
+                THEN excluded.vehicle_display_name ELSE devices.vehicle_display_name END,
+            vin_year = COALESCE(excluded.vin_year, devices.vin_year),
+            model_variant = CASE WHEN excluded.model_variant != ''
+                THEN excluded.model_variant ELSE devices.model_variant END,
+            car_series = CASE WHEN excluded.car_series != ''
+                THEN excluded.car_series ELSE devices.car_series END,
+            vehicle_type = CASE WHEN excluded.vehicle_type != ''
+                THEN excluded.vehicle_type ELSE devices.vehicle_type END,
+            controller_version = CASE WHEN excluded.controller_version != ''
+                THEN excluded.controller_version ELSE devices.controller_version END,
+            controller_series = CASE WHEN excluded.controller_series > 0
+                THEN excluded.controller_series ELSE devices.controller_series END,
             activated = excluded.activated,
             trial_started_at = COALESCE(devices.trial_started_at, excluded.trial_started_at),
             trial_ends_at = CASE
@@ -1685,17 +1710,34 @@ def upsert_device(conn, device_code, raw_device_code, app_version, package_name,
             END,
             last_seen_at = excluded.last_seen_at
         """,
-        (device_code, raw_device_code, app_version, package_name, 1 if activated else 0, trial_started, trial_ends, now, now),
+        (
+            device_code, raw_device_code, app_version, package_name,
+            profile["vehicle_display_name"], profile["vin_year"], profile["model_variant"],
+            profile["car_series"], profile["vehicle_type"], profile["controller_version"],
+            profile["controller_series"], 1 if activated else 0, trial_started, trial_ends,
+            now, now,
+        ),
     )
 
 
-def upsert_device_group(conn, device_codes, raw_device_code, app_version, package_name, activated):
+def upsert_device_group(
+    conn,
+    device_codes,
+    raw_device_code,
+    app_version,
+    package_name,
+    activated,
+    vehicle_profile=None,
+):
     codes = device_codes or []
     if not codes:
         return None
     anchor = trial_anchor_for_codes(conn, codes)
     for code in codes:
-        upsert_device(conn, code, raw_device_code, app_version, package_name, activated, anchor)
+        upsert_device(
+            conn, code, raw_device_code, app_version, package_name, activated, anchor,
+            vehicle_profile,
+        )
     return first_device_for_codes(conn, codes)
 
 
@@ -1706,16 +1748,17 @@ def device_license_payload(
     app_version,
     package_name,
     activated,
-    device_codes=None,
-    credential_requested=False,
-    presented_token="",
-    credential_reissue_authorized=False,
-    rotate_credential=False,
+    vehicle_profile=None,
 ):
     codes = [device_code]
-    device = upsert_device_group(conn, codes, raw_device_code, app_version, package_name, activated)
+    device = upsert_device_group(
+        conn, codes, raw_device_code, app_version, package_name, activated, vehicle_profile,
+    )
     if device is None:
-        upsert_device(conn, device_code, raw_device_code, app_version, package_name, activated)
+        upsert_device(
+            conn, device_code, raw_device_code, app_version, package_name, activated,
+            vehicle_profile=vehicle_profile,
+        )
         device = conn.execute("SELECT * FROM devices WHERE device_code = ?", (device_code,)).fetchone()
     trial_ends_at = device["trial_ends_at"] if device else ""
     trial_end = parse_utc(trial_ends_at)
@@ -1730,19 +1773,6 @@ def device_license_payload(
         "trialEndsAtIso": trial_ends_at,
         "message": "已激活" if activated else ("试用中" if trial_active else "未激活"),
     }
-    if credential_requested and activated:
-        token = resolve_device_token(
-            conn,
-            codes,
-            presented_token,
-            allow_reissue=credential_reissue_authorized,
-            rotate=rotate_credential,
-        )
-        if token:
-            result["deviceToken"] = token
-            result["credentialVersion"] = DEVICE_CREDENTIAL_VERSION
-        else:
-            result["deviceCredentialRequired"] = True
     return result
 
 
@@ -1798,21 +1828,8 @@ def payment_order_expired(order, now=None):
 
 def payment_poll_token_matches(order, token):
     expected = str(order["poll_token_hash"] or "")
-    candidate = device_token_hash(token) if token else ""
+    candidate = hash_secret(token) if token else ""
     return bool(expected and candidate and secrets.compare_digest(expected, candidate))
-
-
-def payment_device_authorized(conn, order, presented_token):
-    try:
-        aliases = json.loads(order["device_codes_json"] or "[]")
-    except (TypeError, ValueError, json.JSONDecodeError):
-        aliases = []
-    codes = list(dict.fromkeys([order["device_code"], *aliases]))
-    rows = conn.execute(
-        f"SELECT * FROM devices WHERE device_code IN ({sql_placeholders(codes)})",
-        codes,
-    ).fetchall()
-    return bool(presented_token and any(device_token_matches(row, presented_token) for row in rows))
 
 
 def payment_checkout_mode(payment_type, pay_info):
@@ -1995,8 +2012,7 @@ def refresh_payment_order_from_provider(out_trade_no, payload_hash=""):
         ).fetchone()
 
 
-def paid_payment_payload(conn, order, presented_token):
-    device_codes = [order["device_code"]]
+def paid_payment_payload(conn, order):
     license_row = conn.execute(
         "SELECT * FROM license_codes WHERE id = ? AND enabled = 1",
         (order["license_code_id"],),
@@ -2016,10 +2032,6 @@ def paid_payment_payload(conn, order, presented_token):
         order["app_version"],
         order["package_name"],
         True,
-        device_codes=device_codes,
-        credential_requested=True,
-        presented_token=presented_token,
-        credential_reissue_authorized=True,
     )
     activated_at_iso, activated_at_ms = license_row_activated_at(conn, license_row)
     result.update({
@@ -2031,46 +2043,24 @@ def paid_payment_payload(conn, order, presented_token):
         "activationCodeMasked": mask_license_code(license_row["code"]),
         "message": "支付成功，永久授权已自动激活",
     })
-    offline_license = build_offline_license(
-        device_codes,
-        order["package_name"],
-        license_row["code"],
-        activated_at_ms,
-    )
-    if offline_license is not None:
-        result["offlineLicense"] = offline_license
     return result
 
 
 @app.post("/api/v1/license/status")
 def api_license_status():
     payload = request.get_json(silent=True) or {}
+    vehicle_profile = vehicle_profile_from_payload(payload)
     device_codes = collect_device_codes(payload)
     device_code = device_codes[0] if device_codes else ""
     raw_device = payload.get("rawDeviceCode", "")
     app_version = payload.get("appVersion", "")
     package_name = payload.get("packageName", "")
-    credential_requested = requested_device_credential(payload)
-    offline_proof_authorized = verify_offline_license_proof(
-        payload.get("deviceProof"),
-        [device_code],
-        package_name,
-    ) if credential_requested else False
     if not device_code:
         return jsonify({"success": False, "activated": False, "message": "缺少车架号"}), 400
     with db() as conn:
         row = license_for_device_codes(conn, [device_code])
         activated = row is not None
         response_device_code = device_code
-        presented_token = request_device_token()
-        existing_device = conn.execute(
-            "SELECT * FROM devices WHERE device_code = ?",
-            (device_code,),
-        ).fetchone()
-        credential_authorized = offline_proof_authorized or device_token_matches(
-            existing_device,
-            presented_token,
-        )
         result = device_license_payload(
             conn,
             response_device_code,
@@ -2078,35 +2068,24 @@ def api_license_status():
             app_version,
             package_name,
             activated,
-            device_codes=[device_code],
-            credential_requested=credential_requested,
-            presented_token=presented_token,
-            credential_reissue_authorized=offline_proof_authorized,
+            vehicle_profile,
         )
-        if row is not None and credential_authorized:
+        if row is not None:
             activated_at_iso, activated_at_ms = license_row_activated_at(conn, row)
             result["activatedAt"] = activated_at_ms
             result["activatedAtIso"] = activated_at_iso
-            offline_license = build_offline_license(
-                [response_device_code],
-                package_name,
-                row["code"],
-                activated_at_ms,
-            )
-            if offline_license is not None:
-                result["offlineLicense"] = offline_license
     return jsonify(result)
 
 
 @app.post("/api/v1/license/activate")
 def api_license_activate():
     payload = request.get_json(silent=True) or {}
+    vehicle_profile = vehicle_profile_from_payload(payload)
     device_codes = collect_device_codes(payload)
     device_code = device_codes[0] if device_codes else ""
     raw_device = payload.get("rawDeviceCode", "")
     app_version = payload.get("appVersion", "")
     package_name = payload.get("packageName", "")
-    credential_requested = requested_device_credential(payload)
     code = format_license_code(payload.get("activationCode", ""))
     if not device_code:
         return jsonify({"success": False, "activated": False, "message": "缺少车架号"}), 400
@@ -2122,7 +2101,10 @@ def api_license_activate():
                 "message": f"请求过于频繁，请 {remaining} 秒后再试",
             }), 429
         if not is_valid_license_code(code):
-            upsert_device_group(conn, [device_code], raw_device, app_version, package_name, False)
+            upsert_device_group(
+                conn, [device_code], raw_device, app_version, package_name, False,
+                vehicle_profile,
+            )
             remaining = record_api_failure(conn, attempt_key)
             log_event(conn, "license", f"激活失败：激活码格式不正确 {code}", request.remote_addr)
             if remaining > 0:
@@ -2134,7 +2116,10 @@ def api_license_activate():
             return jsonify({"success": False, "activated": False, "message": "激活码格式不正确"}), 400
         row = conn.execute("SELECT * FROM license_codes WHERE code = ?", (code,)).fetchone()
         if row is None or not row["enabled"]:
-            upsert_device_group(conn, [device_code], raw_device, app_version, package_name, False)
+            upsert_device_group(
+                conn, [device_code], raw_device, app_version, package_name, False,
+                vehicle_profile,
+            )
             remaining = record_api_failure(conn, attempt_key)
             log_event(conn, "license", f"激活失败：无效激活码 {code}", request.remote_addr)
             if remaining > 0:
@@ -2146,7 +2131,10 @@ def api_license_activate():
             return jsonify({"success": False, "activated": False, "message": "激活码无效或已停用"}), 403
         bound = row["device_code"]
         if bound and bound != device_code:
-            upsert_device_group(conn, [device_code], raw_device, app_version, package_name, False)
+            upsert_device_group(
+                conn, [device_code], raw_device, app_version, package_name, False,
+                vehicle_profile,
+            )
             remaining = record_api_failure(conn, attempt_key)
             log_event(conn, "license", f"激活失败：{code} 已绑定其他车辆", request.remote_addr)
             if remaining > 0:
@@ -2166,7 +2154,10 @@ def api_license_activate():
             """,
             (bound_device_code, raw_device, now, now, row["id"]),
         )
-        upsert_device_group(conn, [device_code], raw_device, app_version, package_name, True)
+        upsert_device_group(
+            conn, [device_code], raw_device, app_version, package_name, True,
+            vehicle_profile,
+        )
         record_api_success(conn, attempt_key)
         log_event(conn, "license", f"车辆 {bound_device_code} 激活成功", request.remote_addr)
         result = device_license_payload(
@@ -2176,28 +2167,18 @@ def api_license_activate():
             app_version,
             package_name,
             True,
-            device_codes=[device_code],
-            credential_requested=credential_requested,
-            presented_token=request_device_token(),
-            rotate_credential=credential_requested,
+            vehicle_profile,
         )
         result["activatedAt"] = epoch_millis(now)
         result["activatedAtIso"] = now
         result["message"] = "激活成功，已获得永久授权"
-        offline_license = build_offline_license(
-            [bound_device_code],
-            package_name,
-            code,
-            result["activatedAt"],
-        )
-        if offline_license is not None:
-            result["offlineLicense"] = offline_license
     return jsonify(result)
 
 
 @app.post("/api/v1/license/payment/create")
 def api_payment_create():
     payload = request.get_json(silent=True) or {}
+    vehicle_profile = vehicle_profile_from_payload(payload)
     payment_type = str(payload.get("paymentType") or "").strip().lower()
     device_codes = collect_device_codes(payload)
     device_code = device_codes[0] if device_codes else ""
@@ -2219,7 +2200,10 @@ def api_payment_create():
     with db() as conn:
         if license_for_device_codes(conn, [device_code]) is not None:
             return jsonify({"success": False, "message": "当前车辆已经永久激活，无需重复购买"}), 409
-        upsert_device_group(conn, [device_code], raw_device, app_version, package_name, False)
+        upsert_device_group(
+            conn, [device_code], raw_device, app_version, package_name, False,
+            vehicle_profile,
+        )
         reusable = conn.execute(
             """
             SELECT * FROM payment_orders
@@ -2242,13 +2226,30 @@ def api_payment_create():
         if reusable is not None:
             conn.execute(
                 "UPDATE payment_orders SET poll_token_hash = ?, updated_at = ? WHERE id = ?",
-                (device_token_hash(poll_token), utc_now(), reusable["id"]),
+                (hash_secret(poll_token), utc_now(), reusable["id"]),
             )
             refreshed = conn.execute(
                 "SELECT * FROM payment_orders WHERE id = ?",
                 (reusable["id"],),
             ).fetchone()
             return jsonify(payment_order_client_payload(refreshed, poll_token))
+
+        rate_limits = (
+            (f"payment_create_ip:{client_key()[:128]}", PAYMENT_CREATE_IP_LIMIT),
+            (f"payment_create_vin:{device_code}", PAYMENT_CREATE_DEVICE_LIMIT),
+        )
+        for rate_key, limit in rate_limits:
+            remaining = consume_api_rate_slot(
+                conn,
+                rate_key,
+                max_requests=max(1, limit),
+                window_seconds=PAYMENT_CREATE_WINDOW_SECONDS,
+            )
+            if remaining > 0:
+                return jsonify({
+                    "success": False,
+                    "message": f"创建支付订单过于频繁，请 {remaining} 秒后再试",
+                }), 429
 
         out_trade_no = payment_order_number()
         now = utc_now()
@@ -2272,7 +2273,7 @@ def api_payment_create():
                 payment_type,
                 title,
                 expected_cents,
-                device_token_hash(poll_token),
+                hash_secret(poll_token),
                 now,
                 expires_at,
                 now,
@@ -2285,8 +2286,8 @@ def api_payment_create():
             "method": "scan",
             "device": "pc",
             "out_trade_no": out_trade_no,
-            "notify_url": f"{PUBLIC_API_BASE_URL}/api/v1/license/payment/notify",
-            "return_url": f"{PUBLIC_API_BASE_URL}/api/v1/license/payment/return?out_trade_no={out_trade_no}",
+            "notify_url": f"{PUBLIC_BASE_URL}/api/v1/license/payment/notify",
+            "return_url": f"{PUBLIC_BASE_URL}/api/v1/license/payment/return?out_trade_no={out_trade_no}",
             "name": title,
             "money": payment_amount_text(expected_cents),
         })
@@ -2338,8 +2339,9 @@ def api_payment_create():
                 "UPDATE payment_orders SET status = 'failed', updated_at = ? WHERE out_trade_no = ?",
                 (utc_now(), out_trade_no),
             )
-            log_event(conn, "payment", f"订单 {out_trade_no} 创建失败：{str(exc)[:180]}")
-        return jsonify({"success": False, "message": f"创建支付订单失败：{exc}"}), 502
+            safe_error = redact_endpoint_text(str(exc))[:180]
+            log_event(conn, "payment", f"订单 {out_trade_no} 创建失败：{safe_error}")
+        return jsonify({"success": False, "message": "创建支付订单失败，请稍后重试"}), 502
 
 
 @app.post("/api/v1/license/payment/status")
@@ -2347,7 +2349,6 @@ def api_payment_status():
     payload = request.get_json(silent=True) or {}
     out_trade_no = str(payload.get("orderNo") or "").strip()[:80]
     poll_token = str(payload.get("pollToken") or "").strip()[:256]
-    presented_token = request_device_token()
     if not out_trade_no or not poll_token:
         return jsonify({"success": False, "message": "缺少支付订单凭据"}), 400
     with db() as conn:
@@ -2384,7 +2385,7 @@ def api_payment_status():
             (out_trade_no,),
         ).fetchone()
         if order["status"] == "paid":
-            return jsonify(paid_payment_payload(conn, order, presented_token))
+            return jsonify(paid_payment_payload(conn, order))
         result = payment_order_client_payload(order)
         result["message"] = {
             "pending": "等待扫码支付",
@@ -2434,8 +2435,8 @@ def api_payment_notify():
 def api_payment_return():
     return """<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>支付结果</title><style>body{margin:0;background:#f5f7fb;color:#18202a;font-family:system-ui,-apple-system,sans-serif;display:grid;place-items:center;min-height:100vh}.box{max-width:420px;margin:24px;padding:28px;background:#fff;border:1px solid #e6eaf0;border-radius:16px;text-align:center;box-shadow:0 16px 50px rgba(25,35,45,.08)}h1{font-size:22px;margin:0 0 10px}p{color:#607080;line-height:1.7;margin:0}</style></head>
-<body><div class="box"><h1>支付结果已提交</h1><p>请返回车机上的超级玩具箱，系统核实到账后会自动完成永久激活。</p></div></body></html>"""
+<title>支付结果</title><link rel="stylesheet" href="/static/platform.css"></head>
+<body class="payment-result"><div class="payment-result-box"><h1>支付结果已提交</h1><p>请返回车机上的超级玩具箱，系统核实到账后会自动完成永久激活。</p></div></body></html>"""
 
 
 if __name__ == "__main__":

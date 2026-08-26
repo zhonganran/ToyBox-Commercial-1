@@ -3,9 +3,7 @@ package com.byd.wjx.ui.settings
 import com.byd.wjx.activation.ActivationSnapshot
 import com.byd.wjx.activation.ActivationPaymentOrder
 import com.byd.wjx.data.repository.SettingsRepository
-import com.byd.wjx.data.vehicle.HeadlightAvailability
-import com.byd.wjx.data.vehicle.HeadlightControlSnapshot
-import com.byd.wjx.data.vehicle.HeadlightMode
+import com.byd.wjx.data.system.SettingsPermissionHealthSnapshot
 import com.byd.wjx.vehicle.CarProfile
 
 /**
@@ -24,7 +22,7 @@ data class SettingsUiState(
     val activationPayment: ActivationPaymentUiState = ActivationPaymentUiState(),
     val serviceQr: SettingsServiceQrUiState = SettingsServiceQrUiState(),
     val vehicleEventSound: SettingsVehicleEventSoundUiState = SettingsVehicleEventSoundUiState(),
-    val vehicleControl: SettingsVehicleControlUiState = SettingsVehicleControlUiState(),
+    val vehicleProfile: SettingsVehicleProfileUiState = SettingsVehicleProfileUiState(),
 )
 
 data class SettingsServiceQrUiState(
@@ -46,20 +44,9 @@ data class SettingsAppPreferencesUiState(
     )
 }
 
-data class SettingsVehicleControlUiState(
-    val headlightAvailability: HeadlightAvailability = HeadlightAvailability.UNKNOWN,
-    val headlightMode: HeadlightMode? = null,
-    val headlightLoading: Boolean = false,
-    val headlightMessage: String = "尚未检测车辆灯光服务",
+data class SettingsVehicleProfileUiState(
     val carProfile: CarProfile? = null,
-) {
-    internal fun withSnapshot(snapshot: HeadlightControlSnapshot) = copy(
-        headlightAvailability = snapshot.availability,
-        headlightMode = snapshot.mode,
-        headlightLoading = false,
-        headlightMessage = snapshot.message,
-    )
-}
+)
 
 data class SettingsMaintenanceUiState(
     val appVersion: String = "0.0.0",
@@ -69,6 +56,8 @@ data class SettingsMaintenanceUiState(
     val isUploadingLogs: Boolean = false,
     val lastBootInfo: String? = null,
     val autoCheckUpdates: Boolean = true,
+    val permissionHealth: SettingsPermissionHealthSnapshot = SettingsPermissionHealthSnapshot(),
+    val isPermissionHealthLoading: Boolean = false,
     /** Status of the last config backup/restore operation. Red if starts with error prefix. */
     val configStatus: String? = null,
 )

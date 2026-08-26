@@ -7,10 +7,10 @@ internal class HelperDaemonRuntime(
     val autoservice: IBinder,
     val autoInterface: String,
     val systemContext: Context?,
+    val installIdentity: String,
     val virtualDisplays: HelperVirtualDisplayRegistry = HelperVirtualDisplayRegistry(),
     val lockSoundRuntime: WjxLockSoundRuntime =
         WjxLockSoundRuntime(autoservice, autoInterface, systemContext),
-    val headlightClient: BydHeadlightBinderClient = BydHeadlightBinderClient(systemContext),
 ) {
     fun start() {
         lockSoundRuntime.start()

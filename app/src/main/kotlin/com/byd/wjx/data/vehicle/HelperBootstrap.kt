@@ -1,5 +1,6 @@
 package com.byd.wjx.data.vehicle
 
+import com.byd.wjx.BuildConfig
 import com.byd.wjx.data.autoservice.AdbOnDeviceClient
 import com.byd.wjx.helper.HelperBinderProtocol
 import com.byd.wjx.log.WjxFileLogger
@@ -20,6 +21,7 @@ import javax.inject.Singleton
 class HelperBootstrap @Inject constructor(
     private val adb: AdbOnDeviceClient,
     private val helper: HelperClient,
+    private val installIdentityStore: HelperInstallIdentityStore? = null,
 ) {
     private val mutex = Mutex()
     @Volatile private var currentProtocolReady = false
@@ -109,6 +111,19 @@ class HelperBootstrap @Inject constructor(
                 TAG,
                 "helper protocol version=$version required=${HelperBinderProtocol.CURRENT_VERSION}",
             )
+            return false
+        }
+        val runtimeVersionCode = helper.runtimeVersionCode() ?: return false
+        if (runtimeVersionCode != BuildConfig.VERSION_CODE) {
+            WjxFileLogger.i(
+                TAG,
+                "helper apk version=$runtimeVersionCode required=${BuildConfig.VERSION_CODE}",
+            )
+            return false
+        }
+        val expectedInstallIdentity = installIdentityStore?.current()
+        if (expectedInstallIdentity != null && helper.runtimeInstallIdentity() != expectedInstallIdentity) {
+            WjxFileLogger.i(TAG, "helper belongs to a previous app installation")
             return false
         }
         return batchProtocolAvailable().also(::noteProtocolReady)

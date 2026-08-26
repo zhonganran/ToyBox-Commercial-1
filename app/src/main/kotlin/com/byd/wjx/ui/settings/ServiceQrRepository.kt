@@ -56,7 +56,8 @@ class ServiceQrRepository @Inject constructor(
         runCatching {
             imageCacheFile(key, imageUrl)
                 .takeIf { it.isFile && it.length() in 1..SERVICE_QR_IMAGE_MAX_BYTES.toLong() }
-                ?.readBytes()
+                ?.inputStream()
+                ?.use { input -> readLimitedBytes(input, SERVICE_QR_IMAGE_MAX_BYTES) }
         }.getOrNull()
     }
 

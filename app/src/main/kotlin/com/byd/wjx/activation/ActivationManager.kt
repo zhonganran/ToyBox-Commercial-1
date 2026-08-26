@@ -4,6 +4,7 @@ import android.content.Context
 import com.byd.wjx.data.vehicle.HelperBootstrap
 import com.byd.wjx.data.vehicle.HelperClient
 import com.byd.wjx.log.WjxFileLogger
+import com.byd.wjx.security.EndpointPrivacy
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.Locale
 import javax.inject.Inject
@@ -97,13 +98,10 @@ class ActivationManager @Inject constructor(
     private val deviceIdentity by lazy {
         ActivationDeviceIdentityProvider(preferences, helperBootstrap, helperClient)
     }
-    private val offlineLicenseStore by lazy { OfflineLicenseStore(appContext, preferences) }
     private val apiClient by lazy {
         ActivationApiClient(
             context = appContext,
             okHttpClient = okHttpClient,
-            deviceTokenProvider = entitlementStore::currentDeviceToken,
-            deviceProofProvider = offlineLicenseStore::read,
         )
     }
 
@@ -126,8 +124,6 @@ class ActivationManager @Inject constructor(
         val deviceCode = storedVinCode()
         return entitlementStore.currentSnapshot(deviceCode, storedDeviceAliases())
     }
-
-    fun currentDeviceToken(): String = entitlementStore.currentDeviceToken()
 
     suspend fun refreshSnapshot(): ActivationSnapshot = withContext(Dispatchers.IO) {
         refreshSnapshotSingleFlight()
@@ -165,7 +161,6 @@ class ActivationManager @Inject constructor(
                 .onSuccess { applyServerStatus(it, deviceCode) }
                 .onFailure {
                     WjxFileLogger.w(TAG, "status request failed: ${it.message}", it)
-                    restoreOfflineLicense(candidates, "status_request_failed")
                 }
         } else {
             WjxFileLogger.w(TAG, "refreshSnapshot no stable device code")
@@ -197,13 +192,15 @@ class ActivationManager @Inject constructor(
             WjxFileLogger.w(TAG, "activate request failed: ${error.message}", error)
             return@withContext ActivationResult(
                 success = false,
-                message = "连接激活服务器失败：${error.message ?: "网络不可用"}",
+                message = "连接激活服务器失败：${EndpointPrivacy.userMessage(error, "网络不可用")}",
                 snapshot = currentSnapshot(),
             )
         }
 
         val ok = response.optBoolean("success", false) && response.optBoolean("activated", false)
-        val message = response.optString("message", if (ok) "激活成功，已获得永久授权" else "激活失败")
+        val message = EndpointPrivacy.redact(
+            response.optString("message", if (ok) "激活成功，已获得永久授权" else "激活失败"),
+        )
         if (ok) {
             applyServerStatus(response, deviceCode, requestedActivationCode = code)
         }
@@ -264,57 +261,25 @@ class ActivationManager @Inject constructor(
             WjxFileLogger.w(TAG, "server status rejected: VIN mismatch")
             return
         }
-        val aliases = listOf(normalizedDevice)
         val entitlement = entitlementStore.applyServerStatus(
             json = json,
             normalizedDevice = normalizedDevice,
             requestedActivationCode = requestedActivationCode,
         )
         deviceIdentity.rememberCandidates(listOf(normalizedDevice))
-        if (entitlement.activated) {
-            offlineLicenseStore.persist(json.optJSONObject(KEY_OFFLINE_LICENSE), aliases, normalizedDevice)
-        } else {
-            offlineLicenseStore.clear("server_not_activated")
-        }
         WjxFileLogger.i(
             TAG,
-            "server status applied activated=${entitlement.activated} aliases=${aliases.size} " +
+            "server status applied activated=${entitlement.activated} " +
                 "boundCode=${entitlement.boundActivationCode.isNotBlank()} " +
-                "credential=${entitlement.hasDeviceToken} trialEndsAt=${entitlement.serverTrialEndsAt}",
+                "trialEndsAt=${entitlement.serverTrialEndsAt}",
         )
     }
-
-    private fun restoreOfflineLicense(deviceCandidates: List<String>, reason: String): Boolean {
-        val primary = sanitizeDeviceCandidates(deviceCandidates).firstOrNull()
-            ?: storedVinCode()
-        val aliases = listOf(normalizeDeviceCode(primary)).filter(String::isNotBlank)
-        if (aliases.isEmpty()) {
-            WjxFileLogger.w(TAG, "offline license restore skipped: no VIN reason=$reason")
-            return false
-        }
-        val license = offlineLicenseStore.read() ?: run {
-            WjxFileLogger.w(TAG, "offline license restore skipped: no cache reason=$reason")
-            return false
-        }
-        val match = offlineLicenseStore.verify(license, aliases) ?: run {
-            WjxFileLogger.w(TAG, "offline license restore rejected reason=$reason")
-            return false
-        }
-        entitlementStore.restoreOfflineLicense(match.deviceCode, license)
-        deviceIdentity.rememberVerifiedDevice(match.deviceCode, listOf(match.deviceCode))
-        offlineLicenseStore.remember(license)
-        WjxFileLogger.i(TAG, "offline license restored reason=$reason")
-        return true
-    }
-
-    private fun sanitizeDeviceCandidates(values: List<String>): List<String> =
-        deviceIdentity.sanitizeCandidates(values)
 
     private fun storedVinCode(): String =
         deviceIdentity.storedVinCode()
 
     private fun storedDeviceAliases(extra: List<String> = emptyList()): List<String> {
-        val primary = sanitizeDeviceCandidates(extra).firstOrNull() ?: storedVinCode()
+        val primary = deviceIdentity.sanitizeCandidates(extra).firstOrNull() ?: storedVinCode()
         return listOf(normalizeDeviceCode(primary)).filter(String::isNotBlank)
     }
 
@@ -329,6 +294,5 @@ class ActivationManager @Inject constructor(
         const val STATUS_REFRESH_INTERVAL_MS = 10L * 60L * 1000L
         private const val TAG = "ActivationManager"
         private const val PREF_NAME = "wjx_activation"
-        private const val KEY_OFFLINE_LICENSE = "offlineLicense"
     }
 }

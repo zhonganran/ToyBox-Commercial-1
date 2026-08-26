@@ -3,6 +3,8 @@ package com.byd.wjx.data.autoservice
 /** Strict command catalog for the small set of shell operations the app permits. */
 internal object AdbShellCommands {
     const val HELPER_PROCESS_NAME = "wjx_helper"
+    const val AUTHORIZED_KEY_SAVED_MARKER = "wjx_adb_authorized_key_saved"
+    const val IDENTITY_BACKUP_SAVED_MARKER = "wjx_adb_identity_saved"
 
     fun getProperty(name: String): String {
         require(name.matches(PROPERTY_NAME)) { "AdbOnDeviceClient: refused getprop name: $name" }
@@ -33,32 +35,61 @@ internal object AdbShellCommands {
             "cmd notification allow_listener $quoted 2>/dev/null || true; echo ok"
     }
 
-    fun killHelper(): String = "pkill -9 -f $HELPER_PROCESS_NAME 2>/dev/null; sleep 0.5"
+    fun persistIdentityBackup(encoded: String): String {
+        require(encoded.matches(IDENTITY_BACKUP)) { "Invalid encrypted ADB identity backup" }
+        val quoted = shellQuote(encoded)
+        val setting = AdbIdentityBackupStore.SETTING_NAME
+        return "settings put system $setting $quoted && " +
+            "[ \"\$(settings get system $setting 2>/dev/null)\" = $quoted ] && " +
+            "echo $IDENTITY_BACKUP_SAVED_MARKER"
+    }
 
+    fun persistAuthorizedKey(keyLine: String): String {
+        require(keyLine.length in 1..2048 && keyLine.none { it == '\n' || it == '\r' || it == '\u0000' }) {
+            "Invalid ADB authorized key"
+        }
+        val keyPrefix = keyLine.substringBefore(' ')
+        val hostId = keyLine.substringAfter(' ', missingDelimiterValue = "")
+        require(keyPrefix.matches(ADB_PUBLIC_KEY) && hostId.matches(ADB_HOST_ID)) {
+            "Invalid ADB authorized key format"
+        }
+        val quotedPrefix = shellQuote(keyPrefix)
+        val quotedLine = shellQuote(keyLine)
+        return "(grep -qF $quotedPrefix $ADB_KEYS_FILE 2>/dev/null || " +
+            "printf '%s\\n' $quotedLine >> $ADB_KEYS_FILE) && " +
+            "grep -qF $quotedPrefix $ADB_KEYS_FILE 2>/dev/null && " +
+            "echo $AUTHORIZED_KEY_SAVED_MARKER"
+    }
+
+    fun killHelper(): String =
+        "WATCHDOG_PID=\$(cat /data/local/tmp/wjx_runtime_watchdog.pid 2>/dev/null); " +
+            "case \"\$WATCHDOG_PID\" in ''|*[!0-9]*) ;; *) kill \"\$WATCHDOG_PID\" 2>/dev/null ;; esac; " +
+            "rm -f /data/local/tmp/wjx_runtime_watchdog.pid; pkill -9 -f $HELPER_PROCESS_NAME 2>/dev/null; " +
+            "rm -f /data/local/tmp/wjx_helper.lock; sleep 0.5"
     fun helperHeartbeat(): String = "ps -A -o NAME"
 
     fun spawnHelper(
         packageCodePath: String,
         callerUid: Int,
+        installIdentity: String,
         helperLogPath: String,
         helperLogDirectory: String,
     ): String {
         val quotedLogPath = shellQuote(helperLogPath)
+        require(installIdentity.matches(INSTALL_ID)) { "Invalid helper install identity" }
         val classpathScript = helperClasspath(packageCodePath)
-        val startScript = shellQuote(helperStartScript(classpathScript, quotedLogPath, callerUid))
+        val startScript = shellQuote(helperStartScript(classpathScript, quotedLogPath, callerUid, packageCodePath, installIdentity))
         return "mkdir -p ${shellQuote(helperLogDirectory)}; " +
             "printf '%s\\n' '[wjx_helper spawn]' >>$quotedLogPath; " +
             "printf '%s\\n' $startScript >/data/local/tmp/wjx_helper_start.sh; " +
             "chmod 755 /data/local/tmp/wjx_helper_start.sh; " +
             "sh /data/local/tmp/wjx_helper_start.sh"
     }
-
     fun shellQuote(value: String): String = "'" + value.replace("'", "'\"'\"'") + "'"
-
     private fun helperStartScript(
         classpathScript: String,
         helperLogPath: String,
-        callerUid: Int,
+        callerUid: Int, packageCodePath: String, installIdentity: String,
     ): String = """
         #!/system/bin/sh
         mkdir -p /sdcard/WJX 2>/dev/null
@@ -66,13 +97,12 @@ internal object AdbShellCommands {
         $classpathScript
         CLASSPATH="${'$'}HELPER_CP" setsid app_process /system/bin \
           --nice-name=$HELPER_PROCESS_NAME com.byd.wjx.helper.HelperDaemon \
-          $callerUid </dev/null >>$helperLogPath 2>&1 &
+          $callerUid ${shellQuote(packageCodePath)} $installIdentity </dev/null >>$helperLogPath 2>&1 &
         for i in 1 2 3; do
           service list 2>/dev/null | grep -q $HELPER_PROCESS_NAME && break
           sleep 1
         done
     """.trimIndent()
-
     private fun helperClasspath(packageCodePath: String): String {
         val packageLoop = HELPER_CLASSPATH_PACKAGES.joinToString(" ", transform = ::shellQuote)
         val fileLoop = HELPER_CLASSPATH_FILES.joinToString(" ", transform = ::shellQuote)
@@ -85,10 +115,14 @@ internal object AdbShellCommands {
             "[ -f \"\$path\" ] && HELPER_CP=\"\$HELPER_CP:\$path\"; " +
             "done"
     }
-
     private val PROPERTY_NAME = Regex("""^[A-Za-z0-9_.-]{1,96}$""")
     private val SETTING_NAME = Regex("""^[A-Za-z0-9_.-]{1,96}$""")
     private val APP_PACKAGE_NAME = Regex("""^com\.byd\.wjx$""")
+    private val IDENTITY_BACKUP = Regex("""^[A-Za-z0-9_-]{1,16384}$""")
+    private val ADB_PUBLIC_KEY = Regex("""^[A-Za-z0-9+/=]{680,720}$""")
+    private val ADB_HOST_ID = Regex("""^[A-Za-z0-9@._-]{1,96}$""")
+    private val INSTALL_ID = Regex("""^[0-9a-f-]{36}$""")
+    private const val ADB_KEYS_FILE = "/data/misc/adb/adb_keys"
     private val HELPER_CLASSPATH_PACKAGES = listOf(
         "com.byd.launcher",
         "com.byd.car.server",
@@ -97,7 +131,5 @@ internal object AdbShellCommands {
         "com.xy.instrumentnavigation",
         "com.android.launcher3",
     )
-    private val HELPER_CLASSPATH_FILES = listOf(
-        "/system/app/BydAutoVoiceTTS/BydAutoVoiceTTS.apk",
-    )
+    private val HELPER_CLASSPATH_FILES = listOf("/system/app/BydAutoVoiceTTS/BydAutoVoiceTTS.apk")
 }

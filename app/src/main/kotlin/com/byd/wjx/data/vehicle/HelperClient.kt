@@ -10,28 +10,6 @@ data class HelperShellResult(
     val ok: Boolean get() = status == 0 && exitCode == 0
 }
 
-enum class HeadlightMode(val serviceValue: Int, val label: String) {
-    OFF(16, "关闭"),
-    AUTO(2, "自动"),
-    LOW_BEAM(4, "近光"),
-    HIGH_BEAM(8, "远光");
-
-    companion object {
-        fun fromServiceValue(value: Int): HeadlightMode? = entries.firstOrNull {
-            it.serviceValue == value
-        }
-    }
-}
-
-data class HelperHeadlightReply(
-    val transportStatus: Int,
-    val serviceCode: Int,
-    val value: Int,
-) {
-    val transportOk: Boolean get() = transportStatus == 0
-    val serviceOk: Boolean get() = serviceCode == 0
-}
-
 /**
  * Client contract for the in-vehicle helper daemon registered as `wjx_helper`.
  * Transport and platform details are owned by [HelperClientImpl].
@@ -56,6 +34,10 @@ interface HelperClient {
     suspend fun isAlive(): Boolean
     /** Returns the helper's exact wire-protocol version, or null for an invalid reply. */
     suspend fun protocolVersion(): Int? = null
+    /** APK build that launched the current helper process. */
+    suspend fun runtimeVersionCode(): Int? = null
+    /** App installation that owns the current helper process. */
+    suspend fun runtimeInstallIdentity(): String? = null
 
     /** Creates a VirtualDisplay backed by [surface]; returns its displayId (>0) or null. */
     suspend fun createVirtualDisplay(
@@ -99,12 +81,6 @@ interface HelperClient {
     suspend fun execShellResult(command: String): HelperShellResult? = null
     /** Generic helper-side shell execution. Keep call sites narrow and logged. */
     suspend fun execShell(command: String): String? = null
-    /** Checks BYD's official external-light capability bit for headlight mode control. */
-    suspend fun queryHeadlightSupport(): HelperHeadlightReply? = null
-    /** Reads the current mode from BYD's official external-light service. */
-    suspend fun getHeadlightMode(): HelperHeadlightReply? = null
-    /** Sets one official mode and returns the actual mode read back by the helper. */
-    suspend fun setHeadlightMode(mode: HeadlightMode): HelperHeadlightReply? = null
     /** Applies BYD's privileged lock-sound playback route state in the helper process. */
     suspend fun setLockSoundPlaybackState(enabled: Boolean): Boolean = false
 }

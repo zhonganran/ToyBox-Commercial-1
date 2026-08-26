@@ -3,6 +3,12 @@ package com.byd.wjx.activation
 import android.content.Context
 import com.byd.wjx.BuildConfig
 import com.byd.wjx.log.WjxFileLogger
+import com.byd.wjx.security.EndpointPrivacy
+import com.byd.wjx.security.isSameDeploymentOrigin
+import com.byd.wjx.security.isSecureDeploymentEndpoint
+import com.byd.wjx.security.readBoundedUtf8Body
+import com.byd.wjx.vehicle.VehicleIdentityResolver
+import com.byd.wjx.vehicle.VehicleInfo
 import java.time.Instant
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -20,12 +26,16 @@ internal data class ActivationPaymentCheckResult(
 internal class ActivationApiClient(
     context: Context,
     private val okHttpClient: OkHttpClient,
-    private val deviceTokenProvider: () -> String,
-    private val deviceProofProvider: () -> JSONObject?,
     apiBaseUrl: String = BuildConfig.ACTIVATION_API_URL,
+    private val vehicleInfoProvider: () -> VehicleInfo = { VehicleIdentityResolver.read() },
 ) {
     private val appContext = context.applicationContext
     private val apiBaseUrl = apiBaseUrl.trim().trimEnd('/')
+
+    init {
+        require(isSecureDeploymentEndpoint(this.apiBaseUrl)) { "激活服务配置不安全" }
+    }
+
     fun requestStatus(deviceCode: String): JSONObject =
         postJson("status", basePayload(deviceCode))
 
@@ -87,7 +97,7 @@ internal class ActivationApiClient(
         )
         val status = response.optString("status", "pending")
         val paid = response.optBoolean("paid", false)
-        val message = response.optString(
+        val message = EndpointPrivacy.redact(response.optString(
             "message",
             when (status) {
                 "paid" -> "支付成功，永久授权已自动激活"
@@ -95,7 +105,7 @@ internal class ActivationApiClient(
                 "failed" -> "支付订单失败，请重新尝试"
                 else -> "等待扫码支付"
             },
-        )
+        ))
         WjxFileLogger.i(TAG, "payment status status=$status paid=$paid")
         return ActivationPaymentCheckResult(status, paid, message, response)
     }
@@ -105,8 +115,17 @@ internal class ActivationApiClient(
         put("rawDeviceCode", deviceCode)
         put("appVersion", BuildConfig.VERSION_NAME)
         put("packageName", appContext.packageName)
-        put("credentialVersion", DEVICE_CREDENTIAL_VERSION)
-        deviceProofProvider()?.let { put("deviceProof", it) }
+        put("vehicleProfile", vehicleProfilePayload(vehicleInfoProvider()))
+    }
+
+    private fun vehicleProfilePayload(info: VehicleInfo): JSONObject = JSONObject().apply {
+        info.vinYear?.let { put("vinYear", it) }
+        put("displayName", info.displayName.take(MAX_PROFILE_TEXT_LENGTH))
+        put("modelVariant", info.modelVariant.take(MAX_PROFILE_TEXT_LENGTH))
+        put("carSeries", info.carSeries.take(MAX_PROFILE_TEXT_LENGTH))
+        put("vehicleType", info.vehicleType.take(MAX_PROFILE_TEXT_LENGTH))
+        put("controllerVersion", info.controllerVersion.take(MAX_CONTROLLER_VERSION_LENGTH))
+        put("controllerSeries", info.controllerSeries.coerceAtLeast(0))
     }
 
     private fun postJson(path: String, payload: JSONObject): JSONObject {
@@ -114,19 +133,21 @@ internal class ActivationApiClient(
             .url("$apiBaseUrl/$path")
             .post(payload.toString().toRequestBody(JSON))
             .header("Content-Type", "application/json")
-        deviceTokenProvider().takeIf(String::isNotBlank)?.let { token ->
-            requestBuilder.header("Authorization", "Bearer $token")
-        }
         val request = requestBuilder.build()
         WjxFileLogger.i(
             TAG,
-            "request path=$path url=$apiBaseUrl/$path deviceLength=${payload.optString("deviceCode").length}",
+            "request path=$path deviceLength=${payload.optString("deviceCode").length}",
         )
         okHttpClient.newCall(request).execute().use { response ->
-            val text = response.body?.string().orEmpty()
+            if (!isSameDeploymentOrigin(response.request.url.toString(), request.url.toString())) {
+                throw IllegalStateException("激活服务重定向不安全")
+            }
+            val text = readBoundedUtf8Body(response.body)
             val json = runCatching { JSONObject(text) }.getOrElse { JSONObject() }
             if (!response.isSuccessful) {
-                val message = json.optString("message", "HTTP ${response.code}")
+                val message = EndpointPrivacy.redact(
+                    json.optString("message", "HTTP ${response.code}"),
+                )
                 WjxFileLogger.w(TAG, "request failed path=$path code=${response.code} message=$message")
                 throw IllegalStateException(message)
             }
@@ -140,7 +161,8 @@ internal class ActivationApiClient(
 
     companion object {
         private const val TAG = "ActivationApiClient"
-        private const val DEVICE_CREDENTIAL_VERSION = 1
+        private const val MAX_PROFILE_TEXT_LENGTH = 120
+        private const val MAX_CONTROLLER_VERSION_LENGTH = 160
         private val JSON = "application/json; charset=utf-8".toMediaType()
     }
 }

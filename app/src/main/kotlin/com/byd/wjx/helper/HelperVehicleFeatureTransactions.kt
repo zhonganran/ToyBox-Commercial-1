@@ -8,18 +8,6 @@ internal fun HelperDaemonRuntime.handleVehicleFeatureTransaction(
     data: Parcel,
     reply: Parcel?,
 ): Boolean = when (code) {
-    HelperBinderProtocol.TX_HEADLIGHT_QUERY_SUPPORT -> headlightReply(reply, "support") {
-        headlightClient.querySupport()
-    }
-
-    HelperBinderProtocol.TX_HEADLIGHT_GET_MODE -> headlightReply(reply, "get") {
-        headlightClient.getMode()
-    }
-
-    HelperBinderProtocol.TX_HEADLIGHT_SET_MODE -> headlightReply(reply, "set") {
-        headlightClient.setMode(data.readInt())
-    }
-
     HelperBinderProtocol.TX_SYNC_LOCK_SOUND_CONFIG -> lockSoundReply(reply, "sync") {
         (if (lockSoundRuntime.syncConfig(data.readString().orEmpty())) 0 else -1) to 0
     }
@@ -58,24 +46,6 @@ internal fun HelperDaemonRuntime.handleVehicleFeatureTransaction(
     }
 
     else -> error("vehicle feature transaction routed incorrectly: $code")
-}
-
-private inline fun HelperDaemonRuntime.headlightReply(
-    reply: Parcel?,
-    operation: String,
-    block: () -> BydHeadlightReply,
-): Boolean = runCatching {
-    val result = block()
-    reply?.writeInt(result.transportStatus)
-    reply?.writeInt(result.serviceCode)
-    reply?.writeInt(result.value)
-    true
-}.getOrElse {
-    helperLog("HeadlightBinder", "$operation transaction failed: ${throwableSummary(it)}")
-    reply?.writeInt(-1)
-    reply?.writeInt(-1)
-    reply?.writeInt(-1)
-    true
 }
 
 private inline fun lockSoundReply(

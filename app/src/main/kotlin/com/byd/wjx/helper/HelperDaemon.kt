@@ -17,7 +17,15 @@ private const val LOCK_PATH = "/data/local/tmp/wjx_helper.lock"
 @SuppressLint("PrivateApi")
 fun main(args: Array<String>) {
     val expectedUid = args.getOrNull(0)?.toIntOrNull() ?: run {
-        System.err.println("ERR: usage: HelperDaemon <appUid>")
+        System.err.println("ERR: usage: HelperDaemon <appUid> <packageCodePath> <installIdentity>")
+        exitProcess(2)
+    }
+    val packageCodePath = args.getOrNull(1)?.takeIf(String::isNotBlank) ?: run {
+        System.err.println("ERR: packageCodePath missing")
+        exitProcess(2)
+    }
+    val installIdentity = args.getOrNull(2)?.takeIf(String::isNotBlank) ?: run {
+        System.err.println("ERR: installIdentity missing")
         exitProcess(2)
     }
 
@@ -46,6 +54,7 @@ fun main(args: Array<String>) {
         autoservice = autoservice,
         autoInterface = autoservice.interfaceDescriptor.orEmpty(),
         systemContext = systemContext,
+        installIdentity = installIdentity,
     )
     val helperBinder = HelperBinderService(
         expectedUid = expectedUid,
@@ -62,7 +71,7 @@ fun main(args: Array<String>) {
 
     System.out.println("READY pid=${android.os.Process.myPid()}")
     System.out.flush()
-    WjxRuntimeWatchdog.enable()
+    WjxRuntimeWatchdog.enable(packageCodePath)
     runtime.start()
     Looper.loop()
 }

@@ -3,6 +3,7 @@ package com.byd.wjx.data.autoservice
 import android.content.Context
 import com.byd.wjx.log.WjxFileLogger
 import com.byd.wjx.storage.WjxDirectories
+import com.byd.wjx.data.vehicle.HelperInstallIdentityStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -14,6 +15,7 @@ import kotlinx.coroutines.withContext
 class AdbOnDeviceClientImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val keyStore: AdbKeyStore,
+    private val helperInstallIdentityStore: HelperInstallIdentityStore = HelperInstallIdentityStore(context),
 ) : AdbOnDeviceClient {
     @Suppress("unused")
     internal var protocolFactory: () -> AdbProtocol = {
@@ -26,6 +28,7 @@ class AdbOnDeviceClientImpl @Inject constructor(
         authorizedKeyLineProvider = {
             String(AdbAuth.serializePublicKey(keyStore.loadOrGenerate()), Charsets.UTF_8)
         },
+        encryptedIdentityBackupProvider = keyStore::getOrCreateEncryptedIdentityBackup,
     )
 
     override suspend fun connect(): Result<Unit> = connectionManager.connect()
@@ -81,6 +84,7 @@ class AdbOnDeviceClientImpl @Inject constructor(
             val command = AdbShellCommands.spawnHelper(
                 packageCodePath = context.packageCodePath,
                 callerUid = android.os.Process.myUid(),
+                installIdentity = helperInstallIdentityStore.current(),
                 helperLogPath = WjxFileLogger.logFilePath,
                 helperLogDirectory = WjxDirectories.baseDir.absolutePath,
             )

@@ -5,6 +5,7 @@ import com.byd.wjx.activation.ActivationPaymentOrder
 import com.byd.wjx.activation.ActivationPaymentStatus
 import com.byd.wjx.activation.ActivationResult
 import com.byd.wjx.activation.ActivationSnapshot
+import com.byd.wjx.security.EndpointPrivacy
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
@@ -57,7 +58,7 @@ class SettingsActivationCoordinator private constructor(
             } catch (error: Exception) {
                 emit(
                     ActivationPaymentUpdate.PollRetry(
-                        error.message ?: "查询支付状态失败，正在重试",
+                        EndpointPrivacy.userMessage(error, "查询支付状态失败，正在重试"),
                     ),
                 )
                 continue

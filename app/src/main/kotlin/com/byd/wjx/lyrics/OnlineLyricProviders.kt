@@ -2,10 +2,12 @@ package com.byd.wjx.lyrics
 
 import android.util.Base64
 import com.byd.wjx.log.WjxFileLogger
+import com.byd.wjx.security.readBoundedUtf8Body
 import java.net.URLEncoder
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import org.json.JSONObject
 
 internal class QishuiLyricProvider(
@@ -26,7 +28,7 @@ internal class QishuiLyricProvider(
                 "$API_BASE/search/track?q=$encoded&cursor=0&search_method=input" +
                     "&aid=$AID&device_platform=web&channel=pc_web",
             ),
-        ).execute().use { it.body?.string().orEmpty() }
+        ).execute().use(::readLyricResponse)
         val selected = OnlineLyricMatcher.selectBest(
             snapshot,
             LyricParsers.parseQishuiSearchCandidates(searchJson),
@@ -40,7 +42,7 @@ internal class QishuiLyricProvider(
                 "$API_BASE/track_v2?track_id=$trackId&media_type=track" +
                     "&aid=$AID&device_platform=web&channel=pc_web",
             ),
-        ).execute().use { it.body?.string().orEmpty() }
+        ).execute().use(::readLyricResponse)
         return LyricParsers.parseQishuiLyricResponse(responseJson, key)?.also {
             WjxFileLogger.i(TAG, "loaded ${it.lines.size} lines trackId=$trackId")
         }
@@ -80,7 +82,7 @@ internal class NeteaseLyricProvider(
                 .header("User-Agent", USER_AGENT)
                 .post(body)
                 .build(),
-        ).execute().use { it.body?.string().orEmpty() }
+        ).execute().use(::readLyricResponse)
         val songs = JSONObject(searchJson).optJSONObject("result")?.optJSONArray("songs") ?: return null
         val candidates = (0 until songs.length()).mapNotNull { index ->
             val song = songs.optJSONObject(index) ?: return@mapNotNull null
@@ -106,7 +108,7 @@ internal class NeteaseLyricProvider(
                 .url("https://music.163.com/api/song/lyric?id=$songId&lv=1&kv=1&tv=-1")
                 .header("User-Agent", USER_AGENT)
                 .build(),
-        ).execute().use { it.body?.string().orEmpty() }
+        ).execute().use(::readLyricResponse)
         val lrc = JSONObject(lyricJson).optJSONObject("lrc")?.optString("lyric").orEmpty()
         val lines = LyricParsers.parseLrcText(lrc)
         return lines.takeIf(List<LyricLine>::isNotEmpty)?.let { LyricsResult(key, it) }
@@ -124,7 +126,7 @@ internal class KugouLyricProvider(
                 .url("https://mobileservice.kugou.com/api/v3/search/song?format=json&keyword=$encoded&page=1&pagesize=5")
                 .header("User-Agent", USER_AGENT)
                 .build(),
-        ).execute().use { it.body?.string().orEmpty() }
+        ).execute().use(::readLyricResponse)
         val songs = JSONObject(searchJson).optJSONObject("data")?.optJSONArray("info") ?: return null
         val candidates = (0 until songs.length()).mapNotNull { index ->
             val song = songs.optJSONObject(index) ?: return@mapNotNull null
@@ -148,7 +150,7 @@ internal class KugouLyricProvider(
                 )
                 .header("User-Agent", USER_AGENT)
                 .build(),
-        ).execute().use { it.body?.string().orEmpty() }
+        ).execute().use(::readLyricResponse)
         val candidate = JSONObject(candidatesJson).optJSONArray("candidates")?.optJSONObject(0)
             ?: return null
         val id = candidate.optString("id").takeIf(String::isNotBlank) ?: return null
@@ -158,7 +160,7 @@ internal class KugouLyricProvider(
                 .url("https://lyrics.kugou.com/download?ver=1&client=pc&id=$id&accesskey=$accessKey&fmt=lrc&charset=utf8")
                 .header("User-Agent", USER_AGENT)
                 .build(),
-        ).execute().use { it.body?.string().orEmpty() }
+        ).execute().use(::readLyricResponse)
         val content = JSONObject(downloadJson).optString("content").takeIf(String::isNotBlank)
             ?: return null
         val raw = String(Base64.decode(content, Base64.DEFAULT), Charsets.UTF_8)
@@ -168,6 +170,12 @@ internal class KugouLyricProvider(
 }
 
 private const val USER_AGENT = "Mozilla/5.0 SuperToyBoxLyrics/1.0"
+private const val LYRIC_RESPONSE_MAX_BYTES = 1024 * 1024
+
+private fun readLyricResponse(response: Response): String {
+    if (!response.isSuccessful) throw IllegalStateException("在线歌词服务响应异常：${response.code}")
+    return readBoundedUtf8Body(response.body, LYRIC_RESPONSE_MAX_BYTES)
+}
 
 private fun MusicPlaybackSnapshot.searchKeyword(): String? =
     listOf(title, artist).filter(String::isNotBlank).joinToString(" ").takeIf(String::isNotBlank)

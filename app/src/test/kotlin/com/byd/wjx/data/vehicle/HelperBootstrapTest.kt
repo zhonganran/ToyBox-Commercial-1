@@ -1,9 +1,11 @@
 package com.byd.wjx.data.vehicle
 
+import com.byd.wjx.BuildConfig
 import com.byd.wjx.data.autoservice.AdbOnDeviceClient
 import com.byd.wjx.helper.HelperBinderProtocol
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertTrue
@@ -17,6 +19,7 @@ class HelperBootstrapTest {
         val adb = mockk<AdbOnDeviceClient>(relaxed = true)
         coEvery { helper.isAlive() } returns true
         coEvery { helper.protocolVersion() } returns HelperBinderProtocol.CURRENT_VERSION
+        coEvery { helper.runtimeVersionCode() } returns BuildConfig.VERSION_CODE
         coEvery { helper.readBatch(VehicleGateway.AVAILABILITY_PROBES) } returns probeReply()
 
         val bootstrap = HelperBootstrap(adb, helper)
@@ -28,6 +31,7 @@ class HelperBootstrapTest {
         coVerify(exactly = 0) { adb.spawnHelper() }
         coVerify(exactly = 1) { helper.isAlive() }
         coVerify(exactly = 1) { helper.protocolVersion() }
+        coVerify(exactly = 1) { helper.runtimeVersionCode() }
         coVerify(exactly = 1) { helper.readBatch(VehicleGateway.AVAILABILITY_PROBES) }
     }
 
@@ -41,6 +45,7 @@ class HelperBootstrapTest {
             0,
             HelperBinderProtocol.CURRENT_VERSION,
         )
+        coEvery { helper.runtimeVersionCode() } returns BuildConfig.VERSION_CODE
         coEvery { helper.readBatch(VehicleGateway.AVAILABILITY_PROBES) } returns probeReply()
 
         val ready = HelperBootstrap(adb, helper).ensureVehicleReadsReady()
@@ -56,12 +61,51 @@ class HelperBootstrapTest {
         coEvery { helper.isAlive() } returns true
         coEvery { adb.spawnHelper() } returns true
         coEvery { helper.protocolVersion() } returns HelperBinderProtocol.CURRENT_VERSION
+        coEvery { helper.runtimeVersionCode() } returns BuildConfig.VERSION_CODE
         coEvery { helper.readBatch(VehicleGateway.AVAILABILITY_PROBES) } returnsMany listOf(
             null,
             probeReply(),
         )
 
         val ready = HelperBootstrap(adb, helper).ensureVehicleReadsReady()
+
+        assertTrue(ready)
+        coVerify(exactly = 1) { adb.spawnHelper() }
+    }
+
+    @Test
+    fun `vehicle read readiness restarts helper launched from replaced apk`() = runTest {
+        val helper = mockk<HelperClient>()
+        val adb = mockk<AdbOnDeviceClient>(relaxed = true)
+        coEvery { helper.isAlive() } returns true
+        coEvery { adb.spawnHelper() } returns true
+        coEvery { helper.protocolVersion() } returns HelperBinderProtocol.CURRENT_VERSION
+        coEvery { helper.runtimeVersionCode() } returnsMany listOf(
+            BuildConfig.VERSION_CODE - 1,
+            BuildConfig.VERSION_CODE,
+        )
+        coEvery { helper.readBatch(VehicleGateway.AVAILABILITY_PROBES) } returns probeReply()
+
+        val ready = HelperBootstrap(adb, helper).ensureVehicleReadsReady()
+
+        assertTrue(ready)
+        coVerify(exactly = 1) { adb.spawnHelper() }
+    }
+
+    @Test
+    fun `vehicle read readiness restarts helper from previous app installation`() = runTest {
+        val helper = mockk<HelperClient>()
+        val adb = mockk<AdbOnDeviceClient>(relaxed = true)
+        val installIdentityStore = mockk<HelperInstallIdentityStore>()
+        every { installIdentityStore.current() } returns "new-install"
+        coEvery { helper.isAlive() } returns true
+        coEvery { adb.spawnHelper() } returns true
+        coEvery { helper.protocolVersion() } returns HelperBinderProtocol.CURRENT_VERSION
+        coEvery { helper.runtimeVersionCode() } returns BuildConfig.VERSION_CODE
+        coEvery { helper.runtimeInstallIdentity() } returnsMany listOf("old-install", "new-install")
+        coEvery { helper.readBatch(VehicleGateway.AVAILABILITY_PROBES) } returns probeReply()
+
+        val ready = HelperBootstrap(adb, helper, installIdentityStore).ensureVehicleReadsReady()
 
         assertTrue(ready)
         coVerify(exactly = 1) { adb.spawnHelper() }

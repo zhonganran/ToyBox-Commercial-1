@@ -108,23 +108,16 @@ Completed structural passes:
   owns trigger creation and the grouped add-condition menu.
 - `AutomationSystemActionEditor` now contains only notification and app-launch controls. Call,
   navigation, and URL forms live in dedicated action editor files with independent size ratchets.
-- `OfflineLicenseStore` now owns offline-license cache files and preference persistence, while
-  `OfflineLicenseVerifier` owns canonical payload construction, device matching, expiry checks, and
-  RS256 signature verification. `ActivationManager` remains the public authorization facade and no
-  longer contains cryptographic or license-file implementation details.
 - `ActivationDeviceIdentityProvider` now owns helper-backed VIN reads, short retry/success caching,
-  VIN extraction and redacted diagnostics, candidate normalization, and device-alias persistence.
-  Server status and offline-license restore both update identity through the same component.
-- `ActivationApiClient` now owns activation HTTP transport, authenticated device payloads, status
-  and activation requests, and payment order/status parsing. Credential recovery proof construction
-  lives in `ActivationCredentialRecoveryProofProvider`, where the sole `ANDROID_ID` read and local
-  `HardwareIds` suppression are enforced by `verifySourceHealth` and documented in
-  `activation-device-identity-security.md`. `ActivationManager` only coordinates those results with
+  VIN extraction and redacted diagnostics, candidate normalization, and VIN persistence.
+- `ActivationApiClient` owns activation HTTP transport, VIN-only status and activation requests,
+  and payment order/status parsing. It sends no device credential, recovery proof, offline license,
+  Android ID, or authorization header. `ActivationManager` only coordinates those results with
   entitlement state.
 - `ActivationEntitlementStore` now owns trial initialization, refresh eligibility, entitlement
-  snapshots, device credentials, server-status persistence, activation-code masking, and offline
-  entitlement restoration. `ActivationManager` no longer reads or writes entitlement keys directly,
-  and `verifySourceHealth` enforces that boundary.
+  snapshots, server-status persistence, and activation-code masking. An enabled server license bound
+  to the current VIN restores permanent activation directly after reinstall or data removal; there
+  is no client offline-license file or device-token state.
 - Payment checkout now has explicit `hosted` and `qrcode` modes. Custom payment schemes are rendered
   as native ZXing QR codes; only HTTPS hosted checkout enters the payment-only WebView. That WebView
   has no JavaScript bridge, blocks file/content access, mixed content, third-party cookies, pop-ups,
@@ -156,10 +149,10 @@ Completed structural passes:
   prevents `SettingsViewModel` from importing low-level update, backup, or boot-diagnostics services
   and from reclaiming the cancellable download lifecycle.
 - `SettingsPreferenceCoordinator` now owns theme, wallpaper, and trip-GPS preference persistence,
-  while `SettingsVehicleControlCoordinator` owns controller-series detection and headlight commands.
+  while `SettingsVehicleProfileCoordinator` owns controller-series detection.
   Their screen state is grouped under `SettingsAppPreferencesUiState` and
-  `SettingsVehicleControlUiState`. `SettingsViewModel` no longer imports the settings repository,
-  headlight controller, or car-profile detector directly, and source-health checks keep those
+  `SettingsVehicleProfileUiState`. `SettingsViewModel` no longer imports the settings repository,
+  or car-profile detector directly, and source-health checks keep those
   boundaries in place.
 - `SettingsServiceQrCoordinator` now owns service-QR loading, cache fallback, status messages, and
   image update streams. `ServiceQrRepository` enforces HTTPS same-origin image URLs, redirect checks,
@@ -171,7 +164,7 @@ Completed structural passes:
   persisted config, local choices, helper-sync progress, and structured error status. File scans,
   selection validation, import, deletion, and snapshot construction run on the IO dispatcher inside
   `VehicleEventSoundCoordinator`; `SettingsVehicleUiController` owns sound-state merging, helper sync,
-  controller-series loading, and headlight command/readback state. The Compose section no longer
+  and controller-series loading. The Compose section no longer
   depends on the whole settings state for each event row. Coordinator tests cover activation denial,
   default local selection, shared-file cleanup, helper failure, and status preservation.
 - The 20 FA firmware preset previews remain GIF after a pixel- and timing-exact lossless Animated
@@ -190,9 +183,14 @@ Completed structural passes:
   recovery, while freshness windows and field merging can no longer drift between implementations.
 - The external `HelperDaemon` app_process entry is now a 68-line lifecycle shell. Caller
   verification, transaction routing, autoservice reads/writes, projection commands, system
-  diagnostics, lock-sound/headlight operations, process locking and lock-sound policies have
+  diagnostics, lock-sound operations, process locking and lock-sound policies have
   independent owners and size ratchets. Router tests cover every published transaction plus the
   reserved-code fallback, and the virtual-display registry has explicit idempotent-release tests.
+- Helper replacement now validates three identities before reusing a running process: Binder
+  protocol version, APK `VERSION_CODE`, and a per-install UUID. APK updates retain the install UUID
+  but replace version-mismatched Helper code; uninstall/reinstall generates a new UUID. The runtime
+  watchdog also compares the live package APK path with the path that launched Helper, then kills
+  stale Helper/watchdog processes and wakes the current app after package replacement.
 - Dashboard presentation models and calendar ranges now have dedicated owners. `DashboardViewModel`
   only coordinates repositories, polling and state updates; deterministic range tests lock the
   existing today, rolling-week, rolling-month, rolling-year and all-history semantics.
@@ -224,15 +222,22 @@ Completed structural passes:
   schema/count inspection, zero-kilometer records, deletion filtering, and incremental ordering.
 - On-device ADB is split into a narrow public capability interface, command whitelist/helper script
   catalog, connection and reconnect manager, authenticated session state machine, socket transport,
-  wire codec, RSA-AUTH serializer, and persistent key store. No generic shell execution is exposed
-  outside the package, vehicle data still travels through Helper Binder, and tests cover concurrent
-  connects, reconnect invalidation, helper spawn safety, command injection rejection, packet framing,
-  wire constants, signatures, and daemon-compatible public keys.
+  wire codec, RSA-AUTH serializer, persistent key store, and device-bound identity backup store.
+  After authorization, the connection manager verifies both the daemon public-key registration and
+  an AES-GCM encrypted PKCS#8/X.509 pair written to a versioned system setting. The wrapping key is
+  derived from app-scoped `ANDROID_ID` plus the installed signing-certificate digest, so the same
+  signed app can recover after reinstall without placing a reusable raw private key in the APK or
+  shared storage. Factory reset, vendor setting cleanup, or signing-key changes fail closed and
+  require normal authorization again. No generic shell execution is exposed outside the package,
+  vehicle data still travels through Helper Binder, and tests cover concurrent connects, reconnect
+  invalidation, helper spawn safety, command injection rejection, packet framing, wire constants,
+  signatures, daemon-compatible public keys, encrypted round trips, binding rejection, corruption,
+  internal-file recovery, and verified backup persistence.
 - Helper Binder access now separates operation-specific Parcel encoding from
   `HelperBinderTransport`, which exclusively owns service lookup, binder caching, dead-object retry,
   request timeouts, and independent read/command mutex lanes. The public `HelperClient` stays free of
   Android Binder types, while existing fake-Binder tests lock wire values, batch validation,
-  projection commands, headlight readback, and retry behavior.
+  projection commands, and retry behavior.
 - `VehicleApiImpl` is now a small command facade. `VehicleWriteExecutor` owns allowlist validation,
   helper-status interpretation, bounded CAN readback retries, and error classification;
   `VehicleWriteAuditLogger` owns fail-soft attempt/outcome persistence; and
@@ -251,6 +256,12 @@ Completed structural passes:
   is supported for this new-project release. Source health also rejects the removed phone-casting,
   A950, electronic-mirror, saved-place, and online-sound packages/tokens across app, tests, schemas,
   Gradle, and server code, and locks the cluster card to its fixed high-contrast font palette.
+- The commercial platform schema is version 5. Server-side version 3 and 4 upgrades preserve sold
+  license/VIN bindings, orders, and vehicle records while first removing token columns and then
+  adding the reported vehicle name, VIN year, model variant, car series, power type, and controller
+  identity. Empty reports retain the last known profile. Older or unmarked schemas remain
+  unsupported. Offline-license signing configuration and credential reset controls were removed;
+  payment polling keeps only its independent order-scoped `pollToken` hash.
 
 ## Remaining Large-File Disposition
 
@@ -274,7 +285,7 @@ remaining large files fall into bounded, reviewable ownership groups rather than
 `SettingsViewModel` is now a 166-line stable screen facade over four UI controllers and the service-QR
 coordinator. It owns the shared immutable state container, existing public method names, and the
 small QR stream bridge only. Activation/payment jobs, energy and preference drafts, maintenance jobs,
-vehicle-event sounds, and headlight readback all live behind focused controllers. Source-health gates
+vehicle-event sounds, and vehicle-profile loading all live behind focused controllers. Source-health gates
 cap every controller independently and reject controller-specific state mapping or lifecycle details
 if they return to the ViewModel.
 
@@ -284,16 +295,17 @@ The commercial-foundation cleanup was fully re-verified on 2026-08-26:
 
 - `verifySourceHealth`: passed, including automatic ceilings for every Kotlin file at 300 lines or
   more and ownership guards for the extracted controllers, transports, executors, and repositories;
-- Android JVM tests: 1,178 passed, 0 failed, 0 skipped;
-- server security tests: 39 passed;
+- Android JVM tests: 1,212 passed, 0 failed, 0 skipped;
+- server security tests: 50 passed;
 - fresh-install instrumentation: 1 passed on the API 34 emulator, including schema 21 creation and
   confirmation that the deleted `places` table is absent;
-- `lintDebug`, `assembleDebug`, and `assembleRelease`: passed;
+- `lintRelease` and signed `assembleRelease`: passed;
 - Release R8/resource shrinking: passed;
 - APK identity: `com.byd.wjx`, version `2.1.20` (`versionCode 60`);
-- APK signature: v2 verified, one `CN=Super Toy Box` signer, RSA 4096;
+- APK signature: v2 verified, one `CN=Super Toy Box` signer, RSA 4096, certificate SHA-256
+  `c145426578399e39dc3bf6b06b6295f5f86ab9811ab13f3b655aad6c4bfd7415`;
 - Release APK SHA-256:
-  `3b01b94fe8d497da2341380adf830c49a1cdbd51b1443b54b05d3a1fd626b596`;
+  `78dfd16375463db58bcf72b44c031b1aad46835b7ad4c1491d89cd1b2e0d592e`;
 - `git diff --check`: passed.
 
 Future feature work must preserve these ownership boundaries and lower ceilings when a cohesive

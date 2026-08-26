@@ -28,6 +28,7 @@ import com.byd.wjx.data.system.AutostartGuidePreferences
 import com.byd.wjx.data.system.AutostartSettingsLaunchResult
 import com.byd.wjx.data.system.AutostartSettingsLauncher
 import com.byd.wjx.service.UpdateChecker
+import com.byd.wjx.security.EndpointPrivacy
 import com.byd.wjx.ui.automation.AutomationScreen
 import com.byd.wjx.ui.charges.ChargesScreen
 import com.byd.wjx.ui.desktopcomponents.DesktopComponentsScreen
@@ -94,21 +95,42 @@ fun AppNavigation(
             currentVersion = currentVersion,
             state = dialogState,
             onCheck = {
+                if (autoUpdateState is UpdateState.InstallPermissionRequired) {
+                    autoUpdateDownloadJob = autoCheckScope.launch {
+                        try {
+                            val continued = updateChecker.continuePendingInstall(autoCheckContext)
+                            if (!continued) {
+                                autoUpdateState = UpdateState.Error("待安装更新已经失效，请重新下载")
+                            }
+                        } catch (error: Exception) {
+                            autoUpdateState = UpdateState.Error(
+                                EndpointPrivacy.userMessage(error, "无法打开安装授权"),
+                            )
+                        }
+                    }
+                    return@UpdateDialog
+                }
                 val info = autoUpdateInfo ?: return@UpdateDialog
                 autoUpdateState = UpdateState.Downloading(info.version, autoCheckContext.getString(R.string.update_downloading_start))
                 autoUpdateDownloadJob = autoCheckScope.launch {
                     try {
-                        updateChecker.downloadAndInstall(autoCheckContext, info) { progress ->
+                        val outcome = updateChecker.downloadAndInstall(autoCheckContext, info) { progress ->
                             // Ignore late progress after dismissal so a closed dialog
                             // does not reappear in the Downloading state.
                             if (isActive) {
                                 autoUpdateState = UpdateState.Downloading(info.version, progress)
                             }
                         }
+                        if (outcome == UpdateChecker.InstallOutcome.PERMISSION_REQUIRED) {
+                            autoUpdateState = UpdateState.InstallPermissionRequired(
+                                info.version,
+                                autoCheckContext.getString(R.string.update_install_permission_required),
+                            )
+                        }
                     } catch (e: CancellationException) {
                         throw e // Cooperative cancellation from onDismiss, not an error.
                     } catch (e: Exception) {
-                        autoUpdateState = UpdateState.Error(e.message ?: "下载失败")
+                        autoUpdateState = UpdateState.Error(EndpointPrivacy.userMessage(e, "下载失败"))
                     }
                 }
             },

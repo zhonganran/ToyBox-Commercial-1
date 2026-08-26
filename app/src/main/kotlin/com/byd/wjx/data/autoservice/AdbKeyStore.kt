@@ -4,23 +4,16 @@ import android.content.Context
 import android.util.Log
 import com.byd.wjx.log.WjxFileLogger
 import dagger.hilt.android.qualifiers.ApplicationContext
-import java.io.File
-import java.security.KeyFactory
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.MessageDigest
-import java.security.spec.PKCS8EncodedKeySpec
-import java.security.spec.X509EncodedKeySpec
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
  * Persists the SuperToyBox-side ADB RSA keypair under `filesDir/adb_keys/`.
  *
- * Format: raw bytes — `PKCS#8` for the private key, `X.509`
- * (`SubjectPublicKeyInfo`) for the public key — same as `Key.getEncoded()`
- * returns for `KeyFactory.getInstance("RSA")`. This avoids an extra
- * serialization layer and lets us reuse `KeyFactory.generate*` directly.
+ * Files use raw `PKCS#8` private and X.509 public key bytes.
  *
  * The keystore is intentionally NOT the Android Keystore: standard ADB pubkey
  * auth needs raw modulus/exponent in a non-standard 524-byte ADB layout
@@ -28,44 +21,55 @@ import javax.inject.Singleton
  */
 @Singleton
 class AdbKeyStore @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val identityBackupStore: AdbIdentityBackupStore,
 ) {
-
-    private val keyDir: File get() = File(context.filesDir, "adb_keys")
-    private val privFile: File get() = File(keyDir, "adb_key.priv")
-    private val pubFile: File get() = File(keyDir, "adb_key.pub")
-
+    private val keyFiles = AdbKeyFiles(context.filesDir)
     @Volatile private var cached: KeyPair? = null
 
     /**
-     * Loads the persisted keypair if both files exist & parse, otherwise
-     * generates a fresh 2048-bit RSA pair and writes it. On corrupted files
-     * (parse failure) regenerates and overwrites — never throws to the caller
-     * for a recoverable state.
+     * Loads app files, then the device-bound reinstall backup, before generating a new keypair.
      */
     @Synchronized
     fun loadOrGenerate(): KeyPair {
         cached?.let { return it }
 
-        if (privFile.exists() && pubFile.exists()) {
-            try {
-                val factory = KeyFactory.getInstance("RSA")
-                val priv = factory.generatePrivate(PKCS8EncodedKeySpec(privFile.readBytes()))
-                val pub = factory.generatePublic(X509EncodedKeySpec(pubFile.readBytes()))
-                val pair = KeyPair(pub, priv)
+        try {
+            keyFiles.load()?.let { pair ->
                 cached = pair
                 return pair
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to load saved keypair, regenerating: $e")
-                WjxFileLogger.w(TAG, "Failed to load saved keypair, regenerating: ${e.message}")
+            }
+        } catch (error: Exception) {
+            Log.w(TAG, "Failed to load saved keypair, trying device backup: $error")
+            WjxFileLogger.w(TAG, "Failed to load saved keypair: ${error.message}")
+        }
+
+        identityBackupStore.restore()?.let { restored ->
+            return try {
+                keyFiles.persist(restored)
+                cached = restored
+                WjxFileLogger.i(
+                    TAG,
+                    "restored adb keypair fingerprint=${getFingerprintFor(restored)}",
+                )
+                restored
+            } catch (error: Exception) {
+                Log.w(TAG, "Failed to persist restored keypair, regenerating: $error")
+                WjxFileLogger.w(TAG, "Failed to persist restored keypair: ${error.message}")
+                generateAndPersist()
             }
         }
 
+        return generateAndPersist()
+    }
+
+    internal fun getOrCreateEncryptedIdentityBackup(): String? =
+        identityBackupStore.getOrCreateEncryptedBackup(loadOrGenerate())
+
+    private fun generateAndPersist(): KeyPair {
         val gen = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }
         val pair = gen.generateKeyPair()
-        keyDir.mkdirs()
-        privFile.writeBytes(pair.private.encoded)
-        pubFile.writeBytes(pair.public.encoded)
+        keyFiles.persist(pair)
         cached = pair
         WjxFileLogger.i(TAG, "generated new adb keypair fingerprint=${getFingerprintFor(pair)}")
         return pair

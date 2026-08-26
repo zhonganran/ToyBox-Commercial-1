@@ -4,8 +4,10 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import com.byd.wjx.R
+import com.byd.wjx.data.backup.BackupDestinationProvider
 import com.byd.wjx.data.backup.BackupManager
 import com.byd.wjx.log.WjxFileLogger
+import com.byd.wjx.security.EndpointPrivacy
 import com.byd.wjx.service.BootDiagnosticsStore
 import com.byd.wjx.service.UpdateChecker
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -20,21 +22,13 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.withContext
 
-internal data class SettingsMaintenanceDiagnostics(
-    val lastBootInfo: String?,
-)
-
-internal data class SettingsMaintenanceResult(
-    val success: Boolean,
-    val message: String,
-)
-
 /** Owns settings operations that affect the application installation or support workflow. */
 @Singleton
 class SettingsMaintenanceCoordinator @Inject constructor(
     @ApplicationContext context: Context,
     private val updateChecker: UpdateChecker,
     private val backupManager: BackupManager,
+    private val backupDestinationProvider: BackupDestinationProvider,
     private val logUploader: SettingsLogUploader,
 ) {
     private val appContext = context.applicationContext
@@ -59,7 +53,7 @@ class SettingsMaintenanceCoordinator @Inject constructor(
                     .format(Date(it.lastBootTimestamp))
                 "$timestamp（${formatBootMethod(it.lastBootMethod)}）"
             }
-        return SettingsMaintenanceDiagnostics(lastBootInfo)
+        return SettingsMaintenanceDiagnostics(lastBootInfo = lastBootInfo)
     }
 
     internal suspend fun checkForUpdate(): UpdateState {
@@ -73,7 +67,7 @@ class SettingsMaintenanceCoordinator @Inject constructor(
                 UpdateState.Available(update.version, update.releaseNotes.orEmpty())
             }
         } catch (error: Exception) {
-            UpdateState.Error(error.message ?: "未知错误")
+            UpdateState.Error(EndpointPrivacy.userMessage(error, "未知错误"))
         }
     }
 
@@ -92,13 +86,37 @@ class SettingsMaintenanceCoordinator @Inject constructor(
             ),
         )
         try {
-            updateChecker.downloadAndInstall(appContext, update) { progress ->
+            val outcome = updateChecker.downloadAndInstall(appContext, update) { progress ->
                 trySend(UpdateState.Downloading(update.version, progress))
+            }
+            if (outcome == UpdateChecker.InstallOutcome.PERMISSION_REQUIRED) {
+                send(
+                    UpdateState.InstallPermissionRequired(
+                        update.version,
+                        appContext.getString(R.string.update_install_permission_required),
+                    ),
+                )
             }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            send(UpdateState.Error(error.message ?: "下载失败"))
+            send(UpdateState.Error(EndpointPrivacy.userMessage(error, "下载失败")))
+        }
+    }
+
+    internal suspend fun continuePendingInstall(): UpdateState {
+        val update = availableUpdate ?: return UpdateState.Error("待安装更新已经失效，请重新检查")
+        return try {
+            if (updateChecker.continuePendingInstall(appContext)) {
+                UpdateState.InstallPermissionRequired(
+                    update.version,
+                    appContext.getString(R.string.update_install_permission_required),
+                )
+            } else {
+                UpdateState.Error("待安装更新已经失效，请重新下载")
+            }
+        } catch (error: Exception) {
+            UpdateState.Error(EndpointPrivacy.userMessage(error, "无法打开安装授权"))
         }
     }
 
@@ -113,23 +131,20 @@ class SettingsMaintenanceCoordinator @Inject constructor(
                     WjxFileLogger.w(TAG, "diagnostic log upload failed", error)
                     SettingsMaintenanceResult(
                         false,
-                        "日志上传失败：${error.message ?: "网络不可用"}",
+                        "日志上传失败：${EndpointPrivacy.userMessage(error, "网络不可用")}",
                     )
                 },
             )
 
-    internal suspend fun exportConfig(destination: Uri): SettingsMaintenanceResult =
+    internal suspend fun exportConfig(): SettingsMaintenanceResult =
         runCatching {
-            withContext(Dispatchers.IO) { backupManager.export(destination) }
-            appContext.getString(R.string.settings_config_export_done)
+            val destination = withContext(Dispatchers.IO) {
+                backupDestinationProvider.create().also(backupManager::export)
+            }
+            appContext.getString(R.string.settings_config_export_done, destination.absolutePath)
         }.fold(
             onSuccess = { SettingsMaintenanceResult(true, it) },
-            onFailure = {
-                SettingsMaintenanceResult(
-                    false,
-                    appContext.getString(R.string.settings_error_with_message, it.message ?: "?"),
-                )
-            },
+            onFailure = ::configFailure,
         )
 
     internal suspend fun restoreConfig(uri: Uri): SettingsMaintenanceResult =
@@ -137,12 +152,12 @@ class SettingsMaintenanceCoordinator @Inject constructor(
             withContext(Dispatchers.IO) { backupManager.restore(uri) }
             restartApp()
             SettingsMaintenanceResult(true, "配置恢复完成，正在重启")
-        }.getOrElse {
-            SettingsMaintenanceResult(
-                false,
-                appContext.getString(R.string.settings_error_with_message, it.message ?: "?"),
-            )
-        }
+        }.getOrElse(::configFailure)
+
+    private fun configFailure(error: Throwable) = SettingsMaintenanceResult(
+        false,
+        appContext.getString(R.string.settings_error_with_message, EndpointPrivacy.userMessage(error, "?")),
+    )
 
     private fun formatBootMethod(method: String): String = when {
         method == "WorkManager" -> "系统调度启动"
@@ -161,7 +176,5 @@ class SettingsMaintenanceCoordinator @Inject constructor(
         Runtime.getRuntime().exit(0)
     }
 
-    private companion object {
-        const val TAG = "SettingsMaintenance"
-    }
+    private companion object { const val TAG = "SettingsMaintenance" }
 }

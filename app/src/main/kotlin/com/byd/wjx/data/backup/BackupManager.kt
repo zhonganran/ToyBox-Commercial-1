@@ -3,6 +3,7 @@ package com.byd.wjx.data.backup
 import android.content.Context
 import android.net.Uri
 import com.byd.wjx.data.local.database.AppDatabase
+import java.io.File
 
 /** Public backup facade; format, storage, validation, export, and restore have separate owners. */
 class BackupManager(
@@ -29,7 +30,7 @@ class BackupManager(
         backupFormatVersion = BACKUP_FORMAT_VERSION,
     )
 
-    fun export(destination: Uri) = exporter.export(destination)
+    fun export(destination: File) = exporter.export(destination)
 
     fun restore(uri: Uri) {
         restorer.restore(uri)

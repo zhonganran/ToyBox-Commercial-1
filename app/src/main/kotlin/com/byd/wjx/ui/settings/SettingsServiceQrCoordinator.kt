@@ -1,6 +1,7 @@
 package com.byd.wjx.ui.settings
 
 import com.byd.wjx.log.WjxFileLogger
+import com.byd.wjx.security.EndpointPrivacy
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
@@ -39,7 +40,7 @@ class SettingsServiceQrCoordinator @Inject constructor(
                     message = if (cached.isNotEmpty()) {
                         "网络不可用，已显示缓存二维码"
                     } else {
-                        "二维码读取失败：${error.message ?: "网络异常"}"
+                        "二维码读取失败：${EndpointPrivacy.userMessage(error, "网络异常")}"
                     },
                     messageIsError = cached.isEmpty(),
                 ),

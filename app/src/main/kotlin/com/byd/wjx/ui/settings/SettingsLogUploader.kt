@@ -4,6 +4,10 @@ import android.content.Context
 import com.byd.wjx.BuildConfig
 import com.byd.wjx.activation.ActivationManager
 import com.byd.wjx.log.WjxFileLogger
+import com.byd.wjx.security.EndpointPrivacy
+import com.byd.wjx.security.isSameDeploymentOrigin
+import com.byd.wjx.security.isSecureDeploymentEndpoint
+import com.byd.wjx.security.readBoundedUtf8Body
 import com.byd.wjx.storage.WjxDirectories
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -34,17 +38,17 @@ class SettingsLogUploader @Inject constructor(
     suspend fun upload(): SettingsLogUploadResult = withContext(Dispatchers.IO) {
         val apiUrl = BuildConfig.LOG_UPLOAD_API_URL.trim()
         require(apiUrl.isNotBlank()) { "日志上传地址未配置" }
+        require(isSecureDeploymentEndpoint(apiUrl)) { "日志上传地址配置不安全" }
 
         var activation = activationManager.currentSnapshot()
-        if (activation.deviceCode.isBlank() || activationManager.currentDeviceToken().isBlank()) {
+        if (activation.deviceCode.isBlank()) {
             activation = activationManager.refreshIfNeeded(forceAfterMs = 0L)
         }
         val deviceCode = activation.deviceCode.trim()
         require(deviceCode.isNotBlank()) { "未读取到车架号，请先启动车辆并刷新授权状态" }
-        val deviceToken = activationManager.currentDeviceToken()
-        require(deviceToken.isNotBlank()) { "设备凭证无效，请刷新授权或重新输入激活码" }
 
         WjxFileLogger.i(TAG, "diagnostic log upload requested version=${BuildConfig.VERSION_NAME}")
+        WjxFileLogger.sanitizeStoredLog()
         WjxFileLogger.flush()
         val source = WjxDirectories.appLog
         require(source.isFile && source.length() > 0L) { "当前没有可上传的日志" }
@@ -65,15 +69,17 @@ class SettingsLogUploader @Inject constructor(
             val request = Request.Builder()
                 .url(apiUrl)
                 .post(body)
-                .header("Authorization", "Bearer $deviceToken")
                 .build()
 
             okHttpClient.newCall(request).execute().use { response ->
-                val responseText = response.body?.string().orEmpty()
+                require(isSameDeploymentOrigin(response.request.url.toString(), apiUrl)) {
+                    "日志上传服务重定向不安全"
+                }
+                val responseText = readBoundedUtf8Body(response.body)
                 val json = runCatching { JSONObject(responseText) }.getOrNull()
-                val message = json?.optString("message")
+                val message = EndpointPrivacy.redact(json?.optString("message")
                     ?.takeIf { it.isNotBlank() }
-                    ?: "服务器返回 HTTP ${response.code}"
+                    ?: "服务器返回 HTTP ${response.code}")
                 if (!response.isSuccessful || json?.optBoolean("success", false) != true) {
                     error(message)
                 }

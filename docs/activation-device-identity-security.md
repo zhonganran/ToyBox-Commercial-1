@@ -1,46 +1,47 @@
-# Activation Device Identity Security
+# Activation VIN Identity Boundary
 
 ## Scope
 
-Activation uses three separate identity and authentication layers:
+Permanent activation has one identity key: the 17-character vehicle VIN.
 
-- The vehicle VIN is the license subject and determines which vehicle owns an entitlement.
-- The random server-issued device token is the primary API credential after registration.
-- The credential recovery proof is a reinstall recovery mechanism, not an advertising identifier,
-  analytics identifier, account identifier, or replacement for VIN authorization.
+- An activation code or verified payment binds a permanent entitlement to one VIN.
+- `POST /api/v1/license/status` restores that entitlement whenever the server finds an enabled
+  license bound to the submitted VIN.
+- Reinstalling the APK, clearing application data, or restoring the vehicle system does not require
+  a device token, recovery token, local license file, or signed device proof.
+- The client sends VIN, application version, and package name only. The server returns activation
+  and trial state, not a reusable activation credential.
 
-## Recovery proof construction
+The order-specific payment `pollToken` remains in place. It authorizes polling one payment order and
+cannot activate another VIN or restore a license.
 
-`ActivationCredentialRecoveryProofProvider` is the only production source allowed to read
-`Settings.Secure.ANDROID_ID`. It constructs:
+## Accepted Security Boundary
 
-```text
-SHA-256("wjx-device-credential-v1|<package name>|<ANDROID_ID>")
-```
+VIN-only recovery intentionally treats possession of a readable VIN as sufficient to retrieve that
+VIN's activation state. The status API returns entitlement state but does not expose the activation
+code, payment credentials, or another vehicle's records. Server-side activation-code binding,
+payment verification, request throttling, and license enable/disable state remain authoritative.
 
-The purpose prefix prevents reuse as a general Android ID hash. Including the package name keeps
-proofs separate between application IDs. A blank platform value produces no proof.
+Client-supplied VIN alias arrays are ignored. The server extracts one valid VIN from `deviceCode` or
+`rawDeviceCode`, and all activation, trial, payment, device-registration, and log records use that
+single normalized identity.
 
-The raw Android ID is never uploaded, persisted by the app, or written to application logs. Only
-the 64-character lowercase SHA-256 proof is placed in activation request bodies over HTTPS. The
-server hashes that proof again with its own purpose prefix before storing
-`credential_recovery_hash`; it does not store the client proof verbatim.
+## ADB Identity Is Separate
 
-## Authorization boundaries
+The local ADB key restoration mechanism is not an activation credential. It exists only to avoid
+repeating the Android debugging authorization prompt on the same vehicle system and signed app.
 
-A matching recovery proof may rotate a lost device token for a previously registered,
-unactivated vehicle. For an activated vehicle, recovery also requires the signed offline-license
-device proof. VIN matching and the server-side entitlement remain authoritative; possession of a
-recovery proof does not create or transfer a license.
+`AppScopedDeviceBindingProvider` derives a local, purpose-separated binding from the app-scoped
+Android ID. `AdbIdentityBackupStore` combines it with the installed signing-certificate digest to
+encrypt the ADB RSA identity with AES-GCM before storing the backup in a protected system setting.
+The raw Android ID, derived binding, and ADB private key are never submitted to activation APIs.
 
-The proof is stable only while Android returns the same app-scoped value. It may change after a
-factory reset, for another Android user, or after an application-signing identity change. Those
-events intentionally fail closed and require another supported activation or service path.
+Factory reset, vendor-setting cleanup, or a signing-certificate change may require ADB authorization
+again, but permanent application activation still restores independently from the VIN.
 
 ## Enforcement
 
-- `HardwareIds` is suppressed only on the private `readAndroidId` method.
-- `verifySourceHealth` rejects any other Android ID read or `HardwareIds` suppression.
-- Unit tests pin the derivation, blank-value behavior, and package/device separation.
-- `ActivationApiClient` accepts an injected proof provider, so transport tests never access a real
-  hardware identifier.
+- Activation transport tests assert that credential, proof, and authorization fields are absent.
+- Server schema tests assert that device-token columns do not exist.
+- Server workflow tests cover direct VIN restoration after a fresh installation.
+- `verifySourceHealth` rejects the removed offline-license store and legacy credential providers.

@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.byd.wjx.R
+import com.byd.wjx.security.EndpointPrivacy
 import com.byd.wjx.ui.theme.*
 
 sealed class UpdateState {
@@ -42,6 +43,7 @@ sealed class UpdateState {
     data object UpToDate : UpdateState()
     data class Available(val version: String, val notes: String) : UpdateState()
     data class Downloading(val version: String, val progress: String) : UpdateState()
+    data class InstallPermissionRequired(val version: String, val message: String) : UpdateState()
     data class Error(val message: String) : UpdateState()
 }
 
@@ -136,8 +138,25 @@ fun UpdateDialog(
                                 trackColor = CardSurfaceElevated
                             )
                         }
+                        is UpdateState.InstallPermissionRequired -> {
+                            Text(
+                                "安装包 ${state.version} 已下载并通过校验",
+                                color = AccentGreen,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(state.message, color = TextSecondary, fontSize = 13.sp)
+                            Button(
+                                onClick = onCheck,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = AccentBlue),
+                            ) {
+                                Text("打开安装授权", color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+                        }
                         is UpdateState.Error -> {
-                            Text(stringResource(R.string.settings_update_error, state.message), color = SocRed, fontSize = 13.sp)
+                            Text(stringResource(R.string.settings_update_error, EndpointPrivacy.redact(state.message)), color = SocRed, fontSize = 13.sp)
                             Button(
                                 onClick = onCheck,
                                 modifier = Modifier.fillMaxWidth(),

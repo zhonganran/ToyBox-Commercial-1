@@ -13,6 +13,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.IOException
+import io.mockk.mockk
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [29])
@@ -24,7 +25,7 @@ class AdbOnDeviceClientTest {
 
     private fun newClient(factory: () -> AdbProtocol): AdbOnDeviceClientImpl {
         val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
-        val keyStore = AdbKeyStore(ctx)
+        val keyStore = AdbKeyStore(ctx, mockk(relaxed = true))
         val client = AdbOnDeviceClientImpl(ctx, keyStore)
         client.protocolFactory = factory
         return client
@@ -82,6 +83,40 @@ class AdbOnDeviceClientTest {
 
         assertTrue(result.isSuccess)
         assertEquals(1, fake.connectCalls)
+    }
+
+    @Test
+    fun `connect successfulAuthorization persistsEncryptedIdentityBackup`() = runTest {
+        val fake = FakeProtocol(connectResult = true).apply {
+            execResponder = { command ->
+                when {
+                    command.contains("/data/misc/adb/adb_keys") ->
+                        AdbShellCommands.AUTHORIZED_KEY_SAVED_MARKER
+                    command.contains("settings put system wjx_adb_identity_v1") ->
+                        AdbShellCommands.IDENTITY_BACKUP_SAVED_MARKER
+                    else -> ""
+                }
+            }
+        }
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val manager = AdbConnectionManager(
+            preferences = context.getSharedPreferences("adb-backup-test", 0),
+            protocolFactory = { fake },
+            authorizedKeyLineProvider = { "A".repeat(700) + " wjx@device" },
+            encryptedIdentityBackupProvider = { "encrypted_backup_123" },
+        )
+
+        assertTrue(manager.connect().isSuccess)
+
+        val backupCommand = fake.execCalls.single { command ->
+            command.contains("settings put system wjx_adb_identity_v1")
+        }
+        assertTrue(backupCommand.contains("settings get system wjx_adb_identity_v1"))
+        assertTrue(backupCommand.contains(AdbShellCommands.IDENTITY_BACKUP_SAVED_MARKER))
+        val daemonKeyCommand = fake.execCalls.single { command ->
+            command.contains("/data/misc/adb/adb_keys")
+        }
+        assertTrue(daemonKeyCommand.contains(AdbShellCommands.AUTHORIZED_KEY_SAVED_MARKER))
     }
 
     @Test
@@ -207,9 +242,9 @@ class AdbOnDeviceClientTest {
         val client = newClient { protocols.removeFirst() }
 
         assertTrue(client.connect().isSuccess)
-        first.execResponses = mapOf(
-            "pkill -9 -f wjx_helper 2>/dev/null; sleep 0.5" to null,
-        )
+        first.execResponder = { command ->
+            if (command.contains("pkill -9 -f wjx_helper")) null else ""
+        }
         first.disconnectOnNullExec = true
 
         assertTrue(client.spawnHelper())

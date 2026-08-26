@@ -62,7 +62,7 @@ class ActivationManagerConcurrencyTest {
                     .code(200)
                     .message("OK")
                     .body(
-                        """{"activated":false,"deviceCode":"$vin","deviceToken":"device-token-123","credentialVersion":1}"""
+                        """{"success":true,"activated":true,"deviceCode":"$vin","activatedAt":1800000000000}"""
                             .toResponseBody("application/json".toMediaType()),
                     )
                     .build()
@@ -88,7 +88,7 @@ class ActivationManagerConcurrencyTest {
         refreshes.awaitAll()
 
         assertEquals(1, requestCount.get())
-        assertEquals("device-token-123", manager.currentDeviceToken())
+        assertTrue(manager.currentSnapshot().activated)
     }
 
     private fun activationPreferences() =

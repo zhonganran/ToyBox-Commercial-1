@@ -50,12 +50,11 @@ class ActivationEntitlementStoreTest {
     }
 
     @Test
-    fun `server status persists activation token and masked fallback code`() {
+    fun `server VIN status restores activation and masked fallback code`() {
         val response = JSONObject()
             .put("activated", true)
             .put("activatedAt", now - 5_000L)
             .put("trialEndsAt", now + 60_000L)
-            .put("deviceToken", "device-token")
 
         val applied = store.applyServerStatus(
             json = response,
@@ -66,24 +65,18 @@ class ActivationEntitlementStoreTest {
 
         assertTrue(applied.activated)
         assertEquals("STB1-****-****-9012", applied.boundActivationCode)
-        assertEquals("device-token", store.currentDeviceToken())
         assertTrue(snapshot.activated)
         assertEquals(now - 5_000L, snapshot.activatedAt)
         assertFalse(store.shouldRefresh(ActivationManager.STATUS_REFRESH_INTERVAL_MS))
     }
 
     @Test
-    fun `credential requirement clears stale token without forcing refresh loop`() {
+    fun `server check timestamp prevents unnecessary refresh loop`() {
         store.applyServerStatus(
-            JSONObject().put("activated", false).put("deviceToken", "stale-token"),
-            normalizedDevice = VIN,
-        )
-        store.applyServerStatus(
-            JSONObject().put("activated", false).put("deviceCredentialRequired", true),
+            JSONObject().put("activated", false),
             normalizedDevice = VIN,
         )
 
-        assertEquals("", store.currentDeviceToken())
         assertFalse(store.shouldRefresh(ActivationManager.STATUS_REFRESH_INTERVAL_MS))
     }
 

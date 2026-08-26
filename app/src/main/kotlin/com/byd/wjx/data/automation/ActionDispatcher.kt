@@ -6,6 +6,7 @@ import com.byd.wjx.data.remote.DiParsData
 import com.byd.wjx.data.vehicle.AutoDoorController
 import com.byd.wjx.data.vehicle.VehicleApi
 import com.byd.wjx.log.WjxFileLogger
+import com.byd.wjx.security.EndpointPrivacy
 import com.byd.wjx.vehicle.CarProfileDetector
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
@@ -77,7 +78,7 @@ class ActionDispatcher @Inject constructor(
             "dispatch failed for kind=${action.kind}: ${error.message}",
             error,
         )
-        DispatchResult(false, error.message ?: "未知错误")
+        DispatchResult(false, EndpointPrivacy.userMessage(error, "未知错误"))
     }
 
     fun stopOutsideSound(owner: String) {

@@ -1,13 +1,16 @@
 package com.byd.wjx.ui.settings
 
 import android.content.Context
-import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
+import com.byd.wjx.data.backup.BackupDestinationProvider
 import com.byd.wjx.data.backup.BackupManager
 import com.byd.wjx.service.UpdateChecker
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
+import io.mockk.Runs
 import io.mockk.slot
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
@@ -36,6 +39,7 @@ class SettingsMaintenanceCoordinatorTest {
         coEvery { updateChecker.checkForUpdate(context, forceCheck = true) } returns update
         coEvery { updateChecker.downloadAndInstall(context, update, capture(progress)) } coAnswers {
             progress.captured("25%")
+            UpdateChecker.InstallOutcome.INSTALLER_STARTED
         }
         val coordinator = coordinator(updateChecker = updateChecker)
 
@@ -67,33 +71,76 @@ class SettingsMaintenanceCoordinatorTest {
     }
 
     @Test
+    fun `download reports a dedicated state while installer permission is pending`() = runTest {
+        val updateChecker = mockk<UpdateChecker>()
+        val update = UpdateChecker.UpdateInfo(
+            version = "2.2.0",
+            downloadUrl = "https://download.example/app.apk",
+            releaseNotes = "",
+        )
+        coEvery { updateChecker.checkForUpdate(context, forceCheck = true) } returns update
+        coEvery { updateChecker.downloadAndInstall(context, update, any()) } returns
+            UpdateChecker.InstallOutcome.PERMISSION_REQUIRED
+        val coordinator = coordinator(updateChecker = updateChecker)
+
+        coordinator.checkForUpdate()
+        val states = coordinator.downloadUpdates().toList()
+
+        assertTrue(states.last() is UpdateState.InstallPermissionRequired)
+        assertEquals("2.2.0", (states.last() as UpdateState.InstallPermissionRequired).version)
+    }
+
+    @Test
     fun `support operations map success ids and backup failures into stable messages`() = runTest {
         val logUploader = mockk<SettingsLogUploader>()
         val backupManager = mockk<BackupManager>()
+        val destinationProvider = mockk<BackupDestinationProvider>()
         coEvery { logUploader.upload() } returns SettingsLogUploadResult(42L, "已上传")
-        val destination = Uri.parse("content://backup/test.zip")
-        coEvery { backupManager.export(destination) } throws IllegalStateException("存储空间不可用")
+        val destination = context.cacheDir.resolve("ToyBox_backup_20260826_120000.zip")
+        every { destinationProvider.create() } returns destination
+        every { backupManager.export(destination) } throws IllegalStateException("存储空间不可用")
         val coordinator = coordinator(
             backupManager = backupManager,
+            backupDestinationProvider = destinationProvider,
             logUploader = logUploader,
         )
 
         val upload = coordinator.uploadLogs()
-        val export = coordinator.exportConfig(destination)
+        val export = coordinator.exportConfig()
 
         assertEquals(SettingsMaintenanceResult(true, "日志上传成功，编号 #42"), upload)
         assertFalse(export.success)
         assertTrue(export.message.contains("存储空间不可用"))
     }
 
+    @Test
+    fun `successful backup exports to provider path and reports the full location`() = runTest {
+        val backupManager = mockk<BackupManager>()
+        val destinationProvider = mockk<BackupDestinationProvider>()
+        val destination = context.cacheDir.resolve("ToyBox_backup_20260826_120000.zip")
+        every { destinationProvider.create() } returns destination
+        every { backupManager.export(destination) } just Runs
+        val coordinator = coordinator(
+            backupManager = backupManager,
+            backupDestinationProvider = destinationProvider,
+        )
+
+        val result = coordinator.exportConfig()
+
+        assertTrue(result.success)
+        assertTrue(result.message.contains(destination.absolutePath))
+    }
+
     private fun coordinator(
         updateChecker: UpdateChecker = mockk(relaxed = true),
         backupManager: BackupManager = mockk(relaxed = true),
+        backupDestinationProvider: BackupDestinationProvider = mockk(relaxed = true),
         logUploader: SettingsLogUploader = mockk(relaxed = true),
     ) = SettingsMaintenanceCoordinator(
         context = context,
         updateChecker = updateChecker,
         backupManager = backupManager,
+        backupDestinationProvider = backupDestinationProvider,
         logUploader = logUploader,
     )
 }

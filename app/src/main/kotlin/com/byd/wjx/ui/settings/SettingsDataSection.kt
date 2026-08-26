@@ -37,26 +37,18 @@ import com.byd.wjx.ui.theme.CardSurfaceElevated
 import com.byd.wjx.ui.theme.SocRed
 import com.byd.wjx.ui.theme.TextPrimary
 import com.byd.wjx.ui.theme.TextSecondary
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @Composable
 internal fun SettingsDataSection(
     preferences: SettingsAppPreferencesUiState,
     configStatus: String?,
     onTripGpsRecordingChange: (Boolean) -> Unit,
-    onExportConfig: (Uri) -> Unit,
+    onExportConfig: () -> Unit,
     onRestoreConfig: (Uri) -> Unit,
 ) {
     val onTripGpsToggle = rememberTripGpsToggleAction(onTripGpsRecordingChange)
     val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(onRestoreConfig)
-    }
-    val exportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/zip"),
-    ) { uri ->
-        uri?.let(onExportConfig)
     }
     var showExportConfirm by remember { mutableStateOf(false) }
     var showRestoreConfirm by remember { mutableStateOf(false) }
@@ -66,8 +58,7 @@ internal fun SettingsDataSection(
             onDismiss = { showExportConfirm = false },
             onConfirm = {
                 showExportConfirm = false
-                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-                exportLauncher.launch("ToyBox_backup_$timestamp.zip")
+                onExportConfig()
             },
         )
     }

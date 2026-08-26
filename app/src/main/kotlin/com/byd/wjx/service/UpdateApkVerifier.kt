@@ -15,7 +15,9 @@ internal class UpdateApkVerifier {
     ) {
         require(file.isFile && file.length() > 0L) { "下载的安装包不存在" }
         require(update.apkSize <= 0L || file.length() == update.apkSize) { "安装包大小校验失败" }
-        require(fileSha256(file) == normalizeSha256(update.sha256)) { "安装包 SHA-256 校验失败" }
+        val expectedApkSha256 = normalizedSha256OrNull(update.sha256)
+            ?: throw IllegalArgumentException("安装包 SHA-256 信息无效")
+        require(fileSha256(file) == expectedApkSha256) { "安装包 SHA-256 校验失败" }
 
         val packageManager = context.packageManager
         val archive = packageManager.getPackageArchiveInfo(
@@ -33,7 +35,8 @@ internal class UpdateApkVerifier {
             PackageManager.GET_SIGNING_CERTIFICATES,
         )
         val installedCertificates = certificateSha256(installed)
-        val expectedCertificate = normalizeSha256(update.certificateSha256)
+        val expectedCertificate = normalizedSha256OrNull(update.certificateSha256)
+            ?: throw IllegalArgumentException("安装包证书摘要信息无效")
         require(expectedCertificate in archiveCertificates) { "安装包证书与更新信息不一致" }
         require(archiveCertificates.any(installedCertificates::contains)) { "安装包签名与当前应用不一致" }
     }
@@ -72,8 +75,4 @@ internal class UpdateApkVerifier {
     private fun ByteArray.toHex(): String =
         joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
 
-    private fun normalizeSha256(value: String): String = value
-        .trim()
-        .lowercase()
-        .filter { it in '0'..'9' || it in 'a'..'f' }
 }

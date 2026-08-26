@@ -56,6 +56,9 @@ object BackupPreferencesRegistry {
         PreferenceFilePolicy("service_qr_cache", "ServiceQrCache", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy("osmdroid", "OsmdroidRuntime", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy("adb_config", "AdbOnDeviceClient", PreferenceBackupPolicy.DEVICE_LOCAL),
+        PreferenceFilePolicy("helper_runtime_identity", "HelperInstallIdentityStore", PreferenceBackupPolicy.DEVICE_LOCAL),
+        PreferenceFilePolicy("first_launch_permissions", "FirstLaunchPermissionCoordinator", PreferenceBackupPolicy.DEVICE_LOCAL),
+        PreferenceFilePolicy("pending_update_install", "PendingUpdateInstallStore", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy("wjx_disclaimer", "DisclaimerPreferences", PreferenceBackupPolicy.DEVICE_LOCAL),
     )
 

@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DragIndicator
 import androidx.compose.material.icons.outlined.Folder
@@ -42,12 +41,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -68,51 +64,6 @@ import com.byd.wjx.ui.theme.TextSecondary
 import kotlin.math.roundToInt
 
 @Composable
-internal fun ImportSoundCard(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val shape = RoundedCornerShape(52.dp)
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(Color(0x49345FD7))
-            .drawBehind {
-                drawRoundRect(
-                    color = Color.White.copy(alpha = 0.72f),
-                    cornerRadius = CornerRadius(52.dp.toPx()),
-                    style = Stroke(
-                        width = 2.dp.toPx(),
-                        pathEffect = PathEffect.dashPathEffect(
-                            floatArrayOf(12.dp.toPx(), 8.dp.toPx()),
-                        ),
-                    ),
-                )
-            }
-            .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(46.dp)
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.18f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(Icons.Outlined.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(27.dp))
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text("导入音效", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
-            Text("支持 MP3、WAV、AAC、M4A、OGG、FLAC", color = Color.White.copy(alpha = 0.72f), fontSize = 9.sp)
-        }
-    }
-}
-
-@Composable
 internal fun EmptySoundState(onRefresh: () -> Unit) {
     Box(
         modifier = Modifier
@@ -125,7 +76,12 @@ internal fun EmptySoundState(onRefresh: () -> Unit) {
             Spacer(Modifier.height(8.dp))
             Text("还没有本地音效", color = TextSecondary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(4.dp))
-            Text("点击导入音效，添加 MP3、WAV 等音频文件", color = TextMuted, fontSize = 12.sp)
+            Text("请把音效文件放入 WJX 文件夹后刷新", color = TextMuted, fontSize = 12.sp)
+            Text(
+                "/storage/emulated/0/WJX",
+                color = TextMuted,
+                fontSize = 10.sp,
+            )
             Spacer(Modifier.height(12.dp))
             Button(
                 onClick = onRefresh,

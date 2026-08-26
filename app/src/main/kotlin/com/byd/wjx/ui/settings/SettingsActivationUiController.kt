@@ -1,6 +1,7 @@
 package com.byd.wjx.ui.settings
 
 import com.byd.wjx.log.WjxFileLogger
+import com.byd.wjx.security.EndpointPrivacy
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -74,7 +75,7 @@ internal class SettingsActivationUiController(
                         it.copy(
                             activationPayment = it.activationPayment.copy(
                                 loading = false,
-                                message = error.message ?: "创建支付订单失败",
+                                message = EndpointPrivacy.userMessage(error, "创建支付订单失败"),
                             ),
                         )
                     }

@@ -1,7 +1,6 @@
 package com.byd.wjx.data.autoservice
 
 import android.content.SharedPreferences
-import android.util.Log
 import com.byd.wjx.log.WjxFileLogger
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
@@ -15,9 +14,14 @@ internal class AdbConnectionManager(
     private val preferences: SharedPreferences,
     private val protocolFactory: () -> AdbProtocol,
     private val authorizedKeyLineProvider: () -> String,
+    private val encryptedIdentityBackupProvider: () -> String? = { null },
 ) {
     @Volatile private var protocol: AdbProtocol? = null
     private val connectMutex = Mutex()
+    private val authorizationPersistence = AdbAuthorizationPersistence(
+        authorizedKeyLineProvider,
+        encryptedIdentityBackupProvider,
+    )
 
     suspend fun connect(): Result<Unit> = withContext(Dispatchers.IO) {
         connectMutex.withLock {
@@ -36,7 +40,7 @@ internal class AdbConnectionManager(
                 }
 
                 saveAuthorizedState(true)
-                persistAuthorizedKey(active)
+                authorizationPersistence.persist(active)
                 if (active.isConnected()) {
                     Result.success(Unit)
                 } else {
@@ -107,24 +111,6 @@ internal class AdbConnectionManager(
             true
         }
         if (invalidated) WjxFileLogger.w(TAG, "$operation invalidated disconnected ADB protocol")
-    }
-
-    private fun persistAuthorizedKey(active: AdbProtocol) {
-        try {
-            val keyLine = authorizedKeyLineProvider().trim { it <= ' ' || it == '\u0000' }
-            if (keyLine.isBlank()) return
-            val keyPrefix = keyLine.substringBefore(' ')
-            val command =
-                "grep -qF ${AdbShellCommands.shellQuote(keyPrefix)} /data/misc/adb/adb_keys 2>/dev/null || " +
-                    "echo ${AdbShellCommands.shellQuote(keyLine)} >> /data/misc/adb/adb_keys"
-            if (active.exec(command) == null) {
-                Log.d(TAG, "ADB authorized-key persist skipped or unavailable")
-                WjxFileLogger.d(TAG, "ADB authorized-key persist skipped or unavailable")
-            }
-        } catch (error: Exception) {
-            Log.d(TAG, "ADB authorized-key persist failed: ${error.message}")
-            WjxFileLogger.d(TAG, "ADB authorized-key persist failed: ${error.message}")
-        }
     }
 
     private fun saveAuthorizedState(authorized: Boolean) {

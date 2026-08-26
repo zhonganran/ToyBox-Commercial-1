@@ -2,23 +2,22 @@ package com.byd.wjx.ui.settings
 
 import android.net.Uri
 import com.byd.wjx.audio.LockSoundEvent
-import com.byd.wjx.data.vehicle.HeadlightMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/** Owns settings UI state for vehicle identity, headlight readback, and event sounds. */
+/** Owns settings UI state for vehicle identity and event sounds. */
 internal class SettingsVehicleUiController(
     private val scope: CoroutineScope,
     private val state: MutableStateFlow<SettingsUiState>,
     private val eventSoundCoordinator: VehicleEventSoundCoordinator,
-    private val vehicleControlCoordinator: SettingsVehicleControlCoordinator,
+    private val vehicleProfileCoordinator: SettingsVehicleProfileCoordinator,
 ) {
     fun load() {
         scope.launch {
-            val carProfile = vehicleControlCoordinator.loadProfile()
-            updateVehicleControl { it.copy(carProfile = carProfile) }
+            val carProfile = vehicleProfileCoordinator.loadProfile()
+            updateVehicleProfile { it.copy(carProfile = carProfile) }
         }
         reloadEventSoundChoices()
     }
@@ -54,28 +53,6 @@ internal class SettingsVehicleUiController(
         }
     }
 
-    fun refreshHeadlightControl() {
-        if (state.value.vehicleControl.headlightLoading) return
-        updateVehicleControl {
-            it.copy(headlightLoading = true, headlightMessage = "正在检测车辆灯光服务")
-        }
-        scope.launch {
-            val snapshot = vehicleControlCoordinator.refreshHeadlight()
-            updateVehicleControl { it.withSnapshot(snapshot) }
-        }
-    }
-
-    fun setHeadlightMode(mode: HeadlightMode) {
-        if (state.value.vehicleControl.headlightLoading) return
-        updateVehicleControl {
-            it.copy(headlightLoading = true, headlightMessage = "正在切换为${mode.label}")
-        }
-        scope.launch {
-            val result = vehicleControlCoordinator.setHeadlightMode(mode)
-            updateVehicleControl { it.withSnapshot(result.snapshot) }
-        }
-    }
-
     internal suspend fun refreshEventSoundState(status: String?) {
         applyEventSoundState(eventSoundCoordinator.snapshot(status))
     }
@@ -101,9 +78,9 @@ internal class SettingsVehicleUiController(
         }
     }
 
-    private fun updateVehicleControl(
-        transform: (SettingsVehicleControlUiState) -> SettingsVehicleControlUiState,
+    private fun updateVehicleProfile(
+        transform: (SettingsVehicleProfileUiState) -> SettingsVehicleProfileUiState,
     ) {
-        state.update { it.copy(vehicleControl = transform(it.vehicleControl)) }
+        state.update { it.copy(vehicleProfile = transform(it.vehicleProfile)) }
     }
 }

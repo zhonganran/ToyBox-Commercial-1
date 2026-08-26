@@ -15,16 +15,18 @@ import java.util.concurrent.TimeUnit
  */
 internal object WjxRuntimeWatchdog {
 
-    fun enable() {
-        runCatching { install() }
+    fun enable(packageCodePath: String) {
+        runCatching { install(packageCodePath) }
             .onFailure { helperLog(TAG, "watchdog install failed: ${throwableSummary(it)}") }
     }
 
-    private fun install() {
+    private fun install(packageCodePath: String) {
+        require(packageCodePath.isNotBlank()) { "packageCodePath is blank" }
         val pidFile = File(PID_PATH)
         val versionFile = File(VERSION_PATH)
-        val installedVersion = runCatching { versionFile.readText().trim().toInt() }.getOrNull()
-        if (installedVersion != VERSION) {
+        val identity = "$VERSION\n$packageCodePath"
+        val installedIdentity = runCatching { versionFile.readText().trim() }.getOrNull()
+        if (installedIdentity != identity) {
             stopPidFrom(pidFile)
             pidFile.delete()
         } else if (isPidAlive(pidFile)) {
@@ -33,8 +35,8 @@ internal object WjxRuntimeWatchdog {
         }
 
         val script = File(SCRIPT_PATH)
-        script.writeText(buildScript(WjxDirectories.baseDir.absolutePath))
-        versionFile.writeText("$VERSION\n")
+        script.writeText(buildScript(WjxDirectories.baseDir.absolutePath, packageCodePath))
+        versionFile.writeText("$identity\n")
         Runtime.getRuntime().exec(arrayOf("chmod", "755", SCRIPT_PATH))
             .waitFor(2, TimeUnit.SECONDS)
         Runtime.getRuntime().exec(
@@ -60,7 +62,7 @@ internal object WjxRuntimeWatchdog {
         }.getOrDefault(false)
     }
 
-    internal fun buildScript(logDir: String): String =
+    internal fun buildScript(logDir: String, packageCodePath: String): String =
         """
         #!/system/bin/sh
         PACKAGE="com.byd.wjx"
@@ -68,6 +70,7 @@ internal object WjxRuntimeWatchdog {
         HELPER_SCRIPT="/data/local/tmp/wjx_helper_start.sh"
         PID_FILE="$PID_PATH"
         LOG="$logDir/wjx.log"
+        EXPECTED_APK="$packageCodePath"
         KICK_COMPONENT="com.byd.wjx/com.byd.wjx.service.ShellKeepAliveReceiver"
         KICK_ACTION="com.byd.wjx.action.SHELL_KEEPALIVE"
 
@@ -127,7 +130,7 @@ internal object WjxRuntimeWatchdog {
         while true; do
           NOW=${'$'}(date +%s)
 
-          if [ ${'$'}((NOW - LAST_PACKAGE_CHECK)) -ge 300 ]; then
+          if [ ${'$'}((NOW - LAST_PACKAGE_CHECK)) -ge 15 ]; then
             APK=${'$'}(pm path "${'$'}PACKAGE" 2>/dev/null | head -1 | cut -d: -f2)
             if [ -z "${'$'}APK" ]; then
               echo "${'$'}(date) I/RuntimeWatchdog package missing; exiting" >> "${'$'}LOG"
@@ -136,6 +139,16 @@ internal object WjxRuntimeWatchdog {
               done
               rm -f "${'$'}PID_FILE" "$SCRIPT_PATH" "$VERSION_PATH" \
                 /data/local/tmp/wjx_helper.lock /data/local/tmp/wjx_helper_start.sh 2>/dev/null
+              exit 0
+            fi
+            if [ "${'$'}APK" != "${'$'}EXPECTED_APK" ]; then
+              echo "${'$'}(date) I/RuntimeWatchdog package replaced old=${'$'}EXPECTED_APK new=${'$'}APK" >> "${'$'}LOG"
+              for PID in ${'$'}(pidof "${'$'}HELPER_NAME" 2>/dev/null); do
+                kill -9 "${'$'}PID" 2>/dev/null
+              done
+              rm -f "${'$'}PID_FILE" "$SCRIPT_PATH" "$VERSION_PATH" \
+                /data/local/tmp/wjx_helper.lock /data/local/tmp/wjx_helper_start.sh 2>/dev/null
+              kick_app "package_replaced"
               exit 0
             fi
             LAST_PACKAGE_CHECK=${'$'}NOW
@@ -183,6 +196,6 @@ internal object WjxRuntimeWatchdog {
     private const val SCRIPT_PATH = "/data/local/tmp/wjx_runtime_watchdog.sh"
     private const val PID_PATH = "/data/local/tmp/wjx_runtime_watchdog.pid"
     private const val VERSION_PATH = "/data/local/tmp/wjx_runtime_watchdog.version"
-    private const val VERSION = 2
+    private const val VERSION = 3
     private val PID_REGEX = Regex("""\d+""")
 }

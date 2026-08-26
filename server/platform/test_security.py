@@ -25,10 +25,10 @@ os.environ["WJX_PLATFORM_SECRET_KEY"] = "test-secret-key"
 os.environ["WJX_PLATFORM_TRUSTED_PROXY_COUNT"] = "0"
 
 import app as platform_app
-import platform_license
+import platform_config
 import platform_payment
 import platform_storage
-from platform_apk import ApkMetadata
+from platform_apk import ApkMetadata, is_valid_release_version
 
 
 def tearDownModule():
@@ -36,6 +36,35 @@ def tearDownModule():
 
 
 class AdminBootstrapSecurityTest(unittest.TestCase):
+    def test_commercial_endpoints_require_clean_credential_free_https(self):
+        self.assertEqual(
+            "https://wjx.example",
+            platform_config.validated_https_base_url(
+                "PUBLIC", "https://wjx.example/", allow_path=False
+            ),
+        )
+        self.assertEqual(
+            "https://pay.example/api/v2",
+            platform_config.validated_https_base_url(
+                "PAYMENT", "https://pay.example/api/v2/", allow_path=True
+            ),
+        )
+        for value in (
+            "http://wjx.example",
+            "https://user:secret@wjx.example",
+            "https://wjx.example/api",
+            "https://wjx.example?next=evil",
+            "https://wjx.example/%2e%2e/admin",
+        ):
+            with self.subTest(value=value), self.assertRaises(RuntimeError):
+                platform_config.validated_https_base_url("PUBLIC", value, allow_path=False)
+
+    def test_release_versions_match_the_android_filename_policy(self):
+        self.assertTrue(is_valid_release_version("2.1.20"))
+        self.assertTrue(is_valid_release_version("2.1.20-rc.1"))
+        self.assertFalse(is_valid_release_version("../../payload"))
+        self.assertFalse(is_valid_release_version("2.1.20 beta"))
+
     def test_platform_secret_key_is_required(self):
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("WJX_PLATFORM_SECRET_KEY", None)
@@ -46,7 +75,7 @@ class AdminBootstrapSecurityTest(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("WJX_PLATFORM_ADMIN_PASSWORD", None)
             with self.assertRaisesRegex(RuntimeError, "must be configured"):
-                platform_app.configured_admin_credentials()
+                platform_storage.configured_admin_credentials()
 
     def test_known_insecure_password_is_rejected(self):
         with patch.dict(
@@ -54,7 +83,7 @@ class AdminBootstrapSecurityTest(unittest.TestCase):
             {"WJX_PLATFORM_ADMIN_PASSWORD": platform_storage.INSECURE_ADMIN_PASSWORD},
         ):
             with self.assertRaisesRegex(RuntimeError, "known insecure"):
-                platform_app.configured_admin_credentials()
+                platform_storage.configured_admin_credentials()
 
     def test_explicit_credentials_are_accepted(self):
         with patch.dict(
@@ -66,7 +95,7 @@ class AdminBootstrapSecurityTest(unittest.TestCase):
         ):
             self.assertEqual(
                 ("operator", "commercial-password"),
-                platform_app.configured_admin_credentials(),
+                platform_storage.configured_admin_credentials(),
             )
 
 
@@ -109,17 +138,27 @@ class PlatformStorageTest(unittest.TestCase):
                 "raw_device_code",
                 "app_version",
                 "package_name",
+                "vehicle_display_name",
+                "vin_year",
+                "model_variant",
+                "car_series",
+                "vehicle_type",
+                "controller_version",
+                "controller_series",
                 "activated",
                 "trial_started_at",
                 "trial_ends_at",
                 "first_seen_at",
                 "last_seen_at",
-                "api_token_hash",
-                "api_token_issued_at",
             },
             device_columns,
         )
         self.assertEqual(platform_storage.PLATFORM_SCHEMA_VERSION, schema_version)
+        with platform_storage.db() as conn:
+            config_keys = {
+                row["key"] for row in conn.execute("SELECT key FROM config").fetchall()
+            }
+        self.assertEqual({"license_trial_days", "update_enabled"}, config_keys)
 
     def test_database_context_commits_closes_and_enables_connection_guards(self):
         with platform_storage.db() as conn:
@@ -170,7 +209,7 @@ class PlatformStorageTest(unittest.TestCase):
             finally:
                 platform_storage._db_initialized = initialized
 
-    def test_version_one_database_is_migrated_without_losing_devices(self):
+    def test_version_three_database_preserves_vin_activation_during_upgrade(self):
         with tempfile.TemporaryDirectory() as directory:
             legacy_path = os.path.join(directory, "legacy.db")
             with sqlite3.connect(legacy_path) as conn:
@@ -180,7 +219,7 @@ class PlatformStorageTest(unittest.TestCase):
                         id INTEGER PRIMARY KEY CHECK (id = 1),
                         schema_version INTEGER NOT NULL
                     );
-                    INSERT INTO platform_schema VALUES (1, 1);
+                    INSERT INTO platform_schema VALUES (1, 3);
                     CREATE TABLE devices (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         device_code TEXT NOT NULL UNIQUE,
@@ -196,10 +235,29 @@ class PlatformStorageTest(unittest.TestCase):
                         api_token_issued_at TEXT
                     );
                     INSERT INTO devices
-                        (device_code, first_seen_at, last_seen_at, api_token_hash)
+                        (device_code, raw_device_code, app_version, package_name, activated,
+                         first_seen_at, last_seen_at, api_token_hash, api_token_issued_at)
                     VALUES
-                        ('LC0FD4C42S7184399', '2026-01-01T00:00:00Z',
-                         '2026-01-02T00:00:00Z', 'existing-token-hash');
+                        ('LC0FD4C42S7184399', 'LC0FD4C42S7184399', '2.1.19', 'com.byd.wjx', 1,
+                         '2026-08-01T00:00:00Z', '2026-08-25T00:00:00Z',
+                         'removed-token-hash', '2026-08-01T00:00:00Z');
+                    CREATE TABLE license_codes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        code TEXT NOT NULL UNIQUE,
+                        device_code TEXT NOT NULL DEFAULT '',
+                        raw_device_code TEXT NOT NULL DEFAULT '',
+                        note TEXT NOT NULL DEFAULT '',
+                        enabled INTEGER NOT NULL DEFAULT 1,
+                        activated_at TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+                    INSERT INTO license_codes
+                        (code, device_code, raw_device_code, enabled, activated_at, created_at, updated_at)
+                    VALUES
+                        ('STB-PRESERVE-VIN-ACTIVATION', 'LC0FD4C42S7184399',
+                         'LC0FD4C42S7184399', 1, '2026-08-01T00:00:00Z',
+                         '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z');
                     """
                 )
 
@@ -216,8 +274,178 @@ class PlatformStorageTest(unittest.TestCase):
                             "SELECT * FROM devices WHERE device_code = ?",
                             ("LC0FD4C42S7184399",),
                         ).fetchone()
+                        license_row = conn.execute(
+                            "SELECT * FROM license_codes WHERE device_code = ? AND enabled = 1",
+                            ("LC0FD4C42S7184399",),
+                        ).fetchone()
+                        device_columns = {
+                            row["name"]
+                            for row in conn.execute("PRAGMA table_info(devices)").fetchall()
+                        }
                 self.assertEqual(platform_storage.PLATFORM_SCHEMA_VERSION, version)
-                self.assertEqual("existing-token-hash", device["api_token_hash"])
+                self.assertEqual("LC0FD4C42S7184399", device["device_code"])
+                self.assertIsNotNone(license_row)
+                self.assertNotIn("api_token_hash", device_columns)
+                self.assertNotIn("api_token_issued_at", device_columns)
+                self.assertIn("vehicle_display_name", device_columns)
+                self.assertIn("controller_series", device_columns)
+            finally:
+                platform_storage._db_initialized = initialized
+
+    def test_version_four_database_adds_vehicle_profile_without_losing_vehicle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            legacy_path = os.path.join(directory, "schema4.db")
+            with sqlite3.connect(legacy_path) as conn:
+                conn.executescript(
+                    """
+                    CREATE TABLE platform_schema (
+                        id INTEGER PRIMARY KEY CHECK (id = 1),
+                        schema_version INTEGER NOT NULL
+                    );
+                    INSERT INTO platform_schema VALUES (1, 4);
+                    CREATE TABLE devices (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        device_code TEXT NOT NULL UNIQUE,
+                        raw_device_code TEXT NOT NULL DEFAULT '',
+                        app_version TEXT NOT NULL DEFAULT '',
+                        package_name TEXT NOT NULL DEFAULT '',
+                        activated INTEGER NOT NULL DEFAULT 0,
+                        trial_started_at TEXT,
+                        trial_ends_at TEXT,
+                        first_seen_at TEXT NOT NULL,
+                        last_seen_at TEXT NOT NULL
+                    );
+                    INSERT INTO devices
+                        (device_code, raw_device_code, app_version, package_name, activated,
+                         first_seen_at, last_seen_at)
+                    VALUES
+                        ('LC0FD4C42S7184398', 'LC0FD4C42S7184398', '2.1.20',
+                         'com.byd.wjx', 1, '2026-08-01T00:00:00Z',
+                         '2026-08-25T00:00:00Z');
+                    """
+                )
+
+            initialized = platform_storage._db_initialized
+            try:
+                platform_storage._db_initialized = False
+                with patch.object(platform_storage, "DB_PATH", Path(legacy_path)):
+                    platform_storage.init_db(force=True)
+                    with platform_storage.db() as conn:
+                        version = conn.execute(
+                            "SELECT schema_version FROM platform_schema WHERE id = 1"
+                        ).fetchone()[0]
+                        device = conn.execute(
+                            "SELECT * FROM devices WHERE device_code = ?",
+                            ("LC0FD4C42S7184398",),
+                        ).fetchone()
+                self.assertEqual(platform_storage.PLATFORM_SCHEMA_VERSION, version)
+                self.assertEqual("LC0FD4C42S7184398", device["device_code"])
+                self.assertEqual("", device["vehicle_display_name"])
+                self.assertEqual(0, device["controller_series"])
+            finally:
+                platform_storage._db_initialized = initialized
+
+    def test_version_five_database_removes_only_retired_feature_flags(self):
+        with tempfile.TemporaryDirectory() as directory:
+            legacy_path = os.path.join(directory, "schema5.db")
+            with sqlite3.connect(legacy_path) as conn:
+                conn.executescript(
+                    """
+                    CREATE TABLE platform_schema (
+                        id INTEGER PRIMARY KEY CHECK (id = 1),
+                        schema_version INTEGER NOT NULL
+                    );
+                    INSERT INTO platform_schema VALUES (1, 5);
+                    CREATE TABLE config (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL
+                    );
+                    INSERT INTO config VALUES ('license_trial_days', '14');
+                    INSERT INTO config VALUES ('update_enabled', '0');
+                    INSERT INTO config VALUES ('feature_automation_unlimited', '1');
+                    INSERT INTO config VALUES ('feature_cluster_projection', '1');
+                    INSERT INTO config VALUES ('sound_library_enabled', '1');
+                    CREATE TABLE sounds (id INTEGER PRIMARY KEY, title TEXT NOT NULL);
+                    CREATE TABLE vehicle_profiles (id INTEGER PRIMARY KEY, vin TEXT NOT NULL);
+                    """
+                )
+
+            initialized = platform_storage._db_initialized
+            try:
+                platform_storage._db_initialized = False
+                with patch.object(platform_storage, "DB_PATH", Path(legacy_path)):
+                    platform_storage.init_db(force=True)
+                    with platform_storage.db() as conn:
+                        version = conn.execute(
+                            "SELECT schema_version FROM platform_schema WHERE id = 1"
+                        ).fetchone()[0]
+                        values = {
+                            row["key"]: row["value"]
+                            for row in conn.execute("SELECT key, value FROM config").fetchall()
+                        }
+                        tables = {
+                            row["name"]
+                            for row in conn.execute(
+                                "SELECT name FROM sqlite_master WHERE type = 'table'"
+                            ).fetchall()
+                        }
+                self.assertEqual(platform_storage.PLATFORM_SCHEMA_VERSION, version)
+                self.assertEqual(
+                    {"license_trial_days": "14", "update_enabled": "0"},
+                    values,
+                )
+                self.assertNotIn("sounds", tables)
+                self.assertNotIn("vehicle_profiles", tables)
+            finally:
+                platform_storage._db_initialized = initialized
+
+    def test_version_six_database_repairs_release_metadata_columns(self):
+        with tempfile.TemporaryDirectory() as directory:
+            legacy_path = os.path.join(directory, "schema6.db")
+            with sqlite3.connect(legacy_path) as conn:
+                conn.executescript(
+                    """
+                    CREATE TABLE platform_schema (
+                        id INTEGER PRIMARY KEY CHECK (id = 1),
+                        schema_version INTEGER NOT NULL
+                    );
+                    INSERT INTO platform_schema VALUES (1, 6);
+                    CREATE TABLE releases (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        version TEXT NOT NULL,
+                        version_code INTEGER NOT NULL DEFAULT 0,
+                        apk_filename TEXT NOT NULL,
+                        apk_size INTEGER NOT NULL DEFAULT 0,
+                        release_notes TEXT NOT NULL DEFAULT '',
+                        force_update INTEGER NOT NULL DEFAULT 0,
+                        enabled INTEGER NOT NULL DEFAULT 1,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+                    INSERT INTO releases
+                        (version, version_code, apk_filename, created_at, updated_at)
+                    VALUES ('2.1.19', 59, 'legacy.apk', '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z');
+                    """
+                )
+
+            initialized = platform_storage._db_initialized
+            try:
+                platform_storage._db_initialized = False
+                with patch.object(platform_storage, "DB_PATH", Path(legacy_path)):
+                    platform_storage.init_db(force=True)
+                    with platform_storage.db() as conn:
+                        version = conn.execute(
+                            "SELECT schema_version FROM platform_schema WHERE id = 1"
+                        ).fetchone()[0]
+                        columns = {
+                            row["name"] for row in conn.execute("PRAGMA table_info(releases)").fetchall()
+                        }
+                        release = conn.execute(
+                            "SELECT version, version_code FROM releases WHERE id = 1"
+                        ).fetchone()
+                self.assertEqual(platform_storage.PLATFORM_SCHEMA_VERSION, version)
+                self.assertTrue({"apk_sha256", "package_name", "certificate_sha256"}.issubset(columns))
+                self.assertEqual(("2.1.19", 59), tuple(release))
             finally:
                 platform_storage._db_initialized = initialized
 
@@ -338,6 +566,7 @@ class PlatformRequestSecurityTest(unittest.TestCase):
         self.assertFalse(any(rule.startswith("/sounds/") for rule in rules))
         self.assertFalse(any(rule.startswith("/api/v1/sounds") for rule in rules))
         self.assertFalse(any(rule.startswith("/cdn/sounds") for rule in rules))
+        self.assertNotIn("/api/v1/config", rules)
         self.assertIn("/api/v1/logs/upload", rules)
 
 
@@ -350,7 +579,6 @@ class PlatformWorkflowTest(unittest.TestCase):
 
     def setUp(self):
         self.client = platform_app.app.test_client()
-        self.device_tokens = {}
         self.reset_platform_state()
 
     def tearDown(self):
@@ -453,6 +681,25 @@ class PlatformWorkflowTest(unittest.TestCase):
         self.assertEqual(apk_bytes, download.data)
         download.close()
 
+    def test_update_upload_rejects_filename_unsafe_version_before_saving(self):
+        csrf_token = self.login_and_get_csrf()
+        response = self.client.post(
+            "/updates",
+            data={
+                "version": "../../payload",
+                "version_code": "990001",
+                "csrf_token": csrf_token,
+                "apk": (io.BytesIO(b"not-used"), "fixture.apk"),
+            },
+            content_type="multipart/form-data",
+            follow_redirects=True,
+        )
+        self.assertEqual(200, response.status_code)
+        self.assertIn("版本号格式无效".encode(), response.data)
+        with platform_app.db() as conn:
+            self.assertEqual(0, conn.execute("SELECT COUNT(*) FROM releases").fetchone()[0])
+        self.assertEqual([], list(platform_app.APK_DIR.iterdir()))
+
     def test_database_backup_is_a_consistent_temporary_snapshot(self):
         with platform_app.db() as conn:
             conn.execute(
@@ -508,6 +755,39 @@ class PlatformWorkflowTest(unittest.TestCase):
         self.assertEqual(png_bytes, image.data)
         image.close()
 
+    def test_service_qr_upload_rejects_spoofed_image_extension(self):
+        csrf_token = self.login_and_get_csrf()
+        response = self.client.post(
+            "/service-qrcodes",
+            data={
+                "key": "wechat",
+                "csrf_token": csrf_token,
+                "image": (io.BytesIO(b"not-a-real-image"), "fake.png", "image/png"),
+            },
+            content_type="multipart/form-data",
+            follow_redirects=True,
+        )
+        self.assertEqual(200, response.status_code)
+        self.assertIn("文件内容不是有效".encode(), response.data)
+        with platform_app.db() as conn:
+            row = conn.execute(
+                "SELECT filename, mime_type FROM service_qrcodes WHERE key = 'wechat'"
+            ).fetchone()
+        self.assertEqual("", row["filename"])
+        self.assertEqual("", row["mime_type"])
+
+    def test_security_headers_and_admin_scripts_are_csp_compatible(self):
+        response = self.client.get("/login")
+        self.assertEqual("nosniff", response.headers["X-Content-Type-Options"])
+        self.assertEqual("DENY", response.headers["X-Frame-Options"])
+        self.assertEqual("no-referrer", response.headers["Referrer-Policy"])
+        csp = response.headers["Content-Security-Policy"]
+        self.assertIn("frame-ancestors 'none'", csp)
+        self.assertNotIn("'unsafe-inline'", csp)
+        self.assertIn(b'/static/platform.js', response.data)
+        self.assertNotIn(b"onclick=", response.data)
+        self.assertNotIn(b"onsubmit=", response.data)
+
     def test_license_activation_binds_code_to_one_vin(self):
         license_code = "STB-ABCD-EFGH-JKLM-NPQR-STUV"
         vin = "L1234567890123456"
@@ -528,12 +808,10 @@ class PlatformWorkflowTest(unittest.TestCase):
                 "deviceCode": vin,
                 "appVersion": "test",
                 "packageName": "com.example.test",
-                "credentialVersion": 1,
             },
         )
         self.assertEqual(200, initial_status.status_code)
         self.assertFalse(initial_status.json["activated"])
-        self.assertNotIn("deviceToken", initial_status.json)
 
         activation = self.client.post(
             "/api/v1/license/activate",
@@ -543,14 +821,14 @@ class PlatformWorkflowTest(unittest.TestCase):
                 "appVersion": "test",
                 "packageName": "com.example.test",
                 "activationCode": license_code,
-                "credentialVersion": 1,
             },
         )
         self.assertEqual(200, activation.status_code)
         self.assertTrue(activation.json["success"])
         self.assertTrue(activation.json["activated"])
         self.assertEqual(vin, activation.json["deviceCode"])
-        activated_token = activation.json["deviceToken"]
+        self.assertNotIn("deviceToken", activation.json)
+        self.assertNotIn("offlineLicense", activation.json)
 
         activated_status = self.client.post(
             "/api/v1/license/status",
@@ -558,9 +836,7 @@ class PlatformWorkflowTest(unittest.TestCase):
                 "deviceCode": vin,
                 "appVersion": "test",
                 "packageName": "com.example.test",
-                "credentialVersion": 1,
             },
-            headers={"Authorization": f"Bearer {activated_token}"},
         )
         self.assertEqual(200, activated_status.status_code)
         self.assertTrue(activated_status.json["activated"])
@@ -592,28 +868,21 @@ class PlatformWorkflowTest(unittest.TestCase):
                 """,
                 (license_code, now, now),
             )
-        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        with patch.object(
-            platform_license,
-            "load_offline_license_private_key",
-            return_value=private_key,
-        ):
-            activation = self.client.post(
-                "/api/v1/license/activate",
-                json={
-                    "deviceCode": primary_vin,
-                    "rawDeviceCode": primary_vin,
-                    "deviceCodes": [primary_vin, attacker_vin],
-                    "rawDeviceCodes": [primary_vin, attacker_vin],
-                    "appVersion": "2.1.20",
-                    "packageName": "com.byd.wjx",
-                    "activationCode": license_code,
-                    "credentialVersion": 1,
-                },
-            )
+        activation = self.client.post(
+            "/api/v1/license/activate",
+            json={
+                "deviceCode": primary_vin,
+                "rawDeviceCode": primary_vin,
+                "deviceCodes": [primary_vin, attacker_vin],
+                "rawDeviceCodes": [primary_vin, attacker_vin],
+                "appVersion": "2.1.20",
+                "packageName": "com.byd.wjx",
+                "activationCode": license_code,
+            },
+        )
         self.assertEqual(200, activation.status_code)
         self.assertEqual(primary_vin, activation.json["deviceCode"])
-        self.assertEqual([primary_vin], activation.json["offlineLicense"]["deviceCodes"])
+        self.assertNotIn("offlineLicense", activation.json)
         with platform_app.db() as conn:
             license_row = conn.execute(
                 "SELECT device_code FROM license_codes WHERE code = ?",
@@ -626,23 +895,53 @@ class PlatformWorkflowTest(unittest.TestCase):
         self.assertEqual(primary_vin, license_row["device_code"])
         self.assertIsNone(attacker)
 
-    def register_device(self, vin="L1234567890123456"):
+    def register_device(self, vin="L1234567890123456", vehicle_profile=None):
+        payload = {
+            "deviceCode": vin,
+            "appVersion": "1.9",
+            "packageName": "com.byd.wjx",
+        }
+        if vehicle_profile is not None:
+            payload["vehicleProfile"] = vehicle_profile
         response = self.client.post(
             "/api/v1/license/status",
-            json={
-                "deviceCode": vin,
-                "appVersion": "1.9",
-                "packageName": "com.byd.wjx",
-                "credentialVersion": 1,
-            },
+            json=payload,
         )
         self.assertEqual(200, response.status_code)
         self.assertNotIn("deviceToken", response.json)
-        with platform_app.db() as conn:
-            self.device_tokens[vin] = platform_app.issue_device_token(conn, [vin])
         return vin
 
-    def create_payment(self, vin, token, payment_type="wxpay"):
+    def test_vehicle_profile_upload_retains_last_known_non_empty_values(self):
+        vin = "LC0FD4C42S7184388"
+        self.register_device(
+            vin,
+            {
+                "displayName": "宋 PLUS DM-i",
+                "vinYear": 2025,
+                "modelVariant": "SA3HEV",
+                "carSeries": "SONG_PLUS",
+                "vehicleType": "PHEV",
+                "controllerVersion": "57.1.3.2501010.1",
+                "controllerSeries": 57,
+            },
+        )
+        self.register_device(vin, {})
+
+        with platform_app.db() as conn:
+            device = conn.execute(
+                "SELECT * FROM devices WHERE device_code = ?",
+                (vin,),
+            ).fetchone()
+
+        self.assertEqual("宋 PLUS DM-i", device["vehicle_display_name"])
+        self.assertEqual(2025, device["vin_year"])
+        self.assertEqual("SA3HEV", device["model_variant"])
+        self.assertEqual("SONG_PLUS", device["car_series"])
+        self.assertEqual("PHEV", device["vehicle_type"])
+        self.assertEqual("57.1.3.2501010.1", device["controller_version"])
+        self.assertEqual(57, device["controller_series"])
+
+    def create_payment(self, vin, payment_type="wxpay"):
         return self.client.post(
             "/api/v1/license/payment/create",
             json={
@@ -653,7 +952,6 @@ class PlatformWorkflowTest(unittest.TestCase):
                 "packageName": "com.byd.wjx",
                 "paymentType": payment_type,
             },
-            headers={"Authorization": f"Bearer {token}"} if token else {},
         )
 
     def payment_provider_create_result(self, trade_no="PLATFORM-001"):
@@ -683,7 +981,6 @@ class PlatformWorkflowTest(unittest.TestCase):
                 "deviceCode": vin,
                 "appVersion": "2.1.20",
                 "packageName": "com.byd.wjx",
-                "credentialVersion": 1,
             },
         )
         self.assertEqual(200, initial.status_code)
@@ -693,20 +990,30 @@ class PlatformWorkflowTest(unittest.TestCase):
             "create_provider_order",
             return_value=self.payment_provider_create_result("PLATFORM-POLL-TOKEN"),
         ) as create_provider:
-            created = self.create_payment(vin, "")
+            created = self.create_payment(vin)
         self.assertEqual(200, created.status_code)
         self.assertTrue(created.json["orderNo"].startswith("WJX"))
         self.assertTrue(created.json["pollToken"])
         self.assertEqual("weixin://wxpay/test-order", created.json["payUrl"])
         self.assertEqual("qrcode", created.json["checkoutMode"])
         create_provider.assert_called_once()
+        provider_request = create_provider.call_args.args[0]
+        self.assertEqual(
+            "https://wjx.689588.xyz/api/v1/license/payment/notify",
+            provider_request["notify_url"],
+        )
+        self.assertTrue(
+            provider_request["return_url"].startswith(
+                "https://wjx.689588.xyz/api/v1/license/payment/return?out_trade_no="
+            )
+        )
         rejected = self.client.post(
             "/api/v1/license/payment/status",
             json={"orderNo": created.json["orderNo"], "pollToken": "wrong-token"},
         )
         self.assertEqual(403, rejected.status_code)
 
-    def test_unactivated_status_never_issues_or_recovers_a_device_token(self):
+    def test_status_contract_has_no_device_credentials(self):
         vin = "LC0FD4C42S7184310"
         first = self.client.post(
             "/api/v1/license/status",
@@ -714,8 +1021,6 @@ class PlatformWorkflowTest(unittest.TestCase):
                 "deviceCode": vin,
                 "appVersion": "2.1.20",
                 "packageName": "com.byd.wjx",
-                "credentialVersion": 1,
-                "credentialRecoveryProof": hashlib.sha256(b"first-install").hexdigest(),
             },
         )
         second = self.client.post(
@@ -724,8 +1029,6 @@ class PlatformWorkflowTest(unittest.TestCase):
                 "deviceCode": vin,
                 "appVersion": "2.1.20",
                 "packageName": "com.byd.wjx",
-                "credentialVersion": 1,
-                "credentialRecoveryProof": hashlib.sha256(b"attacker-install").hexdigest(),
             },
         )
         self.assertEqual(200, first.status_code)
@@ -735,13 +1038,13 @@ class PlatformWorkflowTest(unittest.TestCase):
         self.assertNotIn("deviceToken", first.json)
         self.assertNotIn("deviceToken", second.json)
         with platform_app.db() as conn:
-            device = conn.execute(
-                "SELECT api_token_hash FROM devices WHERE device_code = ?",
-                (vin,),
-            ).fetchone()
-        self.assertEqual("", device["api_token_hash"])
+            columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(devices)").fetchall()
+            }
+        self.assertNotIn("api_token_hash", columns)
+        self.assertNotIn("api_token_issued_at", columns)
 
-    def test_activated_device_cannot_recover_without_signed_proof(self):
+    def test_activated_device_restores_directly_by_vin(self):
         vin = self.register_device("LC0FD4C42S7184309")
         now = platform_app.utc_now()
         with platform_app.db() as conn:
@@ -754,31 +1057,30 @@ class PlatformWorkflowTest(unittest.TestCase):
                 ("STB-TEST-NO-RECOVERY", vin, vin, now, now, now),
             )
 
-        rejected = self.client.post(
+        restored = self.client.post(
             "/api/v1/license/status",
             json={
                 "deviceCode": vin,
                 "appVersion": "2.1.18",
                 "packageName": "com.byd.wjx",
-                "credentialVersion": 1,
             },
         )
 
-        self.assertEqual(200, rejected.status_code)
-        self.assertTrue(rejected.json["activated"])
-        self.assertTrue(rejected.json["deviceCredentialRequired"])
-        self.assertNotIn("deviceToken", rejected.json)
+        self.assertEqual(200, restored.status_code)
+        self.assertTrue(restored.json["activated"])
+        self.assertGreater(restored.json["activatedAt"], 0)
+        self.assertNotIn("deviceToken", restored.json)
+        self.assertNotIn("offlineLicense", restored.json)
 
     def test_pending_payment_reuses_order_until_local_expiry(self):
         vin = self.register_device("LC0FD4C42S7184302")
-        token = self.device_tokens[vin]
         with patch.object(platform_app, "payment_ready", return_value=True), patch.object(
             platform_app,
             "create_provider_order",
             return_value=self.payment_provider_create_result(),
         ) as create_provider:
-            first = self.create_payment(vin, token)
-            second = self.create_payment(vin, token)
+            first = self.create_payment(vin)
+            second = self.create_payment(vin)
         self.assertEqual(200, first.status_code)
         self.assertEqual(200, second.status_code)
         self.assertEqual(first.json["orderNo"], second.json["orderNo"])
@@ -789,7 +1091,6 @@ class PlatformWorkflowTest(unittest.TestCase):
 
     def test_expired_pending_payment_creates_fresh_provider_order(self):
         vin = self.register_device("LC0FD4C42S7184305")
-        token = self.device_tokens[vin]
         provider_results = [
             self.payment_provider_create_result("PLATFORM-001") | {"pay_info": "https://mzf.mapay.cc/pay/first"},
             self.payment_provider_create_result("PLATFORM-002") | {"payurl": "https://mzf.mapay.cc/pay/second"},
@@ -799,13 +1100,13 @@ class PlatformWorkflowTest(unittest.TestCase):
             "create_provider_order",
             side_effect=provider_results,
         ) as create_provider:
-            first = self.create_payment(vin, token)
+            first = self.create_payment(vin)
             with platform_app.db() as conn:
                 conn.execute(
                     "UPDATE payment_orders SET expires_at = ? WHERE out_trade_no = ?",
                     ("2000-01-01T00:00:00Z", first.json["orderNo"]),
                 )
-            second = self.create_payment(vin, token)
+            second = self.create_payment(vin)
         self.assertEqual(200, first.status_code)
         self.assertEqual(200, second.status_code)
         self.assertNotEqual(first.json["orderNo"], second.json["orderNo"])
@@ -816,15 +1117,55 @@ class PlatformWorkflowTest(unittest.TestCase):
         with platform_app.db() as conn:
             self.assertEqual(2, conn.execute("SELECT COUNT(*) FROM payment_orders").fetchone()[0])
 
+    def test_new_payment_orders_are_rate_limited_without_device_tokens(self):
+        vins = [
+            "LC0FD4C42S7184401",
+            "LC0FD4C42S7184402",
+            "LC0FD4C42S7184403",
+        ]
+        with patch.object(platform_app, "PAYMENT_CREATE_IP_LIMIT", 2), patch.object(
+            platform_app,
+            "PAYMENT_CREATE_DEVICE_LIMIT",
+            10,
+        ), patch.object(platform_app, "payment_ready", return_value=True), patch.object(
+            platform_app,
+            "create_provider_order",
+            return_value=self.payment_provider_create_result(),
+        ) as create_provider:
+            responses = [self.create_payment(vin) for vin in vins]
+        self.assertEqual([200, 200, 429], [response.status_code for response in responses])
+        self.assertEqual(2, create_provider.call_count)
+        self.assertNotIn("deviceToken", responses[0].json)
+
+    def test_payment_provider_failure_does_not_expose_endpoint_details(self):
+        vin = "LC0FD4C42S7184404"
+        with patch.object(platform_app, "payment_ready", return_value=True), patch.object(
+            platform_app,
+            "create_provider_order",
+            side_effect=platform_app.PaymentProviderError(
+                "GET https://secret-provider.example/order failed at 203.0.113.8:443"
+            ),
+        ):
+            response = self.create_payment(vin)
+        self.assertEqual(502, response.status_code)
+        self.assertEqual("创建支付订单失败，请稍后重试", response.json["message"])
+        self.assertNotIn("secret-provider.example", response.get_data(as_text=True))
+        self.assertNotIn("203.0.113.8", response.get_data(as_text=True))
+        with platform_app.db() as conn:
+            audit = conn.execute(
+                "SELECT message FROM audit_logs WHERE type = 'payment' ORDER BY id DESC LIMIT 1"
+            ).fetchone()["message"]
+        self.assertNotIn("secret-provider.example", audit)
+        self.assertNotIn("203.0.113.8", audit)
+
     def test_legacy_order_uses_current_ttl_for_reuse_decision(self):
         vin = self.register_device("LC0FD4C42S7184306")
-        token = self.device_tokens[vin]
         with patch.object(platform_app, "payment_ready", return_value=True), patch.object(
             platform_app,
             "create_provider_order",
             return_value=self.payment_provider_create_result(),
         ) as create_provider:
-            first = self.create_payment(vin, token)
+            first = self.create_payment(vin)
             with platform_app.db() as conn:
                 old_created = (
                     platform_app.utc_datetime()
@@ -834,14 +1175,13 @@ class PlatformWorkflowTest(unittest.TestCase):
                     "UPDATE payment_orders SET created_at = ?, expires_at = ? WHERE out_trade_no = ?",
                     (old_created, "2099-01-01T00:00:00Z", first.json["orderNo"]),
                 )
-            second = self.create_payment(vin, token)
+            second = self.create_payment(vin)
         self.assertEqual(200, second.status_code)
         self.assertNotEqual(first.json["orderNo"], second.json["orderNo"])
         self.assertEqual(2, create_provider.call_count)
 
     def test_verified_paid_query_activates_once_and_wrong_poll_token_is_rejected(self):
         vin = self.register_device("LC0FD4C42S7184303")
-        token = self.device_tokens[vin]
         with patch.object(platform_app, "PAYMENT_PID", "1000"), patch.object(
             platform_app,
             "payment_ready",
@@ -851,14 +1191,13 @@ class PlatformWorkflowTest(unittest.TestCase):
             "create_provider_order",
             return_value=self.payment_provider_create_result(),
         ):
-            created = self.create_payment(vin, token)
+            created = self.create_payment(vin)
         self.assertEqual(200, created.status_code)
         order_no = created.json["orderNo"]
         status_payload = {"orderNo": order_no, "pollToken": created.json["pollToken"]}
         rejected = self.client.post(
             "/api/v1/license/payment/status",
             json={"orderNo": order_no, "pollToken": "wrong-token"},
-            headers={"Authorization": f"Bearer {token}"},
         )
         self.assertEqual(403, rejected.status_code)
 
@@ -882,12 +1221,10 @@ class PlatformWorkflowTest(unittest.TestCase):
             paid = self.client.post(
                 "/api/v1/license/payment/status",
                 json=status_payload,
-                headers={"Authorization": f"Bearer {token}"},
             )
             repeated = self.client.post(
                 "/api/v1/license/payment/status",
                 json=status_payload,
-                headers={"Authorization": f"Bearer {token}"},
             )
         self.assertEqual(200, paid.status_code)
         self.assertTrue(paid.json["paid"])
@@ -901,7 +1238,6 @@ class PlatformWorkflowTest(unittest.TestCase):
 
     def test_wrong_payment_amount_and_forged_notification_do_not_activate(self):
         vin = self.register_device("LC0FD4C42S7184304")
-        token = self.device_tokens[vin]
         with patch.object(platform_app, "PAYMENT_PID", "1000"), patch.object(
             platform_app,
             "payment_ready",
@@ -911,7 +1247,7 @@ class PlatformWorkflowTest(unittest.TestCase):
             "create_provider_order",
             return_value=self.payment_provider_create_result(),
         ):
-            created = self.create_payment(vin, token)
+            created = self.create_payment(vin)
         order_no = created.json["orderNo"]
         wrong_amount = {
             "code": 0,
@@ -933,7 +1269,6 @@ class PlatformWorkflowTest(unittest.TestCase):
             pending = self.client.post(
                 "/api/v1/license/payment/status",
                 json={"orderNo": order_no, "pollToken": created.json["pollToken"]},
-                headers={"Authorization": f"Bearer {token}"},
             )
         self.assertEqual(200, pending.status_code)
         self.assertFalse(pending.json["paid"])
@@ -948,8 +1283,6 @@ class PlatformWorkflowTest(unittest.TestCase):
             self.assertEqual("pending", conn.execute("SELECT status FROM payment_orders").fetchone()[0])
 
     def upload_log(self, vin, data=b"07-23 12:00:00.000 I/Test diagnostic\n", filename="wjx.log"):
-        token = self.device_tokens.get(vin, "")
-        headers = {"Authorization": f"Bearer {token}"} if token else {}
         return self.client.post(
             "/api/v1/logs/upload",
             data={
@@ -959,7 +1292,6 @@ class PlatformWorkflowTest(unittest.TestCase):
                 "log": (io.BytesIO(data), filename, "application/octet-stream"),
             },
             content_type="multipart/form-data",
-            headers=headers,
         )
 
 
@@ -969,9 +1301,8 @@ class PlatformWorkflowTest(unittest.TestCase):
 
 
 
-    def test_signed_offline_license_can_recover_a_lost_device_credential(self):
+    def test_vin_restores_after_reinstall_without_local_proof(self):
         vin = self.register_device("LC0FD4C42S7184345")
-        original_token = self.device_tokens[vin]
         now = platform_app.utc_now()
         with platform_app.db() as conn:
             conn.execute(
@@ -983,35 +1314,19 @@ class PlatformWorkflowTest(unittest.TestCase):
                 ("STB-OFFLINE-RECOVERY-0001", vin, vin, now, now, now),
             )
             platform_app.refresh_cached_device_activation(conn, vin)
-        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        proof = {
-            "version": 1,
-            "signatureAlg": "RS256",
-            "deviceCodes": [vin],
-            "activated": True,
-            "activatedAt": 1_700_000_000_000,
-            "issuedAt": 1_700_000_000_000,
-            "expiresAt": 0,
-            "packageName": "com.byd.wjx",
-            "licenseCodeMasked": "STB-TEST-****-TEST",
-            "features": [],
-        }
-        with patch.object(platform_license, "load_offline_license_private_key", return_value=private_key):
-            proof["signature"] = platform_app.sign_offline_license(proof)
-            recovered = self.client.post(
-                "/api/v1/license/status",
-                json={
-                    "deviceCode": vin,
-                    "appVersion": "1.9.2",
-                    "packageName": "com.byd.wjx",
-                    "credentialVersion": 1,
-                    "deviceProof": proof,
-                },
-            )
+        recovered = self.client.post(
+            "/api/v1/license/status",
+            json={
+                "deviceCode": vin,
+                "appVersion": "2.1.20",
+                "packageName": "com.byd.wjx",
+            },
+        )
 
         self.assertEqual(200, recovered.status_code)
-        self.assertTrue(recovered.json["deviceToken"])
-        self.assertNotEqual(original_token, recovered.json["deviceToken"])
+        self.assertTrue(recovered.json["activated"])
+        self.assertNotIn("deviceToken", recovered.json)
+        self.assertNotIn("offlineLicense", recovered.json)
 
 
 
@@ -1022,7 +1337,19 @@ class PlatformWorkflowTest(unittest.TestCase):
             "LC0FD4C42S7184346",
             "LC0FD4C42S7184347",
         )
-        for vin in vins:
+        self.register_device(
+            vins[0],
+            {
+                "displayName": "宋 PLUS DM-i",
+                "vinYear": 2025,
+                "modelVariant": "SA3HEV",
+                "carSeries": "SONG_PLUS",
+                "vehicleType": "PHEV",
+                "controllerVersion": "57.1.3.2501010.1",
+                "controllerSeries": 57,
+            },
+        )
+        for vin in vins[1:]:
             self.register_device(vin)
         with platform_app.db() as conn:
             now = platform_app.utc_now()
@@ -1063,56 +1390,29 @@ class PlatformWorkflowTest(unittest.TestCase):
         self.assertIn("已到期".encode(), activated.data)
         self.assertIn(vins[0].encode(), detail.data)
         self.assertIn("最近诊断日志".encode(), detail.data)
-        self.assertNotIn("销售款型".encode(), detail.data)
-        self.assertNotIn("车型配置".encode(), detail.data)
+        self.assertIn("车型配置".encode(), detail.data)
+        self.assertIn("2025款 宋 PLUS DM-i".encode(), detail.data)
+        self.assertIn("SA3HEV".encode(), detail.data)
+        self.assertIn("SONG_PLUS".encode(), detail.data)
+        self.assertIn("PHEV".encode(), detail.data)
+        self.assertIn("57.1.3.2501010.1".encode(), detail.data)
 
-    def test_admin_reset_requires_a_trusted_credential_to_issue_a_new_token(self):
+    def test_vehicle_detail_has_no_device_credential_controls(self):
         vin = self.register_device("LC0FD4C42S7184311")
-        old_token = self.device_tokens[vin]
         with platform_app.db() as conn:
             device_id = conn.execute(
                 "SELECT id FROM devices WHERE device_code = ?",
                 (vin,),
             ).fetchone()["id"]
 
-        csrf_token = self.login_and_get_csrf()
-        reset = self.client.post(
-            f"/vehicles/{device_id}/reset-credential",
-            data={"csrf_token": csrf_token},
-            follow_redirects=False,
-        )
+        self.login_and_get_csrf()
+        detail = self.client.get(f"/vehicles/{device_id}")
 
-        self.assertEqual(302, reset.status_code)
-        with platform_app.db() as conn:
-            device = conn.execute(
-                "SELECT * FROM devices WHERE id = ?",
-                (device_id,),
-            ).fetchone()
-            audit = conn.execute(
-                "SELECT message FROM audit_logs WHERE type = 'credential' ORDER BY id DESC LIMIT 1"
-            ).fetchone()
-        self.assertEqual("", device["api_token_hash"])
-        self.assertIn(vin, audit["message"])
-
-        registered = self.client.post(
-            "/api/v1/license/status",
-            json={
-                "deviceCode": vin,
-                "appVersion": "2.1.19",
-                "packageName": "com.byd.wjx",
-                "credentialVersion": 1,
-            },
-        )
-        self.assertEqual(200, registered.status_code)
-        self.assertNotIn("deviceToken", registered.json)
-        with platform_app.db() as conn:
-            self.assertEqual(
-                "",
-                conn.execute(
-                    "SELECT api_token_hash FROM devices WHERE device_code = ?",
-                    (vin,),
-                ).fetchone()["api_token_hash"],
-            )
+        self.assertEqual(200, detail.status_code)
+        self.assertNotIn("设备凭证".encode(), detail.data)
+        self.assertNotIn("重置设备凭证".encode(), detail.data)
+        rules = {rule.rule for rule in platform_app.app.url_map.iter_rules()}
+        self.assertNotIn("/vehicles/<int:device_id>/reset-credential", rules)
 
     def test_disabling_or_deleting_a_license_immediately_removes_activated_status(self):
         vin = self.register_device("LC0FD4C42S7184345")
@@ -1162,15 +1462,14 @@ class PlatformWorkflowTest(unittest.TestCase):
         self.assertFalse(response.json["success"])
         self.assertEqual([], list(platform_app.LOG_DIR.iterdir()))
 
-    def test_diagnostic_log_upload_requires_the_device_credential(self):
+    def test_diagnostic_log_upload_accepts_registered_vin_without_device_credential(self):
         vin = self.register_device()
-        self.device_tokens.pop(vin)
 
         response = self.upload_log(vin)
 
-        self.assertEqual(401, response.status_code)
-        self.assertFalse(response.json["success"])
-        self.assertEqual([], list(platform_app.LOG_DIR.iterdir()))
+        self.assertEqual(200, response.status_code)
+        self.assertTrue(response.json["success"])
+        self.assertEqual(1, len(list(platform_app.LOG_DIR.iterdir())))
 
     def test_diagnostic_log_upload_is_private_downloadable_and_deletable(self):
         vin = self.register_device()
@@ -1209,6 +1508,49 @@ class PlatformWorkflowTest(unittest.TestCase):
                 conn.execute("SELECT id FROM diagnostic_logs WHERE id = ?", (log_id,)).fetchone()
             )
         self.assertEqual([], list(platform_app.LOG_DIR.iterdir()))
+
+    def test_diagnostic_log_hides_server_endpoints_on_upload_view_and_download(self):
+        vin = self.register_device()
+        log_bytes = (
+            b"GET https://wjx.689588.xyz/private failed via 203.0.113.8:443\n"
+            b"wjx.689588.xyz unavailable via 2001:db8::8; "
+            b"controller=57.1.3.2501010.1 time=12:00:00.000\n"
+        )
+
+        upload = self.upload_log(vin, log_bytes)
+        self.assertEqual(200, upload.status_code)
+        log_id = upload.json["logId"]
+        stored = next(platform_app.LOG_DIR.iterdir()).read_bytes()
+        self.assertNotIn(b"689588.xyz", stored)
+        self.assertNotIn(b"203.0.113.8", stored)
+        self.assertNotIn(b"2001:db8::8", stored)
+        self.assertIn(b"57.1.3.2501010.1", stored)
+        self.assertIn(b"12:00:00.000", stored)
+
+        self.login_and_get_csrf()
+        view = self.client.get(f"/diagnostic-logs/{log_id}/view")
+        download = self.client.get(f"/diagnostic-logs/{log_id}/download")
+        for response in (view, download):
+            self.assertNotIn(b"689588.xyz", response.data)
+            self.assertNotIn(b"203.0.113.8", response.data)
+            self.assertNotIn(b"2001:db8::8", response.data)
+            self.assertIn(b"[server endpoint hidden]", response.data)
+            self.assertIn(b"57.1.3.2501010.1", response.data)
+            self.assertIn(b"12:00:00.000", response.data)
+
+    def test_diagnostic_log_view_scrubs_historical_files(self):
+        vin = self.register_device()
+        upload = self.upload_log(vin)
+        log_id = upload.json["logId"]
+        path = next(platform_app.LOG_DIR.iterdir())
+        path.write_bytes(b"legacy https://wjx.689588.xyz/path 198.51.100.9\n")
+
+        self.login_and_get_csrf()
+        view = self.client.get(f"/diagnostic-logs/{log_id}/view")
+
+        self.assertNotIn(b"689588.xyz", view.data)
+        self.assertNotIn(b"198.51.100.9", view.data)
+        self.assertIn(b"[server endpoint hidden]", view.data)
 
     def test_diagnostic_log_accepts_raw_bytes_but_rejects_wrong_extension_and_oversize(self):
         vin = self.register_device()

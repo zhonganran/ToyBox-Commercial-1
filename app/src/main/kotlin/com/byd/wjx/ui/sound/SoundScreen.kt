@@ -1,7 +1,5 @@
 package com.byd.wjx.ui.sound
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,9 +31,6 @@ fun SoundScreen(
     viewModel: SoundViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) viewModel.importSound(uri)
-    }
     val onToggleHailing = rememberRealtimeHailingToggleAction(
         isActive = state.realtimeHailingRunning || state.realtimeHailingBusy,
         onToggle = viewModel::toggleRealtimeHailing,
@@ -118,7 +113,6 @@ fun SoundScreen(
             onDelete = { pendingDelete = it },
             onMove = viewModel::moveSound,
             onRefresh = viewModel::refresh,
-            onImport = { importLauncher.launch(arrayOf("audio/*")) },
         )
     }
 }

@@ -1,5 +1,7 @@
 package com.byd.wjx.ui.settings
 
+import com.byd.wjx.data.system.SettingsPermissionHealthCoordinator
+
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.byd.wjx.activation.ActivationManager
@@ -19,11 +21,6 @@ import com.byd.wjx.data.local.entity.TripEntity
 import com.byd.wjx.data.local.entity.TripPointEntity
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.data.repository.TripRepository
-import com.byd.wjx.data.vehicle.HeadlightController
-import com.byd.wjx.data.vehicle.HeadlightAvailability
-import com.byd.wjx.data.vehicle.HeadlightControlResult
-import com.byd.wjx.data.vehicle.HeadlightControlSnapshot
-import com.byd.wjx.data.vehicle.HeadlightMode
 import com.byd.wjx.service.UpdateChecker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -142,7 +139,6 @@ class SettingsViewModelTest {
         updateChecker: UpdateChecker? = null,
         settingsDao: FakeSettingsDao = FakeSettingsDao(),
         logUploader: SettingsLogUploader = mockk(relaxed = true),
-        headlightController: HeadlightController = mockk(relaxed = true),
         activationManager: ActivationManager = mockk(relaxed = true),
     ): SettingsViewModel {
         val ctx: Context = ApplicationProvider.getApplicationContext()
@@ -169,6 +165,7 @@ class SettingsViewModelTest {
             context = ctx,
             updateChecker = resolvedUpdateChecker,
             backupManager = backupManager,
+            backupDestinationProvider = mockk(relaxed = true),
             logUploader = logUploader,
         )
         val lockSoundConfigSync = mockk<com.byd.wjx.audio.LockSoundConfigSync>(relaxed = true)
@@ -194,14 +191,14 @@ class SettingsViewModelTest {
                 configSync = lockSoundConfigSync,
             ),
             maintenanceCoordinator = maintenanceCoordinator,
+            permissionHealthCoordinator = mockk(relaxed = true),
             serviceQrCoordinator = SettingsServiceQrCoordinator(
                 mockk<ServiceQrRepository>().also { repository ->
                     every { repository.cached() } returns emptyMap()
                     coEvery { repository.refresh() } returns emptyMap()
                 },
             ),
-            vehicleControlCoordinator = SettingsVehicleControlCoordinator(
-                headlightController = headlightController,
+            vehicleProfileCoordinator = SettingsVehicleProfileCoordinator(
                 carProfileDetector = com.byd.wjx.vehicle.CarProfileDetector(
                     propertyReader = { "34" },
                 ),
@@ -217,49 +214,6 @@ class SettingsViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(SettingsRepository.DEFAULT_BATTERY_CAPACITY, vm.uiState.value.energy.batteryCapacity)
-    }
-
-    @Test
-    fun `headlight refresh exposes supported mode and message`() = runTest {
-        val controller = mockk<HeadlightController>()
-        coEvery { controller.refresh() } returns HeadlightControlSnapshot(
-            availability = HeadlightAvailability.SUPPORTED,
-            mode = HeadlightMode.AUTO,
-            message = "当前模式：自动",
-        )
-        val vm = buildViewModel(headlightController = controller)
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        vm.refreshHeadlightControl()
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        assertEquals(HeadlightAvailability.SUPPORTED, vm.uiState.value.vehicleControl.headlightAvailability)
-        assertEquals(HeadlightMode.AUTO, vm.uiState.value.vehicleControl.headlightMode)
-        assertEquals("当前模式：自动", vm.uiState.value.vehicleControl.headlightMessage)
-        assertEquals(false, vm.uiState.value.vehicleControl.headlightLoading)
-        coVerify(exactly = 1) { controller.refresh() }
-    }
-
-    @Test
-    fun `headlight set keeps vehicle readback instead of requested mode`() = runTest {
-        val controller = mockk<HeadlightController>()
-        coEvery { controller.setMode(HeadlightMode.HIGH_BEAM) } returns HeadlightControlResult(
-            success = false,
-            snapshot = HeadlightControlSnapshot(
-                availability = HeadlightAvailability.SUPPORTED,
-                mode = HeadlightMode.AUTO,
-                message = "车辆未切换到远光，当前仍为自动",
-            ),
-        )
-        val vm = buildViewModel(headlightController = controller)
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        vm.setHeadlightMode(HeadlightMode.HIGH_BEAM)
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        assertEquals(HeadlightMode.AUTO, vm.uiState.value.vehicleControl.headlightMode)
-        assertEquals("车辆未切换到远光，当前仍为自动", vm.uiState.value.vehicleControl.headlightMessage)
-        assertEquals(false, vm.uiState.value.vehicleControl.headlightLoading)
     }
 
     @Test
@@ -392,6 +346,7 @@ class SettingsViewModelTest {
             onProgressSlot.captured.invoke("10%")
             delay(10_000)                       // still downloading...
             onProgressSlot.captured.invoke("100%") // must NOT run after the dialog is closed
+            UpdateChecker.InstallOutcome.INSTALLER_STARTED
         }
 
         val vm = buildViewModel(updateChecker = uc)
