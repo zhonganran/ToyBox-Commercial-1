@@ -26,6 +26,8 @@ data class SettingsPermissionHealthItem(
     val detail: String,
     val ready: Boolean,
     val optional: Boolean = false,
+    val specialPermission: FirstLaunchSpecialPermission? = null,
+    val openAppPermissionSettings: Boolean = false,
 )
 
 data class SettingsPermissionHealthSnapshot(
@@ -66,6 +68,7 @@ class SettingsPermissionHealthCoordinator @Inject constructor(
                             "缺少：${runtimeMissing.joinToString("、", transform = ::runtimePermissionLabel)}"
                         },
                         ready = runtimeMissing.isEmpty(),
+                        openAppPermissionSettings = runtimeMissing.isNotEmpty(),
                     ),
                     specialItem(
                         id = "all_files_access",
@@ -116,12 +119,14 @@ class SettingsPermissionHealthCoordinator @Inject constructor(
                         title = "使用情况访问",
                         detail = if (usageStatsReady) "前台应用识别可用" else "ADB自动授权尚未生效",
                         ready = usageStatsReady,
+                        specialPermission = FirstLaunchSpecialPermission.USAGE_STATS,
                     ),
                     SettingsPermissionHealthItem(
                         id = "battery",
                         title = "后台与电池白名单",
                         detail = if (batteryReady) "已加入系统电池优化白名单" else "后台白名单尚未确认",
                         ready = batteryReady,
+                        specialPermission = FirstLaunchSpecialPermission.BATTERY_OPTIMIZATION,
                     ),
                     SettingsPermissionHealthItem(
                         id = "adb",
@@ -195,6 +200,7 @@ class SettingsPermissionHealthCoordinator @Inject constructor(
             detail = if (ready) readyDetail else missingDetail,
             ready = ready,
             optional = optional,
+            specialPermission = permission,
         )
     }
 

@@ -68,6 +68,44 @@ class FirstLaunchPermissionCoordinatorTest {
     }
 
     @Test
+    fun `android 12 legacy storage with runtime grants has broad file access`() {
+        assertTrue(
+            hasBroadExternalStorageAccess(
+                sdkInt = Build.VERSION_CODES.S,
+                targetSdkInt = Build.VERSION_CODES.Q,
+                externalStorageManager = false,
+                legacyExternalStorage = true,
+                readPermissionGranted = true,
+                writePermissionGranted = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `scoped storage requires all files manager grant`() {
+        assertFalse(
+            hasBroadExternalStorageAccess(
+                sdkInt = Build.VERSION_CODES.S,
+                targetSdkInt = Build.VERSION_CODES.R,
+                externalStorageManager = false,
+                legacyExternalStorage = false,
+                readPermissionGranted = true,
+                writePermissionGranted = true,
+            ),
+        )
+        assertTrue(
+            hasBroadExternalStorageAccess(
+                sdkInt = Build.VERSION_CODES.S,
+                targetSdkInt = Build.VERSION_CODES.R,
+                externalStorageManager = true,
+                legacyExternalStorage = false,
+                readPermissionGranted = false,
+                writePermissionGranted = false,
+            ),
+        )
+    }
+
+    @Test
     fun `android 10 includes usage stats and battery optimization special steps`() {
         assertTrue(
             AppSpecialPermissionPolicy.isApplicable(
@@ -218,6 +256,73 @@ class FirstLaunchPermissionCoordinatorTest {
 
         nextLaunch.onRuntimePermissionsResult(mapOf(Manifest.permission.RECORD_AUDIO to false))
         assertTrue(specialRequests.isEmpty())
+    }
+
+    @Test
+    fun `application update rechecks newly missing all files access`() {
+        val granted = AppRuntimePermissionPolicy.initialPermissions(Build.VERSION_CODES.S).toSet() +
+            Manifest.permission.ACCESS_BACKGROUND_LOCATION
+        val firstVersionSpecialRequests = mutableListOf<FirstLaunchSpecialPermission>()
+        val firstVersion = FirstLaunchPermissionCoordinator(
+            context = context,
+            sdkInt = Build.VERSION_CODES.S,
+            appVersionCode = 61,
+            permissionGranted = granted::contains,
+            specialPermissionGranted = { true },
+            launchRuntimePermissions = { error("runtime permissions should be granted") },
+            launchBackgroundLocation = { error("background location should be granted") },
+            launchSpecialPermissionSettings = { firstVersionSpecialRequests += it; true },
+        )
+        firstVersion.start()
+        assertTrue(firstVersionSpecialRequests.isEmpty())
+
+        val updatedVersionSpecialRequests = mutableListOf<FirstLaunchSpecialPermission>()
+        val updatedVersion = FirstLaunchPermissionCoordinator(
+            context = context,
+            sdkInt = Build.VERSION_CODES.S,
+            appVersionCode = 62,
+            permissionGranted = granted::contains,
+            specialPermissionGranted = {
+                it != FirstLaunchSpecialPermission.ALL_FILES_ACCESS
+            },
+            launchRuntimePermissions = { error("runtime permissions should remain granted") },
+            launchBackgroundLocation = { error("background location should remain granted") },
+            launchSpecialPermissionSettings = { updatedVersionSpecialRequests += it; true },
+        )
+
+        updatedVersion.start()
+
+        assertEquals(
+            listOf(FirstLaunchSpecialPermission.ALL_FILES_ACCESS),
+            updatedVersionSpecialRequests,
+        )
+    }
+
+    @Test
+    fun `legacy completed flag cannot skip new special permissions`() {
+        context.getSharedPreferences(FIRST_LAUNCH_PERMISSION_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("completed", true)
+            .commit()
+        val granted = AppRuntimePermissionPolicy.initialPermissions(Build.VERSION_CODES.S).toSet() +
+            Manifest.permission.ACCESS_BACKGROUND_LOCATION
+        val specialRequests = mutableListOf<FirstLaunchSpecialPermission>()
+        val coordinator = FirstLaunchPermissionCoordinator(
+            context = context,
+            sdkInt = Build.VERSION_CODES.S,
+            appVersionCode = 61,
+            permissionGranted = granted::contains,
+            specialPermissionGranted = {
+                it != FirstLaunchSpecialPermission.ALL_FILES_ACCESS
+            },
+            launchRuntimePermissions = { error("runtime permissions should be granted") },
+            launchBackgroundLocation = { error("background location should be granted") },
+            launchSpecialPermissionSettings = { specialRequests += it; true },
+        )
+
+        coordinator.start()
+
+        assertEquals(listOf(FirstLaunchSpecialPermission.ALL_FILES_ACCESS), specialRequests)
     }
 
     @Test

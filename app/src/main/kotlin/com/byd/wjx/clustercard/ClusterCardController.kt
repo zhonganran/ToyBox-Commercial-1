@@ -66,7 +66,7 @@ class ClusterCardController @Inject constructor(
         val oldX = lp.x
         val oldY = lp.y
         positionByPercent(lp, config)
-        view.bind(metrics, baseData, telemetryData, config.scale)
+        view.bind(metrics, baseData, telemetryData, config)
         if (changed || lp.x != oldX || lp.y != oldY) {
             runCatching { window.windowManager?.updateViewLayout(view, lp) }
                 .onFailure {
@@ -166,7 +166,9 @@ class ClusterCardController @Inject constructor(
 
     private fun windowHeight(config: ClusterCardConfig, context: Context?): Int {
         val density = context?.resources?.displayMetrics?.density ?: appContext.resources.displayMetrics.density
-        return (ClusterCardLayout.heightDp(config) * density).roundToInt().coerceIn(64, clusterHeight)
+        val minimumHeight = (MINIMUM_WINDOW_HEIGHT_DP * density).roundToInt().coerceAtLeast(1)
+        return (ClusterCardLayout.heightDp(config) * density).roundToInt()
+            .coerceIn(minimumHeight.coerceAtMost(clusterHeight), clusterHeight)
     }
 
     private fun resolveClusterDisplay(): Display? {
@@ -217,6 +219,7 @@ class ClusterCardController @Inject constructor(
         const val TAG = "ClusterCard"
         const val CLUSTER_DISPLAY_NAME = "XDJAScreenProjection"
         const val DEFAULT_CLUSTER_DISPLAY_ID = 2
+        const val MINIMUM_WINDOW_HEIGHT_DP = 28f
         const val MISSING_DISPLAY_LOG_INTERVAL_MS = 30_000L
         const val CLUSTER_FLAGS =
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or

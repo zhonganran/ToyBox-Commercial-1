@@ -1,5 +1,7 @@
 package com.byd.wjx.ui.map
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -19,6 +21,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -38,6 +41,12 @@ fun MapScreen(
     val currentLocation = rememberCurrentLocation()
     var fitRequest by remember { mutableIntStateOf(0) }
     var locationRequest by remember { mutableIntStateOf(0) }
+    var dashcamPlaybackTarget by remember { mutableStateOf<DashcamPlaybackTarget?>(null) }
+    val dashcamFolderLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+        uri?.let(viewModel::selectDashcamFolder)
+    }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val wide = maxWidth >= 880.dp
@@ -61,11 +70,23 @@ fun MapScreen(
                         locationRequest = locationRequest,
                         onFitRoutes = { fitRequest++ },
                         onLocate = { locationRequest++ },
+                        onOpenDashcamAtTime = { dashcamPlaybackTarget = it },
                         modifier = Modifier.weight(0.82f).fillMaxHeight(),
                     )
-                    TripRecordsPanel(
+                    TripRecordsOrVideoPanel(
                         state = state,
+                        playbackTarget = dashcamPlaybackTarget,
                         onSelectTrip = viewModel::selectTrip,
+                        onSelectDashcamFolder = { dashcamFolderLauncher.launch(null) },
+                        onRefreshDashcamVideos = viewModel::refreshDashcamVideos,
+                        onClearDashcamFolder = {
+                            dashcamPlaybackTarget = null
+                            viewModel.clearDashcamFolder()
+                        },
+                        onOpenDashcamVideos = { tripId ->
+                            dashcamPlaybackTarget = DashcamPlaybackTarget(tripId = tripId)
+                        },
+                        onDismissVideo = { dashcamPlaybackTarget = null },
                         modifier = Modifier.weight(1.18f).fillMaxHeight(),
                     )
                 }
@@ -81,16 +102,68 @@ fun MapScreen(
                         locationRequest = locationRequest,
                         onFitRoutes = { fitRequest++ },
                         onLocate = { locationRequest++ },
+                        onOpenDashcamAtTime = { dashcamPlaybackTarget = it },
                         modifier = Modifier.fillMaxWidth().height(280.dp),
                     )
-                    TripRecordsPanel(
+                    TripRecordsOrVideoPanel(
                         state = state,
+                        playbackTarget = dashcamPlaybackTarget,
                         onSelectTrip = viewModel::selectTrip,
+                        onSelectDashcamFolder = { dashcamFolderLauncher.launch(null) },
+                        onRefreshDashcamVideos = viewModel::refreshDashcamVideos,
+                        onClearDashcamFolder = {
+                            dashcamPlaybackTarget = null
+                            viewModel.clearDashcamFolder()
+                        },
+                        onOpenDashcamVideos = { tripId ->
+                            dashcamPlaybackTarget = DashcamPlaybackTarget(tripId = tripId)
+                        },
+                        onDismissVideo = { dashcamPlaybackTarget = null },
                         modifier = Modifier.fillMaxWidth().weight(1f),
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TripRecordsOrVideoPanel(
+    state: MapUiState,
+    playbackTarget: DashcamPlaybackTarget?,
+    onSelectTrip: (Long?) -> Unit,
+    onSelectDashcamFolder: () -> Unit,
+    onRefreshDashcamVideos: () -> Unit,
+    onClearDashcamFolder: () -> Unit,
+    onOpenDashcamVideos: (Long) -> Unit,
+    onDismissVideo: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val trip = playbackTarget?.let { target ->
+        state.trips.firstOrNull { it.id == target.tripId }
+    }
+    val clips = playbackTarget?.let { target ->
+        state.dashcamVideosByTrip[target.tripId].orEmpty()
+    }.orEmpty()
+    if (playbackTarget != null && trip != null && clips.isNotEmpty()) {
+        DashcamVideoPanel(
+            trip = trip,
+            clips = clips,
+            initialClipUri = playbackTarget.clipUri,
+            initialPositionMs = playbackTarget.positionMs,
+            onDismiss = onDismissVideo,
+            modifier = modifier,
+        )
+    } else {
+        TripRecordsPanel(
+            state = state,
+            onSelectTrip = onSelectTrip,
+            onSelectDashcamFolder = onSelectDashcamFolder,
+            onRefreshDashcamVideos = onRefreshDashcamVideos,
+            onClearDashcamFolder = onClearDashcamFolder,
+            onOpenDashcamVideos = onOpenDashcamVideos,
+            modifier = modifier,
+        )
     }
 }
 

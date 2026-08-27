@@ -46,6 +46,16 @@ class ClusterCardRepository @Inject constructor(
 
     fun setYPct(slot: ClusterCardSlot, value: Float) = update(slot) { copy(yPct = value) }
 
+    fun setFontFamily(slot: ClusterCardSlot, value: ClusterCardFont) = update(slot) { copy(fontFamily = value) }
+
+    fun setTextColor(slot: ClusterCardSlot, value: ClusterCardTextColor) = update(slot) { copy(textColor = value) }
+
+    fun setFontScale(slot: ClusterCardSlot, value: Float) = update(slot) { copy(fontScale = value) }
+
+    fun setHeightScale(slot: ClusterCardSlot, value: Float) = update(slot) {
+        copy(heightScale = value)
+    }
+
     fun resetPosition(slot: ClusterCardSlot) = update(slot) {
         copy(xPct = slot.defaultXPct, yPct = slot.defaultYPct)
     }
@@ -78,6 +88,14 @@ class ClusterCardRepository @Inject constructor(
             widthScale = prefs.getFloat(key(KEY_WIDTH_SCALE, slot), 1f),
             xPct = prefs.getFloat(key(KEY_X_PCT, slot), slot.defaultXPct),
             yPct = prefs.getFloat(key(KEY_Y_PCT, slot), slot.defaultYPct),
+            fontFamily = ClusterCardFont.fromStoredValue(
+                prefs.getString(key(KEY_FONT_FAMILY, slot), null),
+            ),
+            textColor = ClusterCardTextColor.fromStoredValue(
+                prefs.getString(key(KEY_TEXT_COLOR, slot), null),
+            ),
+            fontScale = prefs.getFloat(key(KEY_FONT_SCALE, slot), 1f),
+            heightScale = prefs.getFloat(key(KEY_HEIGHT_SCALE, slot), 1f),
         ),
     )
 
@@ -98,6 +116,10 @@ class ClusterCardRepository @Inject constructor(
             .putFloat(key(KEY_WIDTH_SCALE, slot), value.widthScale)
             .putFloat(key(KEY_X_PCT, slot), value.xPct)
             .putFloat(key(KEY_Y_PCT, slot), value.yPct)
+            .putString(key(KEY_FONT_FAMILY, slot), value.fontFamily.name)
+            .putString(key(KEY_TEXT_COLOR, slot), value.textColor.name)
+            .putFloat(key(KEY_FONT_SCALE, slot), value.fontScale)
+            .putFloat(key(KEY_HEIGHT_SCALE, slot), value.heightScale)
             .apply()
     }
 
@@ -114,5 +136,9 @@ class ClusterCardRepository @Inject constructor(
         private const val KEY_WIDTH_SCALE = "width_scale"
         private const val KEY_X_PCT = "x_pct"
         private const val KEY_Y_PCT = "y_pct"
+        private const val KEY_FONT_FAMILY = "font_family"
+        private const val KEY_TEXT_COLOR = "text_color"
+        private const val KEY_FONT_SCALE = "font_scale"
+        private const val KEY_HEIGHT_SCALE = "height_scale"
     }
 }

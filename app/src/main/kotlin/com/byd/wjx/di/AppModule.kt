@@ -23,6 +23,7 @@ import com.byd.wjx.domain.calculator.RangeCalculator
 import com.byd.wjx.domain.calculator.SocInterpolator
 import com.byd.wjx.domain.calculator.SocInterpolatorPrefs
 import com.byd.wjx.domain.calculator.SocInterpolatorPrefsImpl
+import com.byd.wjx.network.AppDnsFactory
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -80,8 +81,9 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideOkHttpClient(): OkHttpClient {
+    fun provideOkHttpClient(@ApplicationContext context: Context): OkHttpClient {
         return OkHttpClient.Builder()
+            .dns(AppDnsFactory.create(context))
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .writeTimeout(15, TimeUnit.SECONDS)

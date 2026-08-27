@@ -1,11 +1,7 @@
 package com.byd.wjx
 
-import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
-import android.provider.Settings
 import android.widget.Toast
-import android.annotation.SuppressLint
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -144,52 +140,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    @SuppressLint("InlinedApi", "BatteryLife")
     private fun openSpecialPermissionSettings(permission: FirstLaunchSpecialPermission): Boolean =
-        runCatching {
-            val intent = when (permission) {
-                FirstLaunchSpecialPermission.ALL_FILES_ACCESS -> Intent(
-                    Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                    Uri.parse("package:$packageName"),
-                )
-                FirstLaunchSpecialPermission.LOCATION_SERVICES ->
-                    Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
-                FirstLaunchSpecialPermission.BLUETOOTH ->
-                    Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
-                FirstLaunchSpecialPermission.OVERLAY -> Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName"),
-                )
-                FirstLaunchSpecialPermission.NOTIFICATION_LISTENER ->
-                    Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                FirstLaunchSpecialPermission.ACCESSIBILITY ->
-                    Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                FirstLaunchSpecialPermission.USAGE_STATS ->
-                    Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-                FirstLaunchSpecialPermission.BATTERY_OPTIMIZATION -> Intent(
-                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                    Uri.parse("package:$packageName"),
-                )
-            }
-            startActivity(intent)
-            true
-        }.onFailure { error ->
-            WjxFileLogger.w(TAG, "Unable to open ${permission.name} settings: ${error.message}", error)
-        }.getOrElse {
-            if (permission == FirstLaunchSpecialPermission.ALL_FILES_ACCESS) {
-                runCatching {
-                    startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
-                    true
-                }.onFailure { fallbackError ->
-                    WjxFileLogger.w(
-                        TAG,
-                        "Unable to open all-files fallback settings: ${fallbackError.message}",
-                        fallbackError,
-                    )
-                }.getOrDefault(false)
-            } else {
-                false
-            }
+        openAppSpecialPermissionSettings(this, permission) { error ->
+            WjxFileLogger.w(
+                TAG,
+                "Unable to open ${permission.name} settings: ${error.message}",
+                error,
+            )
         }
 
     private fun configureSystemBars() {

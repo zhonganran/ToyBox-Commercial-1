@@ -6,6 +6,10 @@ import java.util.Locale
 import kotlin.math.abs
 
 const val CLUSTER_CARD_MAX_METRICS = 8
+const val CLUSTER_CARD_MIN_FONT_SCALE = 0.7f
+const val CLUSTER_CARD_MAX_FONT_SCALE = 1.5f
+const val CLUSTER_CARD_MIN_HEIGHT_SCALE = 0.55f
+const val CLUSTER_CARD_MAX_HEIGHT_SCALE = 1.4f
 
 enum class ClusterCardSlot(
     val label: String,
@@ -17,6 +21,47 @@ enum class ClusterCardSlot(
     SECONDARY("仪表卡片2", "_2", 100f, 50f),
 }
 
+enum class ClusterCardFont(
+    val label: String,
+    internal val typefaceName: String?,
+) {
+    SYSTEM("系统默认", null),
+    SANS_SERIF("无衬线", "sans-serif"),
+    SERIF("衬线", "serif"),
+    MONOSPACE("等宽", "monospace"),
+    CONDENSED("紧凑", "sans-serif-condensed"),
+    ;
+
+    companion object {
+        fun fromStoredValue(value: String?): ClusterCardFont =
+            entries.firstOrNull { it.name == value } ?: SYSTEM
+    }
+}
+
+enum class ClusterCardTextColor(
+    val label: String,
+    private val lightArgb: Int,
+    private val darkArgb: Int = lightArgb,
+) {
+    FOLLOW_SYSTEM("跟随系统", 0xFF111111.toInt(), 0xFFFFFFFF.toInt()),
+    WHITE("白色", 0xFFFFFFFF.toInt()),
+    BLACK("黑色", 0xFF111111.toInt()),
+    RED("红色", 0xFFFF5252.toInt()),
+    ORANGE("橙色", 0xFFFFA726.toInt()),
+    YELLOW("黄色", 0xFFFFD740.toInt()),
+    GREEN("绿色", 0xFF4ADE80.toInt()),
+    CYAN("青色", 0xFF35DCD6.toInt()),
+    BLUE("蓝色", 0xFF68B8FF.toInt()),
+    ;
+
+    fun resolveArgb(isNightMode: Boolean): Int = if (isNightMode) darkArgb else lightArgb
+
+    companion object {
+        fun fromStoredValue(value: String?): ClusterCardTextColor =
+            entries.firstOrNull { it.name == value } ?: FOLLOW_SYSTEM
+    }
+}
+
 data class ClusterCardConfig(
     val enabled: Boolean = false,
     val metricIds: List<String> = emptyList(),
@@ -24,6 +69,10 @@ data class ClusterCardConfig(
     val widthScale: Float = 1f,
     val xPct: Float = 50f,
     val yPct: Float = 50f,
+    val fontFamily: ClusterCardFont = ClusterCardFont.SYSTEM,
+    val textColor: ClusterCardTextColor = ClusterCardTextColor.FOLLOW_SYSTEM,
+    val fontScale: Float = 1f,
+    val heightScale: Float = 1f,
 )
 
 internal fun sanitizeClusterCardConfig(raw: ClusterCardConfig): ClusterCardConfig = raw.copy(
@@ -35,6 +84,11 @@ internal fun sanitizeClusterCardConfig(raw: ClusterCardConfig): ClusterCardConfi
     widthScale = raw.widthScale.coerceIn(0.7f, 1.4f),
     xPct = raw.xPct.coerceIn(0f, 100f),
     yPct = raw.yPct.coerceIn(0f, 100f),
+    fontScale = raw.fontScale.coerceIn(CLUSTER_CARD_MIN_FONT_SCALE, CLUSTER_CARD_MAX_FONT_SCALE),
+    heightScale = raw.heightScale.coerceIn(
+        CLUSTER_CARD_MIN_HEIGHT_SCALE,
+        CLUSTER_CARD_MAX_HEIGHT_SCALE,
+    ),
 )
 
 internal object ClusterCardVisibility {
@@ -197,6 +251,15 @@ object ClusterCardLayout {
 
     fun widthDp(config: ClusterCardConfig): Float = 300f * config.scale * config.widthScale
 
-    fun heightDp(config: ClusterCardConfig): Float =
-        (18f + rowCount(config.metricIds.size) * 66f) * config.scale
+    fun heightDp(config: ClusterCardConfig): Float {
+        val effectiveScale = config.scale.coerceAtLeast(MIN_TEXT_LAYOUT_SCALE)
+        val rowFontScale = config.fontScale.coerceIn(
+            CLUSTER_CARD_MIN_FONT_SCALE,
+            CLUSTER_CARD_MAX_FONT_SCALE,
+        )
+        val rowHeight = 66f * rowFontScale * config.heightScale
+        return (18f + rowCount(config.metricIds.size) * rowHeight) * effectiveScale
+    }
+
+    private const val MIN_TEXT_LAYOUT_SCALE = 0.62f
 }

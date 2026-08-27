@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Button
@@ -16,6 +17,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.byd.wjx.FirstLaunchSpecialPermission
 import com.byd.wjx.data.system.SettingsPermissionHealthItem
 import com.byd.wjx.ui.theme.AccentBlue
 import com.byd.wjx.ui.theme.AccentContent
@@ -40,6 +43,8 @@ internal fun SettingsPermissionHealthSection(
     maintenance: SettingsMaintenanceUiState,
     onRefresh: () -> Unit,
     onRepair: () -> Unit,
+    onOpenSpecialPermission: (FirstLaunchSpecialPermission) -> Boolean,
+    onOpenAppPermissionSettings: () -> Boolean,
 ) {
     val snapshot = maintenance.permissionHealth
     SectionHeader(text = "权限与运行环境")
@@ -66,7 +71,13 @@ internal fun SettingsPermissionHealthSection(
                 fontWeight = FontWeight.Bold,
             )
 
-            snapshot.items.forEach { item -> PermissionHealthRow(item) }
+            snapshot.items.forEach { item ->
+                PermissionHealthRow(
+                    item = item,
+                    onOpenSpecialPermission = onOpenSpecialPermission,
+                    onOpenAppPermissionSettings = onOpenAppPermissionSettings,
+                )
+            }
 
             snapshot.message?.let { message ->
                 Text(
@@ -112,7 +123,11 @@ internal fun SettingsPermissionHealthSection(
 }
 
 @Composable
-private fun PermissionHealthRow(item: SettingsPermissionHealthItem) {
+private fun PermissionHealthRow(
+    item: SettingsPermissionHealthItem,
+    onOpenSpecialPermission: (FirstLaunchSpecialPermission) -> Boolean,
+    onOpenAppPermissionSettings: () -> Boolean,
+) {
     val color = when {
         item.ready -> AccentGreen
         item.optional -> AccentOrange
@@ -126,6 +141,22 @@ private fun PermissionHealthRow(item: SettingsPermissionHealthItem) {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(item.title, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             Text(item.detail, color = TextSecondary, fontSize = 11.sp, lineHeight = 15.sp)
+        }
+        if (!item.ready && (item.specialPermission != null || item.openAppPermissionSettings)) {
+            IconButton(
+                onClick = {
+                    item.specialPermission?.let(onOpenSpecialPermission)
+                        ?: onOpenAppPermissionSettings()
+                },
+                modifier = Modifier.size(36.dp),
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Outlined.OpenInNew,
+                    contentDescription = "打开${item.title}授权设置",
+                    tint = color,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
         }
         Text(
             when {

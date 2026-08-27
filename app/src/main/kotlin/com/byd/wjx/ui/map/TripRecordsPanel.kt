@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,7 +17,17 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +43,7 @@ import com.byd.wjx.ui.components.consumptionColor
 import com.byd.wjx.ui.components.formatTime
 import com.byd.wjx.ui.theme.AccentBlue
 import com.byd.wjx.ui.theme.AccentGreen
+import com.byd.wjx.ui.theme.AccentOrange
 import com.byd.wjx.ui.theme.CardBorder
 import com.byd.wjx.ui.theme.CardSurface
 import com.byd.wjx.ui.theme.SceneAmber
@@ -44,6 +56,10 @@ import java.util.Locale
 internal fun TripRecordsPanel(
     state: MapUiState,
     onSelectTrip: (Long?) -> Unit,
+    onSelectDashcamFolder: () -> Unit,
+    onRefreshDashcamVideos: () -> Unit,
+    onClearDashcamFolder: () -> Unit,
+    onOpenDashcamVideos: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Card(
@@ -52,32 +68,112 @@ internal fun TripRecordsPanel(
         colors = CardDefaults.cardColors(containerColor = CardSurface),
         border = BorderStroke(1.dp, CardBorder.copy(alpha = 0.68f)),
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize().padding(14.dp),
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            TripPanelHeader(state, onSelectTrip)
-            TripSummary(state)
-            TripListHeader()
-            if (state.trips.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("所选时间段暂无行程记录", color = TextMuted, fontSize = 13.sp)
+            item(key = "panel_header") {
+                TripPanelHeader(state, onSelectTrip)
+            }
+            item(key = "trip_summary") {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    TripSummary(state)
                 }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(5.dp),
-                ) {
-                    items(state.trips.take(120), key = TripEntity::id) { trip ->
-                        val hasRoute = state.tripRoutes.any { it.trip.id == trip.id }
-                        TripRecordRow(
-                            trip = trip,
-                            hasRoute = hasRoute,
-                            selected = state.selectedTripId == trip.id,
-                            onClick = { if (hasRoute) onSelectTrip(trip.id) },
-                        )
+            }
+            item(key = "dashcam_folder") {
+                DashcamFolderRow(
+                    state = state,
+                    onSelectFolder = onSelectDashcamFolder,
+                    onRefresh = onRefreshDashcamVideos,
+                    onClear = onClearDashcamFolder,
+                )
+            }
+            item(key = "list_header") {
+                TripListHeader()
+            }
+            if (state.trips.isEmpty()) {
+                item(key = "empty") {
+                    Box(
+                        Modifier.fillMaxWidth().height(120.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("所选时间段暂无行程记录", color = TextMuted, fontSize = 13.sp)
                     }
                 }
+            } else {
+                items(state.trips.take(120), key = TripEntity::id) { trip ->
+                    val hasRoute = state.tripRoutes.any { it.trip.id == trip.id }
+                    val videoCount = state.dashcamVideosByTrip[trip.id]?.size ?: 0
+                    TripRecordRow(
+                        trip = trip,
+                        hasRoute = hasRoute,
+                        videoCount = videoCount,
+                        selected = state.selectedTripId == trip.id,
+                        onClick = { if (hasRoute) onSelectTrip(trip.id) },
+                        onOpenVideos = { onOpenDashcamVideos(trip.id) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DashcamFolderRow(
+    state: MapUiState,
+    onSelectFolder: () -> Unit,
+    onRefresh: () -> Unit,
+    onClear: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(CardBorder.copy(alpha = 0.12f))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(Icons.Outlined.VideoLibrary, contentDescription = null, tint = AccentBlue)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                state.dashcamFolderName ?: "尚未添加行车记录仪文件夹",
+                color = TextPrimary,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                when {
+                    state.dashcamScanning -> "正在扫描录像文件"
+                    state.dashcamError != null -> state.dashcamError
+                    state.dashcamFolderName != null -> "已识别 ${state.dashcamVideoCount} 段录像"
+                    else -> "手动选择保存录像的文件夹"
+                },
+                color = if (state.dashcamError != null) AccentOrange else TextSecondary,
+                fontSize = 10.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (state.dashcamFolderName == null) {
+            Button(
+                onClick = onSelectFolder,
+                colors = ButtonDefaults.buttonColors(containerColor = AccentGreen),
+            ) {
+                Icon(Icons.Outlined.FolderOpen, contentDescription = null)
+                Text("添加文件夹")
+            }
+        } else {
+            IconButton(onClick = onSelectFolder, enabled = !state.dashcamScanning) {
+                Icon(Icons.Outlined.FolderOpen, contentDescription = "更换录像文件夹", tint = AccentBlue)
+            }
+            IconButton(onClick = onRefresh, enabled = !state.dashcamScanning) {
+                Icon(Icons.Outlined.Refresh, contentDescription = "重新扫描录像", tint = AccentGreen)
+            }
+            IconButton(onClick = onClear, enabled = !state.dashcamScanning) {
+                Icon(Icons.Outlined.Delete, contentDescription = "清除录像文件夹", tint = AccentOrange)
             }
         }
     }
@@ -198,11 +294,12 @@ private fun TripSummaryMetric(
 @Composable
 private fun TripListHeader() {
     Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 9.dp)) {
-        TripHeaderText("时间 / 时长", 1.35f)
-        TripHeaderText("里程", 0.72f)
-        TripHeaderText("用电", 0.72f)
-        TripHeaderText("用油", 0.68f)
-        TripHeaderText("电费 / 油费", 1.05f)
+        TripHeaderText("时间 / 时长", 1.25f)
+        TripHeaderText("里程", 0.65f)
+        TripHeaderText("用电", 0.65f)
+        TripHeaderText("用油", 0.60f)
+        TripHeaderText("电费 / 油费", 0.92f)
+        TripHeaderText("录像", 0.72f)
     }
 }
 
@@ -218,8 +315,10 @@ private fun androidx.compose.foundation.layout.RowScope.TripHeaderText(
 private fun TripRecordRow(
     trip: TripEntity,
     hasRoute: Boolean,
+    videoCount: Int,
     selected: Boolean,
     onClick: () -> Unit,
+    onOpenVideos: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
@@ -228,7 +327,7 @@ private fun TripRecordRow(
             .padding(horizontal = 9.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1.35f)) {
+        Column(modifier = Modifier.weight(1.25f)) {
             Text(
                 formatTime(trip.startTs),
                 color = TextPrimary,
@@ -242,10 +341,10 @@ private fun TripRecordRow(
                 fontSize = 10.sp,
             )
         }
-        TripValue(trip.distanceKm?.let { "%.1f km".format(Locale.CHINA, it) }, 0.72f)
-        TripValue(trip.kwhConsumed?.let { "%.1f kWh".format(Locale.CHINA, it) }, 0.72f)
-        TripValue(trip.fuelConsumedL?.let { "%.1f L".format(Locale.CHINA, it) }, 0.68f)
-        Column(modifier = Modifier.weight(1.05f)) {
+        TripValue(trip.distanceKm?.let { "%.1f km".format(Locale.CHINA, it) }, 0.65f)
+        TripValue(trip.kwhConsumed?.let { "%.1f kWh".format(Locale.CHINA, it) }, 0.65f)
+        TripValue(trip.fuelConsumedL?.let { "%.1f L".format(Locale.CHINA, it) }, 0.60f)
+        Column(modifier = Modifier.weight(0.92f)) {
             Text(
                 trip.cost?.let { "电 %.2f 元".format(Locale.CHINA, it) } ?: "电 --",
                 color = AccentGreen,
@@ -256,6 +355,22 @@ private fun TripRecordRow(
                 color = SceneAmber,
                 fontSize = 10.sp,
             )
+        }
+        if (videoCount > 0) {
+            TextButton(
+                onClick = onOpenVideos,
+                modifier = Modifier.weight(0.72f),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp),
+            ) {
+                Icon(
+                    Icons.Outlined.VideoLibrary,
+                    contentDescription = null,
+                    tint = AccentBlue,
+                )
+                Text("${videoCount}段", color = AccentBlue, fontSize = 10.sp, maxLines = 1)
+            }
+        } else {
+            TripValue(null, 0.72f)
         }
     }
 }

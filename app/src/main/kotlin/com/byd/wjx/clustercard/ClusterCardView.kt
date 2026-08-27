@@ -1,9 +1,11 @@
 package com.byd.wjx.clustercard
 
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Typeface
 import android.view.View
 import com.byd.wjx.data.remote.DiParsData
 
@@ -14,37 +16,38 @@ internal class ClusterCardView(context: Context) : View(context) {
         strokeWidth = density * 0.6f
     }
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.NORMAL)
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
     }
     private val valuePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
 
     private var metrics: List<ClusterCardMetric> = emptyList()
     private var baseData: DiParsData? = null
     private var telemetryData: DiParsData? = null
     private var cardScale: Float = 0.65f
+    private var fontScale: Float = 1f
+    private var heightScale: Float = 1f
 
     fun bind(
         metrics: List<ClusterCardMetric>,
         baseData: DiParsData?,
         telemetryData: DiParsData?,
-        scale: Float,
+        config: ClusterCardConfig,
     ) {
         this.metrics = metrics
         this.baseData = baseData
         this.telemetryData = telemetryData
-        cardScale = scale
+        cardScale = config.scale
+        fontScale = config.fontScale
+        heightScale = config.heightScale
+        applyFont(config.fontFamily)
+        applyTextColor(config.textColor)
         invalidate()
     }
 
     init {
-        // Instrument cards use a fixed high-contrast palette; system night mode must not alter them.
-        dividerPaint.color = Color.argb(70, 255, 255, 255)
-        labelPaint.color = Color.argb(210, 255, 255, 255)
-        valuePaint.color = Color.WHITE
-        labelPaint.setShadowLayer(density * 1.5f, 0f, density * 0.5f, Color.BLACK)
-        valuePaint.setShadowLayer(density * 2f, 0f, density * 0.7f, Color.BLACK)
+        applyTextColor(ClusterCardTextColor.FOLLOW_SYSTEM)
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -91,16 +94,21 @@ internal class ClusterCardView(context: Context) : View(context) {
     ) {
         val horizontalPadding = density * 10f
         val availableWidth = (right - left - horizontalPadding * 2).coerceAtLeast(density * 30f)
-        labelPaint.textSize = density * 11f * cardScale.coerceAtLeast(0.62f)
-        valuePaint.textSize = density * 18f * cardScale.coerceAtLeast(0.62f)
+        labelPaint.textSize = density * 11f * cardScale.coerceAtLeast(0.62f) * fontScale
+        valuePaint.textSize = density * 18f * cardScale.coerceAtLeast(0.62f) * fontScale
 
         val label = metric.label
         val value = metric.displayValue(baseData, telemetryData)
         fitText(labelPaint, label, availableWidth, density * 8f)
         fitText(valuePaint, value, availableWidth, density * 11f)
 
-        val labelBaseline = top + (bottom - top) * 0.38f - (labelPaint.ascent() + labelPaint.descent()) / 2f
-        val valueBaseline = top + (bottom - top) * 0.70f - (valuePaint.ascent() + valuePaint.descent()) / 2f
+        val labelHeight = labelPaint.descent() - labelPaint.ascent()
+        val valueHeight = valuePaint.descent() - valuePaint.ascent()
+        val lineGap = density * 4f * cardScale.coerceAtLeast(0.62f) * fontScale * heightScale
+        val textBlockHeight = labelHeight + lineGap + valueHeight
+        val textTop = top + ((bottom - top - textBlockHeight) / 2f).coerceAtLeast(0f)
+        val labelBaseline = textTop - labelPaint.ascent()
+        val valueBaseline = textTop + labelHeight + lineGap - valuePaint.ascent()
         canvas.drawText(label, left + horizontalPadding, labelBaseline, labelPaint)
         canvas.drawText(value, left + horizontalPadding, valueBaseline, valuePaint)
     }
@@ -109,5 +117,39 @@ internal class ClusterCardView(context: Context) : View(context) {
         while (paint.textSize > minSize && paint.measureText(text) > maxWidth) {
             paint.textSize -= density * 0.5f
         }
+    }
+
+    private fun applyFont(font: ClusterCardFont) {
+        val baseTypeface = font.typefaceName?.let { Typeface.create(it, Typeface.NORMAL) }
+            ?: Typeface.DEFAULT
+        labelPaint.typeface = Typeface.create(baseTypeface, Typeface.NORMAL)
+        valuePaint.typeface = Typeface.create(baseTypeface, Typeface.BOLD)
+    }
+
+    private fun applyTextColor(textColor: ClusterCardTextColor) {
+        val isNightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
+            Configuration.UI_MODE_NIGHT_YES
+        val color = textColor.resolveArgb(isNightMode)
+        dividerPaint.color = withAlpha(color, 70)
+        labelPaint.color = withAlpha(color, 210)
+        valuePaint.color = color
+
+        val shadowColor = if (isDarkColor(color)) Color.WHITE else Color.BLACK
+        labelPaint.setShadowLayer(density * 1.5f, 0f, density * 0.5f, shadowColor)
+        valuePaint.setShadowLayer(density * 2f, 0f, density * 0.7f, shadowColor)
+    }
+
+    private fun withAlpha(color: Int, alpha: Int): Int = Color.argb(
+        alpha,
+        Color.red(color),
+        Color.green(color),
+        Color.blue(color),
+    )
+
+    private fun isDarkColor(color: Int): Boolean {
+        val brightness = Color.red(color) * 0.299f +
+            Color.green(color) * 0.587f +
+            Color.blue(color) * 0.114f
+        return brightness < 145f
     }
 }

@@ -13,6 +13,10 @@ class ClusterCardModelsTest {
 
         assertFalse(config.enabled)
         assertTrue(config.metricIds.isEmpty())
+        assertEquals(ClusterCardFont.SYSTEM, config.fontFamily)
+        assertEquals(ClusterCardTextColor.FOLLOW_SYSTEM, config.textColor)
+        assertEquals(1f, config.fontScale)
+        assertEquals(1f, config.heightScale)
     }
 
     @Test
@@ -50,6 +54,8 @@ class ClusterCardModelsTest {
                 widthScale = 2f,
                 xPct = -20f,
                 yPct = 140f,
+                fontScale = 3f,
+                heightScale = 0.1f,
             ),
         )
 
@@ -58,6 +64,19 @@ class ClusterCardModelsTest {
         assertEquals(1.4f, result.widthScale)
         assertEquals(0f, result.xPct)
         assertEquals(100f, result.yPct)
+        assertEquals(CLUSTER_CARD_MAX_FONT_SCALE, result.fontScale)
+        assertEquals(CLUSTER_CARD_MIN_HEIGHT_SCALE, result.heightScale)
+    }
+
+    @Test
+    fun `font scale is clamped and invalid stored appearance values use defaults`() {
+        val result = sanitizeClusterCardConfig(ClusterCardConfig(fontScale = 0.1f))
+
+        assertEquals(CLUSTER_CARD_MIN_FONT_SCALE, result.fontScale)
+        assertEquals(ClusterCardFont.SYSTEM, ClusterCardFont.fromStoredValue("missing"))
+        assertEquals(ClusterCardTextColor.FOLLOW_SYSTEM, ClusterCardTextColor.fromStoredValue("missing"))
+        assertEquals(ClusterCardFont.SERIF, ClusterCardFont.fromStoredValue("SERIF"))
+        assertEquals(ClusterCardTextColor.BLUE, ClusterCardTextColor.fromStoredValue("BLUE"))
     }
 
     @Test
@@ -119,5 +138,24 @@ class ClusterCardModelsTest {
         assertEquals(2, ClusterCardLayout.rowCount(3))
         assertEquals(2, ClusterCardLayout.rowCount(4))
         assertEquals(4, ClusterCardLayout.rowCount(8))
+    }
+
+    @Test
+    fun `card height follows font size and independent height setting`() {
+        val base = ClusterCardConfig(
+            metricIds = listOf(ClusterCardMetric.SPEED.id, ClusterCardMetric.SOC.id),
+            scale = 0.45f,
+            fontScale = 1f,
+        )
+        val reducedFont = base.copy(fontScale = CLUSTER_CARD_MIN_FONT_SCALE)
+        val enlarged = base.copy(fontScale = 1.5f)
+        val compact = enlarged.copy(heightScale = CLUSTER_CARD_MIN_HEIGHT_SCALE)
+
+        assertTrue(ClusterCardLayout.heightDp(reducedFont) < ClusterCardLayout.heightDp(base))
+        assertTrue(ClusterCardLayout.heightDp(enlarged) > ClusterCardLayout.heightDp(base))
+        assertTrue(ClusterCardLayout.heightDp(compact) < ClusterCardLayout.heightDp(enlarged))
+        assertEquals(39.80f, ClusterCardLayout.heightDp(reducedFont), 0.01f)
+        assertEquals(72.54f, ClusterCardLayout.heightDp(enlarged), 0.01f)
+        assertEquals(44.92f, ClusterCardLayout.heightDp(compact), 0.01f)
     }
 }

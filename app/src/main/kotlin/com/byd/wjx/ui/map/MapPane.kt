@@ -43,6 +43,7 @@ internal fun MapPane(
     locationRequest: Int,
     onFitRoutes: () -> Unit,
     onLocate: () -> Unit,
+    onOpenDashcamAtTime: (DashcamPlaybackTarget) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Card(
@@ -52,7 +53,13 @@ internal fun MapPane(
         border = BorderStroke(1.dp, CardBorder.copy(alpha = 0.68f)),
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            OsmdroidMapView(state, currentLocation, fitRequest, locationRequest)
+            OsmdroidMapView(
+                state = state,
+                currentLocation = currentLocation,
+                fitRequest = fitRequest,
+                locationRequest = locationRequest,
+                onOpenDashcamAtTime = onOpenDashcamAtTime,
+            )
             when {
                 state.isLoading -> Box(
                     modifier = Modifier

@@ -36,6 +36,7 @@ internal fun OsmdroidMapView(
     currentLocation: Location?,
     fitRequest: Int,
     locationRequest: Int,
+    onOpenDashcamAtTime: (DashcamPlaybackTarget) -> Unit,
 ) {
     val context = LocalContext.current
     val thresholds = LocalConsumptionThresholds.current
@@ -83,6 +84,8 @@ internal fun OsmdroidMapView(
             displayedRoutes.forEach { route ->
                 if (route.points.size < 2) return@forEach
                 val routePoints = decimateTripPoints(route.points, MAX_ROUTE_POINTS)
+                val plottedRoutePoints = routePoints.map { point -> point to point.toMapGeoPoint() }
+                val dashcamClips = state.dashcamVideosByTrip[route.trip.id].orEmpty()
                 val routeColor = route.kwhPer100km?.let {
                     consumptionColor(it, thresholds.good, thresholds.bad)
                 } ?: AccentGreen
@@ -92,11 +95,36 @@ internal fun OsmdroidMapView(
                         outlinePaint.strokeWidth = if (state.selectedTripId == route.trip.id) 9f else 6f
                         outlinePaint.isAntiAlias = true
                         infoWindow = null
-                        setPoints(routePoints.map(TripPointEntity::toMapGeoPoint))
+                        setPoints(plottedRoutePoints.map { it.second })
+                        if (dashcamClips.isNotEmpty()) {
+                            setOnClickListener { _, _, eventPosition ->
+                                plottedRoutePoints.nearestTo(eventPosition)
+                                    ?.first
+                                    ?.let { point ->
+                                        DashcamRouteTimeline.targetAt(route, dashcamClips, point.timestamp)
+                                    }
+                                    ?.let(onOpenDashcamAtTime)
+                                true
+                            }
+                        }
                     },
                 )
             }
             displayedRoutes.forEach { route -> addRouteBoundaries(map, route) }
+            displayedRoutes.forEach { route ->
+                if (state.selectedTripId != route.trip.id) return@forEach
+                val clips = state.dashcamVideosByTrip[route.trip.id].orEmpty()
+                DashcamRouteTimeline.markerPoints(route, clips).forEach { videoPoint ->
+                    map.overlays.add(
+                        dashcamRouteMarker(
+                            mapView = map,
+                            position = videoPoint.routePoint.toMapGeoPoint(),
+                            timestamp = videoPoint.target.timestamp ?: videoPoint.routePoint.timestamp,
+                            onClick = { onOpenDashcamAtTime(videoPoint.target) },
+                        ),
+                    )
+                }
+            }
             currentPoint?.let { point ->
                 map.overlays.add(
                     Marker(map).apply {
@@ -122,6 +150,14 @@ internal fun OsmdroidMapView(
             map.invalidate()
         },
     )
+}
+
+private fun List<Pair<TripPointEntity, GeoPoint>>.nearestTo(
+    target: GeoPoint,
+): Pair<TripPointEntity, GeoPoint>? = minByOrNull { (_, point) ->
+    val latitudeDelta = point.latitude - target.latitude
+    val longitudeDelta = point.longitude - target.longitude
+    latitudeDelta * latitudeDelta + longitudeDelta * longitudeDelta
 }
 
 private fun addRouteBoundaries(map: MapView, route: TripRoute) {

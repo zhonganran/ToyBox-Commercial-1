@@ -1,7 +1,10 @@
 package com.byd.wjx.ui.map
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.byd.wjx.data.dashcam.DashcamFolderRepository
+import com.byd.wjx.data.dashcam.DashcamVideoClip
 import com.byd.wjx.data.local.entity.TripEntity
 import com.byd.wjx.data.local.entity.TripPointEntity
 import com.byd.wjx.data.repository.TripRepository
@@ -36,20 +39,42 @@ data class MapUiState(
     val avgConsumption: Double = 0.0,
     val avgFuelConsumption: Double = 0.0,
     val trips: List<TripEntity> = emptyList(),
-    val selectedTripId: Long? = null
+    val selectedTripId: Long? = null,
+    val dashcamFolderName: String? = null,
+    val dashcamVideoCount: Int = 0,
+    val dashcamVideosByTrip: Map<Long, List<DashcamVideoClip>> = emptyMap(),
+    val dashcamScanning: Boolean = false,
+    val dashcamError: String? = null,
 )
 
 @HiltViewModel
 class MapViewModel @Inject constructor(
     private val tripRepository: TripRepository,
+    private val dashcamFolderRepository: DashcamFolderRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MapUiState())
     val uiState: StateFlow<MapUiState> = _uiState.asStateFlow()
     private var loadJob: Job? = null
+    private var latestDashcamClips: List<DashcamVideoClip> = emptyList()
 
     init {
+        viewModelScope.launch {
+            dashcamFolderRepository.state.collect { library ->
+                latestDashcamClips = library.clips
+                _uiState.update { state ->
+                    state.copy(
+                        dashcamFolderName = library.folderName,
+                        dashcamVideoCount = library.clips.size,
+                        dashcamVideosByTrip = DashcamTripMatcher.match(state.trips, library.clips),
+                        dashcamScanning = library.scanning,
+                        dashcamError = library.error,
+                    )
+                }
+            }
+        }
         loadData()
+        refreshDashcamVideos()
     }
 
     fun setPeriod(period: MapPeriod) {
@@ -59,6 +84,18 @@ class MapViewModel @Inject constructor(
 
     fun selectTrip(tripId: Long?) {
         _uiState.update { it.copy(selectedTripId = tripId) }
+    }
+
+    fun selectDashcamFolder(uri: Uri) {
+        viewModelScope.launch { dashcamFolderRepository.selectFolder(uri) }
+    }
+
+    fun refreshDashcamVideos() {
+        viewModelScope.launch { dashcamFolderRepository.refresh() }
+    }
+
+    fun clearDashcamFolder() {
+        viewModelScope.launch { dashcamFolderRepository.clearFolder() }
     }
 
     private fun loadData() {
@@ -120,6 +157,7 @@ class MapViewModel @Inject constructor(
                         avgConsumption = data.avgConsumption,
                         avgFuelConsumption = data.avgFuelConsumption,
                         selectedTripId = selectedTripId,
+                        dashcamVideosByTrip = DashcamTripMatcher.match(data.trips, latestDashcamClips),
                         isLoading = false
                     )
                 }

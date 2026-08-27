@@ -1,7 +1,6 @@
 package com.byd.wjx
 
 import android.Manifest
-import android.app.AlarmManager
 import android.app.AppOpsManager
 import android.bluetooth.BluetoothManager
 import android.content.ComponentName
@@ -16,6 +15,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.location.LocationManagerCompat
 
 internal const val FIRST_LAUNCH_PERMISSION_PREFS = "first_launch_permissions"
+internal const val FIRST_LAUNCH_PERMISSION_COMPLETED_VERSION = "completed_version"
 
 internal object AppRuntimePermissionPolicy {
     @Suppress("InlinedApi")
@@ -41,7 +41,7 @@ internal object AppRuntimePermissionPolicy {
         sdkInt >= Build.VERSION_CODES.Q && fineLocationGranted
 }
 
-internal enum class FirstLaunchSpecialPermission {
+enum class FirstLaunchSpecialPermission {
     ALL_FILES_ACCESS,
     LOCATION_SERVICES,
     BLUETOOTH,
@@ -62,7 +62,20 @@ internal object AppSpecialPermissionPolicy {
 
     fun isGranted(context: Context, permission: FirstLaunchSpecialPermission): Boolean = when (permission) {
         FirstLaunchSpecialPermission.ALL_FILES_ACCESS ->
-            Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
+            hasBroadExternalStorageAccess(
+                sdkInt = Build.VERSION.SDK_INT,
+                targetSdkInt = context.applicationInfo.targetSdkVersion,
+                externalStorageManager = externalStorageManagerGranted(),
+                legacyExternalStorage = legacyExternalStorageEnabled(),
+                readPermissionGranted = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.READ_EXTERNAL_STORAGE,
+                ) == PackageManager.PERMISSION_GRANTED,
+                writePermissionGranted = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                ) == PackageManager.PERMISSION_GRANTED,
+            )
         FirstLaunchSpecialPermission.LOCATION_SERVICES -> {
             val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
             manager == null || LocationManagerCompat.isLocationEnabled(manager)
@@ -111,7 +124,34 @@ internal object AppSpecialPermissionPolicy {
         ComponentName("com.byd.wjx", "com.byd.wjx.service.KeepAliveAccessibilityService"),
     )
     private const val ENABLED_NOTIFICATION_LISTENERS = "enabled_notification_listeners"
+
+    private fun externalStorageManagerGranted(): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            runCatching { Environment.isExternalStorageManager() }.getOrDefault(false)
+        } else {
+            false
+        }
+
+    private fun legacyExternalStorageEnabled(): Boolean =
+        runCatching { Environment.isExternalStorageLegacy() }.getOrDefault(false)
 }
+
+internal fun hasBroadExternalStorageAccess(
+    sdkInt: Int,
+    targetSdkInt: Int,
+    externalStorageManager: Boolean,
+    legacyExternalStorage: Boolean,
+    readPermissionGranted: Boolean,
+    writePermissionGranted: Boolean,
+): Boolean =
+    sdkInt < Build.VERSION_CODES.R ||
+        externalStorageManager ||
+        (
+            targetSdkInt <= Build.VERSION_CODES.Q &&
+                legacyExternalStorage &&
+                readPermissionGranted &&
+                writePermissionGranted
+            )
 
 internal class FirstLaunchPermissionCoordinator(
     private val context: Context,
@@ -119,6 +159,7 @@ internal class FirstLaunchPermissionCoordinator(
     private val launchBackgroundLocation: (String) -> Unit,
     private val launchSpecialPermissionSettings: (FirstLaunchSpecialPermission) -> Boolean,
     private val sdkInt: Int = Build.VERSION.SDK_INT,
+    private val appVersionCode: Int = BuildConfig.VERSION_CODE,
     private val permissionGranted: (String) -> Boolean = { permission ->
         ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
     },
@@ -186,18 +227,30 @@ internal class FirstLaunchPermissionCoordinator(
     }
 
     private fun continueAfterRuntimePermissions() {
-        if (preferences.getBoolean(KEY_COMPLETED, false)) {
-            log("permission health check completed")
+        val completedVersion = preferences.getInt(
+            FIRST_LAUNCH_PERMISSION_COMPLETED_VERSION,
+            VERSION_NOT_COMPLETED,
+        )
+        val missingSpecialPermissions = applicableSpecialPermissions()
+            .filterNot(specialPermissionGranted)
+        if (completedVersion == appVersionCode) {
+            log(
+                "permission health check completed version=$appVersionCode " +
+                    "missingSpecial=${missingSpecialPermissions.toLogValue()}",
+            )
         } else {
+            log(
+                "permission flow required completedVersion=$completedVersion " +
+                    "currentVersion=$appVersionCode " +
+                    "missingSpecial=${missingSpecialPermissions.toLogValue()}",
+            )
             requestNextSpecialPermission()
         }
     }
 
     private fun requestNextSpecialPermission() {
-        val next = FirstLaunchSpecialPermission.entries.firstOrNull { permission ->
-            AppSpecialPermissionPolicy.isApplicable(permission, sdkInt) &&
-                permission !in attemptedSpecialPermissions &&
-                !specialPermissionGranted(permission)
+        val next = applicableSpecialPermissions().firstOrNull { permission ->
+            permission !in attemptedSpecialPermissions && !specialPermissionGranted(permission)
         }
         if (next == null) {
             markCompleted()
@@ -217,12 +270,29 @@ internal class FirstLaunchPermissionCoordinator(
     }
 
     private fun markCompleted() {
-        preferences.edit().putBoolean(KEY_COMPLETED, true).apply()
-        log("first-launch permission flow completed")
+        val missingSpecialPermissions = applicableSpecialPermissions()
+            .filterNot(specialPermissionGranted)
+        preferences.edit()
+            .putBoolean(KEY_COMPLETED, true)
+            .putInt(FIRST_LAUNCH_PERMISSION_COMPLETED_VERSION, appVersionCode)
+            .apply()
+        log(
+            "first-launch permission flow completed version=$appVersionCode " +
+                "missingSpecial=${missingSpecialPermissions.toLogValue()}",
+        )
         onCompleted()
     }
 
+    private fun applicableSpecialPermissions(): List<FirstLaunchSpecialPermission> =
+        FirstLaunchSpecialPermission.entries.filter { permission ->
+            AppSpecialPermissionPolicy.isApplicable(permission, sdkInt)
+        }
+
+    private fun List<FirstLaunchSpecialPermission>.toLogValue(): String =
+        joinToString(",") { it.name.lowercase() }.ifBlank { "none" }
+
     private companion object {
         const val KEY_COMPLETED = "completed"
+        const val VERSION_NOT_COMPLETED = -1
     }
 }

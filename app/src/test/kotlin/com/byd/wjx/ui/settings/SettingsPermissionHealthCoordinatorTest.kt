@@ -36,6 +36,9 @@ class SettingsPermissionHealthCoordinatorTest {
 
         assertTrue(result.items.any { it.id == "adb" && it.ready })
         assertTrue(result.items.any { it.id == "helper" && it.ready })
+        assertTrue(result.items.any { item ->
+            item.id == "runtime" && !item.ready && item.openAppPermissionSettings
+        })
         coVerify(exactly = 1) { adb.grantUsageStatsAppop(context.packageName) }
         coVerify(exactly = 1) { adb.grantMusicNotificationListenerAccess() }
         coVerify(exactly = 1) { helper.grantOverlayPermission() }
