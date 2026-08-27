@@ -31,6 +31,8 @@ class BackupPreferencesRegistryTest {
         listOf(
             "wjx_range_prefs",
             "wjx_seat_channel",
+            "wjx_dashcam_folder",
+            BackupRestoreNoticeStore.PREFS_NAME,
         ).forEach { expected ->
             assertTrue("must remain device-local: $expected", expected in BackupPreferencesRegistry.DEVICE_LOCAL_FILES)
         }

@@ -6,6 +6,8 @@ import android.net.Uri
 import com.byd.wjx.R
 import com.byd.wjx.data.backup.BackupDestinationProvider
 import com.byd.wjx.data.backup.BackupManager
+import com.byd.wjx.data.backup.BackupRestoreException
+import com.byd.wjx.data.backup.BackupRestoreNoticeStore
 import com.byd.wjx.log.WjxFileLogger
 import com.byd.wjx.security.EndpointPrivacy
 import com.byd.wjx.service.BootDiagnosticsStore
@@ -147,12 +149,26 @@ class SettingsMaintenanceCoordinator @Inject constructor(
             onFailure = ::configFailure,
         )
 
-    internal suspend fun restoreConfig(uri: Uri): SettingsMaintenanceResult =
-        runCatching {
+    internal suspend fun restoreConfig(uri: Uri): SettingsMaintenanceResult {
+        return try {
             withContext(Dispatchers.IO) { backupManager.restore(uri) }
+            BackupRestoreNoticeStore.save(
+                appContext,
+                "配置恢复完成，WJX 音效会自动重新扫描；请检查系统权限和行车记录仪文件夹授权。",
+            )
             restartApp()
             SettingsMaintenanceResult(true, "配置恢复完成，正在重启")
-        }.getOrElse(::configFailure)
+        } catch (error: Exception) {
+            if (error is BackupRestoreException && error.restartRequired) {
+                BackupRestoreNoticeStore.save(
+                    appContext,
+                    "配置恢复失败，已自动恢复操作前的数据；请检查系统权限和行车记录仪文件夹授权。",
+                )
+                restartApp()
+            }
+            configFailure(error)
+        }
+    }
 
     private fun configFailure(error: Throwable) = SettingsMaintenanceResult(
         false,

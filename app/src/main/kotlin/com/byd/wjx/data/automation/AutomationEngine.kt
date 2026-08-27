@@ -31,6 +31,7 @@ class AutomationEngine @Inject constructor(
     vehicleStateRepository: VehicleStateRepository,
     private val trackingStateRepository: TrackingStateRepository,
     private val confirmationPresenter: AutomationConfirmationPresenter,
+    private val reverseMirrorController: ReverseMirrorController,
     @ApplicationContext context: Context,
 ) {
     companion object {
@@ -43,6 +44,8 @@ class AutomationEngine @Inject constructor(
         internal const val LOCATION_MAX_AGE_MS = 120_000L
         private const val STALE_LOCATION_LOG_INTERVAL_MS = 60_000L
         private const val MAX_AUTOMATION_RULES = 50
+        private const val REVERSE_GEAR = 2
+        private const val MIRROR_RECOVERY_INTERVAL_MS = 5_000L
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -64,9 +67,12 @@ class AutomationEngine @Inject constructor(
 
     private var lastStaleLocationLogAtMs = 0L
     private var lastStaleLocationTimeMs = Long.MIN_VALUE
+    private var mirrorRecoveryAttempts = 0
+    private var lastMirrorRecoveryAttemptAtMs = Long.MIN_VALUE
     internal var nowProvider: () -> Long = System::currentTimeMillis
 
     suspend fun evaluate(data: DiParsData, tripStartedAt: Long?) {
+        recoverMirrorSnapshotAtStartup(data)
         confirmationNotifications.cleanupExpired()
         evaluateRules(
             data = data,
@@ -74,6 +80,34 @@ class AutomationEngine @Inject constructor(
             boardVehicleEdge = boardVehicleDetector.onSample(data),
             allowIntervalPulse = true,
         )
+    }
+
+    private suspend fun recoverMirrorSnapshotAtStartup(data: DiParsData) {
+        if (!reverseMirrorController.hasPendingRestore()) {
+            mirrorRecoveryAttempts = 0
+            lastMirrorRecoveryAttemptAtMs = Long.MIN_VALUE
+            return
+        }
+        // Keep the snapshot armed while reversing. If the rule still exists, its exit edge will
+        // restore normally; otherwise startup recovery takes over on the first non-R sample.
+        if (data.gear == REVERSE_GEAR) return
+        if (ReverseMirrorController.mirrorRestoreBlockReason(data) != null) return
+        val now = nowProvider()
+        if (mirrorRecoveryAttempts > 0 && now - lastMirrorRecoveryAttemptAtMs < MIRROR_RECOVERY_INTERVAL_MS) {
+            return
+        }
+        lastMirrorRecoveryAttemptAtMs = now
+        mirrorRecoveryAttempts++
+        val result = reverseMirrorController.restore(data)
+        WjxFileLogger.i(
+            TAG,
+            "startup mirror recovery attempt=$mirrorRecoveryAttempts success=${result.success} " +
+                "reason=${result.reason.orEmpty()}",
+        )
+        if (result.success) {
+            mirrorRecoveryAttempts = 0
+            lastMirrorRecoveryAttemptAtMs = Long.MIN_VALUE
+        }
     }
 
     private suspend fun evaluateRules(

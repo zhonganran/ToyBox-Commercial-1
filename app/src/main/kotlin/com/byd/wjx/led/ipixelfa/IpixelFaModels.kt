@@ -2,6 +2,7 @@ package com.byd.wjx.led.ipixelfa
 
 import com.byd.wjx.led.LedLinkageCatalog
 import com.byd.wjx.led.LedLinkageTriggerType
+import com.byd.wjx.led.LedBrightnessSchedule
 
 enum class IpixelFaPreset(
     val presetId: Int,
@@ -134,6 +135,7 @@ data class IpixelFaPreferenceSnapshot(
     val deviceAddress: String = "",
     val deviceName: String = "",
     val brightness: Int = 70,
+    val brightnessSchedule: LedBrightnessSchedule = LedBrightnessSchedule(),
     val rules: List<IpixelFaLinkageRule> = emptyList(),
 )
 

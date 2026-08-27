@@ -31,6 +31,10 @@ interface HelperClient {
      * 1 = physical action, 0 = accepted no-op, <0/null = error or helper unreachable.
      */
     suspend fun writeStatus(dev: Int, fid: Int, value: Int): Int?
+    /** Reads the four absolute physical door-mirror axes through BYDAutoBodyworkDevice. */
+    suspend fun readMirrorPosition(): MirrorPosition? = null
+    /** Applies all four mirror axes through BYD's complete mirror/steering float batch. */
+    suspend fun applyMirrorPosition(position: MirrorPosition): Boolean = false
     suspend fun isAlive(): Boolean
     /** Returns the helper's exact wire-protocol version, or null for an invalid reply. */
     suspend fun protocolVersion(): Int? = null

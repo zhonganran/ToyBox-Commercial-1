@@ -71,7 +71,6 @@ class SettingsViewModel @Inject constructor(
         state = _uiState,
         coordinator = permissionHealthCoordinator,
     )
-
     init {
         energyUi.load()
         vehicleUi.load()

@@ -2,6 +2,7 @@ package com.byd.wjx.led.ipixelfa
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.byd.wjx.led.LedBrightnessSchedule
 import com.byd.wjx.led.LedLinkageTriggerType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -111,5 +112,30 @@ class IpixelFaPreferencesTest {
         assertEquals("FA:00", snapshot.deviceAddress)
         assertEquals("FA LED", snapshot.deviceName)
         assertEquals(35, snapshot.brightness)
+    }
+
+    @Test
+    fun `FA day night brightness schedule persists and clamps values`() {
+        val preferences = IpixelFaPreferences(context)
+        preferences.setBrightnessSchedule(
+            LedBrightnessSchedule(
+                enabled = true,
+                dayStartMinute = -5,
+                nightStartMinute = 2_000,
+                dayBrightness = 150,
+                nightBrightness = -10,
+            ),
+        )
+
+        assertEquals(
+            LedBrightnessSchedule(
+                enabled = true,
+                dayStartMinute = 0,
+                nightStartMinute = 1_439,
+                dayBrightness = 100,
+                nightBrightness = 0,
+            ),
+            IpixelFaPreferences(context).state.value.brightnessSchedule,
+        )
     }
 }

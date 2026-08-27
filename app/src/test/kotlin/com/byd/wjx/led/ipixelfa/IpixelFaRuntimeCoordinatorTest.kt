@@ -2,6 +2,7 @@ package com.byd.wjx.led.ipixelfa
 
 import com.byd.wjx.data.nativestack.ParsReader
 import com.byd.wjx.data.remote.diParsData
+import com.byd.wjx.led.LedBrightnessSchedule
 import com.byd.wjx.led.LedLinkageTriggerType
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -19,6 +20,44 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class IpixelFaRuntimeCoordinatorTest {
+    @Test
+    fun `FA initialization applies scheduled brightness`() = runTest {
+        val preferenceState = MutableStateFlow(
+            IpixelFaPreferenceSnapshot(
+                enabled = true,
+                deviceAddress = "AA:BB:CC:DD:EE:FF",
+                brightness = 63,
+                brightnessSchedule = LedBrightnessSchedule(
+                    enabled = true,
+                    dayStartMinute = 0,
+                    nightStartMinute = 0,
+                    dayBrightness = 37,
+                    nightBrightness = 12,
+                ),
+            ),
+        )
+        val preferences = mockk<IpixelFaPreferences>()
+        every { preferences.state } returns preferenceState
+        val connectionState = MutableStateFlow(IpixelFaConnectionState())
+        val bleClient = mockk<IpixelFaBleClient>(relaxed = true)
+        every { bleClient.connection } returns connectionState
+        coEvery { bleClient.setBrightness(any()) } returns true
+        coEvery { bleClient.playProgramList() } returns true
+        val parsReader = mockk<ParsReader>(relaxed = true)
+        val coordinator = IpixelFaRuntimeCoordinator(preferences, bleClient, parsReader)
+
+        coordinator.start(backgroundScope)
+        runCurrent()
+        connectionState.value = IpixelFaConnectionState(
+            phase = IpixelFaConnectionPhase.READY,
+            address = "AA:BB:CC:DD:EE:FF",
+        )
+        runCurrent()
+
+        coVerify(exactly = 1) { bleClient.setBrightness(37) }
+        coordinator.stop()
+    }
+
     @Test
     fun `FA reconnect initializes brightness without sending an implicit scene`() = runTest {
         val preferenceState = MutableStateFlow(

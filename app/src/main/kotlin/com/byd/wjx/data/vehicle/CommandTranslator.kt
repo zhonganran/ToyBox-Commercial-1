@@ -214,6 +214,9 @@ object CommandTranslator {
         is VehicleCommandSyntax.FanLevel -> listOf(Resolved("ac_wind_level", command.value))
         is VehicleCommandSyntax.SunshadePosition -> listOf(Resolved("sunshade_set_position", command.value))
         is VehicleCommandSyntax.AmbientBrightness -> listOf(Resolved("ambient_light_level", command.value + 1))
+        is VehicleCommandSyntax.HeadlightHeight -> listOf(
+            Resolved("headlight_height_level", ((5 - command.value) * 2) + 1)
+        )
         is VehicleCommandSyntax.Massage -> listOf(
             Resolved("${command.seat.actionPrefix}_massage_lvl${command.value}", command.value),
             Resolved("${command.seat.actionPrefix}_massage_${command.mode.actionSuffix}", command.mode.rawValue),
@@ -229,6 +232,7 @@ object CommandTranslator {
                 "ac_wind_level",
                 "sunshade_set_position",
                 "ambient_light_level",
+                "headlight_height_level",
             )
         )
         for (prefix in listOf("driver", "passenger")) {
@@ -256,6 +260,7 @@ object CommandTranslator {
             "设置温度16", "设置温度30", "副驾温度16", "副驾温度30",
             "风量0档", "风量7档", "遮阳帘位置0", "遮阳帘位置100",
             "氛围灯亮度1档", "氛围灯亮度4档",
+            "前照灯高度0档", "前照灯高度5档",
             "主驾按摩波浪1档", "主驾按摩肩部3档",
             "副驾按摩波浪1档", "副驾按摩肩部3档",
         ).forEach { addAll(resolve(it)) }

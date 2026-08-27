@@ -92,10 +92,6 @@ class ClusterCardSettingsViewModel @Inject constructor(
 
     fun setYPct(slot: ClusterCardSlot, value: Float) = repository.setYPct(slot, value)
 
-    fun setFontFamily(slot: ClusterCardSlot, value: ClusterCardFont) = repository.setFontFamily(slot, value)
-
-    fun setTextColor(slot: ClusterCardSlot, value: ClusterCardTextColor) = repository.setTextColor(slot, value)
-
     fun setFontScale(slot: ClusterCardSlot, value: Float) = repository.setFontScale(slot, value)
 
     fun setHeightScale(slot: ClusterCardSlot, value: Float) = repository.setHeightScale(slot, value)

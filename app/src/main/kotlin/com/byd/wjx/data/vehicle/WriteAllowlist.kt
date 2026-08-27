@@ -74,6 +74,7 @@ class WriteAllowlist(private val map: Map<String, WriteEntry>) {
             1023 to 1276190756,  // co-driver massage mode
             1004 to 1125122118,  // DRL (daytime running lights) on/off
             1004 to 871366669,   // hazard lights on/off
+            1004 to 1125122084,  // unified headlight height level
         )
 
         /** Official Settings feature-catalog readbacks for optional comfort writes. */
@@ -85,6 +86,7 @@ class WriteAllowlist(private val map: Map<String, WriteEntry>) {
             (1000 to 501219394) to 1314914314,  // ventilation-only state
             (1000 to 944767029) to 1116733454,  // steering-wheel heat state
             (1001 to 1330642984) to 1101004816, // sunshade percentage
+            (1004 to 1125122084) to 1254096916, // current headlight height level
             (1023 to 1276190736) to 1335885876, // driver massage intensity
             (1023 to 1276190752) to 1335885872, // driver massage mode
             (1023 to 1276190739) to 1335885884, // passenger massage intensity
@@ -198,6 +200,18 @@ class WriteAllowlist(private val map: Map<String, WriteEntry>) {
          * LIVE_VALIDATED still wins on collision.
          */
         val CANDIDATE_UNVALIDATED: List<WriteEntry> = listOf(
+            // Original Settings APK: UI index 0..5 maps to raw 11,9,7,5,3,1.
+            WriteEntry(
+                "headlight_height_level",
+                1004,
+                1125122084,
+                1254096916,
+                1,
+                11,
+                "lights",
+                false,
+                "byd-settings-apk",
+            ),
             // Seat heat/vent fallback channel. value range 1..6:
             // 1=off, 2=lvl1 ... 6=lvl5.
             WriteEntry("driver_seat_heat_fallback",    1001, 1125122068, null, 1, 6, "seats", false, "validated-v80"),

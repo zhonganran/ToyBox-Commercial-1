@@ -236,6 +236,17 @@ class WriteAllowlistTest {
         assertEquals(2, al.find("drl_off")!!.valueMin)
     }
 
+    @Test fun `headlight height uses official write and readback fids`() {
+        assertTrue((1004 to 1125122084) in WriteAllowlist.BANNED_DEV_FID_EXCEPTIONS)
+        val entry = WriteAllowlist.loadProduction { "{}" }.find("headlight_height_level")
+        assertNotNull(entry)
+        assertEquals(1004, entry!!.dev)
+        assertEquals(1125122084, entry.writeFid)
+        assertEquals(1254096916, entry.readbackFid)
+        assertEquals(1, entry.valueMin)
+        assertEquals(11, entry.valueMax)
+    }
+
     @Test fun `hazard switch is allowed only on its dedicated fid`() {
         assertTrue(1004 to 871366669 in WriteAllowlist.BANNED_DEV_FID_EXCEPTIONS)
 

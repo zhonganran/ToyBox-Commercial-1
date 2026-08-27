@@ -2,11 +2,7 @@ package com.byd.wjx.clustercard
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -14,11 +10,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
@@ -51,7 +45,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -181,28 +174,10 @@ fun ClusterCardSettingsContent(
     SettingsPanel {
         Text("卡片外观", color = TextPrimary, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
         Text(
-            "每张卡片可独立设置字体、颜色、字号、宽高、尺寸和位置",
+            "每张卡片可独立设置字号、宽高、尺寸和位置",
             color = TextSecondary,
             fontSize = 12.sp,
             lineHeight = 17.sp,
-        )
-        Text("字体", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(ClusterCardFont.entries, key = ClusterCardFont::name) { font ->
-                FilterChip(
-                    selected = state.config.fontFamily == font,
-                    onClick = { viewModel.setFontFamily(slot, font) },
-                    label = { Text(font.label) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = AccentGreen.copy(alpha = 0.24f),
-                    ),
-                )
-            }
-        }
-        Text("字体颜色", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-        TextColorPicker(
-            selected = state.config.textColor,
-            onSelect = { viewModel.setTextColor(slot, it) },
         )
         ConfigSlider(
             title = "字体大小",
@@ -260,54 +235,6 @@ fun ClusterCardSettingsContent(
             onDismiss = { showMetricPicker = false },
         )
     }
-}
-
-@Composable
-private fun TextColorPicker(
-    selected: ClusterCardTextColor,
-    onSelect: (ClusterCardTextColor) -> Unit,
-) {
-    val isNightMode = isSystemInDarkTheme()
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        items(ClusterCardTextColor.entries, key = ClusterCardTextColor::name) { choice ->
-            val argb = choice.resolveArgb(isNightMode)
-            val swatchColor = Color(argb)
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(38.dp)
-                        .background(swatchColor, CircleShape)
-                        .border(
-                            width = if (selected == choice) 3.dp else 1.dp,
-                            color = if (selected == choice) AccentGreen else CardBorder,
-                            shape = CircleShape,
-                        )
-                        .clickable { onSelect(choice) },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (selected == choice) {
-                        Icon(
-                            Icons.Outlined.CheckCircle,
-                            contentDescription = "已选择${choice.label}",
-                            tint = contrastingColor(argb),
-                            modifier = Modifier.size(22.dp),
-                        )
-                    }
-                }
-                Text(choice.label, color = TextSecondary, fontSize = 11.sp, maxLines = 1)
-            }
-        }
-    }
-}
-
-private fun contrastingColor(argb: Int): Color {
-    val brightness = android.graphics.Color.red(argb) * 0.299f +
-        android.graphics.Color.green(argb) * 0.587f +
-        android.graphics.Color.blue(argb) * 0.114f
-    return if (brightness < 145f) Color.White else Color.Black
 }
 
 @Composable

@@ -28,6 +28,8 @@ object BackupPreferencesRegistry {
         PreferenceFilePolicy("exterior_hailing", "ExteriorHailingSettings", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("key_shortcuts", "KeyShortcutSettings", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("wjx_seat_channel", "SeatChannelStorePrefs", PreferenceBackupPolicy.DEVICE_LOCAL),
+        PreferenceFilePolicy("wjx_reverse_mirror_state", "ReverseMirrorSnapshotStore", PreferenceBackupPolicy.DEVICE_LOCAL),
+        PreferenceFilePolicy("wjx_dashcam_folder", "DashcamFolderRepository", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy("lyric_display_controls", "LyricDisplayPanelPreferences", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("sound_library", "SoundLibrary", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy(
@@ -59,6 +61,7 @@ object BackupPreferencesRegistry {
         PreferenceFilePolicy("helper_runtime_identity", "HelperInstallIdentityStore", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy("first_launch_permissions", "FirstLaunchPermissionCoordinator", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy("pending_update_install", "PendingUpdateInstallStore", PreferenceBackupPolicy.DEVICE_LOCAL),
+        PreferenceFilePolicy(BackupRestoreNoticeStore.PREFS_NAME, "BackupRestoreNoticeStore", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy("wjx_disclaimer", "DisclaimerPreferences", PreferenceBackupPolicy.DEVICE_LOCAL),
     )
 

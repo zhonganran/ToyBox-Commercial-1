@@ -317,4 +317,48 @@ class HelperClientBinderTest {
         assertNull(client.readBatch(specs))
         assertFalse(resolved)
     }
+
+    @Test
+    fun `mirror position read preserves four float axes`() = runBlocking {
+        val expected = MirrorPosition(21.5f, 44f, 82.25f, 63.5f)
+        val binder = object : FakeIBinder() {
+            override fun transact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+                assertEquals(HelperBinderProtocol.TX_READ_MIRROR_POSITION, code)
+                data.setDataPosition(0)
+                data.enforceInterface(HelperBinderProtocol.DESCRIPTOR)
+                reply!!.writeInt(0)
+                reply.writeFloat(expected.leftHorizontal)
+                reply.writeFloat(expected.leftVertical)
+                reply.writeFloat(expected.rightHorizontal)
+                reply.writeFloat(expected.rightVertical)
+                reply.setDataPosition(0)
+                return true
+            }
+        }
+
+        assertEquals(expected, clientWith(binder).readMirrorPosition())
+    }
+
+    @Test
+    fun `mirror position write uses dedicated float transaction`() = runBlocking {
+        val expected = MirrorPosition(18f, 38.5f, 79f, 41.25f)
+        val binder = object : FakeIBinder() {
+            override fun transact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+                assertEquals(HelperBinderProtocol.TX_APPLY_MIRROR_POSITION, code)
+                data.setDataPosition(0)
+                data.enforceInterface(HelperBinderProtocol.DESCRIPTOR)
+                assertEquals(expected.leftHorizontal, data.readFloat())
+                assertEquals(expected.leftVertical, data.readFloat())
+                assertEquals(expected.rightHorizontal, data.readFloat())
+                assertEquals(expected.rightVertical, data.readFloat())
+                reply!!.writeInt(0)
+                reply.writeInt(0)
+                reply.setDataPosition(0)
+                return true
+            }
+        }
+
+        assertTrue(clientWith(binder).applyMirrorPosition(expected))
+    }
+
 }

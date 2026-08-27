@@ -4,6 +4,7 @@ import com.byd.wjx.data.nativestack.ParsReader
 import com.byd.wjx.data.remote.DiParsData
 import com.byd.wjx.led.LedSignalTier
 import com.byd.wjx.led.LedVehicleSignalAccumulator
+import com.byd.wjx.led.brightnessAt
 import com.byd.wjx.led.runLedSignalLoop
 import com.byd.wjx.log.WjxFileLogger
 import kotlinx.coroutines.CoroutineScope
@@ -38,6 +39,9 @@ class IpixelFaRuntimeCoordinator @Inject constructor(
     @Volatile private var connectionInitialized = false
     private var pendingPreset: IpixelFaPreset? = null
     private var programListResumePending = false
+    private var lastAppliedBrightness: Int? = null
+    private var lastBrightnessEvaluationAtMs = Long.MIN_VALUE
+    private var nextBrightnessRetryAtMs = 0L
     private var runtimeJob: Job? = null
 
     @Synchronized
@@ -129,6 +133,7 @@ class IpixelFaRuntimeCoordinator @Inject constructor(
                             decisionMutex.withLock {
                                 connectionInitialized = false
                                 clearPendingCommands()
+                                resetBrightnessState()
                             }
                         }
                         wasReady = connection.ready
@@ -234,6 +239,7 @@ class IpixelFaRuntimeCoordinator @Inject constructor(
         ruleEngine.reset()
         clearPendingCommands()
         connectionInitialized = false
+        resetBrightnessState()
         signalAccumulator.reset()
         _runtime.value = IpixelFaRuntimeState()
         bleClient.disconnect()
@@ -246,9 +252,20 @@ class IpixelFaRuntimeCoordinator @Inject constructor(
         evaluateAndDispatch(System.currentTimeMillis())
     }
 
-    suspend fun applyBrightness(percent: Int): Boolean {
+    suspend fun applyBrightness(percent: Int): Boolean = decisionMutex.withLock {
         if (!bleClient.connection.value.ready) return false
-        return bleClient.setBrightness(percent)
+        val normalized = percent.coerceIn(0, 100)
+        val sent = bleClient.setBrightness(normalized)
+        if (sent) {
+            lastAppliedBrightness = normalized
+            nextBrightnessRetryAtMs = 0L
+        }
+        sent
+    }
+
+    suspend fun syncBrightness(): Boolean = decisionMutex.withLock {
+        if (!bleClient.connection.value.ready) return false
+        applyDesiredBrightness(System.currentTimeMillis(), force = true)
     }
 
     private suspend fun evaluateAndDispatch(now: Long) = decisionMutex.withLock {
@@ -267,6 +284,7 @@ class IpixelFaRuntimeCoordinator @Inject constructor(
         }
         val current = _runtime.value.currentPreset
         if (!bleClient.connection.value.ready) return@withLock
+        ensureScheduledBrightness(now)
 
         val presetToSend = pendingPreset
         if (presetToSend != null) {
@@ -304,7 +322,12 @@ class IpixelFaRuntimeCoordinator @Inject constructor(
             connectionInitialized = false
             return false
         }
-        val brightnessApplied = bleClient.setBrightness(preferences.state.value.brightness)
+        val desiredBrightness = desiredBrightness(System.currentTimeMillis())
+        val brightnessApplied = bleClient.setBrightness(desiredBrightness)
+        if (brightnessApplied) {
+            lastAppliedBrightness = desiredBrightness
+            nextBrightnessRetryAtMs = 0L
+        }
         val programListApplied = brightnessApplied && bleClient.playProgramList()
         val initialized = programListApplied && bleClient.connection.value.ready
         connectionInitialized = initialized
@@ -360,8 +383,49 @@ class IpixelFaRuntimeCoordinator @Inject constructor(
         ruleEngine.reset()
         clearPendingCommands()
         connectionInitialized = false
+        resetBrightnessState()
         signalAccumulator.reset()
         _runtime.value = IpixelFaRuntimeState()
+    }
+
+    private suspend fun ensureScheduledBrightness(now: Long) {
+        if (!preferences.state.value.brightnessSchedule.enabled) return
+        if (
+            lastBrightnessEvaluationAtMs != Long.MIN_VALUE &&
+            now >= lastBrightnessEvaluationAtMs &&
+            now - lastBrightnessEvaluationAtMs < BRIGHTNESS_EVALUATION_INTERVAL_MS
+        ) {
+            return
+        }
+        lastBrightnessEvaluationAtMs = now
+        applyDesiredBrightness(now, force = false)
+    }
+
+    private suspend fun applyDesiredBrightness(now: Long, force: Boolean): Boolean {
+        val desired = desiredBrightness(now)
+        if (!force && desired == lastAppliedBrightness) return true
+        if (!force && now < nextBrightnessRetryAtMs) return false
+        val sent = bleClient.setBrightness(desired)
+        if (sent) {
+            lastAppliedBrightness = desired
+            nextBrightnessRetryAtMs = 0L
+            WjxFileLogger.i(TAG, "scheduled brightness applied=$desired")
+        } else {
+            nextBrightnessRetryAtMs = now + BRIGHTNESS_RETRY_MS
+            WjxFileLogger.w(TAG, "scheduled brightness failed desired=$desired")
+        }
+        return sent
+    }
+
+    private fun desiredBrightness(now: Long): Int {
+        val prefs = preferences.state.value
+        return prefs.brightnessSchedule.brightnessAt(now, prefs.brightness).coerceIn(0, 100)
+    }
+
+    private fun resetBrightnessState() {
+        lastAppliedBrightness = null
+        lastBrightnessEvaluationAtMs = Long.MIN_VALUE
+        nextBrightnessRetryAtMs = 0L
     }
 
     private fun clearPendingCommands() {
@@ -380,6 +444,8 @@ class IpixelFaRuntimeCoordinator @Inject constructor(
         private const val ADAS_INTERVAL_MS = 1_000L
         private const val ENGINE_TICK_MS = 100L
         private const val INITIALIZATION_RETRY_MS = 2_000L
+        private const val BRIGHTNESS_RETRY_MS = 2_000L
+        private const val BRIGHTNESS_EVALUATION_INTERVAL_MS = 1_000L
     }
 
     private data class ActiveFaBinding(

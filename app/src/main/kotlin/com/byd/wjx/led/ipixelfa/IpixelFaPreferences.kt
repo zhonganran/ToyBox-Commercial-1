@@ -1,6 +1,7 @@
 package com.byd.wjx.led.ipixelfa
 
 import android.content.Context
+import com.byd.wjx.led.LedBrightnessSchedule
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,6 +33,15 @@ class IpixelFaPreferences @Inject constructor(
 
     fun setBrightness(percent: Int) = update {
         putInt(KEY_BRIGHTNESS, percent.coerceIn(0, 100))
+    }
+
+    fun setBrightnessSchedule(schedule: LedBrightnessSchedule) = update {
+        val normalized = schedule.normalized(MIN_BRIGHTNESS, MAX_BRIGHTNESS)
+        putBoolean(KEY_BRIGHTNESS_SCHEDULE_ENABLED, normalized.enabled)
+        putInt(KEY_DAY_START_MINUTE, normalized.dayStartMinute)
+        putInt(KEY_NIGHT_START_MINUTE, normalized.nightStartMinute)
+        putInt(KEY_DAY_BRIGHTNESS, normalized.dayBrightness)
+        putInt(KEY_NIGHT_BRIGHTNESS, normalized.nightBrightness)
     }
 
     @Synchronized
@@ -88,7 +98,20 @@ class IpixelFaPreferences @Inject constructor(
         enabled = prefs.getBoolean(KEY_ENABLED, false),
         deviceAddress = prefs.getString(KEY_DEVICE_ADDRESS, "").orEmpty(),
         deviceName = prefs.getString(KEY_DEVICE_NAME, "").orEmpty(),
-        brightness = prefs.getInt(KEY_BRIGHTNESS, 70).coerceIn(0, 100),
+        brightness = prefs.getInt(KEY_BRIGHTNESS, 70).coerceIn(MIN_BRIGHTNESS, MAX_BRIGHTNESS),
+        brightnessSchedule = LedBrightnessSchedule(
+            enabled = prefs.getBoolean(KEY_BRIGHTNESS_SCHEDULE_ENABLED, false),
+            dayStartMinute = prefs.getInt(
+                KEY_DAY_START_MINUTE,
+                LedBrightnessSchedule.DEFAULT_DAY_START_MINUTE,
+            ),
+            nightStartMinute = prefs.getInt(
+                KEY_NIGHT_START_MINUTE,
+                LedBrightnessSchedule.DEFAULT_NIGHT_START_MINUTE,
+            ),
+            dayBrightness = prefs.getInt(KEY_DAY_BRIGHTNESS, 70),
+            nightBrightness = prefs.getInt(KEY_NIGHT_BRIGHTNESS, 20),
+        ).normalized(MIN_BRIGHTNESS, MAX_BRIGHTNESS),
         rules = prefs.getString(KEY_RULES, null).let { raw ->
             when {
                 raw == null -> IpixelFaLinkageRuleFactory.defaultRules()
@@ -105,5 +128,12 @@ class IpixelFaPreferences @Inject constructor(
         private const val KEY_DEVICE_ADDRESS = "device_address"
         private const val KEY_DEVICE_NAME = "device_name"
         private const val KEY_BRIGHTNESS = "brightness"
+        private const val KEY_BRIGHTNESS_SCHEDULE_ENABLED = "brightness_schedule_enabled"
+        private const val KEY_DAY_START_MINUTE = "day_start_minute"
+        private const val KEY_NIGHT_START_MINUTE = "night_start_minute"
+        private const val KEY_DAY_BRIGHTNESS = "day_brightness"
+        private const val KEY_NIGHT_BRIGHTNESS = "night_brightness"
+        private const val MIN_BRIGHTNESS = 0
+        private const val MAX_BRIGHTNESS = 100
     }
 }

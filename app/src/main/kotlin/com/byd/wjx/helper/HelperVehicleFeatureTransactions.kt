@@ -2,6 +2,7 @@ package com.byd.wjx.helper
 
 import android.os.Parcel
 import com.byd.wjx.audio.BydLockSoundPlaybackState
+import com.byd.wjx.data.vehicle.MirrorPosition
 
 internal fun HelperDaemonRuntime.handleVehicleFeatureTransaction(
     code: Int,
@@ -40,6 +41,44 @@ internal fun HelperDaemonRuntime.handleVehicleFeatureTransaction(
         true
     }.getOrElse {
         helperLog("ExteriorAudio", "lock sound playback state failed: ${throwableSummary(it)}")
+        reply?.writeInt(-1)
+        reply?.writeInt(0)
+        true
+    }
+
+    HelperBinderProtocol.TX_READ_MIRROR_POSITION -> runCatching {
+        val position = withAutoserviceTransactionLock {
+            HelperMirrorPlatform.readPosition(systemContext)
+        }
+        reply?.writeInt(if (position != null) 0 else -2)
+        reply?.writeFloat(position?.leftHorizontal ?: 0f)
+        reply?.writeFloat(position?.leftVertical ?: 0f)
+        reply?.writeFloat(position?.rightHorizontal ?: 0f)
+        reply?.writeFloat(position?.rightVertical ?: 0f)
+        true
+    }.getOrElse {
+        helperLog("MirrorPosition", "read failed: ${throwableSummary(it)}")
+        reply?.writeInt(-1)
+        repeat(4) { reply?.writeFloat(0f) }
+        true
+    }
+
+    HelperBinderProtocol.TX_APPLY_MIRROR_POSITION -> runCatching {
+        val position = MirrorPosition(
+            leftHorizontal = data.readFloat(),
+            leftVertical = data.readFloat(),
+            rightHorizontal = data.readFloat(),
+            rightVertical = data.readFloat(),
+        )
+        require(position.isSane()) { "invalid mirror position" }
+        val applied = withAutoserviceTransactionLock {
+            HelperMirrorPlatform.applyPosition(systemContext, position)
+        }
+        reply?.writeInt(if (applied) 0 else -2)
+        reply?.writeInt(0)
+        true
+    }.getOrElse {
+        helperLog("MirrorPosition", "apply failed: ${throwableSummary(it)}")
         reply?.writeInt(-1)
         reply?.writeInt(0)
         true

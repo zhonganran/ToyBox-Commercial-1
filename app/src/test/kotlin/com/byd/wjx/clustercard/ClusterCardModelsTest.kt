@@ -13,8 +13,6 @@ class ClusterCardModelsTest {
 
         assertFalse(config.enabled)
         assertTrue(config.metricIds.isEmpty())
-        assertEquals(ClusterCardFont.SYSTEM, config.fontFamily)
-        assertEquals(ClusterCardTextColor.FOLLOW_SYSTEM, config.textColor)
         assertEquals(1f, config.fontScale)
         assertEquals(1f, config.heightScale)
     }
@@ -69,14 +67,10 @@ class ClusterCardModelsTest {
     }
 
     @Test
-    fun `font scale is clamped and invalid stored appearance values use defaults`() {
+    fun `font scale is clamped`() {
         val result = sanitizeClusterCardConfig(ClusterCardConfig(fontScale = 0.1f))
 
         assertEquals(CLUSTER_CARD_MIN_FONT_SCALE, result.fontScale)
-        assertEquals(ClusterCardFont.SYSTEM, ClusterCardFont.fromStoredValue("missing"))
-        assertEquals(ClusterCardTextColor.FOLLOW_SYSTEM, ClusterCardTextColor.fromStoredValue("missing"))
-        assertEquals(ClusterCardFont.SERIF, ClusterCardFont.fromStoredValue("SERIF"))
-        assertEquals(ClusterCardTextColor.BLUE, ClusterCardTextColor.fromStoredValue("BLUE"))
     }
 
     @Test

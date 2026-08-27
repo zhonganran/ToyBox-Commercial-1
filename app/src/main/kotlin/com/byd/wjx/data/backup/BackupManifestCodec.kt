@@ -46,9 +46,14 @@ internal object BackupManifestCodec {
                     "只能恢复由当前版本导出的备份。",
             )
         }
-        val expectedFiles = currentPreferenceFiles.sorted()
-        if (manifest.preferenceFiles != expectedFiles) {
-            throw IllegalStateException("备份中的配置文件清单与当前版本不一致")
+        val backupFiles = manifest.preferenceFiles
+        if (backupFiles != backupFiles.distinct().sorted()) {
+            throw IllegalStateException("备份中的配置文件清单无效")
+        }
+        // Older backups may contain settings for features removed from the current app. Their
+        // payload is ignored by the preference store instead of making the whole backup unusable.
+        check(currentPreferenceFiles.size == currentPreferenceFiles.distinct().size) {
+            "当前版本配置文件清单包含重复项"
         }
     }
 }

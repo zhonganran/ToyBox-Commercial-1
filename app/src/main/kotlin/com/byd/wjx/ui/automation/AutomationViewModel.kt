@@ -78,7 +78,7 @@ class AutomationViewModel @Inject constructor(
                 val result = actionDispatcher.dispatch(
                     action = action,
                     data = null,
-                    owner = "automation:preview",
+                    owner = ActionDispatcher.PREVIEW_OWNER,
                 )
                 if (result.success) result.reason ?: "已执行"
                 else "错误：${result.reason ?: "不可用"}"
@@ -202,6 +202,9 @@ class AutomationViewModel @Inject constructor(
                 }
                 "auto_door" -> {
                     if (a.autoDoorActionOption() == null) return "动作 #$n：未选择自动滑门动作"
+                }
+                "mirror_tilt" -> {
+                    if (a.mirrorTiltRequest() == null) return "动作 #$n：后视镜下翻设置无效"
                 }
             }
         }

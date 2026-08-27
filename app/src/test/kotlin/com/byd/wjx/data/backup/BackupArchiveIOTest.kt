@@ -52,7 +52,7 @@ class BackupArchiveIOTest {
     }
 
     @Test
-    fun `manifest requires the exact sorted current preference inventory`() {
+    fun `manifest accepts an older sorted preference inventory`() {
         val manifest = BackupManifest(
             backupFormatVersion = 1,
             appVersionCode = 2120,
@@ -61,10 +61,22 @@ class BackupArchiveIOTest {
             preferenceFiles = listOf("a", "b"),
         )
 
-        BackupManifestCodec.requireCurrent(manifest, 1, 21, listOf("b", "a"))
+        BackupManifestCodec.requireCurrent(manifest, 1, 21, listOf("a", "b", "new"))
+    }
+
+    @Test
+    fun `manifest rejects an unsorted or duplicate preference inventory`() {
+        val manifest = BackupManifest(
+            backupFormatVersion = 1,
+            appVersionCode = 2120,
+            dbSchemaVersion = 21,
+            createdAt = 1L,
+            preferenceFiles = listOf("b", "a"),
+        )
+
         assertThrows(IllegalStateException::class.java) {
             BackupManifestCodec.requireCurrent(
-                manifest.copy(preferenceFiles = listOf("b", "a")),
+                manifest,
                 1,
                 21,
                 listOf("a", "b"),

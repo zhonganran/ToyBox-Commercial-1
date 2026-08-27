@@ -4,6 +4,7 @@ import com.byd.wjx.data.nativestack.ParsReader
 import com.byd.wjx.data.remote.DiParsData
 import com.byd.wjx.led.LedSignalTier
 import com.byd.wjx.led.LedVehicleSignalAccumulator
+import com.byd.wjx.led.brightnessAt
 import com.byd.wjx.led.runLedSignalLoop
 import com.byd.wjx.log.WjxFileLogger
 import kotlinx.coroutines.CoroutineScope
@@ -38,6 +39,9 @@ class MafuRuntimeCoordinator @Inject constructor(
     @Volatile private var connectionInitialized = false
     private var pendingRemoteKey: MafuRemoteKey? = null
     private var programListResumePending = false
+    private var lastAppliedBrightness: Int? = null
+    private var lastBrightnessEvaluationAtMs = Long.MIN_VALUE
+    private var nextBrightnessRetryAtMs = 0L
     private var runtimeJob: Job? = null
 
     @Synchronized
@@ -129,6 +133,7 @@ class MafuRuntimeCoordinator @Inject constructor(
                             decisionMutex.withLock {
                                 connectionInitialized = false
                                 clearPendingCommands()
+                                resetBrightnessState()
                             }
                         }
                         wasReady = connection.ready
@@ -234,6 +239,7 @@ class MafuRuntimeCoordinator @Inject constructor(
         ruleEngine.reset()
         clearPendingCommands()
         connectionInitialized = false
+        resetBrightnessState()
         signalAccumulator.reset()
         _runtime.value = MafuRuntimeState()
         bleClient.disconnect()
@@ -246,9 +252,20 @@ class MafuRuntimeCoordinator @Inject constructor(
         evaluateAndDispatch(System.currentTimeMillis())
     }
 
-    suspend fun applyBrightness(level: Int): Boolean {
+    suspend fun applyBrightness(level: Int): Boolean = decisionMutex.withLock {
         if (!bleClient.connection.value.ready) return false
-        return bleClient.setBrightness(level)
+        val normalized = level.coerceIn(1, 15)
+        val sent = bleClient.setBrightness(normalized)
+        if (sent) {
+            lastAppliedBrightness = normalized
+            nextBrightnessRetryAtMs = 0L
+        }
+        sent
+    }
+
+    suspend fun syncBrightness(): Boolean = decisionMutex.withLock {
+        if (!bleClient.connection.value.ready) return false
+        applyDesiredBrightness(System.currentTimeMillis(), force = true)
     }
 
     suspend fun setScreenPower(enabled: Boolean): Boolean {
@@ -279,6 +296,7 @@ class MafuRuntimeCoordinator @Inject constructor(
         }
         val current = _runtime.value.currentRemoteKey
         if (!bleClient.connection.value.ready) return@withLock
+        ensureScheduledBrightness(now)
 
         val keyToSend = pendingRemoteKey
         if (keyToSend != null) {
@@ -320,9 +338,12 @@ class MafuRuntimeCoordinator @Inject constructor(
             return false
         }
         val screenPowerApplied = bleClient.setScreenPower(true)
-        val brightnessApplied = screenPowerApplied && bleClient.setBrightness(
-            preferences.state.value.brightness
-        )
+        val desiredBrightness = desiredBrightness(System.currentTimeMillis())
+        val brightnessApplied = screenPowerApplied && bleClient.setBrightness(desiredBrightness)
+        if (brightnessApplied) {
+            lastAppliedBrightness = desiredBrightness
+            nextBrightnessRetryAtMs = 0L
+        }
         val programListApplied = brightnessApplied && bleClient.playProgramList()
         val initialized = programListApplied && bleClient.connection.value.ready
         connectionInitialized = initialized
@@ -381,8 +402,49 @@ class MafuRuntimeCoordinator @Inject constructor(
         ruleEngine.reset()
         clearPendingCommands()
         connectionInitialized = false
+        resetBrightnessState()
         signalAccumulator.reset()
         _runtime.value = MafuRuntimeState()
+    }
+
+    private suspend fun ensureScheduledBrightness(now: Long) {
+        if (!preferences.state.value.brightnessSchedule.enabled) return
+        if (
+            lastBrightnessEvaluationAtMs != Long.MIN_VALUE &&
+            now >= lastBrightnessEvaluationAtMs &&
+            now - lastBrightnessEvaluationAtMs < BRIGHTNESS_EVALUATION_INTERVAL_MS
+        ) {
+            return
+        }
+        lastBrightnessEvaluationAtMs = now
+        applyDesiredBrightness(now, force = false)
+    }
+
+    private suspend fun applyDesiredBrightness(now: Long, force: Boolean): Boolean {
+        val desired = desiredBrightness(now)
+        if (!force && desired == lastAppliedBrightness) return true
+        if (!force && now < nextBrightnessRetryAtMs) return false
+        val sent = bleClient.setBrightness(desired)
+        if (sent) {
+            lastAppliedBrightness = desired
+            nextBrightnessRetryAtMs = 0L
+            WjxFileLogger.i(TAG, "scheduled brightness applied=$desired")
+        } else {
+            nextBrightnessRetryAtMs = now + BRIGHTNESS_RETRY_MS
+            WjxFileLogger.w(TAG, "scheduled brightness failed desired=$desired")
+        }
+        return sent
+    }
+
+    private fun desiredBrightness(now: Long): Int {
+        val prefs = preferences.state.value
+        return prefs.brightnessSchedule.brightnessAt(now, prefs.brightness).coerceIn(1, 15)
+    }
+
+    private fun resetBrightnessState() {
+        lastAppliedBrightness = null
+        lastBrightnessEvaluationAtMs = Long.MIN_VALUE
+        nextBrightnessRetryAtMs = 0L
     }
 
     private fun clearPendingCommands() {
@@ -401,6 +463,8 @@ class MafuRuntimeCoordinator @Inject constructor(
         private const val ADAS_INTERVAL_MS = 1_000L
         private const val ENGINE_TICK_MS = 100L
         private const val INITIALIZATION_RETRY_MS = 2_000L
+        private const val BRIGHTNESS_RETRY_MS = 2_000L
+        private const val BRIGHTNESS_EVALUATION_INTERVAL_MS = 1_000L
     }
 
     private data class ActiveMafuBinding(

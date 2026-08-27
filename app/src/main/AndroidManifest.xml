@@ -57,6 +57,8 @@
     <uses-permission android:name="android.permission.BYDAUTO_SPECIAL_SET" />
     <uses-permission android:name="android.permission.BYDAUTO_GEARBOX_GET" />
     <uses-permission android:name="android.permission.BYDAUTO_SPEED_GET" />
+    <uses-permission android:name="android.permission.BYDAUTO_SETTING_COMMON" />
+    <uses-permission android:name="android.permission.BYDAUTO_SETTING_GET" />
     <uses-permission android:name="com.android.permission.BYD_AUTO_MATED_TEST" />
     <uses-permission
         android:name="android.permission.PACKAGE_USAGE_STATS"

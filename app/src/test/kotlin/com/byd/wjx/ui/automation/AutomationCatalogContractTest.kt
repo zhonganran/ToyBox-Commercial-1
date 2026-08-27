@@ -38,4 +38,22 @@ class AutomationCatalogContractTest {
         assertEquals(listOf("双闪打开", "双闪关闭"), hazardActions.map { it.command })
         assertTrue(hazardActions.all { it.category == "灯光" })
     }
+
+    @Test
+    fun `headlight height exposes all six Chinese choices without a default`() {
+        val actions = ACTION_COMMANDS.filter { it.command.startsWith("前照灯高度") }
+        assertEquals((0..5).map { "前照灯高度${it}档" }, actions.map { it.command })
+        assertEquals(
+            listOf(
+                "前照灯高度：最近",
+                "前照灯高度：较近",
+                "前照灯高度：近",
+                "前照灯高度：远",
+                "前照灯高度：较远",
+                "前照灯高度：最远",
+            ),
+            actions.map { it.name },
+        )
+        assertTrue(actions.all { it.category == "灯光" })
+    }
 }

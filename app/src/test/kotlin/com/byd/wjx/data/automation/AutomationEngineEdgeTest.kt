@@ -92,6 +92,7 @@ class AutomationEngineEdgeTest {
             vehicleStateRepository = emptyVehicleRepository(),
             trackingStateRepository = FakeTrackingStateRepository(),
             confirmationPresenter = mockk(relaxed = true),
+            reverseMirrorController = noPendingMirrorController(),
             context = ApplicationProvider.getApplicationContext<Context>(),
         )
         return engine to ruleRepository
@@ -335,6 +336,7 @@ class AutomationEngineEdgeTest {
             vehicleStateRepository = emptyVehicleRepository(),
             trackingStateRepository = FakeTrackingStateRepository(),
             confirmationPresenter = presenter,
+            reverseMirrorController = noPendingMirrorController(),
             context = ApplicationProvider.getApplicationContext(),
         )
 
@@ -462,11 +464,88 @@ class AutomationEngineEdgeTest {
         coVerify(exactly = 2) { ruleRepository.markTriggered(1, any()) }
     }
 
+    @Test fun `startup restores a persisted mirror snapshot outside reverse gear`() = runBlocking {
+        val mirrorController = mockk<ReverseMirrorController>(relaxed = true) {
+            every { hasPendingRestore() } returns true
+            coEvery { restore(any()) } returns DispatchResult(true)
+        }
+        val engine = engineFor(
+            rules = emptyList(),
+            ruleRepository = mockk(relaxed = true),
+            dispatcher = mockk(relaxed = true),
+            mirrorController = mirrorController,
+        )
+
+        engine.evaluate(diParsData(gear = 4, speed = 0), null)
+
+        coVerify(exactly = 1) { mirrorController.restore(any()) }
+    }
+
+    @Test fun `startup keeps mirror snapshot armed until reverse gear exits`() = runBlocking {
+        val mirrorController = mockk<ReverseMirrorController>(relaxed = true) {
+            every { hasPendingRestore() } returns true
+            coEvery { restore(any()) } returns DispatchResult(true)
+        }
+        val engine = engineFor(
+            rules = emptyList(),
+            ruleRepository = mockk(relaxed = true),
+            dispatcher = mockk(relaxed = true),
+            mirrorController = mirrorController,
+        )
+
+        engine.evaluate(diParsData(gear = 2, speed = 0), null)
+        coVerify(exactly = 0) { mirrorController.restore(any()) }
+        engine.evaluate(diParsData(gear = 4, speed = 0), null)
+
+        coVerify(exactly = 1) { mirrorController.restore(any()) }
+    }
+
+    @Test fun `startup recovery notices a snapshot created after an earlier empty check`() = runBlocking {
+        val mirrorController = mockk<ReverseMirrorController>(relaxed = true) {
+            every { hasPendingRestore() } returnsMany listOf(false, true)
+            coEvery { restore(any()) } returns DispatchResult(true)
+        }
+        val engine = engineFor(
+            rules = emptyList(),
+            ruleRepository = mockk(relaxed = true),
+            dispatcher = mockk(relaxed = true),
+            mirrorController = mirrorController,
+        )
+
+        engine.evaluate(diParsData(gear = 4, speed = 0), null)
+        engine.evaluate(diParsData(gear = 4, speed = 0), null)
+
+        coVerify(exactly = 1) { mirrorController.restore(any()) }
+    }
+
+    @Test fun `startup recovery keeps retrying after more than three failures`() = runBlocking {
+        val mirrorController = mockk<ReverseMirrorController>(relaxed = true) {
+            every { hasPendingRestore() } returns true
+            coEvery { restore(any()) } returns DispatchResult(false, "temporary failure")
+        }
+        val engine = engineFor(
+            rules = emptyList(),
+            ruleRepository = mockk(relaxed = true),
+            dispatcher = mockk(relaxed = true),
+            mirrorController = mirrorController,
+        )
+        var now = 100_000L
+        engine.nowProvider = { now }
+
+        repeat(4) {
+            engine.evaluate(diParsData(gear = 4, speed = 0), null)
+            now += 5_000L
+        }
+
+        coVerify(exactly = 4) { mirrorController.restore(any()) }
+    }
+
     private fun engineFor(
         rules: List<RuleEntity>,
         ruleRepository: AutomationRuleRepository,
         dispatcher: ActionDispatcher,
         vehicleRepository: VehicleStateRepository = emptyVehicleRepository(),
+        mirrorController: ReverseMirrorController = noPendingMirrorController(),
     ) = AutomationEngine(
         ruleRepository = ruleRepository,
         journalRepository = mockk<AutomationJournalRepository>(relaxed = true),
@@ -485,8 +564,13 @@ class AutomationEngineEdgeTest {
         vehicleStateRepository = vehicleRepository,
         trackingStateRepository = FakeTrackingStateRepository(),
         confirmationPresenter = mockk(relaxed = true),
+        reverseMirrorController = mirrorController,
         context = ApplicationProvider.getApplicationContext(),
     )
+
+    private fun noPendingMirrorController() = mockk<ReverseMirrorController>(relaxed = true) {
+        every { hasPendingRestore() } returns false
+    }
 
     private fun emptyVehicleRepository() = mockk<VehicleStateRepository>(relaxed = true) {
         every { actionSnapshot } returns MutableStateFlow<VehicleSnapshot?>(null)

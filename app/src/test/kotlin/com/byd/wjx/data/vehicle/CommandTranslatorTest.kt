@@ -303,6 +303,17 @@ class CommandTranslatorTest {
         assertEquals("steering_heat_off" to 1, one("关闭方向盘加热")?.let { it.actionName to it.value })
     }
 
+    @Test fun `headlight height uses original six-level mapping`() {
+        assertEquals(
+            listOf(11, 9, 7, 5, 3, 1),
+            (0..5).map { level -> one("前照灯高度${level}档")?.value },
+        )
+        assertEquals(
+            "headlight_height_level",
+            one("前照灯高度2档")?.actionName,
+        )
+    }
+
     @Test fun `massage uses official mode enum and writes intensity before mode`() {
         assertEquals(
             listOf(

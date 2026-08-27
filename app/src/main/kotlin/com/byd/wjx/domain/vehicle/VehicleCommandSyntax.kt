@@ -49,6 +49,10 @@ object VehicleCommandSyntax {
         override fun commandFor(value: Int): String = "氛围灯亮度${value.coerceIn(1, 4)}档"
     }
 
+    data class HeadlightHeight(override val value: Int) : NumericCommand {
+        override fun commandFor(value: Int): String = "前照灯高度${value.coerceIn(0, 5)}档"
+    }
+
     enum class MassageSeat(val token: String, val actionPrefix: String) {
         DRIVER("主驾", "driver"),
         PASSENGER("副驾", "passenger"),
@@ -106,6 +110,9 @@ object VehicleCommandSyntax {
         AMBIENT_BRIGHTNESS.matchEntire(command)?.let { match ->
             return AmbientBrightness(match.groupValues[1].toInt().coerceIn(1, 4))
         }
+        HEADLIGHT_HEIGHT.matchEntire(command)?.let { match ->
+            return HeadlightHeight(match.groupValues[1].toInt().coerceIn(0, 5))
+        }
         MASSAGE.matchEntire(command)?.let { match ->
             val seat = if (match.groupValues[1] == "主驾") MassageSeat.DRIVER else MassageSeat.PASSENGER
             val mode = MassageMode.entries.firstOrNull { it.token == match.groupValues[2] } ?: return null
@@ -121,5 +128,6 @@ object VehicleCommandSyntax {
     private val FAN_LEVEL = Regex("""风量(\d+)档""")
     private val SUNSHADE_POSITION = Regex("""遮阳帘位置(\d+)""")
     private val AMBIENT_BRIGHTNESS = Regex("""氛围灯亮度(\d+)档""")
+    private val HEADLIGHT_HEIGHT = Regex("""前照灯高度([0-5])档""")
     private val MASSAGE = Regex("""(主驾|副驾)按摩(波浪|脉冲|拉伸|腰部|肩部)([123])档""")
 }

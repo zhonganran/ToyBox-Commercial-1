@@ -71,6 +71,37 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
         return status
     }
 
+    override suspend fun readMirrorPosition(): MirrorPosition? =
+        transactParsed(
+            HelperBinderProtocol.TX_READ_MIRROR_POSITION,
+            writeArgs = { },
+            timeoutMs = MIRROR_TIMEOUT_MS,
+        ) { reply ->
+            val status = if (reply.dataAvail() >= 4) reply.readInt() else return@transactParsed null
+            if (!readAccepted(status) || reply.dataAvail() < 16) return@transactParsed null
+            MirrorPosition(
+                leftHorizontal = reply.readFloat(),
+                leftVertical = reply.readFloat(),
+                rightHorizontal = reply.readFloat(),
+                rightVertical = reply.readFloat(),
+            ).takeIf(MirrorPosition::isSane)
+        }
+
+    override suspend fun applyMirrorPosition(position: MirrorPosition): Boolean {
+        if (!position.isSane()) return false
+        val success = statusOk(
+            HelperBinderProtocol.TX_APPLY_MIRROR_POSITION,
+            timeoutMs = MIRROR_TIMEOUT_MS,
+        ) { data ->
+            data.writeFloat(position.leftHorizontal)
+            data.writeFloat(position.leftVertical)
+            data.writeFloat(position.rightHorizontal)
+            data.writeFloat(position.rightVertical)
+        }
+        WjxFileLogger.i(TAG, "apply mirror position accepted=$success")
+        return success
+    }
+
     override suspend fun isAlive(): Boolean =
         transact(HelperBinderProtocol.TX_PING) { }
             ?.let { (status, _) -> readAccepted(status) } ?: false
@@ -301,6 +332,7 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
         private const val BATCH_TIMEOUT_PER_READ_MS = 50L
         private const val BATCH_TIMEOUT_MAX_MS = 15000L
         private const val FORCE_TIMEOUT_MS = 15000L
+        private const val MIRROR_TIMEOUT_MS = 10000L
         private const val DEV_SHELL_TIMEOUT_MS = 620000L
     }
 }

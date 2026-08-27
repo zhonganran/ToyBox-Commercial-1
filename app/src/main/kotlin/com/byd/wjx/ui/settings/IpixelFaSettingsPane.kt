@@ -164,6 +164,7 @@ internal fun IpixelFaSettingsPane(viewModel: IpixelFaSettingsViewModel) {
                         viewModel.setBrightness(it.toInt())
                     },
                     onValueChangeFinished = { viewModel.applyBrightness(brightness.toInt()) },
+                    enabled = !preferences.brightnessSchedule.enabled,
                     valueRange = 10f..100f,
                     colors = SliderDefaults.colors(
                         thumbColor = AccentBlue,
@@ -173,6 +174,14 @@ internal fun IpixelFaSettingsPane(viewModel: IpixelFaSettingsViewModel) {
                 )
             }
         }
+
+        LedBrightnessScheduleCard(
+            schedule = preferences.brightnessSchedule,
+            minBrightness = 0,
+            maxBrightness = 100,
+            brightnessText = { "$it%" },
+            onScheduleChange = viewModel::setBrightnessSchedule,
+        )
 
         if (state.devices.isNotEmpty()) {
             Card(

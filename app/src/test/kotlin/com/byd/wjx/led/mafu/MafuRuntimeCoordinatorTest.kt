@@ -2,6 +2,7 @@ package com.byd.wjx.led.mafu
 
 import com.byd.wjx.data.nativestack.ParsReader
 import com.byd.wjx.data.remote.diParsData
+import com.byd.wjx.led.LedBrightnessSchedule
 import com.byd.wjx.led.LedLinkageTriggerType
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -20,6 +21,45 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MafuRuntimeCoordinatorTest {
+    @Test
+    fun `Mafu initialization applies scheduled brightness`() = runTest {
+        val preferenceState = MutableStateFlow(
+            MafuPreferenceSnapshot(
+                enabled = true,
+                deviceAddress = "AA:BB:CC:DD:EE:FF",
+                brightness = 12,
+                brightnessSchedule = LedBrightnessSchedule(
+                    enabled = true,
+                    dayStartMinute = 0,
+                    nightStartMinute = 0,
+                    dayBrightness = 8,
+                    nightBrightness = 3,
+                ),
+            ),
+        )
+        val preferences = mockk<MafuPreferences>()
+        every { preferences.state } returns preferenceState
+        val connectionState = MutableStateFlow(MafuConnectionState())
+        val bleClient = mockk<MafuBleClient>(relaxed = true)
+        every { bleClient.connection } returns connectionState
+        coEvery { bleClient.setScreenPower(true) } returns true
+        coEvery { bleClient.setBrightness(any()) } returns true
+        coEvery { bleClient.playProgramList() } returns true
+        val parsReader = mockk<ParsReader>(relaxed = true)
+        val coordinator = MafuRuntimeCoordinator(preferences, bleClient, parsReader)
+
+        coordinator.start(backgroundScope)
+        runCurrent()
+        connectionState.value = MafuConnectionState(
+            phase = MafuConnectionPhase.READY,
+            address = "AA:BB:CC:DD:EE:FF",
+        )
+        runCurrent()
+
+        coVerify(exactly = 1) { bleClient.setBrightness(8) }
+        coordinator.stop()
+    }
+
     @Test
     fun `Mafu connects in carousel mode and retries restoring it after a condition ends`() = runTest {
         val preferenceState = MutableStateFlow(

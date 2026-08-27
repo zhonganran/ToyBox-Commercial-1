@@ -45,8 +45,16 @@ internal fun MafuSettingsPane(viewModel: MafuSettingsViewModel) {
         )
         MafuBrightnessCard(
             brightness = preferences.brightness,
+            enabled = !preferences.brightnessSchedule.enabled,
             onBrightnessChange = viewModel::setBrightness,
             onBrightnessChangeFinished = viewModel::applyBrightness,
+        )
+        LedBrightnessScheduleCard(
+            schedule = preferences.brightnessSchedule,
+            minBrightness = 1,
+            maxBrightness = 15,
+            brightnessText = { "$it / 15" },
+            onScheduleChange = viewModel::setBrightnessSchedule,
         )
         MafuRemoteModelCard(
             model = preferences.remoteModel,

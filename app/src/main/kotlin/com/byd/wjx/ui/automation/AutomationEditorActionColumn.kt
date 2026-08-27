@@ -30,7 +30,7 @@ internal fun AutomationEditorActionColumn(
         AutomationEditorActionList(
             title = stringResource(R.string.automation_section_then),
             actions = editing.actions,
-            onActionsChange = { updated -> onUpdate { copy(actions = updated) } },
+            onActionsChange = { updated -> onUpdate { withActionPhase(updated, exitPhase = false) } },
             onTestAction = onTestAction,
         )
         Spacer(Modifier.height(20.dp))
@@ -38,7 +38,7 @@ internal fun AutomationEditorActionColumn(
             title = stringResource(R.string.automation_section_on_exit),
             hint = stringResource(R.string.automation_section_on_exit_hint),
             actions = editing.exitActions,
-            onActionsChange = { updated -> onUpdate { copy(exitActions = updated) } },
+            onActionsChange = { updated -> onUpdate { withActionPhase(updated, exitPhase = true) } },
             onTestAction = onTestAction,
         )
         Spacer(Modifier.height(20.dp))

@@ -2,6 +2,7 @@ package com.byd.wjx.led.mafu
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.byd.wjx.led.LedBrightnessSchedule
 import com.byd.wjx.led.LedLinkageTriggerType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -63,6 +64,22 @@ class MafuPreferencesTest {
         preferences.setRemoteModel(MafuRemoteModel.YS_9_KEY)
 
         assertEquals(MafuRemoteKey.KEY_1, preferences.state.value.rules.single().steps.single().remoteKey)
+    }
+
+    @Test
+    fun `Mafu day night brightness schedule persists in protocol range`() {
+        val preferences = MafuPreferences(context)
+        val schedule = LedBrightnessSchedule(
+            enabled = true,
+            dayStartMinute = 8 * 60,
+            nightStartMinute = 21 * 60 + 30,
+            dayBrightness = 14,
+            nightBrightness = 3,
+        )
+
+        preferences.setBrightnessSchedule(schedule)
+
+        assertEquals(schedule, MafuPreferences(context).state.value.brightnessSchedule)
     }
 
 }

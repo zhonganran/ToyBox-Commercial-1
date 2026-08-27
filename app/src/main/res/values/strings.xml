@@ -236,6 +236,8 @@
     <string name="automation_action_outside_sound_empty">未选择音效</string>
     <string name="automation_action_auto_door">自动滑门</string>
     <string name="automation_action_auto_door_label">自动滑门</string>
+    <string name="automation_action_mirror_tilt">后视镜下翻</string>
+    <string name="automation_action_mirror_restore">恢复后视镜位置</string>
     <string name="automation_action_group_vehicle">车辆控制</string>
     <string name="automation_action_group_media">音频媒体</string>
     <string name="automation_action_group_apps">应用与流程</string>

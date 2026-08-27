@@ -2,10 +2,14 @@ package com.byd.wjx.clustercard
 
 import android.content.Context
 import android.content.res.Configuration
+import android.database.ContentObserver
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import com.byd.wjx.data.remote.DiParsData
 
@@ -28,6 +32,20 @@ internal class ClusterCardView(context: Context) : View(context) {
     private var cardScale: Float = 0.65f
     private var fontScale: Float = 1f
     private var heightScale: Float = 1f
+    private var isNightMode = ClusterCardDayNightMode.resolve(
+        context.contentResolver,
+        resources.configuration,
+    )
+    private var observingDayNightMode = false
+    private val dayNightModeObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) {
+            refreshDayNightMode()
+        }
+
+        override fun onChange(selfChange: Boolean, uri: Uri?) {
+            refreshDayNightMode()
+        }
+    }
 
     fun bind(
         metrics: List<ClusterCardMetric>,
@@ -41,13 +59,38 @@ internal class ClusterCardView(context: Context) : View(context) {
         cardScale = config.scale
         fontScale = config.fontScale
         heightScale = config.heightScale
-        applyFont(config.fontFamily)
-        applyTextColor(config.textColor)
+        applyTextColor()
         invalidate()
     }
 
     init {
-        applyTextColor(ClusterCardTextColor.FOLLOW_SYSTEM)
+        applyTextColor()
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        observingDayNightMode = runCatching {
+            context.contentResolver.registerContentObserver(
+                ClusterCardDayNightMode.vehicleModeUri,
+                false,
+                dayNightModeObserver,
+            )
+            true
+        }.getOrDefault(false)
+        refreshDayNightMode()
+    }
+
+    override fun onDetachedFromWindow() {
+        if (observingDayNightMode) {
+            runCatching { context.contentResolver.unregisterContentObserver(dayNightModeObserver) }
+            observingDayNightMode = false
+        }
+        super.onDetachedFromWindow()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        refreshDayNightMode(newConfig)
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -119,24 +162,21 @@ internal class ClusterCardView(context: Context) : View(context) {
         }
     }
 
-    private fun applyFont(font: ClusterCardFont) {
-        val baseTypeface = font.typefaceName?.let { Typeface.create(it, Typeface.NORMAL) }
-            ?: Typeface.DEFAULT
-        labelPaint.typeface = Typeface.create(baseTypeface, Typeface.NORMAL)
-        valuePaint.typeface = Typeface.create(baseTypeface, Typeface.BOLD)
+    private fun refreshDayNightMode(configuration: Configuration = resources.configuration) {
+        val newNightMode = ClusterCardDayNightMode.resolve(context.contentResolver, configuration)
+        if (newNightMode == isNightMode) return
+        isNightMode = newNightMode
+        applyTextColor()
+        invalidate()
     }
 
-    private fun applyTextColor(textColor: ClusterCardTextColor) {
-        val isNightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
-            Configuration.UI_MODE_NIGHT_YES
-        val color = textColor.resolveArgb(isNightMode)
+    private fun applyTextColor() {
+        val color = if (isNightMode) Color.WHITE else Color.BLACK
         dividerPaint.color = withAlpha(color, 70)
-        labelPaint.color = withAlpha(color, 210)
+        labelPaint.color = color
         valuePaint.color = color
-
-        val shadowColor = if (isDarkColor(color)) Color.WHITE else Color.BLACK
-        labelPaint.setShadowLayer(density * 1.5f, 0f, density * 0.5f, shadowColor)
-        valuePaint.setShadowLayer(density * 2f, 0f, density * 0.7f, shadowColor)
+        labelPaint.clearShadowLayer()
+        valuePaint.clearShadowLayer()
     }
 
     private fun withAlpha(color: Int, alpha: Int): Int = Color.argb(
@@ -146,10 +186,4 @@ internal class ClusterCardView(context: Context) : View(context) {
         Color.blue(color),
     )
 
-    private fun isDarkColor(color: Int): Boolean {
-        val brightness = Color.red(color) * 0.299f +
-            Color.green(color) * 0.587f +
-            Color.blue(color) * 0.114f
-        return brightness < 145f
-    }
 }

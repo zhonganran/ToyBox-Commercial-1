@@ -186,6 +186,7 @@ internal fun MafuScreenPowerCard(
 @Composable
 internal fun MafuBrightnessCard(
     brightness: Int,
+    enabled: Boolean,
     onBrightnessChange: (Int) -> Unit,
     onBrightnessChangeFinished: (Int) -> Unit,
 ) {
@@ -213,6 +214,7 @@ internal fun MafuBrightnessCard(
                     onBrightnessChange(it.toInt())
                 },
                 onValueChangeFinished = { onBrightnessChangeFinished(sliderValue.toInt()) },
+                enabled = enabled,
                 valueRange = 1f..15f,
                 steps = 13,
                 colors = SliderDefaults.colors(

@@ -7,6 +7,7 @@ import com.byd.wjx.log.WjxFileLogger
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.util.UUID
 
 internal class BackupRestorer(
     private val context: Context,
@@ -24,6 +25,7 @@ internal class BackupRestorer(
             databaseDirectory,
             "${BackupArchiveContract.DATABASE_FILE_NAME}.restore.tmp",
         )
+        var rollbackDatabase: File? = null
         try {
             val payload = context.contentResolver.openInputStream(uri)?.use { input ->
                 BackupArchiveReader.extract(input, temporaryDatabase)
@@ -36,18 +38,31 @@ internal class BackupRestorer(
                 currentSchemaVersion = AppDatabase.SCHEMA_VERSION,
                 currentPreferenceFiles = preferenceStore.fileNames,
             )
-            val preferences = BackupPreferencesCodec.deserialize(payload.preferencesJson)
-            preferenceStore.requireKnownFiles(preferences)
+            val preferences = preferenceStore.restorableSubset(
+                preferences = BackupPreferencesCodec.deserialize(payload.preferencesJson),
+                declaredFiles = manifest.preferenceFiles,
+            )
             databaseValidator.validate(
                 file = temporaryDatabase,
                 expectedSchemaVersion = AppDatabase.SCHEMA_VERSION,
                 expectedRoomIdentityHash = databaseValidator.currentRoomIdentityHash(),
             )
 
+            val rollbackPreferences = preferenceStore.collectNonEmpty()
+            rollbackDatabase = createDatabaseSnapshot()
             appDatabase.close()
-            replaceDatabase(temporaryDatabase, targetDatabase)
-            deleteDatabaseSidecars(databaseDirectory)
-            preferenceStore.replaceAll(preferences)
+            BackupRestoreTransaction.execute(
+                applyDatabase = {
+                    replaceDatabase(temporaryDatabase, targetDatabase)
+                    deleteDatabaseSidecars(databaseDirectory)
+                },
+                applyPreferences = { preferenceStore.replaceAll(preferences) },
+                rollbackDatabase = {
+                    copyDatabase(rollbackDatabase, targetDatabase)
+                    deleteDatabaseSidecars(databaseDirectory)
+                },
+                rollbackPreferences = { preferenceStore.replaceAll(rollbackPreferences) },
+            )
             WjxFileLogger.i(
                 TAG,
                 "backup restored uri=$uri schema=${manifest.dbSchemaVersion} " +
@@ -55,6 +70,22 @@ internal class BackupRestorer(
             )
         } finally {
             temporaryDatabase.delete()
+            rollbackDatabase?.delete()
+        }
+    }
+
+    private fun createDatabaseSnapshot(): File {
+        val snapshot = File(context.cacheDir, "backup-rollback-${UUID.randomUUID()}.db")
+        return try {
+            val escapedPath = snapshot.absolutePath.replace("'", "''")
+            appDatabase.openHelper.writableDatabase.execSQL("VACUUM INTO '$escapedPath'")
+            require(snapshot.isFile && snapshot.canRead() && snapshot.length() > 0L) {
+                "恢复前数据库快照为空"
+            }
+            snapshot
+        } catch (error: Exception) {
+            snapshot.delete()
+            throw IllegalStateException("无法创建恢复前安全快照", error)
         }
     }
 
@@ -79,6 +110,15 @@ internal class BackupRestorer(
                 throw IllegalStateException("恢复时无法替换数据库文件", replaceError)
             }
         }
+    }
+
+    private fun copyDatabase(sourceDatabase: File?, targetDatabase: File) {
+        val source = requireNotNull(sourceDatabase) { "恢复前数据库快照不存在" }
+        Files.copy(
+            source.toPath(),
+            targetDatabase.toPath(),
+            StandardCopyOption.REPLACE_EXISTING,
+        )
     }
 
     private fun deleteDatabaseSidecars(databaseDirectory: File?) {

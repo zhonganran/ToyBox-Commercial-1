@@ -2,6 +2,7 @@ package com.byd.wjx.led.mafu
 
 import com.byd.wjx.led.LedLinkageCatalog
 import com.byd.wjx.led.LedLinkageTriggerType
+import com.byd.wjx.led.LedBrightnessSchedule
 
 enum class MafuRemoteModel(
     val modelCode: Int,
@@ -150,6 +151,10 @@ data class MafuPreferenceSnapshot(
     val deviceAddress: String = "",
     val deviceName: String = "",
     val brightness: Int = 12,
+    val brightnessSchedule: LedBrightnessSchedule = LedBrightnessSchedule(
+        dayBrightness = 12,
+        nightBrightness = 4,
+    ),
     val remoteModel: MafuRemoteModel = MafuRemoteModel.YS_17_KEY,
     val rules: List<MafuLinkageRule> = emptyList(),
 )

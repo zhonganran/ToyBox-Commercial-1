@@ -14,6 +14,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import com.byd.wjx.data.local.HistoryImporter
+import com.byd.wjx.data.backup.BackupRestoreNoticeStore
 import com.byd.wjx.data.repository.SettingsRepository
 import com.byd.wjx.data.system.SettingsPermissionHealthCoordinator
 import com.byd.wjx.log.WjxFileLogger
@@ -104,7 +105,12 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        window.decorView.post(permissionCoordinator::start)
+        window.decorView.post {
+            BackupRestoreNoticeStore.consume(this)?.let { message ->
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+            }
+            permissionCoordinator.start()
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

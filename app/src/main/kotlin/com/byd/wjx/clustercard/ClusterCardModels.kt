@@ -21,47 +21,6 @@ enum class ClusterCardSlot(
     SECONDARY("仪表卡片2", "_2", 100f, 50f),
 }
 
-enum class ClusterCardFont(
-    val label: String,
-    internal val typefaceName: String?,
-) {
-    SYSTEM("系统默认", null),
-    SANS_SERIF("无衬线", "sans-serif"),
-    SERIF("衬线", "serif"),
-    MONOSPACE("等宽", "monospace"),
-    CONDENSED("紧凑", "sans-serif-condensed"),
-    ;
-
-    companion object {
-        fun fromStoredValue(value: String?): ClusterCardFont =
-            entries.firstOrNull { it.name == value } ?: SYSTEM
-    }
-}
-
-enum class ClusterCardTextColor(
-    val label: String,
-    private val lightArgb: Int,
-    private val darkArgb: Int = lightArgb,
-) {
-    FOLLOW_SYSTEM("跟随系统", 0xFF111111.toInt(), 0xFFFFFFFF.toInt()),
-    WHITE("白色", 0xFFFFFFFF.toInt()),
-    BLACK("黑色", 0xFF111111.toInt()),
-    RED("红色", 0xFFFF5252.toInt()),
-    ORANGE("橙色", 0xFFFFA726.toInt()),
-    YELLOW("黄色", 0xFFFFD740.toInt()),
-    GREEN("绿色", 0xFF4ADE80.toInt()),
-    CYAN("青色", 0xFF35DCD6.toInt()),
-    BLUE("蓝色", 0xFF68B8FF.toInt()),
-    ;
-
-    fun resolveArgb(isNightMode: Boolean): Int = if (isNightMode) darkArgb else lightArgb
-
-    companion object {
-        fun fromStoredValue(value: String?): ClusterCardTextColor =
-            entries.firstOrNull { it.name == value } ?: FOLLOW_SYSTEM
-    }
-}
-
 data class ClusterCardConfig(
     val enabled: Boolean = false,
     val metricIds: List<String> = emptyList(),
@@ -69,8 +28,6 @@ data class ClusterCardConfig(
     val widthScale: Float = 1f,
     val xPct: Float = 50f,
     val yPct: Float = 50f,
-    val fontFamily: ClusterCardFont = ClusterCardFont.SYSTEM,
-    val textColor: ClusterCardTextColor = ClusterCardTextColor.FOLLOW_SYSTEM,
     val fontScale: Float = 1f,
     val heightScale: Float = 1f,
 )

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.byd.wjx.activation.ActivationManager
 import com.byd.wjx.activation.PremiumFeature
+import com.byd.wjx.led.LedBrightnessSchedule
 import com.byd.wjx.led.ipixelfa.IpixelFaBleClient
 import com.byd.wjx.led.ipixelfa.IpixelFaConnectionPhase
 import com.byd.wjx.led.ipixelfa.IpixelFaConnectionState
@@ -125,6 +126,21 @@ class IpixelFaSettingsViewModel @Inject constructor(
         viewModelScope.launch {
             val ok = runtimeCoordinator.applyBrightness(percent)
             showMessage(if (ok) "亮度已调至 $percent%" else "设备未连接，亮度将在重连后应用")
+        }
+    }
+
+    fun setBrightnessSchedule(schedule: LedBrightnessSchedule) {
+        if (!requireLedLinkageAccess()) return
+        preferences.setBrightnessSchedule(schedule)
+        viewModelScope.launch {
+            val ok = runtimeCoordinator.syncBrightness()
+            showMessage(
+                when {
+                    ok && schedule.enabled -> "日夜亮度联动已应用"
+                    ok -> "日夜亮度联动已关闭，已恢复手动亮度"
+                    else -> "亮度设置已保存，将在设备重连后应用"
+                },
+            )
         }
     }
 

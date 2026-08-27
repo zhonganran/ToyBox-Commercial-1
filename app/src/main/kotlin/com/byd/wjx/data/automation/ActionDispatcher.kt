@@ -22,6 +22,7 @@ class ActionDispatcher @Inject constructor(
     autoDoorController: AutoDoorController,
     httpClient: OkHttpClient,
     sentryModeController: SentryModeController,
+    reverseMirrorController: ReverseMirrorController,
     notificationPresenter: AutomationNotificationPresenter,
     @ApplicationContext context: Context,
     profileDetector: CarProfileDetector = CarProfileDetector(),
@@ -30,6 +31,7 @@ class ActionDispatcher @Inject constructor(
         vehicleApi = vehicleApi,
         autoDoorController = autoDoorController,
         sentryModeController = sentryModeController,
+        reverseMirrorController = reverseMirrorController,
     )
     private val notificationActions = AutomationNotificationActionHandler(
         context = context,
@@ -70,6 +72,11 @@ class ActionDispatcher @Inject constructor(
             "play_video" -> mediaActions.playVideo(action, owner)
             "stop_video" -> mediaActions.stopVideo()
             "sentry_mode" -> vehicleActions.setSentryMode(action)
+            "mirror_tilt", "mirror_restore" -> vehicleActions.controlMirror(
+                action = action,
+                data = data,
+                preview = owner == PREVIEW_OWNER,
+            )
             else -> DispatchResult(false, "未知动作类型：${action.kind}")
         }
     } catch (error: Exception) {
@@ -112,6 +119,7 @@ class ActionDispatcher @Inject constructor(
 
     companion object {
         private const val TAG = "ActionDispatcher"
+        const val PREVIEW_OWNER = "automation:preview"
 
         internal fun isWindowOpenCommand(command: String): Boolean =
             isAutomationWindowOpenCommand(command)

@@ -27,11 +27,15 @@ internal class BackupPreferenceStore(
         }
     }
 
-    fun requireKnownFiles(preferences: Map<String, Map<String, Any?>>) {
-        val unexpectedFiles = preferences.keys - fileNames.toSet()
-        if (unexpectedFiles.isNotEmpty()) {
-            throw IllegalStateException("备份包含当前版本不识别的配置文件")
+    fun restorableSubset(
+        preferences: Map<String, Map<String, Any?>>,
+        declaredFiles: List<String>,
+    ): Map<String, Map<String, Any?>> {
+        val undeclaredFiles = preferences.keys - declaredFiles.toSet()
+        if (undeclaredFiles.isNotEmpty()) {
+            throw IllegalStateException("备份配置内容与清单不一致")
         }
+        return preferences.filterKeys { it in fileNames }
     }
 
     fun replaceAll(preferences: Map<String, Map<String, Any?>>) {
