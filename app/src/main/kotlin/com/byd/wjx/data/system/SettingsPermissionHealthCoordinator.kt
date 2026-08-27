@@ -61,11 +61,19 @@ class SettingsPermissionHealthCoordinator @Inject constructor(
                         id = "runtime",
                         title = "运行时权限",
                         detail = if (runtimeMissing.isEmpty()) {
-                            "文件、位置、麦克风、蓝牙和通知权限已允许"
+                            "文件、位置、摄像头、麦克风、蓝牙和通知权限已允许"
                         } else {
                             "缺少：${runtimeMissing.joinToString("、", transform = ::runtimePermissionLabel)}"
                         },
                         ready = runtimeMissing.isEmpty(),
+                    ),
+                    specialItem(
+                        id = "all_files_access",
+                        title = "所有文件访问",
+                        permission = FirstLaunchSpecialPermission.ALL_FILES_ACCESS,
+                        readyDetail = "可读取整个本地共享存储",
+                        missingDetail = "需要在系统设置中允许管理所有文件",
+                        optional = Build.VERSION.SDK_INT < Build.VERSION_CODES.R,
                     ),
                     specialItem(
                         id = "location_services",
@@ -204,6 +212,7 @@ class SettingsPermissionHealthCoordinator @Inject constructor(
         Manifest.permission.ACCESS_COARSE_LOCATION -> "大致位置"
         Manifest.permission.ACCESS_FINE_LOCATION -> "精确位置"
         Manifest.permission.ACCESS_BACKGROUND_LOCATION -> "后台位置"
+        Manifest.permission.CAMERA -> "摄像头"
         Manifest.permission.RECORD_AUDIO -> "麦克风"
         Manifest.permission.BLUETOOTH_SCAN -> "蓝牙扫描"
         Manifest.permission.BLUETOOTH_CONNECT -> "蓝牙连接"

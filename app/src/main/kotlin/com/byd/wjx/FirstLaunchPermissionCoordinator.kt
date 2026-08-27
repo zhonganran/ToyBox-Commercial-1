@@ -1,12 +1,16 @@
 package com.byd.wjx
 
 import android.Manifest
+import android.app.AlarmManager
+import android.app.AppOpsManager
 import android.bluetooth.BluetoothManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.os.Build
+import android.os.Environment
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.content.ContextCompat
 import androidx.core.location.LocationManagerCompat
@@ -22,6 +26,7 @@ internal object AppRuntimePermissionPolicy {
         }
         add(Manifest.permission.ACCESS_COARSE_LOCATION)
         add(Manifest.permission.ACCESS_FINE_LOCATION)
+        add(Manifest.permission.CAMERA)
         add(Manifest.permission.RECORD_AUDIO)
         if (sdkInt >= Build.VERSION_CODES.S) {
             add(Manifest.permission.BLUETOOTH_SCAN)
@@ -37,15 +42,27 @@ internal object AppRuntimePermissionPolicy {
 }
 
 internal enum class FirstLaunchSpecialPermission {
+    ALL_FILES_ACCESS,
     LOCATION_SERVICES,
     BLUETOOTH,
     OVERLAY,
     NOTIFICATION_LISTENER,
     ACCESSIBILITY,
+    USAGE_STATS,
+    BATTERY_OPTIMIZATION,
 }
 
 internal object AppSpecialPermissionPolicy {
+    fun isApplicable(permission: FirstLaunchSpecialPermission, sdkInt: Int): Boolean = when (permission) {
+        FirstLaunchSpecialPermission.ALL_FILES_ACCESS -> sdkInt >= Build.VERSION_CODES.R
+        FirstLaunchSpecialPermission.USAGE_STATS -> sdkInt >= Build.VERSION_CODES.LOLLIPOP
+        FirstLaunchSpecialPermission.BATTERY_OPTIMIZATION -> sdkInt >= Build.VERSION_CODES.M
+        else -> true
+    }
+
     fun isGranted(context: Context, permission: FirstLaunchSpecialPermission): Boolean = when (permission) {
+        FirstLaunchSpecialPermission.ALL_FILES_ACCESS ->
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
         FirstLaunchSpecialPermission.LOCATION_SERVICES -> {
             val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
             manager == null || LocationManagerCompat.isLocationEnabled(manager)
@@ -66,6 +83,20 @@ internal object AppSpecialPermissionPolicy {
             )
             REQUIRED_ACCESSIBILITY_SERVICES.all(enabled::contains)
         }
+        FirstLaunchSpecialPermission.USAGE_STATS -> runCatching {
+            val manager = context.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager
+                ?: return@runCatching false
+            manager.unsafeCheckOpNoThrow(
+                AppOpsManager.OPSTR_GET_USAGE_STATS,
+                android.os.Process.myUid(),
+                context.packageName,
+            ) == AppOpsManager.MODE_ALLOWED
+        }.getOrDefault(false)
+        FirstLaunchSpecialPermission.BATTERY_OPTIMIZATION -> runCatching {
+            val manager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+                ?: return@runCatching false
+            manager.isIgnoringBatteryOptimizations(context.packageName)
+        }.getOrDefault(false)
     }
 
     private fun enabledComponents(context: Context, setting: String): Set<ComponentName> =
@@ -95,6 +126,7 @@ internal class FirstLaunchPermissionCoordinator(
         AppSpecialPermissionPolicy.isGranted(context, permission)
     },
     private val log: (String) -> Unit = {},
+    private val onCompleted: () -> Unit = {},
 ) {
     private val preferences = context.getSharedPreferences(
         FIRST_LAUNCH_PERMISSION_PREFS,
@@ -163,7 +195,9 @@ internal class FirstLaunchPermissionCoordinator(
 
     private fun requestNextSpecialPermission() {
         val next = FirstLaunchSpecialPermission.entries.firstOrNull { permission ->
-            permission !in attemptedSpecialPermissions && !specialPermissionGranted(permission)
+            AppSpecialPermissionPolicy.isApplicable(permission, sdkInt) &&
+                permission !in attemptedSpecialPermissions &&
+                !specialPermissionGranted(permission)
         }
         if (next == null) {
             markCompleted()
@@ -185,6 +219,7 @@ internal class FirstLaunchPermissionCoordinator(
     private fun markCompleted() {
         preferences.edit().putBoolean(KEY_COMPLETED, true).apply()
         log("first-launch permission flow completed")
+        onCompleted()
     }
 
     private companion object {

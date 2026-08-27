@@ -34,6 +34,7 @@ class FirstLaunchPermissionCoordinatorTest {
         assertTrue(Manifest.permission.WRITE_EXTERNAL_STORAGE in permissions)
         assertTrue(Manifest.permission.ACCESS_COARSE_LOCATION in permissions)
         assertTrue(Manifest.permission.ACCESS_FINE_LOCATION in permissions)
+        assertTrue(Manifest.permission.CAMERA in permissions)
         assertTrue(Manifest.permission.RECORD_AUDIO in permissions)
         assertFalse(Manifest.permission.BLUETOOTH_SCAN in permissions)
         assertFalse(Manifest.permission.POST_NOTIFICATIONS in permissions)
@@ -48,6 +49,81 @@ class FirstLaunchPermissionCoordinatorTest {
         assertTrue(Manifest.permission.BLUETOOTH_SCAN in permissions)
         assertTrue(Manifest.permission.BLUETOOTH_CONNECT in permissions)
         assertTrue(Manifest.permission.POST_NOTIFICATIONS in permissions)
+    }
+
+    @Test
+    fun `all files access is requested only on android 11 and newer`() {
+        assertFalse(
+            AppSpecialPermissionPolicy.isApplicable(
+                FirstLaunchSpecialPermission.ALL_FILES_ACCESS,
+                Build.VERSION_CODES.Q,
+            ),
+        )
+        assertTrue(
+            AppSpecialPermissionPolicy.isApplicable(
+                FirstLaunchSpecialPermission.ALL_FILES_ACCESS,
+                Build.VERSION_CODES.R,
+            ),
+        )
+    }
+
+    @Test
+    fun `android 10 includes usage stats and battery optimization special steps`() {
+        assertTrue(
+            AppSpecialPermissionPolicy.isApplicable(
+                FirstLaunchSpecialPermission.USAGE_STATS,
+                Build.VERSION_CODES.Q,
+            ),
+        )
+        assertTrue(
+            AppSpecialPermissionPolicy.isApplicable(
+                FirstLaunchSpecialPermission.BATTERY_OPTIMIZATION,
+                Build.VERSION_CODES.Q,
+            ),
+        )
+    }
+
+    @Test
+    fun `completion callback runs when every required permission is already ready`() {
+        var completionCount = 0
+        val granted = AppRuntimePermissionPolicy.initialPermissions(Build.VERSION_CODES.Q).toSet() +
+            Manifest.permission.ACCESS_BACKGROUND_LOCATION
+        val coordinator = FirstLaunchPermissionCoordinator(
+            context = context,
+            sdkInt = Build.VERSION_CODES.Q,
+            permissionGranted = granted::contains,
+            specialPermissionGranted = { true },
+            launchRuntimePermissions = { error("runtime permissions should be skipped") },
+            launchBackgroundLocation = { error("background location should be skipped") },
+            launchSpecialPermissionSettings = { error("special settings should be skipped") },
+            onCompleted = { completionCount += 1 },
+        )
+
+        coordinator.start()
+        coordinator.start()
+
+        assertEquals(1, completionCount)
+    }
+
+    @Test
+    fun `android 12 requests all files access before other special settings`() {
+        val granted = AppRuntimePermissionPolicy.initialPermissions(Build.VERSION_CODES.S).toMutableSet().apply {
+            add(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+        }
+        val specialRequests = mutableListOf<FirstLaunchSpecialPermission>()
+        val coordinator = FirstLaunchPermissionCoordinator(
+            context = context,
+            sdkInt = Build.VERSION_CODES.S,
+            permissionGranted = granted::contains,
+            specialPermissionGranted = { false },
+            launchRuntimePermissions = { error("runtime permissions should be granted") },
+            launchBackgroundLocation = { error("background location should be granted") },
+            launchSpecialPermissionSettings = { specialRequests += it; true },
+        )
+
+        coordinator.start()
+
+        assertEquals(listOf(FirstLaunchSpecialPermission.ALL_FILES_ACCESS), specialRequests)
     }
 
     @Test
@@ -69,12 +145,22 @@ class FirstLaunchPermissionCoordinatorTest {
         coordinator.onBackgroundLocationResult(granted = false)
         assertEquals(listOf(FirstLaunchSpecialPermission.LOCATION_SERVICES), specialRequests)
         repeat(FirstLaunchSpecialPermission.entries.size) { coordinator.onActivityResumed() }
-        assertEquals(FirstLaunchSpecialPermission.entries, specialRequests)
+        assertEquals(
+            FirstLaunchSpecialPermission.entries.filter {
+                AppSpecialPermissionPolicy.isApplicable(it, Build.VERSION_CODES.Q)
+            },
+            specialRequests,
+        )
 
         coordinator.start()
         assertEquals(1, baseRequests.size)
         assertEquals(2, backgroundRequests.size)
-        assertEquals(FirstLaunchSpecialPermission.entries.size, specialRequests.size)
+        assertEquals(
+            FirstLaunchSpecialPermission.entries.count {
+                AppSpecialPermissionPolicy.isApplicable(it, Build.VERSION_CODES.Q)
+            },
+            specialRequests.size,
+        )
     }
 
     @Test

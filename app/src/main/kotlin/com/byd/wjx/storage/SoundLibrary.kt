@@ -1,6 +1,8 @@
 package com.byd.wjx.storage
 
 import android.content.Context
+import android.os.Build
+import android.os.Environment
 import com.byd.wjx.log.WjxFileLogger
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -16,13 +18,23 @@ class SoundLibrary @Inject constructor(
 ) {
     fun listSounds(): List<SoundItem> {
         WjxDirectories.ensureBaseDirs()
-        val files = WjxDirectories.soundDir
-            .listFiles()
-            ?.filter {
+        val directory = WjxDirectories.soundDir
+        val listedFiles = directory.listFiles()
+        if (listedFiles == null) {
+            val allFilesAccess = Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
+                Environment.isExternalStorageManager()
+            WjxFileLogger.w(
+                TAG,
+                "list sounds failed directory=${directory.absolutePath} " +
+                    "exists=${directory.exists()} readable=${directory.canRead()} " +
+                    "allFilesAccess=$allFilesAccess",
+            )
+            return emptyList()
+        }
+        val files = listedFiles.filter {
                 it.isFile &&
                     it.extension.lowercase() in SUPPORTED_EXT
             }
-            ?: emptyList()
         val order = loadOrder()
         val orderIndex = order.withIndex().associate { it.value to it.index }
         return files

@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
+import android.annotation.SuppressLint
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -18,6 +19,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import com.byd.wjx.data.local.HistoryImporter
 import com.byd.wjx.data.repository.SettingsRepository
+import com.byd.wjx.data.system.SettingsPermissionHealthCoordinator
 import com.byd.wjx.log.WjxFileLogger
 import com.byd.wjx.security.EndpointPrivacy
 import com.byd.wjx.service.KeepAliveService
@@ -43,6 +45,7 @@ class MainActivity : AppCompatActivity() {
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var updateChecker: UpdateChecker
     @Inject lateinit var historyImporter: HistoryImporter
+    @Inject lateinit var permissionHealthCoordinator: SettingsPermissionHealthCoordinator
     private var historySyncJob: Job? = null
     private var pendingInstallJob: Job? = null
     private lateinit var permissionCoordinator: FirstLaunchPermissionCoordinator
@@ -70,6 +73,7 @@ class MainActivity : AppCompatActivity() {
             launchBackgroundLocation = backgroundLocationLauncher::launch,
             launchSpecialPermissionSettings = ::openSpecialPermissionSettings,
             log = { message -> WjxFileLogger.i(TAG, message) },
+            onCompleted = ::runInitialPermissionRepair,
         )
         configureSystemBars()
         ensureWjxDirectory()
@@ -140,9 +144,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    @SuppressLint("InlinedApi", "BatteryLife")
     private fun openSpecialPermissionSettings(permission: FirstLaunchSpecialPermission): Boolean =
         runCatching {
             val intent = when (permission) {
+                FirstLaunchSpecialPermission.ALL_FILES_ACCESS -> Intent(
+                    Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    Uri.parse("package:$packageName"),
+                )
                 FirstLaunchSpecialPermission.LOCATION_SERVICES ->
                     Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
                 FirstLaunchSpecialPermission.BLUETOOTH ->
@@ -155,12 +164,33 @@ class MainActivity : AppCompatActivity() {
                     Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
                 FirstLaunchSpecialPermission.ACCESSIBILITY ->
                     Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                FirstLaunchSpecialPermission.USAGE_STATS ->
+                    Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                FirstLaunchSpecialPermission.BATTERY_OPTIMIZATION -> Intent(
+                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:$packageName"),
+                )
             }
             startActivity(intent)
             true
         }.onFailure { error ->
             WjxFileLogger.w(TAG, "Unable to open ${permission.name} settings: ${error.message}", error)
-        }.getOrDefault(false)
+        }.getOrElse {
+            if (permission == FirstLaunchSpecialPermission.ALL_FILES_ACCESS) {
+                runCatching {
+                    startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+                    true
+                }.onFailure { fallbackError ->
+                    WjxFileLogger.w(
+                        TAG,
+                        "Unable to open all-files fallback settings: ${fallbackError.message}",
+                        fallbackError,
+                    )
+                }.getOrDefault(false)
+            } else {
+                false
+            }
+        }
 
     private fun configureSystemBars() {
         WindowCompat.setDecorFitsSystemWindows(window, true)
@@ -175,6 +205,20 @@ class MainActivity : AppCompatActivity() {
     private fun startBackgroundStack() {
         WjxFileLogger.i(TAG, "startBackgroundStack")
         KeepAliveService.start(this, "main_activity")
+    }
+
+    /** After the visible permission flow, let the already-authorized ADB/Helper repair system-only grants. */
+    private fun runInitialPermissionRepair() {
+        lifecycleScope.launch {
+            delay(250L)
+            val snapshot = runCatching { permissionHealthCoordinator.repairAndInspect() }
+                .onFailure { WjxFileLogger.w(TAG, "initial permission repair failed: ${it.message}", it) }
+                .getOrNull()
+            WjxFileLogger.i(
+                TAG,
+                "initial permission repair completed unresolved=${snapshot?.unresolvedRequiredCount ?: -1}",
+            )
+        }
     }
 
     private fun syncVehicleHistory(reason: String) {
