@@ -80,6 +80,38 @@ class ActivationEntitlementStoreTest {
         assertFalse(store.shouldRefresh(ActivationManager.STATUS_REFRESH_INTERVAL_MS))
     }
 
+    @Test
+    fun `automatic refresh backs off after failures while manual refresh stays available`() {
+        val first = store.recordRefreshFailure()
+
+        assertEquals(1, first.failureCount)
+        assertEquals(60_000L, first.retryAfterMs)
+        assertFalse(store.shouldRefresh(ActivationManager.STATUS_REFRESH_INTERVAL_MS))
+        assertTrue(store.shouldRefresh(0L))
+
+        now += first.retryAfterMs
+        assertTrue(store.shouldRefresh(ActivationManager.STATUS_REFRESH_INTERVAL_MS))
+        assertEquals(2L * 60_000L, store.recordRefreshFailure().retryAfterMs)
+        assertEquals(5L * 60_000L, store.recordRefreshFailure().retryAfterMs)
+        assertEquals(10L * 60_000L, store.recordRefreshFailure().retryAfterMs)
+        assertEquals(10L * 60_000L, store.recordRefreshFailure().retryAfterMs)
+    }
+
+    @Test
+    fun `successful server status clears refresh failure backoff`() {
+        store.recordRefreshFailure()
+        assertFalse(store.shouldRefresh(ActivationManager.STATUS_REFRESH_INTERVAL_MS))
+
+        store.applyServerStatus(
+            JSONObject().put("activated", false),
+            normalizedDevice = VIN,
+        )
+
+        assertFalse(store.shouldRefresh(ActivationManager.STATUS_REFRESH_INTERVAL_MS))
+        now += ActivationManager.STATUS_REFRESH_INTERVAL_MS
+        assertTrue(store.shouldRefresh(ActivationManager.STATUS_REFRESH_INTERVAL_MS))
+    }
+
     companion object {
         private const val PREF_NAME = "activation_entitlement_store_test"
         private const val VIN = "L123456789ABCDEFG"

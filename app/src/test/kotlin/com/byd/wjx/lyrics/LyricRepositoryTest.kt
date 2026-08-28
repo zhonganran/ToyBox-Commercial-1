@@ -1,5 +1,7 @@
 package com.byd.wjx.lyrics
 
+import java.net.UnknownHostException
+import java.net.SocketTimeoutException
 import kotlinx.coroutines.test.runTest
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -14,7 +16,7 @@ import org.junit.Test
 class LyricRepositoryTest {
     @Test
     fun parseLrcText_supportsMultipleTagsAndCentiseconds() {
-        val lines = LyricRepository.parseLrcText(
+        val lines = LyricParsers.parseLrcText(
             """
             [00:01.20][00:03.45]第一句
             [00:05.6]第二句
@@ -30,7 +32,7 @@ class LyricRepositoryTest {
 
     @Test
     fun parseBydMetadataLyrics_treatsStandardLrcAsLrcNotJson() {
-        val result = LyricRepository.parseBydMetadataLyrics(
+        val result = LyricParsers.parseBydMetadataLyrics(
             raw = """
                 [00:01.00]第一句
                 [00:02.50]第二句
@@ -46,7 +48,7 @@ class LyricRepositoryTest {
 
     @Test
     fun parseQishuiLyricContent_readsMillisecondTimelineAndRemovesInlineTags() {
-        val lines = LyricRepository.parseQishuiLyricContent(
+        val lines = LyricParsers.parseQishuiLyricContent(
             """
             [24470,5010]<0,330,0>窗<400,330,0>外<1080,330,0>的麻雀
             [30030,4650]<0,330,0>你<330,320,0>说这一句
@@ -64,7 +66,7 @@ class LyricRepositoryTest {
 
     @Test
     fun parseQishuiLyricResponse_supportsRootLyricPayload() {
-        val result = LyricRepository.parseQishuiLyricResponse(
+        val result = LyricParsers.parseQishuiLyricResponse(
             raw = """{"lyric":{"content":"[1000,500]第一句\n[2000,500]第二句"}}""",
             key = "qishui-song",
         )
@@ -76,7 +78,7 @@ class LyricRepositoryTest {
 
     @Test
     fun parseQishuiSearchCandidates_readsResultGroupsShape() {
-        val candidates = LyricRepository.parseQishuiSearchCandidates(
+        val candidates = LyricParsers.parseQishuiSearchCandidates(
             """
             {
               "result_groups": [{
@@ -167,8 +169,9 @@ class LyricRepositoryTest {
     }
 
     @Test
-    fun emptyOnlineLookup_isNotCachedPermanently() = runTest {
+    fun emptyOnlineLookup_isCachedTemporarilyButNotPermanently() = runTest {
         var requestCount = 0
+        var now = 1_800_000_000_000L
         val client = OkHttpClient.Builder()
             .addInterceptor { chain ->
                 requestCount += 1
@@ -181,7 +184,7 @@ class LyricRepositoryTest {
                     .build()
             }
             .build()
-        val repository = LyricRepository(client)
+        val repository = LyricRepository(client) { now }
         val snapshot = MusicPlaybackSnapshot(title = "晚风", artist = "歌手A")
 
         assertTrue(repository.load(snapshot).lines.isEmpty())
@@ -189,7 +192,55 @@ class LyricRepositoryTest {
         assertTrue(requestsAfterFirstLoad > 0)
 
         assertTrue(repository.load(snapshot).lines.isEmpty())
+        assertEquals(requestsAfterFirstLoad, requestCount)
+
+        now += 5L * 60L * 1000L + 1L
+        assertTrue(repository.load(snapshot).lines.isEmpty())
         assertTrue(requestCount > requestsAfterFirstLoad)
+    }
+
+    @Test
+    fun dnsFailure_stopsCurrentProviderChainImmediately() {
+        var requestCount = 0
+        val client = OkHttpClient.Builder()
+            .addInterceptor {
+                requestCount += 1
+                throw UnknownHostException("DNS resolution failed")
+            }
+            .build()
+
+        val result = OnlineLyricSource(client).load(
+            MusicPlaybackSnapshot(title = "晚风", artist = "歌手A"),
+            key = "song",
+        )
+
+        assertTrue(result is OnlineLyricLookupResult.NetworkUnavailable)
+        assertEquals(1, requestCount)
+    }
+
+    @Test
+    fun providerTimeout_continuesWithRemainingSources() {
+        var requestCount = 0
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                requestCount += 1
+                if (requestCount == 1) throw SocketTimeoutException("provider timeout")
+                Response.Builder()
+                    .request(chain.request())
+                    .protocol(Protocol.HTTP_1_1)
+                    .code(200)
+                    .message("OK")
+                    .body("{}".toResponseBody("application/json".toMediaType()))
+                    .build()
+            }
+            .build()
+
+        OnlineLyricSource(client).load(
+            MusicPlaybackSnapshot(title = "晚风", artist = "歌手A"),
+            key = "song",
+        )
+
+        assertTrue(requestCount > 1)
     }
 
     @Test

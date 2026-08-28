@@ -203,9 +203,6 @@ class AutomationViewModel @Inject constructor(
                 "auto_door" -> {
                     if (a.autoDoorActionOption() == null) return "动作 #$n：未选择自动滑门动作"
                 }
-                "mirror_tilt" -> {
-                    if (a.mirrorTiltRequest() == null) return "动作 #$n：后视镜下翻设置无效"
-                }
             }
         }
         return null

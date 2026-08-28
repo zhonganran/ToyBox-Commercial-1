@@ -1,15 +1,10 @@
 package com.byd.wjx.clustercard
 
 import android.content.Context
-import android.content.res.Configuration
-import android.database.ContentObserver
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
-import android.net.Uri
-import android.os.Handler
-import android.os.Looper
 import android.view.View
 import com.byd.wjx.data.remote.DiParsData
 
@@ -32,26 +27,14 @@ internal class ClusterCardView(context: Context) : View(context) {
     private var cardScale: Float = 0.65f
     private var fontScale: Float = 1f
     private var heightScale: Float = 1f
-    private var isNightMode = ClusterCardDayNightMode.resolve(
-        context.contentResolver,
-        resources.configuration,
-    )
-    private var observingDayNightMode = false
-    private val dayNightModeObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
-        override fun onChange(selfChange: Boolean) {
-            refreshDayNightMode()
-        }
-
-        override fun onChange(selfChange: Boolean, uri: Uri?) {
-            refreshDayNightMode()
-        }
-    }
+    private var isNightMode = false
 
     fun bind(
         metrics: List<ClusterCardMetric>,
         baseData: DiParsData?,
         telemetryData: DiParsData?,
         config: ClusterCardConfig,
+        nightMode: Boolean,
     ) {
         this.metrics = metrics
         this.baseData = baseData
@@ -59,38 +42,13 @@ internal class ClusterCardView(context: Context) : View(context) {
         cardScale = config.scale
         fontScale = config.fontScale
         heightScale = config.heightScale
+        isNightMode = nightMode
         applyTextColor()
         invalidate()
     }
 
     init {
         applyTextColor()
-    }
-
-    override fun onAttachedToWindow() {
-        super.onAttachedToWindow()
-        observingDayNightMode = runCatching {
-            context.contentResolver.registerContentObserver(
-                ClusterCardDayNightMode.vehicleModeUri,
-                false,
-                dayNightModeObserver,
-            )
-            true
-        }.getOrDefault(false)
-        refreshDayNightMode()
-    }
-
-    override fun onDetachedFromWindow() {
-        if (observingDayNightMode) {
-            runCatching { context.contentResolver.unregisterContentObserver(dayNightModeObserver) }
-            observingDayNightMode = false
-        }
-        super.onDetachedFromWindow()
-    }
-
-    override fun onConfigurationChanged(newConfig: Configuration) {
-        super.onConfigurationChanged(newConfig)
-        refreshDayNightMode(newConfig)
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -160,14 +118,6 @@ internal class ClusterCardView(context: Context) : View(context) {
         while (paint.textSize > minSize && paint.measureText(text) > maxWidth) {
             paint.textSize -= density * 0.5f
         }
-    }
-
-    private fun refreshDayNightMode(configuration: Configuration = resources.configuration) {
-        val newNightMode = ClusterCardDayNightMode.resolve(context.contentResolver, configuration)
-        if (newNightMode == isNightMode) return
-        isNightMode = newNightMode
-        applyTextColor()
-        invalidate()
     }
 
     private fun applyTextColor() {

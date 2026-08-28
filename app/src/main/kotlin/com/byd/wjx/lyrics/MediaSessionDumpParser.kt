@@ -57,7 +57,7 @@ object MediaSessionDumpParser {
         val mediaId = firstValue(block, MEDIA_ID_KEYS)
         val uri = firstValue(block, MEDIA_URI_KEYS)
         val metadataLyrics = lineValue(block, BYD_LYRICS)
-        val timedLyrics = LyricRepository.parseBydMetadataLyrics(metadataLyrics, "media_session_dump")?.lines
+        val timedLyrics = LyricParsers.parseBydMetadataLyrics(metadataLyrics, "media_session_dump")?.lines
         val realtimeLyrics = REALTIME_LYRIC_KEYS.mapNotNull { firstValue(block, listOf(it)) }
         return MusicPlaybackSnapshot(
             title = title,

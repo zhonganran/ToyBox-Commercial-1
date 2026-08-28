@@ -23,6 +23,7 @@ data class MusicPlaybackSnapshot(
     val hasSong: Boolean
         get() = MusicIdentity.hasUsableTitle(title)
 
+    /** Strict media identity used where same-title tracks still need to be distinguished. */
     fun songKey(): String {
         val identity = MusicIdentity.trackKey(
             title = title,

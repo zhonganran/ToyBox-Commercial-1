@@ -40,8 +40,6 @@ class HelperTransactionRouterTest {
                 HelperBinderProtocol.TX_STOP_LOCK_SOUND,
                 HelperBinderProtocol.TX_PLAY_SENTRY_EVENT,
                 HelperBinderProtocol.TX_SET_LOCK_SOUND_PLAYBACK_STATE,
-                HelperBinderProtocol.TX_READ_MIRROR_POSITION,
-                HelperBinderProtocol.TX_APPLY_MIRROR_POSITION,
             ),
         )
 

@@ -41,7 +41,7 @@
 | F10 | 实时喊话 | 个性音效麦克风；方向盘快捷键 | `SoundScreen.kt`、`SettingsShortcutSection.kt` | `WjxRealtimeHailingService`、`RealtimeHailingEngine`、`ExteriorHailingSettings` | `RECORD_AUDIO`、麦克风前台服务、音频路由 | 与本地车外播放共用音频通道；属于确认保留的核心音频能力，后续整理不得删除其服务、权限、快捷键和自动化调用 | 核心保留 |
 | F11 | 桌面歌词与仪表盘歌词 | 桌面组件 → 歌词组件 | `ui/lyrics/LyricDisplayScreen.kt` | `LyricRuntime`、`MusicNotificationListenerService`、歌词 overlay/controller | 通知访问、悬浮窗、`SYSTEM_ALERT_WINDOW` | `lyrics`、`lyric_display_controls` 偏好；仪表歌词依赖投射/悬浮层 | 核心保留 |
 | F12 | 桌面卡片悬浮窗 | 桌面组件 → 桌面卡片 | `DesktopQuickCardSettingsContent.kt` | `DesktopQuickCardRuntime`、`DesktopQuickCardController` | 悬浮窗、车辆写入、音频 | `wjx_desktop_cards` 偏好；依赖 F03/F08 和车辆控制白名单；与 F10/F11/F13 共享入口和运行时 | 核心保留 |
-| F13 | 仪表卡片与仪表卡片 2 | 桌面组件 → 仪表卡片 | `clustercard/ClusterCardSettingsContent.kt` | `ClusterCardRuntime`、`ClusterCardRepository` | 仪表投射、悬浮窗/媒体投射链路 | `wjx_cluster_card` 偏好；两张卡片独立配置指标、尺寸、位置和布局；字体固定为高对比度白色 | 核心保留 |
+| F13 | 仪表卡片与仪表卡片 2 | 桌面组件 → 仪表卡片 | `clustercard/ClusterCardSettingsContent.kt` | `ClusterCardRuntime`、`ClusterCardRepository` | 仪表投射、悬浮窗/媒体投射链路 | `wjx_cluster_card` 偏好；两张卡片独立配置指标、尺寸、位置和布局；字体跟随车机昼夜模式，白天黑字、夜晚白字 | 核心保留 |
 | F14 | 方向盘快捷键 | 设置 → 按键/显示/车外通道 | `SettingsShortcutSection.kt` | `SteeringWheelKeyService`、`SteeringWheelRuntimeCoordinator`、`KeyShortcutSettings` | 无障碍服务、事件监听、音频/车辆写入 | `key_shortcuts` 偏好；当前动作范围为本地音效和实时喊话；与 F15 共用按键服务但生命周期可独立 | 核心保留 |
 | F15 | 仪表盘投射/镜像 | 设置 → 按键/显示/车外通道 | `SettingsDisplaySection.kt`、`ClusterMirrorConsentActivity` | `ClusterMirrorService`、`ClusterProjectionManager`、`ClusterEntryPoint` | `FOREGROUND_SERVICE_MEDIA_PROJECTION`、媒体投射授权、悬浮窗 | `cluster_projection` 偏好；F11/F13 依赖；保留整屏镜像、投射入口和底层投射生命周期 | 核心保留 |
 | F16 | 车辆控制 | 桌面卡片；智能联动 | `DesktopQuickCardSettingsContent.kt`、自动化动作编辑器 | `VehicleApi`、`VehicleGateway`、`WriteAllowlist` | BYD BODYWORK 权限；`vehicle-actions.json` | 自动化动作和桌面卡片共用；前照灯模式控制已删除，车辆状态只读展示不受影响 | 核心保留 |
@@ -77,7 +77,7 @@
 
 手机投屏、A950 LED 协议和电子后视镜已经完成完整删除：UI 入口、源码、Manifest 组件、专属权限、Gradle 依赖、资源、偏好登记和测试均已同步清理。
 
-仪表卡片的系统主题字体颜色切换也已删除，改为固定高对比度白色文字和黑色阴影；仪表卡片、仪表投射和歌词的其他功能保持不变。
+仪表卡片不再提供手动字体颜色设置，字体颜色跟随车机 `sys_day_or_night` 自动切换为白天黑字、夜晚白字；仪表卡片、仪表投射和歌词的其他功能保持不变。
 
 ### F21 手机投屏删除记录
 

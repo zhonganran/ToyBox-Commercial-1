@@ -49,12 +49,11 @@ class LyricRuntime @Inject constructor(
     private val clusterOverlay = ClusterLyricOverlayController(appContext, settings)
     private val poller = MusicPlaybackPoller(adb)
     private val homePackages by lazy { resolveHomePackages() }
-
     private var scope: CoroutineScope? = null
     private var latestPlayback = MusicPlaybackSnapshot.EMPTY
     private var latestLyrics = LyricsResult()
     private var latestCameraActive = false
-    private var lastSongKey = ""
+    private var lastLyricKey = ""
     private var trackChangeHoldUntilMs = 0L
     private var lastDesktopFrame: LyricFrame? = null
     private var lastClusterFrame: LyricFrame? = null
@@ -78,7 +77,7 @@ class LyricRuntime @Inject constructor(
                 if (!snapshot.hasSong) {
                     latestPlayback = snapshot
                     latestLyrics = LyricsResult()
-                    lastSongKey = ""
+                    lastLyricKey = ""
                     trackChangeHoldUntilMs = 0L
                     lyricLoadJob?.cancel()
                     lyricLoadJob = null
@@ -100,42 +99,52 @@ class LyricRuntime @Inject constructor(
                     WjxFileLogger.i(TAG, "lyrics track changed hold=${TRACK_CHANGE_HOLD_MS}ms title=${snapshot.title.take(48)}")
                 }
                 latestPlayback = snapshot
-                val key = snapshot.songKey()
-                if (key != lastSongKey) {
-                    lastSongKey = key
+                val key = snapshot.lyricKey()
+                if (key != lastLyricKey) {
+                    lastLyricKey = key
                     latestLyrics = LyricsResult(key)
                     lyricLoadJob?.cancel()
                     lyricLoadJob = launch(Dispatchers.IO) {
                         var requestSnapshot = snapshot
                         var failedAttempts = 0
                         while (isActive) {
-                            val loaded = runCatching { repository.load(requestSnapshot) }
-                                .onFailure {
-                                    if (it !is CancellationException) {
-                                        WjxFileLogger.w(
-                                            TAG,
-                                            "lyrics load failed key=${logSafeKey(key)}: ${it.message}",
-                                            it,
-                                        )
-                                    }
-                                }
-                                .getOrDefault(LyricsResult(key))
+                            val outcome = try {
+                                repository.loadOutcome(requestSnapshot)
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (error: Throwable) {
+                                LyricLoadOutcome.NetworkUnavailable(
+                                    lyrics = LyricsResult(key),
+                                    message = lyricFailureMessage(error),
+                                )
+                            }
+                            val loaded = outcome.lyrics
                             val stillCurrent = withContext(Dispatchers.Main.immediate) {
-                                if (lastSongKey != loaded.key) {
+                                if (lastLyricKey != loaded.key) {
                                     false
                                 } else {
                                     latestLyrics = loaded
-                                    trackChangeHoldUntilMs = 0L
                                     suppressNextFrameAnimation = true
-                                    WjxFileLogger.i(
-                                        TAG,
-                                        "lyrics loaded key=${logSafeKey(loaded.key)} " +
-                                            "lines=${loaded.lines.size} attempt=${failedAttempts + 1}",
-                                    )
+                                    if (outcome is LyricLoadOutcome.Found) {
+                                        trackChangeHoldUntilMs = 0L
+                                        WjxFileLogger.i(
+                                            TAG,
+                                            "lyrics loaded key=${logSafeKey(loaded.key)} " +
+                                                "lines=${loaded.lines.size} attempt=${failedAttempts + 1}",
+                                        )
+                                    }
                                     true
                                 }
                             }
                             if (!stillCurrent || loaded.lines.isNotEmpty()) break
+
+                            if (outcome is LyricLoadOutcome.NotFound) {
+                                WjxFileLogger.i(
+                                    TAG,
+                                    "lyrics not found key=${logSafeKey(key)}; cached temporarily",
+                                )
+                                break
+                            }
 
                             failedAttempts += 1
                             val retryDelayMs = LyricLoadRetryPolicy.delayAfterFailure(failedAttempts)
@@ -148,12 +157,14 @@ class LyricRuntime @Inject constructor(
                             }
                             WjxFileLogger.i(
                                 TAG,
-                                "lyrics empty key=${logSafeKey(key)} retryIn=${retryDelayMs}ms " +
+                                "lyrics network unavailable key=${logSafeKey(key)} " +
+                                    "reason=${(outcome as? LyricLoadOutcome.NetworkUnavailable)?.message.orEmpty()} " +
+                                    "retryIn=${retryDelayMs}ms " +
                                     "attempt=${failedAttempts + 1}",
                             )
                             delay(retryDelayMs)
                             requestSnapshot = withContext(Dispatchers.Main.immediate) {
-                                latestPlayback.takeIf { it.hasSong && it.songKey() == key }
+                                latestPlayback.takeIf { it.hasSong && it.lyricKey() == key }
                             } ?: break
                         }
                     }

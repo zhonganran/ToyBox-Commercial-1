@@ -33,10 +33,23 @@ object AppDnsFactory {
             .bootstrapDnsHosts(*literalAddresses(DNSPOD_BOOTSTRAP_IPS))
             .includeIPv6(false)
             .build()
+        val cloudflareDns = DnsOverHttps.Builder()
+            .client(bootstrapClient)
+            .url(CLOUDFLARE_DOH_URL.toHttpUrl())
+            .bootstrapDnsHosts(*literalAddresses(CLOUDFLARE_BOOTSTRAP_IPS))
+            .includeIPv6(false)
+            .build()
+        val googleDns = DnsOverHttps.Builder()
+            .client(bootstrapClient)
+            .url(GOOGLE_DOH_URL.toHttpUrl())
+            .bootstrapDnsHosts(*literalAddresses(GOOGLE_BOOTSTRAP_IPS))
+            .includeIPv6(false)
+            .build()
 
         return FallbackDns(
-            resolvers = listOf(Dns.SYSTEM, aliDns, dnsPod),
+            resolvers = listOf(Dns.SYSTEM, aliDns, dnsPod, cloudflareDns, googleDns),
             onFallbackUsed = ::logFallbackUsed,
+            onCacheUsed = ::logCacheUsed,
         )
     }
 
@@ -50,6 +63,13 @@ object AppDnsFactory {
         WjxFileLogger.i(TAG, "system DNS unavailable; encrypted fallback active resolver=$resolverIndex")
     }
 
+    private fun logCacheUsed() {
+        val now = System.currentTimeMillis()
+        val previous = lastCacheLogAt.get()
+        if (now - previous < FALLBACK_LOG_INTERVAL_MS || !lastCacheLogAt.compareAndSet(previous, now)) return
+        WjxFileLogger.i(TAG, "DNS resolver unavailable; recent address cache active")
+    }
+
     private const val TAG = "AppDns"
     private const val DOH_TIMEOUT_SECONDS = 4L
     private const val DNS_CACHE_BYTES = 2L * 1024L * 1024L
@@ -57,7 +77,12 @@ object AppDnsFactory {
     private const val FALLBACK_LOG_INTERVAL_MS = 60_000L
     private const val ALI_DOH_URL = "https://dns.alidns.com/dns-query"
     private const val DNSPOD_DOH_URL = "https://doh.pub/dns-query"
+    private const val CLOUDFLARE_DOH_URL = "https://cloudflare-dns.com/dns-query"
+    private const val GOOGLE_DOH_URL = "https://dns.google/dns-query"
     private val ALI_BOOTSTRAP_IPS = listOf("223.5.5.5", "223.6.6.6")
     private val DNSPOD_BOOTSTRAP_IPS = listOf("1.12.12.12", "120.53.53.53")
+    private val CLOUDFLARE_BOOTSTRAP_IPS = listOf("1.1.1.1", "1.0.0.1")
+    private val GOOGLE_BOOTSTRAP_IPS = listOf("8.8.8.8", "8.8.4.4")
     private val lastFallbackLogAt = AtomicLong(0L)
+    private val lastCacheLogAt = AtomicLong(0L)
 }

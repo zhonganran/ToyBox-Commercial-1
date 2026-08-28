@@ -56,29 +56,8 @@ internal fun EditingRule.hasMinimumSaveFields(): Boolean =
 internal fun EditingRule.withActionPhase(
     updatedActions: List<ActionDef>,
     exitPhase: Boolean,
-): EditingRule {
-    val alreadyHadTilt = (actions + exitActions).any { it.kind == "mirror_tilt" }
-    var updated = if (exitPhase) copy(exitActions = updatedActions) else copy(actions = updatedActions)
-    if (alreadyHadTilt || (updated.actions + updated.exitActions).none { it.kind == "mirror_tilt" }) {
-        return updated
-    }
-    if (!exitPhase && updated.exitActions.none { it.kind == "mirror_restore" }) {
-        updated = updated.copy(
-            exitActions = if (updated.exitActions.isEmpty()) {
-                listOf(newDelayAction(), newMirrorRestoreAction())
-            } else {
-                updated.exitActions + newMirrorRestoreAction()
-            },
-        )
-    }
-    return updated.copy(
-        cooldownSeconds = 0,
-        repeatIntervalSeconds = 0,
-        requirePark = false,
-        confirmBeforeExecute = false,
-        fireOncePerTrip = false,
-    )
-}
+): EditingRule =
+    if (exitPhase) copy(exitActions = updatedActions) else copy(actions = updatedActions)
 
 data class AutomationUiState(
     val rules: List<RuleEntity> = emptyList(),

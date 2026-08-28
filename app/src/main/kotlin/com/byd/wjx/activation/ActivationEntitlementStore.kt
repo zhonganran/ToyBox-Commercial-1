@@ -11,18 +11,41 @@ internal data class AppliedServerEntitlement(
     val serverTrialEndsAt: Long,
 )
 
+internal data class ActivationRefreshBackoff(
+    val failureCount: Int,
+    val retryAfterMs: Long,
+)
+
 internal class ActivationEntitlementStore(
     private val preferences: SharedPreferences,
     private val currentTimeMillis: () -> Long = System::currentTimeMillis,
 ) {
     fun ensureStarted(): Long = ensureTrialStarted(currentTimeMillis())
 
-    fun shouldRefresh(forceAfterMs: Long): Boolean {
+    fun shouldRefresh(
+        forceAfterMs: Long,
+        refreshForMissingDevice: Boolean = false,
+    ): Boolean {
         val now = currentTimeMillis()
+        if (forceAfterMs <= 0L) return true
+        val nextAttemptAt = preferences.getLong(KEY_NEXT_REFRESH_ATTEMPT_AT, 0L)
+        if (nextAttemptAt > now) return false
         val lastCheckedAt = preferences.getLong(KEY_LAST_CHECKED_AT, 0L)
-        return forceAfterMs <= 0L ||
+        return refreshForMissingDevice ||
             lastCheckedAt <= 0L ||
             now - lastCheckedAt >= forceAfterMs
+    }
+
+    fun recordRefreshFailure(): ActivationRefreshBackoff {
+        val now = currentTimeMillis()
+        val failureCount = (preferences.getInt(KEY_REFRESH_FAILURE_COUNT, 0) + 1)
+            .coerceAtMost(MAX_REFRESH_FAILURE_COUNT)
+        val retryAfterMs = refreshFailureDelayMs(failureCount)
+        preferences.edit()
+            .putInt(KEY_REFRESH_FAILURE_COUNT, failureCount)
+            .putLong(KEY_NEXT_REFRESH_ATTEMPT_AT, now + retryAfterMs)
+            .apply()
+        return ActivationRefreshBackoff(failureCount, retryAfterMs)
     }
 
     fun currentSnapshot(
@@ -84,6 +107,8 @@ internal class ActivationEntitlementStore(
             .putLong(KEY_ACTIVATED_AT, activatedAt)
             .putLong(KEY_SERVER_TRIAL_ENDS_AT, serverTrialEndsAt)
             .putLong(KEY_LAST_CHECKED_AT, now)
+            .putInt(KEY_REFRESH_FAILURE_COUNT, 0)
+            .putLong(KEY_NEXT_REFRESH_ATTEMPT_AT, 0L)
             .apply()
         return AppliedServerEntitlement(
             activated = activated,
@@ -130,5 +155,15 @@ internal class ActivationEntitlementStore(
         private const val KEY_ACTIVATED_AT = "activated_at"
         private const val KEY_SERVER_TRIAL_ENDS_AT = "server_trial_ends_at"
         private const val KEY_LAST_CHECKED_AT = "last_checked_at"
+        private const val KEY_REFRESH_FAILURE_COUNT = "refresh_failure_count"
+        private const val KEY_NEXT_REFRESH_ATTEMPT_AT = "next_refresh_attempt_at"
+        private const val MAX_REFRESH_FAILURE_COUNT = 4
+
+        internal fun refreshFailureDelayMs(failureCount: Int): Long = when (failureCount) {
+            1 -> 60_000L
+            2 -> 2L * 60_000L
+            3 -> 5L * 60_000L
+            else -> 10L * 60_000L
+        }
     }
 }

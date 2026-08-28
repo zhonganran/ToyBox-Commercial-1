@@ -5,7 +5,6 @@ import com.byd.wjx.data.local.entity.RuleEntity
 import com.byd.wjx.data.local.entity.TriggerDef
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AutomationRuleEditTest {
@@ -42,7 +41,7 @@ class AutomationRuleEditTest {
     }
 
     @Test
-    fun `adding mirror tilt configures edge driven execution`() {
+    fun `action phase update preserves unrelated rule settings`() {
         val editing = EditingRule(
             cooldownSeconds = 60,
             repeatIntervalSeconds = 30,
@@ -51,18 +50,17 @@ class AutomationRuleEditTest {
             fireOncePerTrip = true,
         )
         val updated = editing.withActionPhase(
-            updatedActions = listOf(newMirrorTiltAction()),
+            updatedActions = listOf(ActionDef("ac_auto_on", "自动空调")),
             exitPhase = false,
         )
 
-        assertEquals(0, updated.cooldownSeconds)
-        assertEquals(0, updated.repeatIntervalSeconds)
-        assertFalse(updated.requirePark)
-        assertFalse(updated.confirmBeforeExecute)
-        assertFalse(updated.fireOncePerTrip)
-        assertTrue(updated.actions.any { it.kind == "mirror_tilt" })
-        assertEquals(listOf("delay", "mirror_restore"), updated.exitActions.map { it.kind })
-        assertEquals("1000", updated.exitActions.first().payload)
+        assertEquals(60, updated.cooldownSeconds)
+        assertEquals(30, updated.repeatIntervalSeconds)
+        assertEquals(true, updated.requirePark)
+        assertEquals(true, updated.confirmBeforeExecute)
+        assertEquals(true, updated.fireOncePerTrip)
+        assertEquals(listOf("ac_auto_on"), updated.actions.map { it.command })
+        assertEquals(emptyList<ActionDef>(), updated.exitActions)
     }
 
 }

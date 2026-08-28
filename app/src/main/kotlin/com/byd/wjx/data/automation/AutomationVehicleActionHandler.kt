@@ -10,7 +10,6 @@ internal class AutomationVehicleActionHandler(
     private val vehicleApi: VehicleApi,
     private val autoDoorController: AutoDoorController,
     private val sentryModeController: SentryModeController,
-    private val reverseMirrorController: ReverseMirrorController,
 ) {
     suspend fun dispatchParam(action: ActionDef, data: DiParsData?): DispatchResult {
         val blockReason = automationCommandBlockReason(action.command, data?.speed)
@@ -62,16 +61,6 @@ internal class AutomationVehicleActionHandler(
             else -> return DispatchResult(false, "哨兵模式动作无效")
         }
         return sentryModeController.setEnabled(enabled)
-    }
-
-    suspend fun controlMirror(
-        action: ActionDef,
-        data: DiParsData?,
-        preview: Boolean,
-    ): DispatchResult = when (action.kind) {
-        "mirror_tilt" -> reverseMirrorController.tilt(action.payload, data, preview)
-        "mirror_restore" -> reverseMirrorController.restore(data)
-        else -> DispatchResult(false, "未知后视镜动作")
     }
 
     companion object {

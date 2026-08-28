@@ -1,18 +1,14 @@
 package com.byd.wjx.ui.map
 
 import android.net.Uri
-import android.widget.MediaController
 import android.widget.VideoView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
@@ -55,7 +51,6 @@ import com.byd.wjx.ui.theme.AccentGreen
 import com.byd.wjx.ui.theme.AccentOrange
 import com.byd.wjx.ui.theme.CardBorder
 import com.byd.wjx.ui.theme.CardSurfaceElevated
-import com.byd.wjx.ui.theme.TextPrimary
 import com.byd.wjx.ui.theme.TextSecondary
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -123,9 +118,6 @@ internal fun DashcamVideoPanel(
                 factory = { context ->
                     VideoView(context).apply {
                         videoViewRef = this
-                        val controls = MediaController(context)
-                        setMediaController(controls)
-                        controls.setAnchorView(this)
                     }
                 },
                 update = { videoView ->
@@ -176,8 +168,7 @@ internal fun DashcamVideoPanel(
                     message,
                     color = AccentOrange,
                     fontSize = 10.sp,
-                    modifier = Modifier.align(Alignment.BottomStart)
-                        .fillMaxWidth()
+                    modifier = Modifier.align(Alignment.Center)
                         .background(CardSurfaceElevated.copy(alpha = 0.92f))
                         .padding(horizontal = 8.dp, vertical = 5.dp),
                 )
@@ -239,12 +230,12 @@ internal fun DashcamVideoPanel(
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Text(
                             formatPlaybackDuration(shownPositionMs),
-                            color = TextSecondary,
+                            color = Color.White.copy(alpha = 0.78f),
                             fontSize = 9.sp,
                         )
                         Text(
                             formatPlaybackDuration(durationMs),
-                            color = TextSecondary,
+                            color = Color.White.copy(alpha = 0.78f),
                             fontSize = 9.sp,
                             modifier = Modifier.weight(1f),
                             textAlign = TextAlign.End,
@@ -262,7 +253,11 @@ internal fun DashcamVideoPanel(
                     enabled = currentIndex > 0,
                     modifier = Modifier.size(36.dp),
                 ) {
-                    Icon(Icons.Outlined.SkipPrevious, contentDescription = "上一段录像")
+                    Icon(
+                        Icons.Outlined.SkipPrevious,
+                        contentDescription = "上一段录像",
+                        tint = if (currentIndex > 0) Color.White else Color.White.copy(alpha = 0.3f),
+                    )
                 }
                 Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
@@ -272,7 +267,7 @@ internal fun DashcamVideoPanel(
                     )
                     Text(
                         "${formatDashcamTime(currentClip.startTs)} - ${formatDashcamTime(currentClip.endTs)}",
-                        color = TextSecondary,
+                        color = Color.White.copy(alpha = 0.72f),
                         fontSize = 9.sp,
                     )
                 }
@@ -281,7 +276,11 @@ internal fun DashcamVideoPanel(
                     enabled = currentIndex < clips.lastIndex,
                     modifier = Modifier.size(36.dp),
                 ) {
-                    Icon(Icons.Outlined.SkipNext, contentDescription = "下一段录像")
+                    Icon(
+                        Icons.Outlined.SkipNext,
+                        contentDescription = "下一段录像",
+                        tint = if (currentIndex < clips.lastIndex) Color.White else Color.White.copy(alpha = 0.3f),
+                    )
                 }
             }
 
@@ -292,7 +291,10 @@ internal fun DashcamVideoPanel(
                         onClick = { currentIndex = index },
                         label = { Text(formatDashcamClock(clip.startTs), fontSize = 10.sp) },
                         colors = FilterChipDefaults.filterChipColors(
+                            containerColor = Color.White.copy(alpha = 0.08f),
+                            labelColor = Color.White.copy(alpha = 0.82f),
                             selectedContainerColor = AccentBlue.copy(alpha = 0.24f),
+                            selectedLabelColor = Color.White,
                         ),
                     )
                 }
@@ -303,50 +305,40 @@ internal fun DashcamVideoPanel(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(8.dp),
-        color = CardSurfaceElevated,
+        color = Color.Black,
         tonalElevation = 6.dp,
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize().padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            videoContent(Modifier.fillMaxSize())
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.58f))
+                    .padding(start = 12.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("行程录像", color = TextPrimary, fontSize = 16.sp)
+                    Text("行程录像", color = Color.White, fontSize = 15.sp)
                     Text(
                         "${formatDashcamTime(trip.startTs)} - " +
                             (trip.endTs?.let(::formatDashcamTime) ?: "进行中") +
                             " · ${clips.size} 段",
-                        color = TextSecondary,
+                        color = Color.White.copy(alpha = 0.72f),
                         fontSize = 10.sp,
                     )
                 }
                 IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Outlined.Close, contentDescription = "关闭录像", tint = TextPrimary)
+                    Icon(Icons.Outlined.Close, contentDescription = "关闭录像", tint = Color.White)
                 }
             }
-            BoxWithConstraints(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                if (maxWidth >= 520.dp) {
-                    Row(
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        videoContent(Modifier.weight(1.1f).fillMaxHeight())
-                        controlsContent(Modifier.weight(0.9f).fillMaxHeight())
-                    }
-                } else {
-                    Column(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        videoContent(
-                            Modifier.fillMaxWidth().weight(1f)
-                                .heightIn(min = 80.dp, max = 380.dp),
-                        )
-                        controlsContent(Modifier.fillMaxWidth())
-                    }
-                }
-            }
+            controlsContent(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.68f))
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            )
         }
     }
 }

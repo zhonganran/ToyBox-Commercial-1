@@ -1,7 +1,6 @@
 package com.byd.wjx.ui.automation
 
 import android.content.Context
-import com.byd.wjx.data.automation.MirrorTiltRequest
 import com.byd.wjx.data.local.entity.ActionDef
 import com.byd.wjx.storage.SoundLibrary
 import org.json.JSONObject
@@ -257,57 +256,6 @@ fun newAutoDoorAction(): ActionDef = ActionDef(
     kind = "auto_door",
     payload = autoDoorPayload(AUTO_DOOR_ACTIONS.first())
 )
-
-// --- 后视镜位置动作 ---
-
-internal fun newMirrorTiltAction(): ActionDef {
-    val request = MirrorTiltRequest(
-        leftEnabled = true,
-        rightEnabled = true,
-        leftHorizontalOffset = MirrorTiltRequest.DEFAULT_HORIZONTAL_OFFSET,
-        leftVerticalOffset = MirrorTiltRequest.DEFAULT_VERTICAL_OFFSET,
-        rightHorizontalOffset = MirrorTiltRequest.DEFAULT_HORIZONTAL_OFFSET,
-        rightVerticalOffset = MirrorTiltRequest.DEFAULT_VERTICAL_OFFSET,
-    )
-    return ActionDef(
-        command = "mirror_tilt",
-        displayName = mirrorTiltDisplayName(request),
-        kind = "mirror_tilt",
-        payload = MirrorTiltRequest.payload(request),
-    )
-}
-
-internal fun newMirrorRestoreAction(): ActionDef = ActionDef(
-    command = "mirror_restore",
-    displayName = "恢复后视镜位置",
-    kind = "mirror_restore",
-)
-
-internal fun ActionDef.mirrorTiltRequest(): MirrorTiltRequest? = MirrorTiltRequest.parse(payload)
-
-internal fun ActionDef.withMirrorTiltRequest(request: MirrorTiltRequest): ActionDef = copy(
-    command = "mirror_tilt",
-    displayName = mirrorTiltDisplayName(request),
-    kind = "mirror_tilt",
-    payload = MirrorTiltRequest.payload(request),
-)
-
-private fun mirrorTiltDisplayName(request: MirrorTiltRequest): String {
-    val sides = buildList {
-        if (request.leftEnabled) {
-            add("左 ${request.leftHorizontalOffset.axisOffset("横")} ${request.leftVerticalOffset.axisOffset("纵")}")
-        }
-        if (request.rightEnabled) {
-            add("右 ${request.rightHorizontalOffset.axisOffset("横")} ${request.rightVerticalOffset.axisOffset("纵")}")
-        }
-    }.joinToString(" · ")
-    return if (sides.isBlank()) "后视镜下翻" else "后视镜下翻：$sides"
-}
-
-private fun Float.axisOffset(axis: String): String {
-    val value = toInt()
-    return "$axis${if (value > 0) "+$value" else value.toString()}"
-}
 
 fun newStopOutsideSoundAction(): ActionDef = ActionDef(
     command = "stop_outside_sound",

@@ -6,6 +6,7 @@ import okhttp3.Dns
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FallbackDnsTest {
@@ -58,6 +59,40 @@ class FallbackDnsTest {
 
         assertEquals("DNS resolution failed", failure.message)
         assertFalse(failure.message.orEmpty().contains("private.example.test"))
+    }
+
+    @Test
+    fun `recent successful address is reused during a transient resolver outage`() {
+        val cachedAddress = address(10, 0, 0, 3)
+        var now = 1_000L
+        var cacheUsed = false
+        var firstLookup = true
+        var fallbackLookupCount = 0
+        val dns = FallbackDns(
+            resolvers = listOf(
+                FakeDns {
+                    if (firstLookup) {
+                        firstLookup = false
+                        listOf(cachedAddress)
+                    } else {
+                        throw UnknownHostException("temporary outage")
+                    }
+                },
+                FakeDns {
+                    fallbackLookupCount += 1
+                    throw UnknownHostException("fallback unavailable")
+                },
+            ),
+            onCacheUsed = { cacheUsed = true },
+            cacheTtlMs = 60_000L,
+            clockMs = { now },
+        )
+
+        assertEquals(listOf(cachedAddress), dns.lookup("example.test"))
+        now += 1_000L
+        assertEquals(listOf(cachedAddress), dns.lookup("example.test"))
+        assertTrue(cacheUsed)
+        assertEquals(0, fallbackLookupCount)
     }
 
     private class FakeDns(private val lookupResult: () -> List<InetAddress>) : Dns {

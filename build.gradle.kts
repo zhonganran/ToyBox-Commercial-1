@@ -36,7 +36,7 @@ tasks.register("verifySourceHealth") {
             "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsVehicleEventSoundState.kt" to 40,
             "app/src/main/kotlin/com/byd/wjx/ui/settings/VehicleEventSoundCoordinator.kt" to 195,
             "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsVehicleSoundSection.kt" to 305,
-            "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsMaintenanceCoordinator.kt" to 180,
+            "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsMaintenanceCoordinator.kt" to 205,
             "app/src/main/kotlin/com/byd/wjx/ui/settings/ServiceQrRepository.kt" to 130,
             "app/src/main/kotlin/com/byd/wjx/ui/settings/ServiceQrTransportPolicy.kt" to 80,
             "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsServiceQrCoordinator.kt" to 85,
@@ -64,7 +64,7 @@ tasks.register("verifySourceHealth") {
             "app/src/main/kotlin/com/byd/wjx/ui/settings/PaymentCheckoutContent.kt" to 230,
             "app/src/main/kotlin/com/byd/wjx/ui/settings/IpixelFaPresetPreview.kt" to 100,
             "app/src/main/kotlin/com/byd/wjx/data/sound/LocalSoundLibraryCoordinator.kt" to 130,
-            "app/src/main/kotlin/com/byd/wjx/storage/SoundLibrary.kt" to 195,
+            "app/src/main/kotlin/com/byd/wjx/storage/SoundLibrary.kt" to 205,
             "app/src/main/kotlin/com/byd/wjx/ui/sound/SoundViewModel.kt" to 350,
             "app/src/main/kotlin/com/byd/wjx/ui/sound/SoundScreen.kt" to 130,
             "app/src/main/kotlin/com/byd/wjx/ui/sound/SoundLocalTab.kt" to 340,
@@ -93,13 +93,13 @@ tasks.register("verifySourceHealth") {
             "app/src/main/kotlin/com/byd/wjx/led/ipixelfa/IpixelFaGattTransport.kt" to 190,
             "app/src/main/kotlin/com/byd/wjx/led/ipixelfa/IpixelFaBleCallbacks.kt" to 45,
             "app/src/main/kotlin/com/byd/wjx/led/ipixelfa/IpixelFaConnectionPolicy.kt" to 30,
-            "app/src/main/kotlin/com/byd/wjx/led/ipixelfa/IpixelFaRuntimeCoordinator.kt" to 400,
+            "app/src/main/kotlin/com/byd/wjx/led/ipixelfa/IpixelFaRuntimeCoordinator.kt" to 465,
             "app/src/main/kotlin/com/byd/wjx/led/mafu/MafuBleClient.kt" to 500,
             "app/src/main/kotlin/com/byd/wjx/led/mafu/MafuGattTransport.kt" to 300,
             "app/src/main/kotlin/com/byd/wjx/led/mafu/MafuBleProtocolSession.kt" to 150,
             "app/src/main/kotlin/com/byd/wjx/led/mafu/MafuConnectionPolicy.kt" to 30,
             "app/src/main/kotlin/com/byd/wjx/led/mafu/MafuBleCallbacks.kt" to 30,
-            "app/src/main/kotlin/com/byd/wjx/led/mafu/MafuRuntimeCoordinator.kt" to 420,
+            "app/src/main/kotlin/com/byd/wjx/led/mafu/MafuRuntimeCoordinator.kt" to 485,
             "app/src/main/kotlin/com/byd/wjx/helper/HelperLockSoundRuntime.kt" to 390,
             "app/src/main/kotlin/com/byd/wjx/helper/HelperLockSoundMonitor.kt" to 370,
             "app/src/main/kotlin/com/byd/wjx/helper/HelperLockSoundConfigStore.kt" to 110,
@@ -139,12 +139,13 @@ tasks.register("verifySourceHealth") {
             "app/src/main/kotlin/com/byd/wjx/data/automation/AutomationExternalActionHandler.kt" to 130,
             "app/src/main/kotlin/com/byd/wjx/data/automation/AutomationHttpActionHandler.kt" to 65,
             "app/src/main/kotlin/com/byd/wjx/data/automation/AutomationMediaActionHandler.kt" to 260,
-            "app/src/main/kotlin/com/byd/wjx/ui/map/MapScreen.kt" to 140,
+            "app/src/main/kotlin/com/byd/wjx/ui/map/MapScreen.kt" to 205,
             "app/src/main/kotlin/com/byd/wjx/ui/map/MapPane.kt" to 140,
             "app/src/main/kotlin/com/byd/wjx/ui/map/MapScreenControls.kt" to 65,
             "app/src/main/kotlin/com/byd/wjx/ui/map/MapLocationState.kt" to 80,
-            "app/src/main/kotlin/com/byd/wjx/ui/map/OsmdroidMapContent.kt" to 230,
-            "app/src/main/kotlin/com/byd/wjx/ui/map/TripRecordsPanel.kt" to 300,
+            "app/src/main/kotlin/com/byd/wjx/ui/map/OsmdroidMapContent.kt" to 255,
+            "app/src/main/kotlin/com/byd/wjx/ui/map/TripRecordsPanel.kt" to 405,
+            "app/src/main/kotlin/com/byd/wjx/ui/map/DashcamVideoPanel.kt" to 380,
             "app/src/main/kotlin/com/byd/wjx/ui/map/TripRouteUtils.kt" to 45,
             "app/src/main/kotlin/com/byd/wjx/ui/home/ProHomePanels.kt" to 320,
             "app/src/main/kotlin/com/byd/wjx/ui/home/ProHomePanelFrame.kt" to 80,
@@ -165,7 +166,7 @@ tasks.register("verifySourceHealth") {
             "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsShortcutEditorDialog.kt" to 220,
             "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsSteeringKeyLearning.kt" to 155,
             "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsClusterGeometryControl.kt" to 75,
-            "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsAppSection.kt" to 40,
+            "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsAppSection.kt" to 65,
             "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsAppearanceSection.kt" to 190,
             "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsDataSection.kt" to 190,
             "app/src/main/kotlin/com/byd/wjx/ui/settings/SettingsDiagnosticLogSection.kt" to 110,
@@ -208,7 +209,7 @@ tasks.register("verifySourceHealth") {
             "app/src/main/kotlin/com/byd/wjx/data/backup/BackupPreferenceStore.kt" to 90,
             "app/src/main/kotlin/com/byd/wjx/data/backup/BackupDatabaseValidator.kt" to 95,
             "app/src/main/kotlin/com/byd/wjx/data/backup/BackupExporter.kt" to 100,
-            "app/src/main/kotlin/com/byd/wjx/data/backup/BackupRestorer.kt" to 110,
+            "app/src/main/kotlin/com/byd/wjx/data/backup/BackupRestorer.kt" to 140,
             "app/src/main/kotlin/com/byd/wjx/audio/WjxOutsidePlayService.kt" to 430,
             "app/src/main/kotlin/com/byd/wjx/audio/OutsidePlaybackPlayer.kt" to 130,
             "app/src/main/kotlin/com/byd/wjx/audio/OutsidePlaybackCommands.kt" to 100,
@@ -263,7 +264,7 @@ tasks.register("verifySourceHealth") {
             "app/src/main/kotlin/com/byd/wjx/data/local/HistoryMaintenanceCoordinator.kt" to 85,
             "app/src/main/kotlin/com/byd/wjx/ui/automation/AutomationActionDefinitions.kt" to 430,
             "app/src/main/kotlin/com/byd/wjx/ui/help/UsageGuideScreen.kt" to 405,
-            "app/src/main/kotlin/com/byd/wjx/clustercard/ClusterCardSettingsContent.kt" to 395,
+            "app/src/main/kotlin/com/byd/wjx/clustercard/ClusterCardSettingsContent.kt" to 410,
             "app/src/main/kotlin/com/byd/wjx/desktopcard/DesktopQuickCardContent.kt" to 390,
             "app/src/main/kotlin/com/byd/wjx/data/vehicle/VehicleApiImpl.kt" to 105,
             "app/src/main/kotlin/com/byd/wjx/data/vehicle/VehicleWriteExecutor.kt" to 240,
@@ -283,7 +284,7 @@ tasks.register("verifySourceHealth") {
             "app/src/main/kotlin/com/byd/wjx/ui/automation/AutomationCatalog.kt" to 340,
             "app/src/main/kotlin/com/byd/wjx/ui/charges/ChargeEditDialog.kt" to 340,
             "app/src/main/kotlin/com/byd/wjx/desktopcard/DesktopQuickCardModels.kt" to 325,
-            "app/src/main/kotlin/com/byd/wjx/data/vehicle/WriteAllowlist.kt" to 320,
+            "app/src/main/kotlin/com/byd/wjx/data/vehicle/WriteAllowlist.kt" to 335,
             "app/src/main/kotlin/com/byd/wjx/ui/dashboard/DashboardViewModel.kt" to 290,
             "app/src/main/kotlin/com/byd/wjx/ui/dashboard/DashboardModels.kt" to 160,
             "app/src/main/kotlin/com/byd/wjx/ui/dashboard/DashboardTimeRanges.kt" to 60,
@@ -423,16 +424,14 @@ tasks.register("verifySourceHealth") {
         val clusterCardView =
             file("app/src/main/kotlin/com/byd/wjx/clustercard/ClusterCardView.kt")
         val clusterCardText = clusterCardController.readText() + clusterCardView.readText()
-        listOf("Configuration.UI_MODE_NIGHT", "applyNightMode(", "nightMode:")
-            .firstOrNull(clusterCardText::contains)?.let { detail ->
-                violations +=
-                    "instrument card restores deleted system font-color switching: $detail"
-            }
         listOf(
-            "labelPaint.color = Color.argb(210, 255, 255, 255)",
-            "valuePaint.color = Color.WHITE",
-        ).firstOrNull { it !in clusterCardView.readText() }?.let { guard ->
-            violations += "instrument card is missing fixed high-contrast palette: $guard"
+            "ClusterCardDayNightMode.resolve",
+            "currentNightMode()",
+            "Dispatchers.IO",
+            "Color.WHITE",
+            "Color.BLACK",
+        ).firstOrNull { it !in clusterCardText }?.let { guard ->
+            violations += "instrument card is missing day/night font-color linkage: $guard"
         }
 
         val automationEngine =

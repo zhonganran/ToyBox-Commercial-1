@@ -316,7 +316,7 @@ class MusicNotificationListenerService : NotificationListenerService() {
         ).map { it.trim() }.filter { LyricTextFilter.isUsable(it) }
 
     private fun parseBydTimedLyrics(raw: String?): List<LyricLine>? =
-        LyricRepository.parseBydMetadataLyrics(raw, "media_metadata")?.lines
+        LyricParsers.parseBydMetadataLyrics(raw, "media_metadata")?.lines
 
     companion object {
         private const val TAG = "MusicLyricsListener"

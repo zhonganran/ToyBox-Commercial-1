@@ -138,15 +138,6 @@ internal fun AddActionButton(
                 text = { Text(stringResource(R.string.automation_action_auto_door), fontSize = 13.sp) },
                 onClick = { menuExpanded = false; onAdd(newAutoDoorAction()) },
             )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_mirror_tilt), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAdd(newMirrorTiltAction()) },
-            )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.automation_action_mirror_restore), fontSize = 13.sp) },
-                onClick = { menuExpanded = false; onAdd(newMirrorRestoreAction()) },
-            )
-
             AutomationMenuGroupHeader(
                 stringResource(R.string.automation_action_group_media),
                 AccentTeal,

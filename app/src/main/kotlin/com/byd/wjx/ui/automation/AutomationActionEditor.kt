@@ -17,7 +17,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.byd.wjx.R
-import com.byd.wjx.data.automation.MirrorTiltRequest
 import com.byd.wjx.data.local.entity.ActionDef
 import com.byd.wjx.domain.vehicle.VehicleCommandSyntax
 import com.byd.wjx.ui.theme.*
@@ -73,19 +72,13 @@ internal fun ActionRow(
                 SimpleActionControls(action = action, modifier = Modifier.weight(1f))
             "auto_door" ->
                 AutoDoorActionControls(action = action, onUpdate = onUpdate, modifier = Modifier.weight(1f))
-            "mirror_tilt" ->
-                MirrorTiltActionControls(action = action, onUpdate = onUpdate, modifier = Modifier.weight(1f))
-            "mirror_restore" ->
-                SimpleActionControls(action = action, modifier = Modifier.weight(1f))
             else -> // "param" (default)
                 ParamActionControls(action = action, onUpdate = onUpdate, modifier = Modifier.weight(1f))
         }
 
         // Vehicle commands and cabin sounds can use the exact saved action path for live testing.
         val canTest = (action.kind == "param" && action.command.isNotBlank()) ||
-            (action.kind == "inside_sound" && action.insideSoundPath().isNotBlank()) ||
-            action.kind == "mirror_tilt" ||
-            action.kind == "mirror_restore"
+            (action.kind == "inside_sound" && action.insideSoundPath().isNotBlank())
         if (canTest) {
             Spacer(Modifier.width(4.dp))
             IconButton(onClick = { onTest(action) }, modifier = Modifier.size(34.dp)) {
@@ -387,175 +380,6 @@ private fun AutoDoorActionControls(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun MirrorTiltActionControls(
-    action: ActionDef,
-    onUpdate: (ActionDef) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val request = action.mirrorTiltRequest() ?: MirrorTiltRequest(
-        leftEnabled = true,
-        rightEnabled = true,
-        leftHorizontalOffset = MirrorTiltRequest.DEFAULT_HORIZONTAL_OFFSET,
-        leftVerticalOffset = MirrorTiltRequest.DEFAULT_VERTICAL_OFFSET,
-        rightHorizontalOffset = MirrorTiltRequest.DEFAULT_HORIZONTAL_OFFSET,
-        rightVerticalOffset = MirrorTiltRequest.DEFAULT_VERTICAL_OFFSET,
-    )
-    var editing by remember { mutableStateOf(false) }
-
-    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-            Icons.Outlined.VerticalAlignBottom,
-            contentDescription = null,
-            tint = AccentTeal,
-            modifier = Modifier.size(16.dp),
-        )
-        Spacer(Modifier.width(7.dp))
-        Text(
-            action.displayName,
-            color = TextPrimary,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier
-                .weight(1f)
-                .clickable { editing = true }
-                .padding(vertical = 7.dp),
-            maxLines = 2,
-        )
-        IconButton(onClick = { editing = true }, modifier = Modifier.size(32.dp)) {
-            Icon(Icons.Outlined.Tune, "调节后视镜下翻", tint = AccentTeal, modifier = Modifier.size(17.dp))
-        }
-    }
-
-    if (editing) {
-        var pending by remember(request) { mutableStateOf(request) }
-        AlertDialog(
-            onDismissRequest = { editing = false },
-            containerColor = CardSurface,
-            title = { Text("后视镜下翻", color = TextPrimary, fontSize = 16.sp) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    MirrorOffsetControl(
-                        label = "左后视镜",
-                        enabled = pending.leftEnabled,
-                        onEnabledChange = { pending = pending.copy(leftEnabled = it) },
-                        horizontalOffset = pending.leftHorizontalOffset,
-                        verticalOffset = pending.leftVerticalOffset,
-                        onHorizontalOffsetChange = {
-                            pending = pending.copy(leftHorizontalOffset = it)
-                        },
-                        onVerticalOffsetChange = {
-                            pending = pending.copy(leftVerticalOffset = it)
-                        },
-                    )
-                    HorizontalDivider(color = CardBorder)
-                    MirrorOffsetControl(
-                        label = "右后视镜",
-                        enabled = pending.rightEnabled,
-                        onEnabledChange = { pending = pending.copy(rightEnabled = it) },
-                        horizontalOffset = pending.rightHorizontalOffset,
-                        verticalOffset = pending.rightVerticalOffset,
-                        onHorizontalOffsetChange = {
-                            pending = pending.copy(rightHorizontalOffset = it)
-                        },
-                        onVerticalOffsetChange = {
-                            pending = pending.copy(rightVerticalOffset = it)
-                        },
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = pending.isValid(),
-                    onClick = {
-                        onUpdate(action.withMirrorTiltRequest(pending))
-                        editing = false
-                    },
-                ) {
-                    Text("确定", color = if (pending.isValid()) AccentGreen else TextMuted)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { editing = false }) {
-                    Text("取消", color = TextSecondary)
-                }
-            },
-        )
-    }
-}
-
-@Composable
-private fun MirrorOffsetControl(
-    label: String,
-    enabled: Boolean,
-    onEnabledChange: (Boolean) -> Unit,
-    horizontalOffset: Float,
-    verticalOffset: Float,
-    onHorizontalOffsetChange: (Float) -> Unit,
-    onVerticalOffsetChange: (Float) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(label, color = TextPrimary, fontSize = 13.sp, modifier = Modifier.weight(1f))
-            Switch(checked = enabled, onCheckedChange = onEnabledChange)
-        }
-        MirrorAxisOffsetControl(
-            label = "左右位置",
-            negativeDirection = "向左",
-            positiveDirection = "向右",
-            value = horizontalOffset,
-            enabled = enabled,
-            onValueChange = onHorizontalOffsetChange,
-        )
-        MirrorAxisOffsetControl(
-            label = "上下位置",
-            negativeDirection = "向上",
-            positiveDirection = "向下",
-            value = verticalOffset,
-            enabled = enabled,
-            onValueChange = onVerticalOffsetChange,
-        )
-    }
-}
-
-@Composable
-private fun MirrorAxisOffsetControl(
-    label: String,
-    negativeDirection: String,
-    positiveDirection: String,
-    value: Float,
-    enabled: Boolean,
-    onValueChange: (Float) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(label, color = TextSecondary, fontSize = 12.sp, modifier = Modifier.weight(1f))
-            Text(
-                value.directionLabel(negativeDirection, positiveDirection),
-                color = if (enabled) AccentTeal else TextMuted,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        Slider(
-            value = value,
-            onValueChange = { onValueChange(it.roundToInt().toFloat()) },
-            enabled = enabled,
-            valueRange = MirrorTiltRequest.OFFSET_MIN..MirrorTiltRequest.OFFSET_MAX,
-            steps = 59,
-        )
-    }
-}
-
-private fun Float.directionLabel(negativeDirection: String, positiveDirection: String): String {
-    val rounded = roundToInt()
-    return when {
-        rounded < 0 -> "$negativeDirection ${-rounded}"
-        rounded > 0 -> "$positiveDirection $rounded"
-        else -> "不偏移 0"
     }
 }
 

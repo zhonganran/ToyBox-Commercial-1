@@ -52,6 +52,24 @@ class MusicPlaybackStateTest {
         )
 
         assertFalse(basic.songKey() == rich.songKey())
+        assertFalse(basic.lyricKey() == rich.lyricKey())
+    }
+
+    @Test
+    fun lyricKey_distinguishesDifferentTrackVersions() {
+        val complete = MusicPlaybackSnapshot(
+            title = "蔡健雅-被驯服的象",
+            artist = "蔡健雅",
+            durationMs = 208_000L,
+            mediaUri = "content://player/current/123",
+        )
+        val incomplete = complete.copy(durationMs = 0L, mediaUri = null)
+        val changedUri = complete.copy(mediaUri = "content://player/session/456")
+
+        assertFalse(complete.lyricKey() == incomplete.lyricKey())
+        assertFalse(complete.lyricKey() == changedUri.lyricKey())
+        assertFalse(complete.songKey() == incomplete.songKey())
+        assertFalse(complete.songKey() == changedUri.songKey())
     }
 
     @Test
@@ -78,8 +96,8 @@ class MusicPlaybackStateTest {
         val neteaseWithoutId = qishuiWithoutId.copy(packageName = "com.netease.cloudmusic")
         val neteaseWithId = neteaseWithoutId.copy(mediaId = "7123456789012345678")
 
-        assertFalse(qishuiWithoutId.songKey() == qishuiWithId.songKey())
-        assertEquals(neteaseWithoutId.songKey(), neteaseWithId.songKey())
+        assertFalse(qishuiWithoutId.lyricKey() == qishuiWithId.lyricKey())
+        assertEquals(neteaseWithoutId.lyricKey(), neteaseWithId.lyricKey())
     }
 
     @Test
@@ -179,6 +197,37 @@ class MusicPlaybackStateTest {
         assertEquals(listOf("上一句", "当前句", "下一句"), snapshot.realtimeLyrics)
         assertEquals(2_000L, snapshot.positionMs)
         MusicPlaybackStore.publish(MusicPlaybackSnapshot.EMPTY)
+    }
+
+    @Test
+    fun musicPlaybackStore_preservesDurationWhenSameTrackMetadataTemporarilyDropsIt() {
+        MusicPlaybackStore.publish(
+            MusicPlaybackSnapshot(
+                title = "蔡健雅-被驯服的象",
+                artist = "蔡健雅",
+                durationMs = 208_000L,
+                mediaUri = "content://player/current/123",
+                playing = true,
+                packageName = "com.byd.mediacenter",
+            ),
+        )
+        val lyricKey = MusicPlaybackStore.state.value.lyricKey()
+
+        MusicPlaybackStore.publish(
+            MusicPlaybackSnapshot(
+                title = "蔡健雅-被驯服的象",
+                artist = "蔡健雅",
+                durationMs = 0L,
+                mediaUri = null,
+                positionMs = 10_000L,
+                playing = true,
+                packageName = "com.byd.mediacenter",
+            ),
+        )
+
+        assertEquals(208_000L, MusicPlaybackStore.state.value.durationMs)
+        assertEquals("content://player/current/123", MusicPlaybackStore.state.value.mediaUri)
+        assertEquals(lyricKey, MusicPlaybackStore.state.value.lyricKey())
     }
 
     @Test

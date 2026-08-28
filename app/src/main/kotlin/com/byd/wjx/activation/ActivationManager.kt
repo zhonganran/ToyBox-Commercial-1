@@ -113,7 +113,7 @@ class ActivationManager @Inject constructor(
     suspend fun refreshIfNeeded(forceAfterMs: Long = STATUS_REFRESH_INTERVAL_MS): ActivationSnapshot =
         withContext(Dispatchers.IO) {
             val missingDevice = storedVinCode().isBlank() || storedDeviceAliases().isEmpty()
-            if (missingDevice || entitlementStore.shouldRefresh(forceAfterMs)) {
+            if (entitlementStore.shouldRefresh(forceAfterMs, refreshForMissingDevice = missingDevice)) {
                 refreshSnapshotSingleFlight()
             } else {
                 currentSnapshot()
@@ -158,9 +158,23 @@ class ActivationManager @Inject constructor(
         WjxFileLogger.i(TAG, "refreshSnapshot candidates=${candidates.size} primaryLength=${deviceCode.length}")
         if (deviceCode.isNotBlank()) {
             runCatching { apiClient.requestStatus(deviceCode) }
-                .onSuccess { applyServerStatus(it, deviceCode) }
+                .onSuccess {
+                    if (!applyServerStatus(it, deviceCode)) {
+                        val backoff = entitlementStore.recordRefreshFailure()
+                        WjxFileLogger.w(
+                            TAG,
+                            "status response rejected retryIn=${backoff.retryAfterMs}ms " +
+                                "failure=${backoff.failureCount}",
+                        )
+                    }
+                }
                 .onFailure {
-                    WjxFileLogger.w(TAG, "status request failed: ${it.message}", it)
+                    val backoff = entitlementStore.recordRefreshFailure()
+                    WjxFileLogger.w(
+                        TAG,
+                        "status request failed: ${EndpointPrivacy.userMessage(it, "网络不可用")} " +
+                            "retryIn=${backoff.retryAfterMs}ms failure=${backoff.failureCount}",
+                    )
                 }
         } else {
             WjxFileLogger.w(TAG, "refreshSnapshot no stable device code")
@@ -254,12 +268,12 @@ class ActivationManager @Inject constructor(
         json: JSONObject,
         deviceCode: String,
         requestedActivationCode: String = "",
-    ) {
+    ): Boolean {
         val normalizedDevice = normalizeDeviceCode(deviceCode)
         val serverDeviceCode = normalizeDeviceCode(json.optString("deviceCode", ""))
         if (normalizedDevice.isBlank() || serverDeviceCode != normalizedDevice) {
             WjxFileLogger.w(TAG, "server status rejected: VIN mismatch")
-            return
+            return false
         }
         val entitlement = entitlementStore.applyServerStatus(
             json = json,
@@ -273,6 +287,7 @@ class ActivationManager @Inject constructor(
                 "boundCode=${entitlement.boundActivationCode.isNotBlank()} " +
                 "trialEndsAt=${entitlement.serverTrialEndsAt}",
         )
+        return true
     }
 
     private fun storedVinCode(): String =

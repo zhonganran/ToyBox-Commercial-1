@@ -17,6 +17,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
@@ -30,6 +32,10 @@ class ClusterCardController @Inject constructor(
     private var clusterWidth = 1280
     private var clusterHeight = 480
     private var lastMissingDisplayLogAt = 0L
+    private val dayNightModeMutex = Mutex()
+    private var cachedNightMode = false
+    private var lastDayNightModeReadAtMs = Long.MIN_VALUE
+    private var loggedDayNightMode = false
 
     suspend fun render(
         slot: ClusterCardSlot,
@@ -37,43 +43,73 @@ class ClusterCardController @Inject constructor(
         vehicleConnected: Boolean,
         baseData: DiParsData?,
         telemetryData: DiParsData?,
-    ) = withContext(Dispatchers.Main.immediate) {
-        val window = window(slot)
-        val metrics = ClusterCardMetricCatalog.selected(config)
-        if (
-            !ClusterCardVisibility.shouldShow(
-                config = config,
-                vehicleConnected = vehicleConnected,
-                overlayPermissionGranted = Settings.canDrawOverlays(appContext),
-            )
-        ) {
-            hideInternal(slot)
-            return@withContext
-        }
+    ) {
+        val nightMode = currentNightMode()
+        withContext(Dispatchers.Main.immediate) {
+            val window = window(slot)
+            val metrics = ClusterCardMetricCatalog.selected(config)
+            if (
+                !ClusterCardVisibility.shouldShow(
+                    config = config,
+                    vehicleConnected = vehicleConnected,
+                    overlayPermissionGranted = Settings.canDrawOverlays(appContext),
+                )
+            ) {
+                hideInternal(slot)
+                return@withContext
+            }
 
-        ensureDisplayStillValid(slot)
-        if (window.cardView == null && !show(slot, config)) return@withContext
-        val view = window.cardView ?: return@withContext
-        val lp = window.params ?: return@withContext
-        val newWidth = windowWidth(config, window.displayContext)
-        val newHeight = windowHeight(config, window.displayContext)
-        var changed = false
-        if (lp.width != newWidth || lp.height != newHeight) {
-            lp.width = newWidth
-            lp.height = newHeight
-            changed = true
+            ensureDisplayStillValid(slot)
+            if (window.cardView == null && !show(slot, config)) return@withContext
+            val view = window.cardView ?: return@withContext
+            val lp = window.params ?: return@withContext
+            val newWidth = windowWidth(config, window.displayContext)
+            val newHeight = windowHeight(config, window.displayContext)
+            var changed = false
+            if (lp.width != newWidth || lp.height != newHeight) {
+                lp.width = newWidth
+                lp.height = newHeight
+                changed = true
+            }
+            val oldX = lp.x
+            val oldY = lp.y
+            positionByPercent(lp, config)
+            view.bind(metrics, baseData, telemetryData, config, nightMode)
+            if (changed || lp.x != oldX || lp.y != oldY) {
+                runCatching { window.windowManager?.updateViewLayout(view, lp) }
+                    .onFailure {
+                        WjxFileLogger.w(TAG, "${slot.label} update failed; rebuilding: ${it.message}")
+                        hideInternal(slot)
+                    }
+            }
         }
-        val oldX = lp.x
-        val oldY = lp.y
-        positionByPercent(lp, config)
-        view.bind(metrics, baseData, telemetryData, config)
-        if (changed || lp.x != oldX || lp.y != oldY) {
-            runCatching { window.windowManager?.updateViewLayout(view, lp) }
-                .onFailure {
-                    WjxFileLogger.w(TAG, "${slot.label} update failed; rebuilding: ${it.message}")
-                    hideInternal(slot)
-                }
+    }
+
+    private suspend fun currentNightMode(): Boolean = dayNightModeMutex.withLock {
+        val now = SystemClock.elapsedRealtime()
+        if (
+            lastDayNightModeReadAtMs != Long.MIN_VALUE &&
+            now - lastDayNightModeReadAtMs < DAY_NIGHT_REFRESH_INTERVAL_MS
+        ) {
+            return@withLock cachedNightMode
         }
+        val resolution = withContext(Dispatchers.IO) {
+            ClusterCardDayNightMode.resolveState(
+                appContext.contentResolver,
+                appContext.resources.configuration,
+            )
+        }
+        lastDayNightModeReadAtMs = now
+        if (!loggedDayNightMode || cachedNightMode != resolution.isNight) {
+            WjxFileLogger.i(
+                TAG,
+                "instrument card dayNight mode night=${resolution.isNight} " +
+                    "source=${resolution.source.name.lowercase()} raw=${resolution.rawValue ?: "null"}",
+            )
+            loggedDayNightMode = true
+        }
+        cachedNightMode = resolution.isNight
+        cachedNightMode
     }
 
     fun stop() {
@@ -221,6 +257,7 @@ class ClusterCardController @Inject constructor(
         const val DEFAULT_CLUSTER_DISPLAY_ID = 2
         const val MINIMUM_WINDOW_HEIGHT_DP = 28f
         const val MISSING_DISPLAY_LOG_INTERVAL_MS = 30_000L
+        const val DAY_NIGHT_REFRESH_INTERVAL_MS = 1_000L
         const val CLUSTER_FLAGS =
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
