@@ -87,6 +87,16 @@ internal class VehicleWriteExecutor(
 
         val readback = readBackAfterWrite(entry, value)
         if (readback == READBACK_SENTINEL) {
+            if (entry.readbackPolicy == ReadbackPolicy.BEST_EFFORT) {
+                return acceptWithoutReadback(
+                    actionName = actionName,
+                    entry = entry,
+                    value = value,
+                    readback = readback,
+                    diagnostic = "readback_sentinel",
+                    auditId = auditId,
+                )
+            }
             val failure = if (entry.validated) {
                 VehicleWriteError.Sentinel(actionName)
             } else {
@@ -105,6 +115,16 @@ internal class VehicleWriteExecutor(
         }
 
         if (readback != null && readback.toInt() != value) {
+            if (entry.readbackPolicy == ReadbackPolicy.BEST_EFFORT) {
+                return acceptWithoutReadback(
+                    actionName = actionName,
+                    entry = entry,
+                    value = value,
+                    readback = readback,
+                    diagnostic = "readback_mismatch",
+                    auditId = auditId,
+                )
+            }
             val failure = if (entry.validated) {
                 VehicleWriteError.ReadbackMismatch(
                     actionName,
@@ -134,6 +154,33 @@ internal class VehicleWriteExecutor(
         auditLogger.logOutcome(
             actionName, entry.dev, entry.writeFid, value, readback?.toInt(), true,
             null, entry.validated, auditId,
+        )
+        return Result.success(Unit)
+    }
+
+    private suspend fun acceptWithoutReadback(
+        actionName: String,
+        entry: WriteEntry,
+        value: Int,
+        readback: Long?,
+        diagnostic: String,
+        auditId: Long?,
+    ): Result<Unit> {
+        WjxFileLogger.i(
+            TAG,
+            "doWrite accepted: action=$actionName dev=${entry.dev} fid=${entry.writeFid} " +
+                "value=$value readback=$readback diagnostic=$diagnostic policy=best_effort",
+        )
+        auditLogger.logOutcome(
+            actionName,
+            entry.dev,
+            entry.writeFid,
+            value,
+            readback?.toInt(),
+            true,
+            null,
+            entry.validated,
+            auditId,
         )
         return Result.success(Unit)
     }

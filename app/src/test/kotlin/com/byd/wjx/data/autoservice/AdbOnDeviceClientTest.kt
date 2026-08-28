@@ -120,6 +120,30 @@ class AdbOnDeviceClientTest {
     }
 
     @Test
+    fun `connect stays successful when daemon key file is unavailable after identity backup`() = runTest {
+        val fake = FakeProtocol(connectResult = true).apply {
+            execResponder = { command ->
+                when {
+                    command.contains("settings put system wjx_adb_identity_v1") ->
+                        AdbShellCommands.IDENTITY_BACKUP_SAVED_MARKER
+                    command.contains("/data/misc/adb/adb_keys") -> ""
+                    else -> ""
+                }
+            }
+        }
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val manager = AdbConnectionManager(
+            preferences = context.getSharedPreferences("adb-backup-no-daemon-file-test", 0),
+            protocolFactory = { fake },
+            authorizedKeyLineProvider = { "A".repeat(700) + " wjx@device" },
+            encryptedIdentityBackupProvider = { "encrypted_backup_123" },
+        )
+
+        assertTrue(manager.connect().isSuccess)
+        assertTrue(fake.isConnected())
+    }
+
+    @Test
     fun `concurrent connect calls share one adb handshake`() = runTest {
         val fake = FakeProtocol(connectResult = true, connectDelayMs = 100)
         val client = newClient(fake)

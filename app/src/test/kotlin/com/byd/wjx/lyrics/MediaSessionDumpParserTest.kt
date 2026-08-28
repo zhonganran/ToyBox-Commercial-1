@@ -92,4 +92,18 @@ class MediaSessionDumpParserTest {
 
         assertNull(snapshot)
     }
+
+    @Test
+    fun parse_rejectsTelecomSessionEvenWhenItContainsCopiedMusicMetadata() {
+        val snapshot = MediaSessionDumpParser.parse(
+            """
+            Sessions Stack - have 1 sessions:
+              SessionRecord{call packageName=com.android.server.telecom}
+                metadata: size=3, description=Nightwish-Bye Bye Beautiful, Nightwish, null
+                state=PlaybackState {state=3, position=65170, buffered position=0, speed=1.0, updated=1000}
+            """.trimIndent(),
+        )
+
+        assertNull(snapshot)
+    }
 }

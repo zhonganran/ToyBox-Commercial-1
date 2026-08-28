@@ -99,6 +99,8 @@ internal object ClusterCardDayNightMode {
     private const val LEGACY_KEY_COLUMN = "key"
     private const val VALUE_COLUMN = "value"
     private const val GLOBAL_URI_STRING = "content://carsettings/global"
-    private const val VEHICLE_NIGHT_VALUE = 0
-    private const val VEHICLE_DAY_VALUE = 1
+    // BYD CarSettings.Global stores sys_day_or_night as a boolean:
+    // 0=false uses daytime brightness, 1=true uses nighttime brightness.
+    private const val VEHICLE_NIGHT_VALUE = 1
+    private const val VEHICLE_DAY_VALUE = 0
 }

@@ -113,6 +113,20 @@ class MusicPlaybackStateTest {
     }
 
     @Test
+    fun sameTrackAndLyricKey_ignorePackageChangesForTheSameMediaIdentity() {
+        val mediaCenter = MusicPlaybackSnapshot(
+            title = "晚风",
+            artist = "歌手A",
+            durationMs = 240_000L,
+            packageName = "com.byd.mediacenter",
+        )
+        val copiedSession = mediaCenter.copy(packageName = "com.android.server.telecom")
+
+        assertTrue(copiedSession.isSameSongAs(mediaCenter))
+        assertEquals(mediaCenter.lyricKey(), copiedSession.lyricKey())
+    }
+
+    @Test
     fun trackKey_changesWhenEmbeddedLyricsAreCorrected() {
         val stale = MusicPlaybackSnapshot(
             title = "晚风",
@@ -132,6 +146,8 @@ class MusicPlaybackStateTest {
         assertFalse(MusicPlaybackSnapshot(title = "“音乐”正在运行", playing = true).hasSong)
         assertFalse(MusicPlaybackSnapshot(title = "null", artist = "null", playing = true).hasSong)
         assertFalse(MusicPlaybackSnapshot(title = "(null)", playing = true).hasSong)
+        assertFalse(MusicPlaybackSnapshot(title = "MediaCenter", artist = "MediaCenter", playing = true).hasSong)
+        assertFalse(MusicPlaybackSnapshot(title = "酷我音乐(remote)", artist = "好音质", playing = true).hasSong)
     }
 
     @Test
@@ -310,7 +326,7 @@ class MusicPlaybackStateTest {
         )
 
         assertEquals(56_000L, MusicPlaybackStore.state.value.positionMs)
-        assertEquals(MusicPlaybackSource.AdbFallback, MusicPlaybackStore.state.value.source)
+        assertEquals(MusicPlaybackSource.MediaController, MusicPlaybackStore.state.value.source)
     }
 
     @Test
@@ -357,7 +373,7 @@ class MusicPlaybackStateTest {
         assertEquals(originalSongKey, snapshot.songKey())
         assertEquals(36_000L, snapshot.positionMs)
         assertEquals(7_000L, snapshot.anchorElapsedMs)
-        assertEquals(MusicPlaybackSource.AdbFallback, snapshot.source)
+        assertEquals(MusicPlaybackSource.MediaController, snapshot.source)
     }
 
     @Test
@@ -388,5 +404,40 @@ class MusicPlaybackStateTest {
         )
 
         assertEquals(qishui, MusicPlaybackStore.state.value)
+    }
+
+    @Test
+    fun musicPlaybackStore_rejectsLargeAdbPositionJumpForProjectedPrimaryPlayback() {
+        MusicPlaybackStore.publishAt(
+            MusicPlaybackSnapshot(
+                title = "Nightwish-Bye Bye Beautiful",
+                artist = "Nightwish",
+                positionMs = 30_000L,
+                playing = true,
+                packageName = "com.byd.mediacenter",
+                anchorElapsedMs = 10_000L,
+                sessionUpdatedElapsedMs = 10_000L,
+                source = MusicPlaybackSource.MediaController,
+            ),
+            nowElapsedMs = 10_000L,
+        )
+
+        MusicPlaybackStore.publishAt(
+            MusicPlaybackSnapshot(
+                title = "Nightwish-Bye Bye Beautiful",
+                artist = "Nightwish",
+                positionMs = 105_000L,
+                playing = true,
+                packageName = "com.byd.mediacenter",
+                anchorElapsedMs = 20_000L,
+                sessionUpdatedElapsedMs = 20_000L,
+                source = MusicPlaybackSource.AdbFallback,
+            ),
+            nowElapsedMs = 20_000L,
+        )
+
+        val snapshot = MusicPlaybackStore.state.value
+        assertEquals(30_000L, snapshot.positionMs)
+        assertEquals(MusicPlaybackSource.MediaController, snapshot.source)
     }
 }

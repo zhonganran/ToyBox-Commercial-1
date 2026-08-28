@@ -19,7 +19,7 @@ object MediaSessionDumpParser {
             .filter { it.hasSong }
         val preferred = snapshots.filter {
             it.packageName.isBlank() || SupportedMusicPackages.isSupported(it.packageName)
-        }.ifEmpty { snapshots }
+        }
         return preferred
             .sortedWith(
                 compareByDescending<MusicPlaybackSnapshot> { it.playing }

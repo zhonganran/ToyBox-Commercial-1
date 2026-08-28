@@ -24,6 +24,9 @@ object MusicIdentity {
         "none",
         "unknown",
         "unknown title",
+        "mediacenter",
+        "酷我音乐",
+        "酷我音乐(remote)",
     )
 
     fun songKey(title: String, artist: String): String =
@@ -74,13 +77,6 @@ object MusicIdentity {
         nextPackageName: String,
     ): Boolean {
         if (!isSameSong(previousTitle, previousArtist, nextTitle, nextArtist)) return false
-        if (
-            previousPackageName.isNotBlank() &&
-            nextPackageName.isNotBlank() &&
-            previousPackageName != nextPackageName
-        ) {
-            return false
-        }
         val previousUri = normalizeMediaUri(previousMediaUri)
         val nextUri = normalizeMediaUri(nextMediaUri)
         if (previousUri != null && nextUri != null && previousUri != nextUri) return false

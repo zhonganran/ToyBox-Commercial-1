@@ -60,12 +60,7 @@ class HelperBootstrap @Inject constructor(
         if (vehicleProtocolAvailable()) return true
 
         WjxFileLogger.w(TAG, "helper protocol is stale or incomplete; restarting after update")
-        if (!spawnAndWaitLocked("protocol_upgrade")) return false
-        val ready = vehicleProtocolAvailable()
-        if (!ready) {
-            WjxFileLogger.w(TAG, "helper restarted but required protocol is still unavailable")
-        }
-        ready
+        restartAndWaitForCurrentLocked("protocol_upgrade")
     }
 
     suspend fun ensureVehicleReadsReady(): Boolean = ensureCurrent()
@@ -77,8 +72,7 @@ class HelperBootstrap @Inject constructor(
      */
     suspend fun restart(reason: String): Boolean = mutex.withLock {
         WjxFileLogger.w(TAG, "helper restart requested: $reason")
-        noteProtocolReady(false)
-        spawnAndWaitLocked("restart:$reason")
+        restartAndWaitForCurrentLocked("restart:$reason")
     }
 
     private suspend fun spawnAndWaitLocked(reason: String): Boolean {
@@ -99,31 +93,59 @@ class HelperBootstrap @Inject constructor(
         return false
     }
 
+    private suspend fun restartAndWaitForCurrentLocked(reason: String): Boolean {
+        noteProtocolReady(false)
+        val dispatched = HelperProcessGate.withRestart { adb.spawnHelper() }
+        if (!dispatched) {
+            WjxFileLogger.w(TAG, "spawnHelper dispatch failed reason=$reason")
+        }
+        repeat(POLL_ATTEMPTS) {
+            delay(POLL_INTERVAL_MS)
+            if (vehicleProtocolAvailable(logMismatch = false)) {
+                WjxFileLogger.i(TAG, "current helper ready after $reason poll=${it + 1}")
+                return true
+            }
+        }
+        vehicleProtocolAvailable(logMismatch = true)
+        val log = adb.readHelperLog()
+        WjxFileLogger.w(
+            TAG,
+            "current helper unavailable after $reason; daemon log:\n${log.orEmpty().takeLast(2000)}",
+        )
+        return false
+    }
+
     private suspend fun batchProtocolAvailable(): Boolean {
         val values = helper.readBatch(VehicleGateway.AVAILABILITY_PROBES) ?: return false
         return values.size == VehicleGateway.AVAILABILITY_PROBES.size
     }
 
-    private suspend fun vehicleProtocolAvailable(): Boolean {
+    private suspend fun vehicleProtocolAvailable(logMismatch: Boolean = true): Boolean {
         val version = helper.protocolVersion() ?: return false
         if (version != HelperBinderProtocol.CURRENT_VERSION) {
-            WjxFileLogger.i(
-                TAG,
-                "helper protocol version=$version required=${HelperBinderProtocol.CURRENT_VERSION}",
-            )
+            if (logMismatch) {
+                WjxFileLogger.i(
+                    TAG,
+                    "helper protocol version=$version required=${HelperBinderProtocol.CURRENT_VERSION}",
+                )
+            }
             return false
         }
         val runtimeVersionCode = helper.runtimeVersionCode() ?: return false
         if (runtimeVersionCode != BuildConfig.VERSION_CODE) {
-            WjxFileLogger.i(
-                TAG,
-                "helper apk version=$runtimeVersionCode required=${BuildConfig.VERSION_CODE}",
-            )
+            if (logMismatch) {
+                WjxFileLogger.i(
+                    TAG,
+                    "helper apk version=$runtimeVersionCode required=${BuildConfig.VERSION_CODE}",
+                )
+            }
             return false
         }
         val expectedInstallIdentity = installIdentityStore?.current()
         if (expectedInstallIdentity != null && helper.runtimeInstallIdentity() != expectedInstallIdentity) {
-            WjxFileLogger.i(TAG, "helper belongs to a previous app installation")
+            if (logMismatch) {
+                WjxFileLogger.i(TAG, "helper belongs to a previous app installation")
+            }
             return false
         }
         return batchProtocolAvailable().also(::noteProtocolReady)

@@ -55,6 +55,27 @@ class HelperBootstrapTest {
     }
 
     @Test
+    fun `vehicle read readiness waits until old binder identity is replaced`() = runTest {
+        val helper = mockk<HelperClient>()
+        val adb = mockk<AdbOnDeviceClient>(relaxed = true)
+        coEvery { helper.isAlive() } returns true
+        coEvery { adb.spawnHelper() } returns true
+        coEvery { helper.protocolVersion() } returnsMany listOf(
+            0,
+            0,
+            HelperBinderProtocol.CURRENT_VERSION,
+        )
+        coEvery { helper.runtimeVersionCode() } returns BuildConfig.VERSION_CODE
+        coEvery { helper.readBatch(VehicleGateway.AVAILABILITY_PROBES) } returns probeReply()
+
+        val ready = HelperBootstrap(adb, helper).ensureVehicleReadsReady()
+
+        assertTrue(ready)
+        coVerify(exactly = 1) { adb.spawnHelper() }
+        coVerify(exactly = 3) { helper.protocolVersion() }
+    }
+
+    @Test
     fun `vehicle read readiness restarts current helper when batch protocol is incomplete`() = runTest {
         val helper = mockk<HelperClient>()
         val adb = mockk<AdbOnDeviceClient>(relaxed = true)

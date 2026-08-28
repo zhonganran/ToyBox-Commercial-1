@@ -202,6 +202,22 @@ class VehicleApiWriteTest {
         coVerify(exactly = 0) { gateway.readRaw(any()) }
     }
 
+    @Test fun `headlight height accepts successful write when optional readback is sentinel`() = runTest {
+        val productionAllowlist = WriteAllowlist.loadProduction { "{}" }
+        val headlightApi: VehicleApi = VehicleApiImpl(
+            parsReader,
+            gateway,
+            productionAllowlist,
+            writeLogDao,
+        )
+        val entry = requireNotNull(productionAllowlist.find("headlight_height_level"))
+        coEvery { gateway.writeStatus(entry.dev, entry.writeFid, 5) } returns 0
+        coEvery { gateway.readRaw(readbackSpec(entry)) } returns VehicleRawRead(0, -10011)
+
+        assertTrue(headlightApi.dispatch("前照灯高度3档").isSuccess)
+        coVerify(exactly = 1) { gateway.writeStatus(entry.dev, entry.writeFid, 5) }
+    }
+
     // ── C.5: DAO receives audit entry on write ────────────────────────────────
 
     @Test fun `writeAcOn updates one durable audit row with outcome`() = runTest {

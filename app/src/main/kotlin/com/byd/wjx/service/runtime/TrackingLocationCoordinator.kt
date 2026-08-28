@@ -152,8 +152,8 @@ class TrackingLocationCoordinator @Inject constructor(
 
     private companion object {
         const val TAG = "TrackingLocation"
-        const val LOCATION_INTERVAL_MS = 2_000L
-        const val LOCATION_MIN_DISTANCE_M = 8.0f
+        const val LOCATION_INTERVAL_MS = 10_000L
+        const val LOCATION_MIN_DISTANCE_M = 0.0f
         const val FIX_LOG_INTERVAL_MS = 60_000L
     }
 }

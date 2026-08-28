@@ -53,6 +53,30 @@ class MusicNotificationPlaybackTest {
     }
 
     @Test
+    fun sameSongWithOlderControllerAnchor_keepsProjectedProgress() {
+        val previous = MusicPlaybackSnapshot(
+            title = "旅行",
+            artist = "歌手",
+            positionMs = 57_000L,
+            playing = true,
+            packageName = "com.byd.mediacenter",
+            anchorElapsedMs = 65_000L,
+            sessionUpdatedElapsedMs = 65_000L,
+        )
+
+        val resolved = resolveNotificationPlaybackAnchor(
+            previous = previous,
+            sameSong = true,
+            statePositionMs = 122_170L,
+            stateUpdatedAtMs = 60_000L,
+            nowElapsedMs = 75_000L,
+        )
+
+        assertEquals(67_000L, resolved.positionMs)
+        assertEquals(75_000L, resolved.anchorElapsedMs)
+    }
+
+    @Test
     fun changedSong_doesNotReusePreviousPosition() {
         val previous = MusicPlaybackSnapshot(
             title = "旧歌",

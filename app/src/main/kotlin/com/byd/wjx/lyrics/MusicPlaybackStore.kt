@@ -5,6 +5,7 @@ import com.byd.wjx.log.WjxFileLogger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlin.math.abs
 
 /** Arbitrates primary media sessions and the lower-priority on-device ADB fallback. */
 object MusicPlaybackStore {
@@ -34,6 +35,17 @@ object MusicPlaybackStore {
                 nextArtist = snapshot.artist,
             )
             if (sameSongIgnoringPackage) {
+                val previousPosition = previous.projectedPositionMs(nowElapsedMs)
+                val fallbackPosition = snapshot.projectedPositionMs(nowElapsedMs)
+                val driftMs = fallbackPosition - previousPosition
+                if (previous.source.isPrimary && abs(driftMs) > FALLBACK_POSITION_DRIFT_LIMIT_MS) {
+                    WjxFileLogger.d(
+                        TAG,
+                        "ADB position rejected drift=${driftMs}ms currentPkg=${previous.packageName} " +
+                            "fallbackPkg=${snapshot.packageName} title=${snapshot.title.take(48)}",
+                    )
+                    return
+                }
                 val shouldLogMerge = previous.source != MusicPlaybackSource.AdbFallback
                 _state.value = previous.withPlaybackPositionFrom(snapshot)
                 if (shouldLogMerge) {
@@ -121,9 +133,9 @@ object MusicPlaybackStore {
         anchorElapsedMs = fallback.anchorElapsedMs,
         sessionUpdatedElapsedMs = fallback.sessionUpdatedElapsedMs,
         playbackSpeed = fallback.playbackSpeed,
-        source = MusicPlaybackSource.AdbFallback,
     )
 
     private const val TAG = "MusicPlaybackStore"
     private const val PRIMARY_SOURCE_FRESH_MS = 5_000L
+    private const val FALLBACK_POSITION_DRIFT_LIMIT_MS = 10_000L
 }

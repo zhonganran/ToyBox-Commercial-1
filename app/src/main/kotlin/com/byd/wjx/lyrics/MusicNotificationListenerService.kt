@@ -28,9 +28,20 @@ internal fun resolveNotificationPlaybackAnchor(
     val validStatePosition = statePositionMs?.takeIf { it >= 0L }
     val canUseControllerPosition = sameSong || !previous.hasSong
     if (canUseControllerPosition && validStatePosition != null) {
+        val stateAnchor = stateUpdatedAtMs?.takeIf { it > 0L } ?: nowElapsedMs
+        if (
+            sameSong &&
+            previous.sessionUpdatedElapsedMs > 0L &&
+            stateAnchor < previous.sessionUpdatedElapsedMs
+        ) {
+            return NotificationPlaybackAnchor(
+                positionMs = previous.projectedPositionMs(nowElapsedMs),
+                anchorElapsedMs = nowElapsedMs,
+            )
+        }
         return NotificationPlaybackAnchor(
             positionMs = validStatePosition,
-            anchorElapsedMs = stateUpdatedAtMs?.takeIf { it > 0L } ?: nowElapsedMs,
+            anchorElapsedMs = stateAnchor,
         )
     }
     if (sameSong) {

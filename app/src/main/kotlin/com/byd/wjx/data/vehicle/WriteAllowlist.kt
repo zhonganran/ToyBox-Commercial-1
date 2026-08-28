@@ -40,7 +40,13 @@ data class WriteEntry(
     val category: String,
     val validated: Boolean,
     val source: String,
+    val readbackPolicy: ReadbackPolicy = ReadbackPolicy.REQUIRED,
 )
+
+enum class ReadbackPolicy {
+    REQUIRED,
+    BEST_EFFORT,
+}
 
 class WriteAllowlist(private val map: Map<String, WriteEntry>) {
     val size: Int get() = map.size
@@ -176,6 +182,20 @@ class WriteAllowlist(private val map: Map<String, WriteEntry>) {
             // Hazard switch is write-only on this channel: 1=on, 0=off.
             WriteEntry("hazard_on",  1004, 871366669, null, 1, 1, "lights", true, "bydmate-field-2026-07-31"),
             WriteEntry("hazard_off", 1004, 871366669, null, 0, 0, "lights", true, "bydmate-field-2026-07-31"),
+            // Settings APK mapping confirmed in vehicle on 2026-08-28. The setter succeeds,
+            // while the official readback channel returns a firmware sentinel on this model.
+            WriteEntry(
+                "headlight_height_level",
+                1004,
+                1125122084,
+                1254096916,
+                1,
+                11,
+                "lights",
+                true,
+                "wjx-live-2026-08-28",
+                ReadbackPolicy.BEST_EFFORT,
+            ),
             // mirror heat = rear-window defrost (single button on Fangchengbao Bao 3) — 1=on, 0=off, dev=1000
             WriteEntry("defrost_rear_on",  1000, 501219357, null, 1, 1, "climate", true, "wjx-live-2026-05-29"),
             WriteEntry("defrost_rear_off", 1000, 501219357, null, 0, 0, "climate", true, "wjx-live-2026-05-29"),
@@ -200,18 +220,6 @@ class WriteAllowlist(private val map: Map<String, WriteEntry>) {
          * LIVE_VALIDATED still wins on collision.
          */
         val CANDIDATE_UNVALIDATED: List<WriteEntry> = listOf(
-            // Original Settings APK: UI index 0..5 maps to raw 11,9,7,5,3,1.
-            WriteEntry(
-                "headlight_height_level",
-                1004,
-                1125122084,
-                1254096916,
-                1,
-                11,
-                "lights",
-                false,
-                "byd-settings-apk",
-            ),
             // Seat heat/vent fallback channel. value range 1..6:
             // 1=off, 2=lvl1 ... 6=lvl5.
             WriteEntry("driver_seat_heat_fallback",    1001, 1125122068, null, 1, 6, "seats", false, "validated-v80"),

@@ -245,6 +245,9 @@ class WriteAllowlistTest {
         assertEquals(1254096916, entry.readbackFid)
         assertEquals(1, entry.valueMin)
         assertEquals(11, entry.valueMax)
+        assertTrue(entry.validated)
+        assertEquals("wjx-live-2026-08-28", entry.source)
+        assertEquals(ReadbackPolicy.BEST_EFFORT, entry.readbackPolicy)
     }
 
     @Test fun `hazard switch is allowed only on its dedicated fid`() {

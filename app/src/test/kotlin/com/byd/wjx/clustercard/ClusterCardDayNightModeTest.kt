@@ -6,13 +6,13 @@ import org.junit.Test
 
 class ClusterCardDayNightModeTest {
     @Test
-    fun `vehicle value one is daytime`() {
-        assertEquals(false, ClusterCardDayNightMode.parseVehicleNightMode("1"))
+    fun `vehicle value one is nighttime`() {
+        assertEquals(true, ClusterCardDayNightMode.parseVehicleNightMode("1"))
     }
 
     @Test
-    fun `vehicle value zero is nighttime`() {
-        assertEquals(true, ClusterCardDayNightMode.parseVehicleNightMode("0"))
+    fun `vehicle value zero is daytime`() {
+        assertEquals(false, ClusterCardDayNightMode.parseVehicleNightMode("0"))
     }
 
     @Test
