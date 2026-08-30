@@ -52,6 +52,26 @@ class ClusterCardRepository @Inject constructor(
         copy(heightScale = value)
     }
 
+    fun setAdaptiveTextColorEnabled(slot: ClusterCardSlot, value: Boolean) = update(slot) {
+        copy(adaptiveTextColorEnabled = value)
+    }
+
+    fun setManualTextColor(slot: ClusterCardSlot, value: ClusterCardTextColor) = update(slot) {
+        copy(manualTextColorId = value.id)
+    }
+
+    fun setTextOutlineEnabled(slot: ClusterCardSlot, value: Boolean) = update(slot) {
+        copy(textOutlineEnabled = value)
+    }
+
+    fun setBackgroundEnabled(slot: ClusterCardSlot, value: Boolean) = update(slot) {
+        copy(backgroundEnabled = value)
+    }
+
+    fun setBackgroundColor(slot: ClusterCardSlot, value: ClusterCardBackgroundColor) = update(slot) {
+        copy(backgroundColorId = value.id)
+    }
+
     fun resetPosition(slot: ClusterCardSlot) = update(slot) {
         copy(xPct = slot.defaultXPct, yPct = slot.defaultYPct)
     }
@@ -86,6 +106,20 @@ class ClusterCardRepository @Inject constructor(
             yPct = prefs.getFloat(key(KEY_Y_PCT, slot), slot.defaultYPct),
             fontScale = prefs.getFloat(key(KEY_FONT_SCALE, slot), 1f),
             heightScale = prefs.getFloat(key(KEY_HEIGHT_SCALE, slot), 1f),
+            adaptiveTextColorEnabled = prefs.getBoolean(
+                key(KEY_ADAPTIVE_TEXT_COLOR_ENABLED, slot),
+                true,
+            ),
+            manualTextColorId = prefs.getString(
+                key(KEY_MANUAL_TEXT_COLOR_ID, slot),
+                ClusterCardTextColor.DEFAULT.id,
+            ) ?: ClusterCardTextColor.DEFAULT.id,
+            textOutlineEnabled = prefs.getBoolean(key(KEY_TEXT_OUTLINE_ENABLED, slot), false),
+            backgroundEnabled = prefs.getBoolean(key(KEY_BACKGROUND_ENABLED, slot), false),
+            backgroundColorId = prefs.getString(
+                key(KEY_BACKGROUND_COLOR_ID, slot),
+                ClusterCardBackgroundColor.DEFAULT.id,
+            ) ?: ClusterCardBackgroundColor.DEFAULT.id,
         ),
     )
 
@@ -108,6 +142,14 @@ class ClusterCardRepository @Inject constructor(
             .putFloat(key(KEY_Y_PCT, slot), value.yPct)
             .putFloat(key(KEY_FONT_SCALE, slot), value.fontScale)
             .putFloat(key(KEY_HEIGHT_SCALE, slot), value.heightScale)
+            .putBoolean(
+                key(KEY_ADAPTIVE_TEXT_COLOR_ENABLED, slot),
+                value.adaptiveTextColorEnabled,
+            )
+            .putString(key(KEY_MANUAL_TEXT_COLOR_ID, slot), value.manualTextColorId)
+            .putBoolean(key(KEY_TEXT_OUTLINE_ENABLED, slot), value.textOutlineEnabled)
+            .putBoolean(key(KEY_BACKGROUND_ENABLED, slot), value.backgroundEnabled)
+            .putString(key(KEY_BACKGROUND_COLOR_ID, slot), value.backgroundColorId)
             .apply()
     }
 
@@ -126,5 +168,10 @@ class ClusterCardRepository @Inject constructor(
         private const val KEY_Y_PCT = "y_pct"
         private const val KEY_FONT_SCALE = "font_scale"
         private const val KEY_HEIGHT_SCALE = "height_scale"
+        private const val KEY_ADAPTIVE_TEXT_COLOR_ENABLED = "adaptive_text_color_enabled"
+        private const val KEY_MANUAL_TEXT_COLOR_ID = "manual_text_color_id"
+        private const val KEY_TEXT_OUTLINE_ENABLED = "text_outline_enabled"
+        private const val KEY_BACKGROUND_ENABLED = "background_enabled"
+        private const val KEY_BACKGROUND_COLOR_ID = "background_color_id"
     }
 }

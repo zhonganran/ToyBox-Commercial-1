@@ -15,6 +15,11 @@ class ClusterCardModelsTest {
         assertTrue(config.metricIds.isEmpty())
         assertEquals(1f, config.fontScale)
         assertEquals(1f, config.heightScale)
+        assertTrue(config.adaptiveTextColorEnabled)
+        assertEquals(ClusterCardTextColor.DEFAULT.id, config.manualTextColorId)
+        assertFalse(config.textOutlineEnabled)
+        assertFalse(config.backgroundEnabled)
+        assertEquals(ClusterCardBackgroundColor.DEFAULT.id, config.backgroundColorId)
     }
 
     @Test
@@ -54,6 +59,8 @@ class ClusterCardModelsTest {
                 yPct = 140f,
                 fontScale = 3f,
                 heightScale = 0.1f,
+                manualTextColorId = "missing",
+                backgroundColorId = "missing",
             ),
         )
 
@@ -64,6 +71,8 @@ class ClusterCardModelsTest {
         assertEquals(100f, result.yPct)
         assertEquals(CLUSTER_CARD_MAX_FONT_SCALE, result.fontScale)
         assertEquals(CLUSTER_CARD_MIN_HEIGHT_SCALE, result.heightScale)
+        assertEquals(ClusterCardTextColor.DEFAULT.id, result.manualTextColorId)
+        assertEquals(ClusterCardBackgroundColor.DEFAULT.id, result.backgroundColorId)
     }
 
     @Test
@@ -71,6 +80,109 @@ class ClusterCardModelsTest {
         val result = sanitizeClusterCardConfig(ClusterCardConfig(fontScale = 0.1f))
 
         assertEquals(CLUSTER_CARD_MIN_FONT_SCALE, result.fontScale)
+    }
+
+    @Test
+    fun `adaptive text color uses black by day and white at night`() {
+        val config = ClusterCardConfig(adaptiveTextColorEnabled = true)
+
+        assertEquals(0xFF000000.toInt(), ClusterCardTextAppearance.textColor(config, false))
+        assertEquals(0xFFFFFFFF.toInt(), ClusterCardTextAppearance.textColor(config, true))
+    }
+
+    @Test
+    fun `manual text color ignores day night state`() {
+        val config = ClusterCardConfig(
+            adaptiveTextColorEnabled = false,
+            manualTextColorId = ClusterCardTextColor.MIDNIGHT_BLUE.id,
+        )
+
+        assertEquals(
+            ClusterCardTextColor.MIDNIGHT_BLUE.argb,
+            ClusterCardTextAppearance.textColor(config, false),
+        )
+        assertEquals(
+            ClusterCardTextColor.MIDNIGHT_BLUE.argb,
+            ClusterCardTextAppearance.textColor(config, true),
+        )
+    }
+
+    @Test
+    fun `outline color contrasts with selected text color`() {
+        assertEquals(
+            0xFFFFFFFF.toInt(),
+            ClusterCardTextAppearance.outlineColor(ClusterCardTextColor.DEEP_BLACK.argb),
+        )
+        assertEquals(
+            0xFF000000.toInt(),
+            ClusterCardTextAppearance.outlineColor(ClusterCardTextColor.BRIGHT_WHITE.argb),
+        )
+    }
+
+    @Test
+    fun `background color is absent while disabled and selected while enabled`() {
+        val disabled = ClusterCardConfig(
+            backgroundEnabled = false,
+            backgroundColorId = ClusterCardBackgroundColor.MIDNIGHT_BLUE.id,
+        )
+        val enabled = disabled.copy(backgroundEnabled = true)
+
+        assertEquals(null, ClusterCardBackgroundAppearance.color(disabled))
+        assertEquals(
+            ClusterCardBackgroundColor.MIDNIGHT_BLUE.argb,
+            ClusterCardBackgroundAppearance.color(enabled),
+        )
+    }
+
+    @Test
+    fun `low contrast text and background combinations enable protection outline`() {
+        assertTrue(
+            ClusterCardTextAppearance.needsContrastProtection(
+                textColor = 0xFF000000.toInt(),
+                backgroundColor = ClusterCardBackgroundColor.BLACK.argb,
+            ),
+        )
+        assertTrue(
+            ClusterCardTextAppearance.needsContrastProtection(
+                textColor = 0xFFFFFFFF.toInt(),
+                backgroundColor = ClusterCardBackgroundColor.LIGHT_GRAY.argb,
+            ),
+        )
+    }
+
+    @Test
+    fun `safe text and background combinations do not force protection outline`() {
+        assertFalse(
+            ClusterCardTextAppearance.needsContrastProtection(
+                textColor = 0xFFFFFFFF.toInt(),
+                backgroundColor = ClusterCardBackgroundColor.BLACK.argb,
+            ),
+        )
+        assertFalse(
+            ClusterCardTextAppearance.needsContrastProtection(
+                textColor = 0xFF000000.toInt(),
+                backgroundColor = ClusterCardBackgroundColor.LIGHT_GRAY.argb,
+            ),
+        )
+        assertFalse(
+            ClusterCardTextAppearance.needsContrastProtection(
+                textColor = 0xFF000000.toInt(),
+                backgroundColor = null,
+            ),
+        )
+    }
+
+    @Test
+    fun `explicit outline remains enabled for safe combinations`() {
+        val config = ClusterCardConfig(textOutlineEnabled = true)
+
+        assertTrue(
+            ClusterCardTextAppearance.outlineEnabled(
+                config = config,
+                textColor = 0xFFFFFFFF.toInt(),
+                backgroundColor = ClusterCardBackgroundColor.BLACK.argb,
+            ),
+        )
     }
 
     @Test

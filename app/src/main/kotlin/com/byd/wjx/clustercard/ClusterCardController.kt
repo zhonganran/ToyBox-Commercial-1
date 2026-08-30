@@ -46,7 +46,7 @@ class ClusterCardController @Inject constructor(
         baseData: DiParsData?,
         telemetryData: DiParsData?,
     ) {
-        val nightMode = currentNightMode()
+        val nightMode = config.adaptiveTextColorEnabled && currentNightMode()
         withContext(Dispatchers.Main.immediate) {
             val window = window(slot)
             val metrics = ClusterCardMetricCatalog.selected(config)

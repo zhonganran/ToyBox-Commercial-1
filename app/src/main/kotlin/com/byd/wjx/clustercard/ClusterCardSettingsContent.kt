@@ -2,7 +2,9 @@ package com.byd.wjx.clustercard
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -10,9 +12,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
@@ -45,6 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -174,11 +179,53 @@ fun ClusterCardSettingsContent(
     SettingsPanel {
         Text("卡片外观", color = TextPrimary, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
         Text(
-            "每张卡片可独立设置字号、宽高、尺寸和位置",
+            "每张卡片可独立设置字体颜色、描边、底色、字号、宽高、尺寸和位置",
             color = TextSecondary,
             fontSize = 12.sp,
             lineHeight = 17.sp,
         )
+        ToggleRow(
+            title = "自适应字体颜色",
+            subtitle = "开启后跟随车辆昼夜状态：白天黑字，夜间白字",
+            checked = state.config.adaptiveTextColorEnabled,
+            onCheckedChange = { viewModel.setAdaptiveTextColorEnabled(slot, it) },
+        )
+        if (!state.config.adaptiveTextColorEnabled) {
+            Text("字体颜色", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            ColorPicker(
+                options = ClusterCardTextColor.entries,
+                selected = ClusterCardTextColor.fromId(state.config.manualTextColorId),
+                onSelect = { viewModel.setManualTextColor(slot, it) },
+            )
+        }
+        HorizontalDivider(color = CardBorder)
+        ToggleRow(
+            title = "文字描边",
+            subtitle = "开启后始终描边；关闭时仅在字体与底色对比不足时自动保护",
+            checked = state.config.textOutlineEnabled,
+            onCheckedChange = { viewModel.setTextOutlineEnabled(slot, it) },
+        )
+        HorizontalDivider(color = CardBorder)
+        ToggleRow(
+            title = "显示底色",
+            subtitle = "在卡片数据区域后显示半透明底色",
+            checked = state.config.backgroundEnabled,
+            onCheckedChange = { viewModel.setBackgroundEnabled(slot, it) },
+        )
+        if (state.config.backgroundEnabled) {
+            Text("底色", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            ColorPicker(
+                options = ClusterCardBackgroundColor.entries,
+                selected = ClusterCardBackgroundColor.fromId(state.config.backgroundColorId),
+                onSelect = { viewModel.setBackgroundColor(slot, it) },
+            )
+            Text(
+                "字体与底色过于接近时会自动添加保护描边",
+                color = TextSecondary,
+                fontSize = 11.sp,
+            )
+        }
+        HorizontalDivider(color = CardBorder)
         ConfigSlider(
             title = "字体大小",
             value = state.config.fontScale,
@@ -234,6 +281,34 @@ fun ClusterCardSettingsContent(
             onSelect = { viewModel.addMetric(slot, it) },
             onDismiss = { showMetricPicker = false },
         )
+    }
+}
+
+@Composable
+private fun <T : ClusterCardColorOption> ColorPicker(
+    options: List<T>,
+    selected: T,
+    onSelect: (T) -> Unit,
+) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(options, key = ClusterCardColorOption::id) { option ->
+            FilterChip(
+                selected = option == selected,
+                onClick = { onSelect(option) },
+                label = { Text(option.label, maxLines = 1) },
+                leadingIcon = {
+                    Box(
+                        modifier = Modifier
+                            .size(16.dp)
+                            .background(Color(option.argb), CircleShape)
+                            .border(1.dp, CardBorder, CircleShape),
+                    )
+                },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = AccentGreen.copy(alpha = 0.24f),
+                ),
+            )
+        }
     }
 }
 

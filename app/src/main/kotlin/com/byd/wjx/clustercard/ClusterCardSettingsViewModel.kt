@@ -96,6 +96,21 @@ class ClusterCardSettingsViewModel @Inject constructor(
 
     fun setHeightScale(slot: ClusterCardSlot, value: Float) = repository.setHeightScale(slot, value)
 
+    fun setAdaptiveTextColorEnabled(slot: ClusterCardSlot, value: Boolean) =
+        repository.setAdaptiveTextColorEnabled(slot, value)
+
+    fun setManualTextColor(slot: ClusterCardSlot, value: ClusterCardTextColor) =
+        repository.setManualTextColor(slot, value)
+
+    fun setTextOutlineEnabled(slot: ClusterCardSlot, value: Boolean) =
+        repository.setTextOutlineEnabled(slot, value)
+
+    fun setBackgroundEnabled(slot: ClusterCardSlot, value: Boolean) =
+        repository.setBackgroundEnabled(slot, value)
+
+    fun setBackgroundColor(slot: ClusterCardSlot, value: ClusterCardBackgroundColor) =
+        repository.setBackgroundColor(slot, value)
+
     fun resetPosition(slot: ClusterCardSlot) = repository.resetPosition(slot)
 
     fun requestOverlayPermission() {

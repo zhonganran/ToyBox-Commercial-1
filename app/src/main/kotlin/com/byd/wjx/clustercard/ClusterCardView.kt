@@ -20,6 +20,9 @@ internal class ClusterCardView(context: Context) : View(context) {
     private val valuePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
+    private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+    }
 
     private var metrics: List<ClusterCardMetric> = emptyList()
     private var baseData: DiParsData? = null
@@ -27,7 +30,9 @@ internal class ClusterCardView(context: Context) : View(context) {
     private var cardScale: Float = 0.65f
     private var fontScale: Float = 1f
     private var heightScale: Float = 1f
-    private var isNightMode = false
+    private var textOutlineEnabled = false
+    private var textOutlineColor = Color.WHITE
+    private var backgroundColor: Int? = null
 
     fun bind(
         metrics: List<ClusterCardMetric>,
@@ -42,13 +47,19 @@ internal class ClusterCardView(context: Context) : View(context) {
         cardScale = config.scale
         fontScale = config.fontScale
         heightScale = config.heightScale
-        isNightMode = nightMode
-        applyTextColor()
+        backgroundColor = ClusterCardBackgroundAppearance.color(config)
+        val textColor = ClusterCardTextAppearance.textColor(config, nightMode)
+        textOutlineEnabled = ClusterCardTextAppearance.outlineEnabled(
+            config = config,
+            textColor = textColor,
+            backgroundColor = backgroundColor,
+        )
+        applyTextAppearance(textColor)
         invalidate()
     }
 
     init {
-        applyTextColor()
+        applyTextAppearance(Color.BLACK)
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -61,6 +72,20 @@ internal class ClusterCardView(context: Context) : View(context) {
         val contentTop = density * 6f
         val contentBottom = height - density * 6f
         val rowHeight = (contentBottom - contentTop) / rows
+
+        backgroundColor?.let { color ->
+            backgroundPaint.color = color
+            val radius = density * BACKGROUND_CORNER_RADIUS_DP
+            canvas.drawRoundRect(
+                contentLeft,
+                contentTop,
+                contentRight,
+                contentBottom,
+                radius,
+                radius,
+                backgroundPaint,
+            )
+        }
 
         repeat(rows - 1) { row ->
             val y = contentTop + rowHeight * (row + 1)
@@ -110,8 +135,8 @@ internal class ClusterCardView(context: Context) : View(context) {
         val textTop = top + ((bottom - top - textBlockHeight) / 2f).coerceAtLeast(0f)
         val labelBaseline = textTop - labelPaint.ascent()
         val valueBaseline = textTop + labelHeight + lineGap - valuePaint.ascent()
-        canvas.drawText(label, left + horizontalPadding, labelBaseline, labelPaint)
-        canvas.drawText(value, left + horizontalPadding, valueBaseline, valuePaint)
+        drawText(canvas, label, left + horizontalPadding, labelBaseline, labelPaint)
+        drawText(canvas, value, left + horizontalPadding, valueBaseline, valuePaint)
     }
 
     private fun fitText(paint: Paint, text: String, maxWidth: Float, minSize: Float) {
@@ -120,11 +145,30 @@ internal class ClusterCardView(context: Context) : View(context) {
         }
     }
 
-    private fun applyTextColor() {
-        val color = if (isNightMode) Color.WHITE else Color.BLACK
+    private fun drawText(canvas: Canvas, text: String, x: Float, baseline: Float, paint: Paint) {
+        if (textOutlineEnabled) {
+            val fillColor = paint.color
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = (paint.textSize * OUTLINE_WIDTH_RATIO).coerceIn(
+                density * MIN_OUTLINE_WIDTH_DP,
+                density * MAX_OUTLINE_WIDTH_DP,
+            )
+            paint.strokeJoin = Paint.Join.ROUND
+            paint.color = textOutlineColor
+            canvas.drawText(text, x, baseline, paint)
+            paint.style = Paint.Style.FILL
+            paint.color = fillColor
+        }
+        canvas.drawText(text, x, baseline, paint)
+    }
+
+    private fun applyTextAppearance(color: Int) {
         dividerPaint.color = withAlpha(color, 70)
         labelPaint.color = color
         valuePaint.color = color
+        labelPaint.style = Paint.Style.FILL
+        valuePaint.style = Paint.Style.FILL
+        textOutlineColor = ClusterCardTextAppearance.outlineColor(color)
         labelPaint.clearShadowLayer()
         valuePaint.clearShadowLayer()
     }
@@ -135,5 +179,12 @@ internal class ClusterCardView(context: Context) : View(context) {
         Color.green(color),
         Color.blue(color),
     )
+
+    private companion object {
+        const val OUTLINE_WIDTH_RATIO = 0.09f
+        const val MIN_OUTLINE_WIDTH_DP = 1f
+        const val MAX_OUTLINE_WIDTH_DP = 2.2f
+        const val BACKGROUND_CORNER_RADIUS_DP = 6f
+    }
 
 }
