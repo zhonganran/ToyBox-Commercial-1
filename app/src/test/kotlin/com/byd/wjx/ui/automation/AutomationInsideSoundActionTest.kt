@@ -19,10 +19,17 @@ class AutomationInsideSoundActionTest {
         assertEquals("/sdcard/WJX/提示音.mp3", action.insideSoundPath())
         assertEquals("提示音", action.insideSoundName())
         assertFalse(action.insideSoundLoop())
+        assertEquals(30, action.insideSoundVolume())
 
         val looping = action.withInsideSoundLoop(true)
         assertTrue(looping.insideSoundLoop())
         assertEquals("车内播放：提示音（循环）", looping.displayName)
         assertEquals(action.insideSoundPath(), looping.insideSoundPath())
+
+        val quieter = looping.withInsideSoundVolume(20)
+        assertEquals(20, quieter.insideSoundVolume())
+        assertTrue(quieter.insideSoundLoop())
+        assertEquals(action.insideSoundPath(), quieter.insideSoundPath())
+        assertEquals(100, quieter.withInsideSoundVolume(150).insideSoundVolume())
     }
 }

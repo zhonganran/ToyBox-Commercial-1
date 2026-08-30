@@ -55,6 +55,41 @@ class TrackingFeatureRuntimesTest {
         verify(exactly = 1) { fixture.mafu.stop() }
     }
 
+    @Test
+    fun `wake requests reconnect for both active LED runtimes`() = runTest {
+        val fixture = fixture(ledAllowed = true)
+
+        fixture.runtimes.refreshLedAccess(this)
+        fixture.runtimes.requestLedReconnect("broadcast:android.intent.action.SCREEN_ON")
+        fixture.runtimes.requestLedReconnect("broadcast:android.intent.action.USER_PRESENT")
+
+        verify(exactly = 1) { fixture.ipixel.start(any()) }
+        verify(exactly = 1) { fixture.mafu.start(any()) }
+        verify(exactly = 1) {
+            fixture.ipixel.requestReconnect("broadcast:android.intent.action.SCREEN_ON")
+        }
+        verify(exactly = 1) {
+            fixture.ipixel.requestReconnect("broadcast:android.intent.action.USER_PRESENT")
+        }
+        verify(exactly = 1) {
+            fixture.mafu.requestReconnect("broadcast:android.intent.action.SCREEN_ON")
+        }
+        verify(exactly = 1) {
+            fixture.mafu.requestReconnect("broadcast:android.intent.action.USER_PRESENT")
+        }
+    }
+
+    @Test
+    fun `wake does not request reconnect while LED feature is locked`() = runTest {
+        val fixture = fixture(ledAllowed = false)
+
+        fixture.runtimes.refreshLedAccess(this)
+        fixture.runtimes.requestLedReconnect("broadcast:android.intent.action.BOOT_COMPLETED")
+
+        verify(exactly = 0) { fixture.ipixel.requestReconnect(any()) }
+        verify(exactly = 0) { fixture.mafu.requestReconnect(any()) }
+    }
+
     private fun fixture(ledAllowed: Boolean): Fixture {
         val steering = mockk<SteeringWheelRuntimeCoordinator>(relaxed = true)
         val network = mockk<NetworkAvailableMonitor>(relaxed = true)

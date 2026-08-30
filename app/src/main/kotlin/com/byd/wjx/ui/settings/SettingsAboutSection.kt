@@ -2,19 +2,33 @@ package com.byd.wjx.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -35,6 +49,38 @@ internal fun SettingsAboutSection(
     onAutoCheckUpdatesChange: (Boolean) -> Unit,
     onCheckForUpdates: () -> Unit,
 ) {
+    val context = LocalContext.current
+    var showThirdPartyNotices by remember { mutableStateOf(false) }
+    val thirdPartyNotices = remember {
+        runCatching {
+            context.assets.open("THIRD_PARTY_NOTICES.md").bufferedReader().use { it.readText() }
+        }.getOrElse { "第三方许可文件读取失败：${it.message.orEmpty()}" }
+    }
+
+    if (showThirdPartyNotices) {
+        AlertDialog(
+            onDismissRequest = { showThirdPartyNotices = false },
+            title = { Text("第三方开源许可", color = TextPrimary) },
+            text = {
+                Text(
+                    thirdPartyNotices,
+                    color = TextSecondary,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                    modifier = Modifier
+                        .heightIn(max = 520.dp)
+                        .verticalScroll(rememberScrollState()),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showThirdPartyNotices = false }) {
+                    Text("关闭", color = AccentBlue)
+                }
+            },
+            containerColor = CardSurfaceElevated,
+        )
+    }
+
     SectionHeader(text = stringResource(R.string.settings_about_header))
     Card(
         shape = RoundedCornerShape(12.dp),
@@ -100,7 +146,21 @@ internal fun SettingsAboutSection(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                 )
+                }
+            }
+
+            OutlinedButton(
+                onClick = { showThirdPartyNotices = true },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+            ) {
+                Icon(Icons.Outlined.Description, contentDescription = null)
+                Text(
+                    "查看第三方开源许可",
+                    modifier = Modifier.padding(start = 8.dp),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                )
             }
         }
-    }
 }

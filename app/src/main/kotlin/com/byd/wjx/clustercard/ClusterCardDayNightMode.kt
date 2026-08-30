@@ -14,22 +14,34 @@ internal object ClusterCardDayNightMode {
     val vehicleModeUri: Uri
         get() = Uri.withAppendedPath(globalUri, VEHICLE_MODE_KEY)
 
-    fun resolve(contentResolver: ContentResolver, configuration: Configuration): Boolean =
-        resolveState(contentResolver, configuration).isNight
+    fun resolve(
+        contentResolver: ContentResolver,
+        configuration: Configuration,
+        liveSignalRaw: Int? = null,
+    ): Boolean = resolveState(contentResolver, configuration, liveSignalRaw).isNight
 
-    fun resolveState(contentResolver: ContentResolver, configuration: Configuration): Resolution {
+    fun resolveState(
+        contentResolver: ContentResolver,
+        configuration: Configuration,
+        liveSignalRaw: Int? = null,
+    ): Resolution {
+        val liveMode = parseLiveSignalNightMode(liveSignalRaw)
+        if (liveMode != null) {
+            return Resolution(liveMode, Source.VEHICLE_LIGHT_SIGNAL, liveSignalRaw.toString())
+        }
         val rawValue = readVehicleNightModeRaw(contentResolver)
         val vehicleMode = parseVehicleNightMode(rawValue)
         return if (vehicleMode != null) {
-            Resolution(vehicleMode, Source.VEHICLE, rawValue)
+            Resolution(vehicleMode, Source.VEHICLE_DATABASE, rawValue)
         } else {
-            Resolution(isAndroidNightMode(configuration), Source.ANDROID, rawValue)
+            Resolution(isAndroidNightMode(configuration), Source.SYSTEM_UI, rawValue)
         }
     }
 
     enum class Source {
-        VEHICLE,
-        ANDROID,
+        VEHICLE_LIGHT_SIGNAL,
+        VEHICLE_DATABASE,
+        SYSTEM_UI,
     }
 
     data class Resolution(
@@ -46,6 +58,13 @@ internal object ClusterCardDayNightMode {
             "night", "nighttime", "dark", "true" -> true
             else -> null
         }
+    }
+
+    /** BYD LIGHT_DAY_NIGHT_MODE_STATUS: 1=night, 2=day. */
+    fun parseLiveSignalNightMode(value: Int?): Boolean? = when (value) {
+        LIVE_SIGNAL_NIGHT_VALUE -> true
+        LIVE_SIGNAL_DAY_VALUE -> false
+        else -> null
     }
 
     private fun readVehicleNightModeRaw(contentResolver: ContentResolver): String? {
@@ -103,4 +122,6 @@ internal object ClusterCardDayNightMode {
     // 0=false uses daytime brightness, 1=true uses nighttime brightness.
     private const val VEHICLE_NIGHT_VALUE = 1
     private const val VEHICLE_DAY_VALUE = 0
+    private const val LIVE_SIGNAL_NIGHT_VALUE = 1
+    private const val LIVE_SIGNAL_DAY_VALUE = 2
 }

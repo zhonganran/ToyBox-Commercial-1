@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BatteryChargingFull
 import androidx.compose.material.icons.outlined.BluetoothConnected
 import androidx.compose.material.icons.outlined.CloudUpload
+import androidx.compose.material.icons.outlined.DeveloperMode
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MusicNote
@@ -51,18 +52,20 @@ internal enum class SettingsCategory {
     Led,
     EventSound,
     Data,
+    AdbRescue,
 }
 
 @Composable
 internal fun SettingsCategoryHeader(
     category: SettingsCategory,
     state: SettingsUiState,
+    adbRescueState: AdbRescueSettingsUiState,
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val status = category.status(state)
-    val accent = category.accent(state)
+    val status = category.status(state, adbRescueState)
+    val accent = category.accent(state, adbRescueState)
 
     Card(
         shape = RoundedCornerShape(14.dp),
@@ -130,10 +133,12 @@ internal fun SettingsCategoryContent(
     category: SettingsCategory,
     state: SettingsUiState,
     viewModel: SettingsViewModel,
+    adbRescueState: AdbRescueSettingsUiState,
+    adbRescueViewModel: AdbRescueSettingsViewModel,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         if (category != SettingsCategory.Auth) {
-            SettingsCategoryHero(category, state)
+            SettingsCategoryHero(category, state, adbRescueState)
         }
         when (category) {
             SettingsCategory.Auth -> {
@@ -150,6 +155,7 @@ internal fun SettingsCategoryContent(
             )
             SettingsCategory.EventSound -> VehicleEventSoundSection(state, viewModel)
             SettingsCategory.Data -> AppSection(state, viewModel)
+            SettingsCategory.AdbRescue -> AdbRescueSettingsSection(adbRescueViewModel)
         }
     }
 }
@@ -163,6 +169,7 @@ private val SettingsCategory.indexLabel: String
         SettingsCategory.Led -> "05"
         SettingsCategory.EventSound -> "06"
         SettingsCategory.Data -> "07"
+        SettingsCategory.AdbRescue -> "08"
     }
 
 private val SettingsCategory.icon: ImageVector
@@ -174,6 +181,7 @@ private val SettingsCategory.icon: ImageVector
         SettingsCategory.Led -> Icons.Outlined.BluetoothConnected
         SettingsCategory.EventSound -> Icons.Outlined.MusicNote
         SettingsCategory.Data -> Icons.Outlined.CloudUpload
+        SettingsCategory.AdbRescue -> Icons.Outlined.DeveloperMode
     }
 
 private val SettingsCategory.title: String
@@ -185,6 +193,7 @@ private val SettingsCategory.title: String
         SettingsCategory.Led -> "LED联动"
         SettingsCategory.EventSound -> "车辆事件音效"
         SettingsCategory.Data -> "数据与更新"
+        SettingsCategory.AdbRescue -> "ADB救援"
     }
 
 private val SettingsCategory.subtitle: String
@@ -196,9 +205,13 @@ private val SettingsCategory.subtitle: String
         SettingsCategory.Led -> "独立蓝牙协议、屏幕亮度和车辆事件联动"
         SettingsCategory.EventSound -> "锁车、解锁和哨兵的后台车外音效"
         SettingsCategory.Data -> "界面主题、行程轨迹、备份恢复、更新和关于"
+        SettingsCategory.AdbRescue -> "标准 ADB、BYD 无线 ADB、开机恢复与救援重试"
     }
 
-private fun SettingsCategory.status(state: SettingsUiState): String =
+private fun SettingsCategory.status(
+    state: SettingsUiState,
+    adbRescueState: AdbRescueSettingsUiState,
+): String =
     when (this) {
         SettingsCategory.Auth -> state.activation.statusLabel
         SettingsCategory.Service -> if (state.activation.activated) "已授权" else PERMANENT_AUTH_PRICE
@@ -218,9 +231,21 @@ private fun SettingsCategory.status(state: SettingsUiState): String =
             "dark" -> "黑暗主题"
             else -> "自适应主题"
         }
+        SettingsCategory.AdbRescue -> adbRescueCategoryStatus(adbRescueState)
     }
 
-private fun SettingsCategory.accent(state: SettingsUiState): Color =
+internal fun adbRescueCategoryStatus(state: AdbRescueSettingsUiState): String = when {
+    !state.guardEnabled -> "守护关闭"
+    state.report == null -> "待检查"
+    state.report.allModesEnabled && state.report.writeSecureSettingsGranted -> "守护正常"
+    state.report.allModesEnabled -> "权限缺失"
+    else -> "需修复"
+}
+
+private fun SettingsCategory.accent(
+    state: SettingsUiState,
+    adbRescueState: AdbRescueSettingsUiState,
+): Color =
     when (this) {
         SettingsCategory.Auth -> if (state.activation.activated) AccentGreen else if (state.activation.trialActive) AccentOrange else SocRed
         SettingsCategory.Service -> AccentOrange
@@ -229,11 +254,21 @@ private fun SettingsCategory.accent(state: SettingsUiState): Color =
         SettingsCategory.Led -> if (state.activation.activated || state.activation.trialActive) AccentBlue else SocRed
         SettingsCategory.EventSound -> AccentOrange
         SettingsCategory.Data -> AccentPurple
+        SettingsCategory.AdbRescue -> when (adbRescueCategoryStatus(adbRescueState)) {
+            "守护正常" -> AccentGreen
+            "守护关闭", "待检查" -> AccentBlue
+            "权限缺失" -> AccentOrange
+            else -> SocRed
+        }
     }
 
 @Composable
-private fun SettingsCategoryHero(category: SettingsCategory, state: SettingsUiState) {
-    val accent = category.accent(state)
+private fun SettingsCategoryHero(
+    category: SettingsCategory,
+    state: SettingsUiState,
+    adbRescueState: AdbRescueSettingsUiState,
+) {
+    val accent = category.accent(state, adbRescueState)
     Card(
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = CardSurface.copy(alpha = 0.92f)),
@@ -258,7 +293,7 @@ private fun SettingsCategoryHero(category: SettingsCategory, state: SettingsUiSt
                 Text(category.subtitle, color = TextSecondary, fontSize = 13.sp, lineHeight = 17.sp)
             }
             Text(
-                category.status(state),
+                category.status(state, adbRescueState),
                 color = accent,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,

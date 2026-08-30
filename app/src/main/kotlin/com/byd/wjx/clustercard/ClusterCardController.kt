@@ -1,6 +1,7 @@
 package com.byd.wjx.clustercard
 
 import android.content.Context
+import android.content.res.Resources
 import android.graphics.PixelFormat
 import android.graphics.Point
 import android.hardware.display.DisplayManager
@@ -25,6 +26,7 @@ import kotlin.math.roundToInt
 @Singleton
 class ClusterCardController @Inject constructor(
     @ApplicationContext context: Context,
+    private val dayNightSignalReader: ClusterCardDayNightSignalReader,
 ) {
     private val appContext = context.applicationContext
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -35,7 +37,7 @@ class ClusterCardController @Inject constructor(
     private val dayNightModeMutex = Mutex()
     private var cachedNightMode = false
     private var lastDayNightModeReadAtMs = Long.MIN_VALUE
-    private var loggedDayNightMode = false
+    private var lastDayNightResolution: ClusterCardDayNightMode.Resolution? = null
 
     suspend fun render(
         slot: ClusterCardSlot,
@@ -94,19 +96,25 @@ class ClusterCardController @Inject constructor(
             return@withLock cachedNightMode
         }
         val resolution = withContext(Dispatchers.IO) {
+            val liveSignalRaw = runCatching { dayNightSignalReader.readRawMode() }
+                .onFailure {
+                    WjxFileLogger.w(TAG, "instrument dayNight signal read failed: ${it.message}")
+                }
+                .getOrNull()
             ClusterCardDayNightMode.resolveState(
                 appContext.contentResolver,
-                appContext.resources.configuration,
+                Resources.getSystem().configuration,
+                liveSignalRaw,
             )
         }
         lastDayNightModeReadAtMs = now
-        if (!loggedDayNightMode || cachedNightMode != resolution.isNight) {
+        if (lastDayNightResolution != resolution) {
             WjxFileLogger.i(
                 TAG,
                 "instrument card dayNight mode night=${resolution.isNight} " +
                     "source=${resolution.source.name.lowercase()} raw=${resolution.rawValue ?: "null"}",
             )
-            loggedDayNightMode = true
+            lastDayNightResolution = resolution
         }
         cachedNightMode = resolution.isNight
         cachedNightMode

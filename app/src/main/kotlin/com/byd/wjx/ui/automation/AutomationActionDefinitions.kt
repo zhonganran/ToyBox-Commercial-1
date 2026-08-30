@@ -161,6 +161,7 @@ fun newInsideSoundAction(context: Context): ActionDef {
         payload = org.json.JSONObject().apply {
             put("path", path)
             put("name", name)
+            put("volume", DEFAULT_INSIDE_SOUND_VOLUME)
             put("loop", false)
         }.toString()
     )
@@ -178,11 +179,18 @@ fun ActionDef.insideSoundLoop(): Boolean = try {
     org.json.JSONObject(payload ?: "{}").optBoolean("loop", false)
 } catch (_: Exception) { false }
 
+fun ActionDef.insideSoundVolume(): Int = try {
+    org.json.JSONObject(payload ?: "{}")
+        .optInt("volume", DEFAULT_INSIDE_SOUND_VOLUME)
+        .coerceIn(0, 100)
+} catch (_: Exception) { DEFAULT_INSIDE_SOUND_VOLUME }
+
 fun ActionDef.withInsideSound(sound: SoundLibrary.SoundItem): ActionDef = copy(
     displayName = insideSoundDisplayName(sound.name, insideSoundLoop()),
     payload = org.json.JSONObject().apply {
         put("path", sound.file.absolutePath)
         put("name", sound.name)
+        put("volume", insideSoundVolume())
         put("loop", insideSoundLoop())
     }.toString()
 )
@@ -194,10 +202,18 @@ fun ActionDef.withInsideSoundLoop(loop: Boolean): ActionDef = copy(
     }.toString()
 )
 
+fun ActionDef.withInsideSoundVolume(volume: Int): ActionDef = copy(
+    payload = org.json.JSONObject(payload ?: "{}").apply {
+        put("volume", volume.coerceIn(0, 100))
+    }.toString()
+)
+
 private fun insideSoundDisplayName(name: String, loop: Boolean): String {
     val base = if (name.isBlank()) "车内播放音效" else "车内播放：$name"
     return if (loop) "$base（循环）" else base
 }
+
+private const val DEFAULT_INSIDE_SOUND_VOLUME = 30
 
 fun newOutsideSoundAction(context: Context): ActionDef {
     val firstSound = SoundLibrary(context.applicationContext).listSounds().firstOrNull()

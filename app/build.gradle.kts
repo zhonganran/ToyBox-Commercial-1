@@ -63,8 +63,8 @@ android {
         // on DiLink Android 12 through requestLegacyExternalStorage.
         // targetSdk 30+ would break listFiles() on /storage/emulated/0/energydata/
         targetSdk = 29
-        versionCode = 69
-        versionName = "2.1.29"
+        versionCode = 73
+        versionName = "2.1.33"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "UPDATE_API_URL", "\"$updateApiUrl\"")
@@ -223,6 +223,9 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.1")
     androidTestImplementation("androidx.room:room-testing:2.6.1")
+    androidTestImplementation(platform("androidx.compose:compose-bom:2024.12.01"))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 
     // On-device ADB is implemented in-tree and is limited to helper bootstrap and
     // narrow shell diagnostics. Production vehicle FID reads use Helper Binder.

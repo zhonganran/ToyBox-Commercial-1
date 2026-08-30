@@ -72,7 +72,10 @@ class BackupPreferencesRegistryTest {
     }
 
     @Test
-    fun `no user configuration currently requires device-protected backup`() {
-        assertTrue(BackupPreferencesRegistry.DEVICE_PROTECTED_USER_CONFIGURATION_FILES.isEmpty())
+    fun `ADB guard setting is backed up from device-protected storage`() {
+        assertEquals(
+            setOf(com.byd.wjx.adbrescue.AdbRescuePreferences.PREFS_NAME),
+            BackupPreferencesRegistry.DEVICE_PROTECTED_USER_CONFIGURATION_FILES,
+        )
     }
 }

@@ -16,6 +16,8 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.byd.wjx.MainActivity
 import com.byd.wjx.R
+import com.byd.wjx.adbrescue.AdbRescuePreferences
+import com.byd.wjx.adbrescue.AdbRescueRuntimeCoordinator
 import com.byd.wjx.audio.LockSoundConfigSync
 import com.byd.wjx.data.vehicle.HelperBootstrap
 import com.byd.wjx.data.vehicle.HelperClient
@@ -47,6 +49,8 @@ class KeepAliveService : Service() {
     @Inject lateinit var activationManager: com.byd.wjx.activation.ActivationManager
     @Inject lateinit var trackingStateRepository: TrackingStateRepository
     @Inject lateinit var lockSoundConfigSync: LockSoundConfigSync
+    @Inject lateinit var adbRescueRuntime: AdbRescueRuntimeCoordinator
+    @Inject lateinit var adbRescuePreferences: AdbRescuePreferences
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val healthHandler = Handler(Looper.getMainLooper())
@@ -71,6 +75,8 @@ class KeepAliveService : Service() {
             helperBootstrap,
             helperClient,
             trackingStateRepository,
+            adbRescueRuntime,
+            adbRescuePreferences,
             serviceScope,
         )
     }
@@ -90,6 +96,8 @@ class KeepAliveService : Service() {
             helperBootstrap,
             helperClient,
             trackingStateRepository,
+            adbRescueRuntime,
+            adbRescuePreferences,
             serviceScope,
         ).also { startupManager = it }
         manager.start(reason)

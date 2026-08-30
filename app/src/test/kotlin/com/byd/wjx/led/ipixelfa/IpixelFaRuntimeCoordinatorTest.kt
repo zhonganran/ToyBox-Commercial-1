@@ -21,6 +21,45 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class IpixelFaRuntimeCoordinatorTest {
     @Test
+    fun `wake retries FA after failure without disturbing a ready connection`() = runTest {
+        val preferenceState = MutableStateFlow(
+            IpixelFaPreferenceSnapshot(
+                enabled = true,
+                deviceAddress = "AA:BB:CC:DD:EE:FF",
+                deviceName = "FA LED",
+            ),
+        )
+        val preferences = mockk<IpixelFaPreferences>()
+        every { preferences.state } returns preferenceState
+        val connectionState = MutableStateFlow(
+            IpixelFaConnectionState(
+                phase = IpixelFaConnectionPhase.ERROR,
+                address = "AA:BB:CC:DD:EE:FF",
+            ),
+        )
+        val bleClient = mockk<IpixelFaBleClient>(relaxed = true)
+        every { bleClient.connection } returns connectionState
+        val coordinator = IpixelFaRuntimeCoordinator(
+            preferences,
+            bleClient,
+            mockk(relaxed = true),
+        )
+
+        coordinator.start(backgroundScope)
+        runCurrent()
+        coordinator.requestReconnect("broadcast:com.byd.action.ACC_ON")
+        verify(exactly = 2) { bleClient.startAutoConnect() }
+
+        connectionState.value = IpixelFaConnectionState(
+            phase = IpixelFaConnectionPhase.READY,
+            address = "AA:BB:CC:DD:EE:FF",
+        )
+        coordinator.requestReconnect("broadcast:android.intent.action.SCREEN_ON")
+        verify(exactly = 2) { bleClient.startAutoConnect() }
+        coordinator.stop()
+    }
+
+    @Test
     fun `FA initialization applies scheduled brightness`() = runTest {
         val preferenceState = MutableStateFlow(
             IpixelFaPreferenceSnapshot(

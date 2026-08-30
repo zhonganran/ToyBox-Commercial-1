@@ -2,6 +2,8 @@ package com.byd.wjx.service
 
 import android.content.Context
 import android.provider.Settings
+import com.byd.wjx.adbrescue.AdbRescuePreferences
+import com.byd.wjx.adbrescue.AdbRescueRuntimeCoordinator
 import com.byd.wjx.cluster.SteeringWheelKeyService
 import com.byd.wjx.data.vehicle.HelperBootstrap
 import com.byd.wjx.data.vehicle.HelperClient
@@ -9,6 +11,7 @@ import com.byd.wjx.data.repository.TrackingStateRepository
 import com.byd.wjx.log.WjxFileLogger
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -22,6 +25,8 @@ class DaemonStartupManager(
     private val helperBootstrap: HelperBootstrap,
     private val helperClient: HelperClient,
     private val trackingStateRepository: TrackingStateRepository,
+    private val adbRescueRuntime: AdbRescueRuntimeCoordinator,
+    private val adbRescuePreferences: AdbRescuePreferences,
     private val scope: CoroutineScope,
 ) {
     private val appContext = context.applicationContext
@@ -42,7 +47,7 @@ class DaemonStartupManager(
         }
 
         if (verbose || !trackingStateRepository.isRunning.value) {
-            runCatching { TrackingService.start(appContext) }
+            runCatching { TrackingService.start(appContext, reason) }
                 .onSuccess {
                     if (verbose) ChainLog.append(appContext, "DaemonStartup tracking OK")
                     WjxFileLogger.i(TAG, "TrackingService start requested reason=$reason")
@@ -84,6 +89,29 @@ class DaemonStartupManager(
             }
             if (!helperAlive) return
 
+            if (shouldRunAdbRescue(reason, adbRescuePreferences.isGuardEnabled())) {
+                try {
+                    val rescue = adbRescueRuntime.ensureEnabled("daemon:$reason")
+                    WjxFileLogger.i(
+                        TAG,
+                        "ADB rescue reason=$reason enabled=${rescue.report.allModesEnabled} " +
+                            "permission=${rescue.report.writeSecureSettingsGranted} " +
+                            "helperFallback=${rescue.helperModeRepairAttempted}/" +
+                            rescue.helperModeRepairSucceeded,
+                    )
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Throwable) {
+                    WjxFileLogger.w(
+                        TAG,
+                        "ADB rescue failed reason=$reason: ${error.message}",
+                        error,
+                    )
+                }
+            } else if (reason != REASON_HEALTH_CHECK) {
+                WjxFileLogger.i(TAG, "ADB rescue skipped reason=$reason: guard disabled")
+            }
+
             if (KeepAliveAccessibilityService.isConnected && SteeringWheelKeyService.isConnected) {
                 if (reason != REASON_HEALTH_CHECK) {
                     ChainLog.append(appContext, "DaemonStartup a11y already connected")
@@ -101,6 +129,8 @@ class DaemonStartupManager(
                 WjxFileLogger.i(TAG, "overlayPermission=$overlayGranted")
             }
             lastOverlayGranted = overlayGranted
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             WjxFileLogger.w(TAG, "runtime check failed: ${e.message}", e)
             ChainLog.append(appContext, "DaemonStartup runtime FAILED: ${e.message}")
@@ -122,3 +152,6 @@ class DaemonStartupManager(
         }
     }
 }
+
+internal fun shouldRunAdbRescue(reason: String, guardEnabled: Boolean): Boolean =
+    reason != DaemonStartupManager.REASON_HEALTH_CHECK && guardEnabled

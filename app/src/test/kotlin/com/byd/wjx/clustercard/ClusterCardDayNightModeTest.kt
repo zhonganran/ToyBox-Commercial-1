@@ -27,4 +27,21 @@ class ClusterCardDayNightModeTest {
         assertNull(ClusterCardDayNightMode.parseVehicleNightMode("-2147483648"))
         assertNull(ClusterCardDayNightMode.parseVehicleNightMode("invalid"))
     }
+
+    @Test
+    fun `live light signal value one is nighttime`() {
+        assertEquals(true, ClusterCardDayNightMode.parseLiveSignalNightMode(1))
+    }
+
+    @Test
+    fun `live light signal value two is daytime`() {
+        assertEquals(false, ClusterCardDayNightMode.parseLiveSignalNightMode(2))
+    }
+
+    @Test
+    fun `invalid live light signal permits fallback`() {
+        assertNull(ClusterCardDayNightMode.parseLiveSignalNightMode(null))
+        assertNull(ClusterCardDayNightMode.parseLiveSignalNightMode(0))
+        assertNull(ClusterCardDayNightMode.parseLiveSignalNightMode(Int.MIN_VALUE))
+    }
 }

@@ -64,6 +64,17 @@ class TrackingFeatureRuntimes @Inject constructor(
         }
     }
 
+    @Synchronized
+    fun requestLedReconnect(reason: String) {
+        if (!ledRuntimesStarted) {
+            WjxFileLogger.i(TAG, "LED reconnect skipped: runtimes inactive reason=$reason")
+            return
+        }
+        WjxFileLogger.i(TAG, "LED reconnect requested reason=$reason")
+        ipixelFa.requestReconnect(reason)
+        mafu.requestReconnect(reason)
+    }
+
     suspend fun onActionData(data: DiParsData) {
         runCatching { ipixelFa.onVehicleData(data) }
             .onFailure { WjxFileLogger.e(TAG, "FA LED linkage tick failed: ${it.message}", it) }

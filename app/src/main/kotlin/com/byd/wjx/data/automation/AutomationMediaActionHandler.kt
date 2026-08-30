@@ -39,6 +39,7 @@ internal class AutomationMediaActionHandler(
             return DispatchResult(false, "车内音效文件不存在或无法读取")
         }
         val loop = payload.optBoolean("loop", false)
+        val volume = payload.optInt("volume", DEFAULT_INSIDE_SOUND_VOLUME).coerceIn(0, 100)
         val file = File(source)
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
         val streamVolume = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC)
@@ -46,7 +47,7 @@ internal class AutomationMediaActionHandler(
         WjxFileLogger.i(
             TAG,
             "inside sound request source=${source.takeLast(100)} " +
-                "size=${file.takeIf(File::isFile)?.length()} loop=$loop " +
+                "size=${file.takeIf(File::isFile)?.length()} loop=$loop volume=$volume " +
                 "owner=${owner.orEmpty()} streamVolume=$streamVolume/$streamMaximum",
         )
         AutomationVideoActivity.stop(context)
@@ -54,10 +55,10 @@ internal class AutomationMediaActionHandler(
         val started = AutomationMusicService.play(
             context = context,
             source = source,
-            volume = 0,
+            volume = volume,
             loop = loop,
             owner = owner,
-            adjustStreamVolume = false,
+            adjustStreamVolume = true,
         )
         return if (started) {
             DispatchResult(true, "车内音效播放请求已提交")
@@ -235,6 +236,7 @@ internal class AutomationMediaActionHandler(
 
     companion object {
         private const val TAG = "ActionDispatcher"
+        private const val DEFAULT_INSIDE_SOUND_VOLUME = 30
         private const val MEDIA_REPLACEMENT_GUARD_MS = 150L
         private const val REVERSE_GEAR = 2
     }

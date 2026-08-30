@@ -22,6 +22,45 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class MafuRuntimeCoordinatorTest {
     @Test
+    fun `wake retries Mafu after failure without disturbing a ready connection`() = runTest {
+        val preferenceState = MutableStateFlow(
+            MafuPreferenceSnapshot(
+                enabled = true,
+                deviceAddress = "AA:BB:CC:DD:EE:FF",
+                deviceName = "YS LED",
+            ),
+        )
+        val preferences = mockk<MafuPreferences>()
+        every { preferences.state } returns preferenceState
+        val connectionState = MutableStateFlow(
+            MafuConnectionState(
+                phase = MafuConnectionPhase.ERROR,
+                address = "AA:BB:CC:DD:EE:FF",
+            ),
+        )
+        val bleClient = mockk<MafuBleClient>(relaxed = true)
+        every { bleClient.connection } returns connectionState
+        val coordinator = MafuRuntimeCoordinator(
+            preferences,
+            bleClient,
+            mockk(relaxed = true),
+        )
+
+        coordinator.start(backgroundScope)
+        runCurrent()
+        coordinator.requestReconnect("broadcast:com.byd.action.ACC_ON")
+        verify(exactly = 2) { bleClient.startAutoConnect() }
+
+        connectionState.value = MafuConnectionState(
+            phase = MafuConnectionPhase.READY,
+            address = "AA:BB:CC:DD:EE:FF",
+        )
+        coordinator.requestReconnect("broadcast:android.intent.action.SCREEN_ON")
+        verify(exactly = 2) { bleClient.startAutoConnect() }
+        coordinator.stop()
+    }
+
+    @Test
     fun `Mafu initialization applies scheduled brightness`() = runTest {
         val preferenceState = MutableStateFlow(
             MafuPreferenceSnapshot(

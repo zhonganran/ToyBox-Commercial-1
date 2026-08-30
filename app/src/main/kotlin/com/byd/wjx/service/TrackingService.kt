@@ -57,11 +57,13 @@ class TrackingService : Service() {
 
     companion object {
         private const val TAG = "TrackingService"
+        private const val EXTRA_START_REASON = "start_reason"
         private const val HELPER_READINESS_WAIT_MS = 9_000L
         private const val LED_ACTIVATION_CHECK_INTERVAL_MS = 5_000L
 
-        fun start(context: Context) {
+        fun start(context: Context, reason: String = "manual") {
             val intent = Intent(context, TrackingService::class.java)
+                .putExtra(EXTRA_START_REASON, reason)
             context.startForegroundService(intent)
         }
 
@@ -128,6 +130,10 @@ class TrackingService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val reason = intent?.getStringExtra(EXTRA_START_REASON) ?: "sticky_restart"
+        featureRuntimes.refreshLedAccess(serviceScope)
+        featureRuntimes.requestLedReconnect(reason)
+        WjxFileLogger.i(TAG, "onStartCommand reason=$reason startId=$startId")
         return START_STICKY
     }
 

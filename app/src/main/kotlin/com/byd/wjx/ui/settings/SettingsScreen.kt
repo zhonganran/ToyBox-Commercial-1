@@ -55,11 +55,17 @@ import com.byd.wjx.ui.theme.TextSecondary
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
+    adbRescueViewModel: AdbRescueSettingsViewModel = hiltViewModel(),
     initialCategory: String? = null,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val adbRescueState by adbRescueViewModel.uiState.collectAsStateWithLifecycle()
     val categories = SettingsCategory.entries
     var showUsageGuide by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(adbRescueViewModel) {
+        adbRescueViewModel.refresh()
+    }
 
     if (showUsageGuide) {
         BackHandler { showUsageGuide = false }
@@ -195,6 +201,7 @@ fun SettingsScreen(
                             SettingsCategoryHeader(
                                 category = category,
                                 state = state,
+                                adbRescueState = adbRescueState,
                                 selected = activeCategory == category,
                                 onClick = { selectedCategory = category },
                                 modifier = Modifier.width(268.dp),
@@ -212,6 +219,8 @@ fun SettingsScreen(
                             category = activeCategory,
                             state = state,
                             viewModel = viewModel,
+                            adbRescueState = adbRescueState,
+                            adbRescueViewModel = adbRescueViewModel,
                         )
                     }
                 }
@@ -231,6 +240,7 @@ fun SettingsScreen(
                             SettingsCategoryHeader(
                                 category = category,
                                 state = state,
+                                adbRescueState = adbRescueState,
                                 selected = activeCategory == category,
                                 onClick = { selectedCategory = category },
                                 modifier = Modifier.fillMaxWidth(),
@@ -249,6 +259,8 @@ fun SettingsScreen(
                             category = activeCategory,
                             state = state,
                             viewModel = viewModel,
+                            adbRescueState = adbRescueState,
+                            adbRescueViewModel = adbRescueViewModel,
                         )
                     }
                 }

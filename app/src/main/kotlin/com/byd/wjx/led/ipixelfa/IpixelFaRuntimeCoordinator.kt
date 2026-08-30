@@ -57,12 +57,7 @@ class IpixelFaRuntimeCoordinator @Inject constructor(
                         .distinctUntilChanged()
                         .collect { binding ->
                             val connection = bleClient.connection.value
-                            val connectionIsActive = connection.phase in setOf(
-                                IpixelFaConnectionPhase.CONNECTING,
-                                IpixelFaConnectionPhase.DISCOVERING,
-                                IpixelFaConnectionPhase.READY,
-                                IpixelFaConnectionPhase.RETRYING,
-                            )
+                            val connectionIsActive = connection.phase in ACTIVE_CONNECTION_PHASES
                             val connectionMatches = connection.address.equals(
                                 binding.deviceAddress,
                                 ignoreCase = true,
@@ -229,6 +224,17 @@ class IpixelFaRuntimeCoordinator @Inject constructor(
             }
         }
         WjxFileLogger.i(TAG, "FA runtime started")
+    }
+
+    @Synchronized
+    fun requestReconnect(reason: String) {
+        val binding = preferences.state.value
+        if (!runtimeActive || !binding.enabled || binding.deviceAddress.isBlank()) return
+        val connection = bleClient.connection.value
+        val connectionMatches = connection.address.equals(binding.deviceAddress, ignoreCase = true)
+        if (connectionMatches && connection.phase in ACTIVE_CONNECTION_PHASES) return
+        WjxFileLogger.i(TAG, "FA reconnect requested reason=$reason")
+        bleClient.startAutoConnect()
     }
 
     @Synchronized
@@ -438,6 +444,12 @@ class IpixelFaRuntimeCoordinator @Inject constructor(
 
     private companion object {
         private const val TAG = "IpixelFaRuntime"
+        private val ACTIVE_CONNECTION_PHASES = setOf(
+            IpixelFaConnectionPhase.CONNECTING,
+            IpixelFaConnectionPhase.DISCOVERING,
+            IpixelFaConnectionPhase.READY,
+            IpixelFaConnectionPhase.RETRYING,
+        )
         private const val MOTION_INTERVAL_MS = 100L
         private const val BRAKE_INTERVAL_MS = 200L
         private const val BODY_INTERVAL_MS = 500L

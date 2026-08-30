@@ -7,6 +7,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.byd.wjx.SuperToyBoxApp
+import com.byd.wjx.adbrescue.AdbRescueBootCoordinator
 import com.byd.wjx.log.WjxFileLogger
 
 /**
@@ -44,6 +45,9 @@ internal object BootStartupCoordinator {
         ChainLog.append(context, "BootReceiver[$source]: $action")
         logBootEvent(context, action)
         if (!BootState.isUserUnlocked(context)) {
+            if (com.byd.wjx.adbrescue.AdbRescueTriggerPolicy.shouldRunWhileUserLocked(action)) {
+                AdbRescueBootCoordinator.handle(context, action)
+            }
             updateBootMethod(context, "DirectBootDeferred")
             ChainLog.append(context, "DirectBoot deferred until USER_UNLOCKED")
             WjxFileLogger.i(TAG, "DirectBoot deferred until USER_UNLOCKED action=$action")
@@ -56,6 +60,7 @@ internal object BootStartupCoordinator {
             return
         }
 
+        AdbRescueBootCoordinator.handle(context, action)
         ProcessRevivalReceiver.schedule(context.applicationContext)
         (context.applicationContext as? SuperToyBoxApp)?.ensureUnlockedRuntime()
         startFullStack(context, action)

@@ -101,8 +101,10 @@ internal fun InsideSoundActionControls(
         fallbackName = action.insideSoundName(),
         label = stringResource(R.string.automation_action_inside_sound_label),
         loop = action.insideSoundLoop(),
+        volume = action.insideSoundVolume(),
         onSoundSelected = { onUpdate(action.withInsideSound(it)) },
         onLoopChanged = { onUpdate(action.withInsideSoundLoop(it)) },
+        onVolumeChanged = { onUpdate(action.withInsideSoundVolume(it)) },
         modifier = modifier,
     )
 }
@@ -134,8 +136,10 @@ private fun SoundLibraryActionControls(
     fallbackName: String,
     label: String,
     loop: Boolean,
+    volume: Int? = null,
     onSoundSelected: (SoundLibrary.SoundItem) -> Unit,
     onLoopChanged: (Boolean) -> Unit,
+    onVolumeChanged: ((Int) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val selected = sounds.firstOrNull { it.file.absolutePath == selectedPath }
@@ -206,6 +210,32 @@ private fun SoundLibraryActionControls(
                 colors = bydSwitchColors(),
                 modifier = Modifier.size(width = 44.dp, height = 24.dp)
             )
+        }
+        val shownVolume = volume?.coerceIn(0, 100)
+        val volumeChanged = onVolumeChanged
+        if (shownVolume != null && volumeChanged != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("播放音量", color = TextSecondary, fontSize = 12.sp)
+                Slider(
+                    value = shownVolume.toFloat(),
+                    onValueChange = { volumeChanged(it.toInt()) },
+                    valueRange = 0f..100f,
+                    steps = 19,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 8.dp),
+                )
+                Text(
+                    "$shownVolume%",
+                    color = AccentTeal,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.width(42.dp),
+                )
+            }
         }
     }
 }

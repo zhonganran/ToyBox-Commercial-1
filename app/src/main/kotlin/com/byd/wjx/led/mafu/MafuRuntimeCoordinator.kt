@@ -57,14 +57,7 @@ class MafuRuntimeCoordinator @Inject constructor(
                         .distinctUntilChanged()
                         .collect { binding ->
                             val connection = bleClient.connection.value
-                            val connectionIsActive = connection.phase in setOf(
-                                MafuConnectionPhase.CONNECTING,
-                                MafuConnectionPhase.DISCOVERING,
-                                MafuConnectionPhase.SUBSCRIBING,
-                                MafuConnectionPhase.INITIALIZING,
-                                MafuConnectionPhase.READY,
-                                MafuConnectionPhase.RETRYING,
-                            )
+                            val connectionIsActive = connection.phase in ACTIVE_CONNECTION_PHASES
                             val connectionMatches = connection.address.equals(
                                 binding.deviceAddress,
                                 ignoreCase = true,
@@ -229,6 +222,17 @@ class MafuRuntimeCoordinator @Inject constructor(
             }
         }
         WjxFileLogger.i(TAG, "Mafu runtime started")
+    }
+
+    @Synchronized
+    fun requestReconnect(reason: String) {
+        val binding = preferences.state.value
+        if (!runtimeActive || !binding.enabled || binding.deviceAddress.isBlank()) return
+        val connection = bleClient.connection.value
+        val connectionMatches = connection.address.equals(binding.deviceAddress, ignoreCase = true)
+        if (connectionMatches && connection.phase in ACTIVE_CONNECTION_PHASES) return
+        WjxFileLogger.i(TAG, "Mafu reconnect requested reason=$reason")
+        bleClient.startAutoConnect()
     }
 
     @Synchronized
@@ -457,6 +461,14 @@ class MafuRuntimeCoordinator @Inject constructor(
 
     private companion object {
         private const val TAG = "MafuRuntime"
+        private val ACTIVE_CONNECTION_PHASES = setOf(
+            MafuConnectionPhase.CONNECTING,
+            MafuConnectionPhase.DISCOVERING,
+            MafuConnectionPhase.SUBSCRIBING,
+            MafuConnectionPhase.INITIALIZING,
+            MafuConnectionPhase.READY,
+            MafuConnectionPhase.RETRYING,
+        )
         private const val MOTION_INTERVAL_MS = 100L
         private const val BRAKE_INTERVAL_MS = 200L
         private const val BODY_INTERVAL_MS = 500L
