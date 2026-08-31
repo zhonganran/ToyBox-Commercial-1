@@ -57,6 +57,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
     adbRescueViewModel: AdbRescueSettingsViewModel = hiltViewModel(),
     initialCategory: String? = null,
+    onOpenBlindSpot: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val adbRescueState by adbRescueViewModel.uiState.collectAsStateWithLifecycle()
@@ -203,7 +204,13 @@ fun SettingsScreen(
                                 state = state,
                                 adbRescueState = adbRescueState,
                                 selected = activeCategory == category,
-                                onClick = { selectedCategory = category },
+                                onClick = {
+                                    if (category == SettingsCategory.BlindSpot) {
+                                        onOpenBlindSpot()
+                                    } else {
+                                        selectedCategory = category
+                                    }
+                                },
                                 modifier = Modifier.width(268.dp),
                             )
                         }
@@ -221,6 +228,7 @@ fun SettingsScreen(
                             viewModel = viewModel,
                             adbRescueState = adbRescueState,
                             adbRescueViewModel = adbRescueViewModel,
+                            onOpenBlindSpot = onOpenBlindSpot,
                         )
                     }
                 }
@@ -242,7 +250,13 @@ fun SettingsScreen(
                                 state = state,
                                 adbRescueState = adbRescueState,
                                 selected = activeCategory == category,
-                                onClick = { selectedCategory = category },
+                                onClick = {
+                                    if (category == SettingsCategory.BlindSpot) {
+                                        onOpenBlindSpot()
+                                    } else {
+                                        selectedCategory = category
+                                    }
+                                },
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         }
@@ -261,6 +275,7 @@ fun SettingsScreen(
                             viewModel = viewModel,
                             adbRescueState = adbRescueState,
                             adbRescueViewModel = adbRescueViewModel,
+                            onOpenBlindSpot = onOpenBlindSpot,
                         )
                     }
                 }

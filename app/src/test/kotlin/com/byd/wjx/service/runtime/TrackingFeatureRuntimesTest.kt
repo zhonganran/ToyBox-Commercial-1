@@ -93,7 +93,22 @@ class TrackingFeatureRuntimesTest {
         verify(exactly = 0) { fixture.mafu.requestReconnect(any()) }
     }
 
-    private fun fixture(ledAllowed: Boolean): Fixture {
+    @Test
+    fun `electronic rearview uses its own activation feature`() = runTest {
+        val fixture = fixture(ledAllowed = true, rearviewAllowed = false)
+
+        fixture.runtimes.onActionData(mockk(relaxed = true))
+
+        verify(exactly = 1) {
+            fixture.activation.canUse(PremiumFeature.ELECTRONIC_REARVIEW)
+        }
+        verify(exactly = 1) { fixture.blindSpot.onPollSnapshot(any(), accessAllowed = false) }
+        verify(exactly = 0) {
+            fixture.activation.canUse(PremiumFeature.CLUSTER_PROJECTION)
+        }
+    }
+
+    private fun fixture(ledAllowed: Boolean, rearviewAllowed: Boolean = true): Fixture {
         val steering = mockk<SteeringWheelRuntimeCoordinator>(relaxed = true)
         val network = mockk<NetworkAvailableMonitor>(relaxed = true)
         val camera = mockk<CameraRuntimeCoordinator>(relaxed = true)
@@ -108,7 +123,11 @@ class TrackingFeatureRuntimesTest {
         val activation = mockk<ActivationManager>()
         val allowed = MutableStateFlow(ledAllowed)
         every { activation.canUse(any()) } answers {
-            if (invocation.args.first() == PremiumFeature.LED_LINKAGE) allowed.value else true
+            when (invocation.args.first()) {
+                PremiumFeature.LED_LINKAGE -> allowed.value
+                PremiumFeature.ELECTRONIC_REARVIEW -> rearviewAllowed
+                else -> true
+            }
         }
         return Fixture(
             runtimes = TrackingFeatureRuntimes(
@@ -133,6 +152,7 @@ class TrackingFeatureRuntimesTest {
             lyrics = lyrics,
             ipixel = ipixel,
             mafu = mafu,
+            activation = activation,
             ledAllowed = allowed,
         )
     }
@@ -149,6 +169,7 @@ class TrackingFeatureRuntimesTest {
         val lyrics: LyricRuntime,
         val ipixel: IpixelFaRuntimeCoordinator,
         val mafu: MafuRuntimeCoordinator,
+        val activation: ActivationManager,
         val ledAllowed: MutableStateFlow<Boolean>,
     )
 }

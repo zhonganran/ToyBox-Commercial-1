@@ -4,6 +4,22 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 
+private val FULL_PREVIEW_CROP = BlindSpotCrop(0, 0, 100, 100)
+
+internal fun blindSpotPreviewCalibration(
+    calibration: BlindSpotCalibration,
+    editingCrop: Boolean,
+    corrected: Boolean,
+): BlindSpotCalibration = if (editingCrop) {
+    calibration.withCrop(corrected, FULL_PREVIEW_CROP).copy(
+        rotationDegrees = 0,
+        mirrorHorizontally = false,
+        scaleMode = BlindSpotScaleMode.STRETCH,
+    )
+} else {
+    calibration
+}
+
 internal fun blindSpotTransformValues(
     viewWidth: Int,
     viewHeight: Int,

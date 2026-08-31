@@ -118,6 +118,7 @@ private fun KeyShortcutRow(
                 when (binding.actionType) {
                     KeyShortcutActionType.PlaySound -> "按键播放音效"
                     KeyShortcutActionType.RealtimeHailing -> "按键实时喊话"
+                    KeyShortcutActionType.RearStream -> "按键后流媒体开关"
                 },
                 color = TextPrimary,
                 fontSize = 13.sp,

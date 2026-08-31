@@ -25,15 +25,17 @@ class AvmCameraAdapter {
             if (cameraId < 0 && id >= 0) {
                 cameraId = id
                 runCatching {
-                    val width = (info.getMethod("getDefaultPreviewWidth", Int::class.java)
+                    val reportedWidth = (info.getMethod("getDefaultPreviewWidth", Int::class.java)
                         .invoke(null, id) as Number).toInt()
-                    val height = (info.getMethod("getDefaultPreviewHeight", Int::class.java)
+                    val reportedHeight = (info.getMethod("getDefaultPreviewHeight", Int::class.java)
                         .invoke(null, id) as Number).toInt()
-                    if (width > 0 && height > 0) {
-                        previewWidth = width
-                        previewHeight = height
-                    }
-                    log("cameraId=$id preview=${previewWidth}x$previewHeight")
+                    val size = avmPerChannelPreviewSize(tag, reportedWidth, reportedHeight)
+                    previewWidth = size.width
+                    previewHeight = size.height
+                    log(
+                        "cameraId=$id aggregate=${reportedWidth}x$reportedHeight " +
+                            "channel=${previewWidth}x$previewHeight",
+                    )
                 }
             }
         }
@@ -80,17 +82,28 @@ class AvmCameraAdapter {
                 Surface::class.java,
                 Int::class.java,
             )
-            val setPreview = avmClass.getMethod(
-                "setPreviewSurface",
-                Surface::class.java,
-                Int::class.java,
-            )
             var accepted = true
-            surfaces.forEach { (index, surface) ->
-                val added = addPreview.invoke(opened, surface, index)
-                val set = setPreview.invoke(opened, surface, index)
-                log("bind index=$index add=$added set=$set")
-                if (added == false || set == false) accepted = false
+            if (surfaces.size > 1) {
+                surfaces.forEach { (index, surface) ->
+                    val added = addPreview.invoke(opened, surface, index)
+                    log("bind multi index=$index add=$added")
+                    if (added == false) accepted = false
+                }
+            } else {
+                val (index, surface) = surfaces.entries.single()
+                val added = runCatching { addPreview.invoke(opened, surface, index) }
+                if (added.getOrNull() != false && added.isSuccess) {
+                    log("bind single index=$index add=${added.getOrNull()}")
+                } else {
+                    val setPreview = avmClass.getMethod(
+                        "setPreviewSurface",
+                        Surface::class.java,
+                        Int::class.java,
+                    )
+                    val set = setPreview.invoke(opened, surface, index)
+                    log("bind single fallback index=$index set=$set")
+                    if (set == false) accepted = false
+                }
             }
             val started = avmClass.getMethod("startPreview").invoke(opened)
             log("startPreview=$started indexes=${surfaces.keys.joinToString()}")
@@ -165,3 +178,26 @@ class AvmCameraAdapter {
         const val DEFAULT_PREVIEW_HEIGHT = 1300
     }
 }
+
+internal data class AvmPreviewSize(val width: Int, val height: Int)
+
+internal fun avmPerChannelPreviewSize(
+    tag: String,
+    reportedWidth: Int,
+    reportedHeight: Int,
+): AvmPreviewSize {
+    val safeWidth = reportedWidth.takeIf { it > 0 } ?: AvmCameraAdapter.DEFAULT_PREVIEW_WIDTH
+    val safeHeight = reportedHeight.takeIf { it > 0 } ?: AvmCameraAdapter.DEFAULT_PREVIEW_HEIGHT
+    val channelWidth = if (
+        tag.startsWith("pano_") &&
+        safeWidth >= AvmCameraAdapter.DEFAULT_PREVIEW_WIDTH * 2 &&
+        safeWidth % PANORAMA_CHANNEL_COUNT == 0
+    ) {
+        safeWidth / PANORAMA_CHANNEL_COUNT
+    } else {
+        safeWidth
+    }
+    return AvmPreviewSize(channelWidth, safeHeight)
+}
+
+private const val PANORAMA_CHANNEL_COUNT = 4

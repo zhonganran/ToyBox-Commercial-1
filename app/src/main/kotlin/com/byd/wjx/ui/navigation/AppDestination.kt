@@ -26,6 +26,7 @@ enum class AppDestination(
     DESKTOP_COMPONENTS(Screen.DesktopComponents.route, Screen.DesktopComponents),
     AUTOMATION(Screen.Automation.route, Screen.Automation),
     SETTINGS(Screen.Settings.route, Screen.Settings),
+    BLIND_SPOT_SETTINGS("blind_spot_settings", Screen.Settings),
     TRIP_MAP("trip_map", Screen.Home),
     CHARGES("charges", Screen.Home),
     ENERGY_RECOVERY("energy_recovery", Screen.Home),

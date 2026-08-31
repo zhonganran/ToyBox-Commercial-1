@@ -15,8 +15,10 @@ import com.byd.wjx.activation.PremiumFeature
 import com.byd.wjx.audio.ExteriorHailingSettings
 import com.byd.wjx.audio.WjxOutsidePlayService
 import com.byd.wjx.audio.WjxRealtimeHailingService
+import com.byd.wjx.camera.blindspot.BlindSpotPreferences
 import com.byd.wjx.data.foreground.AccessibilityForegroundBridge
 import com.byd.wjx.log.WjxFileLogger
+import com.byd.wjx.service.TrackingService
 import dagger.hilt.android.EntryPointAccessors
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -252,6 +254,27 @@ class SteeringWheelKeyService : AccessibilityService() {
                 WjxFileLogger.i(TAG, "shortcut toggle hailing binding=${binding.id} channel=$channel")
                 WjxOutsidePlayService.stop(applicationContext)
                 WjxRealtimeHailingService.toggle(applicationContext, channel)
+            }
+            KeyShortcutActionType.RearStream -> {
+                if (!entryPoint().activationManager().canUse(PremiumFeature.ELECTRONIC_REARVIEW)) {
+                    WjxFileLogger.i(
+                        TAG,
+                        "shortcut rear stream ignored: electronic rearview activation locked",
+                    )
+                    return
+                }
+                val enabled = BlindSpotPreferences(applicationContext).toggleRearStream()
+                WjxFileLogger.i(
+                    TAG,
+                    "shortcut rear stream binding=${binding.id} enabled=$enabled",
+                )
+                if (enabled) {
+                    runCatching {
+                        TrackingService.start(applicationContext, "rear_stream_shortcut")
+                    }.onFailure {
+                        WjxFileLogger.w(TAG, "shortcut rear stream runtime wake failed: ${it.message}", it)
+                    }
+                }
             }
         }
     }

@@ -81,7 +81,7 @@ class TrackingFeatureRuntimes @Inject constructor(
     suspend fun onActionData(data: DiParsData) {
         blindSpot.onPollSnapshot(
             data,
-            accessAllowed = activationManager.canUse(PremiumFeature.CLUSTER_PROJECTION),
+            accessAllowed = activationManager.canUse(PremiumFeature.ELECTRONIC_REARVIEW),
         )
         runCatching { ipixelFa.onVehicleData(data) }
             .onFailure { WjxFileLogger.e(TAG, "FA LED linkage tick failed: ${it.message}", it) }

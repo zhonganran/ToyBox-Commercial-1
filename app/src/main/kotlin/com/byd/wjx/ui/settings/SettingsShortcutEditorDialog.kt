@@ -77,6 +77,13 @@ internal fun KeyShortcutEditorDialog(
                             onEditorChanged(editor.copy(actionType = KeyShortcutActionType.RealtimeHailing))
                         },
                     )
+                    KeyShortcutChoiceChip(
+                        label = "后流媒体",
+                        selected = editor.actionType == KeyShortcutActionType.RearStream,
+                        onClick = {
+                            onEditorChanged(editor.copy(actionType = KeyShortcutActionType.RearStream))
+                        },
+                    )
                 }
                 Text("触发", color = TextSecondary, fontSize = 12.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

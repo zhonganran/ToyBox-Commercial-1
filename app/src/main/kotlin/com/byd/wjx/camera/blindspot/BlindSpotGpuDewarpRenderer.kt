@@ -55,6 +55,8 @@ internal class BlindSpotGpuDewarpRenderer private constructor(
     @Volatile private var pendingUpdate: MappingUpdate? = null
     @Volatile private var renderingEnabled = false
     private val mappingUpdatePosted = AtomicBoolean(false)
+    private var renderQueued = false
+    private var pendingFrameSignals = 0
 
     val isDewarpActive: Boolean
         get() = dewarpActive
@@ -211,16 +213,31 @@ internal class BlindSpotGpuDewarpRenderer private constructor(
             setOnFrameAvailableListener(
                 { texture ->
                     if (texture !== cameraTexture || released.get()) return@setOnFrameAvailableListener
-                    runCatching(::renderFrame).onFailure { error ->
-                        texture.setOnFrameAvailableListener(null)
-                        if (runtimeFailureReported.compareAndSet(false, true)) onFatalError(error)
-                    }
+                    signalFrame()
                 },
                 checkNotNull(handler),
             )
         }
         cameraTexture = input
         cameraSurface = Surface(input)
+    }
+
+    private fun signalFrame() {
+        pendingFrameSignals++
+        if (renderQueued) return
+        renderQueued = true
+        if (handler?.post(::renderLatestFrame) != true) renderQueued = false
+    }
+
+    private fun renderLatestFrame() {
+        renderQueued = false
+        if (released.get()) return
+        pendingFrameSignals = 0
+        runCatching(::renderFrame).onFailure { error ->
+            cameraTexture?.setOnFrameAvailableListener(null)
+            if (runtimeFailureReported.compareAndSet(false, true)) onFatalError(error)
+        }
+        if (!released.get() && pendingFrameSignals > 0) signalFrame()
     }
 
     private fun installMesh(value: BlindSpotCalibration) {
@@ -338,6 +355,8 @@ internal class BlindSpotGpuDewarpRenderer private constructor(
         cameraSurface = null
         cameraTexture?.release()
         cameraTexture = null
+        renderQueued = false
+        pendingFrameSignals = 0
         if (eglDisplay != EGL14.EGL_NO_DISPLAY && eglSurface != EGL14.EGL_NO_SURFACE) {
             EGL14.eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext)
         }

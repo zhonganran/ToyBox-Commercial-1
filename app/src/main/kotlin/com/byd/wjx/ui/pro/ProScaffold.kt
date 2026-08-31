@@ -31,6 +31,7 @@ fun ProAppScaffold(
     selectedRoute: String,
     onNavigate: (String) -> Unit,
     showNavigation: Boolean = true,
+    showStatusBar: Boolean = true,
     animateBackground: Boolean = false,
     content: @Composable PaddingValues.() -> Unit,
 ) {
@@ -40,7 +41,9 @@ fun ProAppScaffold(
     Box(modifier = Modifier.fillMaxSize()) {
         ProDynamicBackground(scene = selectedRoute, animated = animateBackground)
         Column(modifier = Modifier.fillMaxSize()) {
-            ProTopStatusBar(state = vehicleState)
+            if (showStatusBar) {
+                ProTopStatusBar(state = vehicleState)
+            }
             BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 val baseDensity = LocalDensity.current
                 val contentScale = (maxHeight.value / DESIGN_HEIGHT_DP).coerceIn(0.74f, 1f)

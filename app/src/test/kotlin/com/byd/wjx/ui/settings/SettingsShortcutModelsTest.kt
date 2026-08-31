@@ -36,5 +36,13 @@ class SettingsShortcutModelsTest {
                 ),
             ),
         )
+        assertNull(
+            validateKeyShortcutEditor(
+                KeyShortcutEditorState(
+                    keyCode = 313,
+                    actionType = KeyShortcutActionType.RearStream,
+                ),
+            ),
+        )
     }
 }

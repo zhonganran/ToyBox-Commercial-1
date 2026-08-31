@@ -3,11 +3,10 @@ package com.byd.wjx.camera.blindspot
 import com.byd.wjx.data.vehicle.VehicleReadSpec
 import com.byd.wjx.vehicle.CarProfileDetector
 
-/** Vehicle signal mapping kept outside the controller so verified variants can be added safely. */
+/** Shared BYD vehicle signal mapping kept outside the runtime controller. */
 data class BlindSpotVehicleProfile(
     val id: String,
     val controllerSeries: Int,
-    val verified: Boolean,
     val coreReads: List<VehicleReadSpec>,
     val bsdReads: List<VehicleReadSpec>,
 ) {
@@ -19,10 +18,9 @@ class BlindSpotVehicleProfileResolver(
 ) {
     fun resolve(): BlindSpotVehicleProfile {
         val vehicle = detector.detect()
-        return VERIFIED_PROFILES[vehicle.series] ?: COMMON_PROFILE.copy(
-            id = "controller-${vehicle.seriesLabel}-unverified",
+        return COMMON_PROFILE.copy(
+            id = "byd-common-${vehicle.seriesLabel}",
             controllerSeries = vehicle.series,
-            verified = false,
         )
     }
 
@@ -30,7 +28,6 @@ class BlindSpotVehicleProfileResolver(
         val COMMON_PROFILE = BlindSpotVehicleProfile(
             id = "byd-common-probe",
             controllerSeries = 0,
-            verified = false,
             coreReads = listOf(
                 VehicleReadSpec(5, 1004, 950009900),
                 VehicleReadSpec(7, 1013, -1807745016),
@@ -43,12 +40,5 @@ class BlindSpotVehicleProfileResolver(
             ),
         )
 
-        private val VERIFIED_PROFILES = listOf(23, 34, 57).associateWith { series ->
-            COMMON_PROFILE.copy(
-                id = "controller-$series",
-                controllerSeries = series,
-                verified = true,
-            )
-        }
     }
 }

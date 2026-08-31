@@ -21,6 +21,7 @@ enum class PremiumFeature {
     VEHICLE_EVENT_SOUNDS,
     AUTOMATION_UNLIMITED,
     CLUSTER_PROJECTION,
+    ELECTRONIC_REARVIEW,
     KEY_SHORTCUT_ACTIONS,
     DESKTOP_LYRICS,
     LED_LINKAGE,
@@ -250,6 +251,7 @@ class ActivationManager @Inject constructor(
             PremiumFeature.VEHICLE_EVENT_SOUNDS,
             PremiumFeature.AUTOMATION_UNLIMITED,
             PremiumFeature.CLUSTER_PROJECTION,
+            PremiumFeature.ELECTRONIC_REARVIEW,
             PremiumFeature.KEY_SHORTCUT_ACTIONS,
             PremiumFeature.DESKTOP_LYRICS,
             PremiumFeature.LED_LINKAGE -> snapshot.activated || snapshot.trialActive

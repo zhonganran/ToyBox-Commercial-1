@@ -22,6 +22,19 @@ class BlindSpotPreferencesTest {
     }
 
     @Test
+    fun `rear stream uses pano channel one with independent safe defaults`() {
+        val rear = BlindSpotPreferences.defaultSideConfig(BlindSpotSide.REAR)
+
+        assertEquals(BlindSpotPreferences.REAR_PREVIEW_INDEX, rear.previewIndex)
+        assertEquals(BlindSpotDisplayTarget.CENTER, rear.target)
+        assertEquals(BlindSpotCrop(0, 0, 100, 100), rear.calibration.crop(corrected = false))
+        assertEquals(BlindSpotCrop(0, 0, 100, 100), rear.calibration.crop(corrected = true))
+        assertEquals(0, rear.calibration.rotationDegrees)
+        assertTrue(rear.calibration.mirrorHorizontally)
+        assertFalse(rear.calibration.dewarpEnabled)
+    }
+
+    @Test
     fun `raw and corrected crops update independently`() {
         val initial = BlindSpotPreferences.defaultCalibration(BlindSpotSide.LEFT)
         val changed = initial.withCrop(

@@ -49,4 +49,22 @@ class KeyShortcutSettingsTest {
         assertEquals(KeyShortcutActionType.PlaySound, restored.actionType)
     }
 
+    @Test
+    fun `rear stream toggle binding round trips`() {
+        val settings = KeyShortcutSettings(context)
+        settings.save(
+            listOf(
+                KeyShortcutBinding(
+                    id = "rear-stream",
+                    keyCode = 313,
+                    actionType = KeyShortcutActionType.RearStream,
+                ),
+            ),
+        )
+
+        val restored = settings.loadEnabled().single()
+        assertEquals(KeyShortcutActionType.RearStream, restored.actionType)
+        assertTrue(restored.isConfigured)
+    }
+
 }

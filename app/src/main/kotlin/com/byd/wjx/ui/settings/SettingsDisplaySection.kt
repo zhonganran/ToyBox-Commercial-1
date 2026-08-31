@@ -6,7 +6,10 @@ import androidx.compose.ui.platform.LocalContext
 import com.byd.wjx.cluster.ClusterProjectionPreferences
 
 @Composable
-internal fun DisplaySection(state: SettingsUiState, viewModel: SettingsViewModel) {
+internal fun DisplaySection(
+    state: SettingsUiState,
+    viewModel: SettingsViewModel,
+) {
     val context = LocalContext.current
     val activationAllowed = state.activation.activated || state.activation.trialActive
     val projectionPreferences = remember(context) { ClusterProjectionPreferences(context) }
@@ -27,5 +30,4 @@ internal fun DisplaySection(state: SettingsUiState, viewModel: SettingsViewModel
         preferences = projectionPreferences,
         state = projectionState,
     )
-    BlindSpotSettingsSection(activationAllowed = activationAllowed)
 }

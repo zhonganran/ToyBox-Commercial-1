@@ -15,6 +15,7 @@ plugins {
 val keystorePropsFile = listOf(
     rootProject.file("keystore.properties"),
     rootProject.file("../keystore.properties"),
+    rootProject.file("../商用正式/keystore.properties"),
     rootProject.file("../正式/keystore.properties"),
     rootProject.file("../签名密钥/keystore.properties"),
 ).firstOrNull { it.exists() }
@@ -63,8 +64,8 @@ android {
         // on DiLink Android 12 through requestLegacyExternalStorage.
         // targetSdk 30+ would break listFiles() on /storage/emulated/0/energydata/
         targetSdk = 29
-        versionCode = 78
-        versionName = "2.1.38"
+        versionCode = 82
+        versionName = "2.1.42"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "UPDATE_API_URL", "\"$updateApiUrl\"")

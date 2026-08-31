@@ -16,6 +16,7 @@ import androidx.compose.material.icons.outlined.BatteryChargingFull
 import androidx.compose.material.icons.outlined.BluetoothConnected
 import androidx.compose.material.icons.outlined.CloudUpload
 import androidx.compose.material.icons.outlined.DeveloperMode
+import androidx.compose.material.icons.outlined.DirectionsCar
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MusicNote
@@ -49,6 +50,7 @@ internal enum class SettingsCategory {
     Service,
     Vehicle,
     Control,
+    BlindSpot,
     Led,
     EventSound,
     Data,
@@ -135,6 +137,7 @@ internal fun SettingsCategoryContent(
     viewModel: SettingsViewModel,
     adbRescueState: AdbRescueSettingsUiState,
     adbRescueViewModel: AdbRescueSettingsViewModel,
+    onOpenBlindSpot: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         if (category != SettingsCategory.Auth) {
@@ -150,6 +153,10 @@ internal fun SettingsCategoryContent(
                 BatterySection(state, viewModel)
             }
             SettingsCategory.Control -> DisplaySection(state, viewModel)
+            SettingsCategory.BlindSpot -> BlindSpotSettingsEntry(
+                activationAllowed = state.activation.activated || state.activation.trialActive,
+                onOpen = onOpenBlindSpot,
+            )
             SettingsCategory.Led -> LedLinkSettingsSection(
                 activationAllowed = state.activation.activated || state.activation.trialActive,
             )
@@ -166,10 +173,11 @@ private val SettingsCategory.indexLabel: String
         SettingsCategory.Service -> "02"
         SettingsCategory.Vehicle -> "03"
         SettingsCategory.Control -> "04"
-        SettingsCategory.Led -> "05"
-        SettingsCategory.EventSound -> "06"
-        SettingsCategory.Data -> "07"
-        SettingsCategory.AdbRescue -> "08"
+        SettingsCategory.BlindSpot -> "05"
+        SettingsCategory.Led -> "06"
+        SettingsCategory.EventSound -> "07"
+        SettingsCategory.Data -> "08"
+        SettingsCategory.AdbRescue -> "09"
     }
 
 private val SettingsCategory.icon: ImageVector
@@ -178,6 +186,7 @@ private val SettingsCategory.icon: ImageVector
         SettingsCategory.Service -> Icons.Outlined.VerifiedUser
         SettingsCategory.Vehicle -> Icons.Outlined.BatteryChargingFull
         SettingsCategory.Control -> Icons.Outlined.Key
+        SettingsCategory.BlindSpot -> Icons.Outlined.DirectionsCar
         SettingsCategory.Led -> Icons.Outlined.BluetoothConnected
         SettingsCategory.EventSound -> Icons.Outlined.MusicNote
         SettingsCategory.Data -> Icons.Outlined.CloudUpload
@@ -190,6 +199,7 @@ private val SettingsCategory.title: String
         SettingsCategory.Service -> "服务与授权"
         SettingsCategory.Vehicle -> "车辆费用与能耗"
         SettingsCategory.Control -> "按键 / 显示 / 车外通道"
+        SettingsCategory.BlindSpot -> "电子后视镜"
         SettingsCategory.Led -> "LED联动"
         SettingsCategory.EventSound -> "车辆事件音效"
         SettingsCategory.Data -> "数据与更新"
@@ -202,6 +212,7 @@ private val SettingsCategory.subtitle: String
         SettingsCategory.Service -> "永久授权 $PERMANENT_AUTH_PRICE、联系客服、售后支持"
         SettingsCategory.Vehicle -> "电池容量、充电价格和能耗区间"
         SettingsCategory.Control -> "车外音效通道、方向盘快捷键、仪表盘投射"
+        SettingsCategory.BlindSpot -> "转向盲区画面、实时框选、鱼眼矫正与显示位置"
         SettingsCategory.Led -> "独立蓝牙协议、屏幕亮度和车辆事件联动"
         SettingsCategory.EventSound -> "锁车、解锁和哨兵的后台车外音效"
         SettingsCategory.Data -> "界面主题、行程轨迹、备份恢复、更新和关于"
@@ -217,6 +228,11 @@ private fun SettingsCategory.status(
         SettingsCategory.Service -> if (state.activation.activated) "已授权" else PERMANENT_AUTH_PRICE
         SettingsCategory.Vehicle -> "费用 / 能耗"
         SettingsCategory.Control -> if (state.activation.activated || state.activation.trialActive) "高级可用" else "部分需激活"
+        SettingsCategory.BlindSpot -> if (state.activation.activated || state.activation.trialActive) {
+            "全屏校准"
+        } else {
+            "需激活"
+        }
         SettingsCategory.Led -> if (state.activation.activated || state.activation.trialActive) {
             "设备联动"
         } else {
@@ -251,6 +267,7 @@ private fun SettingsCategory.accent(
         SettingsCategory.Service -> AccentOrange
         SettingsCategory.Vehicle -> AccentBlue
         SettingsCategory.Control -> AccentGreen
+        SettingsCategory.BlindSpot -> AccentBlue
         SettingsCategory.Led -> if (state.activation.activated || state.activation.trialActive) AccentBlue else SocRed
         SettingsCategory.EventSound -> AccentOrange
         SettingsCategory.Data -> AccentPurple

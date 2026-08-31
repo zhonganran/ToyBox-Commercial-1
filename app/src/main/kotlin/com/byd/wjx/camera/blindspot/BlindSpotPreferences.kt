@@ -84,12 +84,16 @@ class BlindSpotPreferences @Inject constructor(
     private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     fun snapshot(): BlindSpotPreferenceSnapshot {
-        val leftIndex = prefs.getInt(key(BlindSpotSide.LEFT, FIELD_PREVIEW_INDEX), DEFAULT_LEFT_PREVIEW_INDEX)
+        val storedLeft = prefs.getInt(
+            key(BlindSpotSide.LEFT, FIELD_PREVIEW_INDEX),
+            DEFAULT_LEFT_PREVIEW_INDEX,
+        )
             .coerceIn(MIN_PREVIEW_INDEX, MAX_PREVIEW_INDEX)
         val storedRight = prefs.getInt(key(BlindSpotSide.RIGHT, FIELD_PREVIEW_INDEX), DEFAULT_RIGHT_PREVIEW_INDEX)
             .coerceIn(MIN_PREVIEW_INDEX, MAX_PREVIEW_INDEX)
-        val rightIndex = storedRight.takeUnless { it == leftIndex }
-            ?: if (leftIndex == DEFAULT_RIGHT_PREVIEW_INDEX) DEFAULT_LEFT_PREVIEW_INDEX else DEFAULT_RIGHT_PREVIEW_INDEX
+        val storedRear = prefs.getInt(key(BlindSpotSide.REAR, FIELD_PREVIEW_INDEX), REAR_PREVIEW_INDEX)
+            .coerceIn(MIN_PREVIEW_INDEX, MAX_PREVIEW_INDEX)
+        val indexes = normalizedPreviewIndexes(storedLeft, storedRight, storedRear)
         return BlindSpotPreferenceSnapshot(
             enabled = prefs.getBoolean(KEY_ENABLED, false),
             minSpeedKmh = prefs.getInt(KEY_MIN_SPEED_KMH, DEFAULT_MIN_SPEED_KMH)
@@ -98,11 +102,17 @@ class BlindSpotPreferences @Inject constructor(
                 .coerceIn(MIN_SPEED_KMH, MAX_SPEED_KMH),
             bsdGlow = prefs.getBoolean(KEY_BSD_GLOW, true),
             bsdOnly = prefs.getBoolean(KEY_BSD_ONLY, false),
+            bsdAutoPopup = prefs.getBoolean(KEY_BSD_AUTO_POPUP, false),
+            bsdAutoCooldownSeconds = normalizeBsdAutoCooldownSeconds(
+                prefs.getInt(KEY_BSD_AUTO_COOLDOWN_SECONDS, DEFAULT_BSD_AUTO_COOLDOWN_SECONDS),
+            ),
             sharpTurnEnabled = prefs.getBoolean(KEY_SHARP_TURN_ENABLED, false),
             sharpTurnAngleDeg = prefs.getInt(KEY_SHARP_TURN_ANGLE_DEG, DEFAULT_SHARP_TURN_ANGLE_DEG)
                 .coerceIn(MIN_SHARP_TURN_ANGLE_DEG, MAX_SHARP_TURN_ANGLE_DEG),
-            left = sideSnapshot(BlindSpotSide.LEFT, leftIndex),
-            right = sideSnapshot(BlindSpotSide.RIGHT, rightIndex),
+            rearStreamEnabled = prefs.getBoolean(KEY_REAR_STREAM_ENABLED, false),
+            left = sideSnapshot(BlindSpotSide.LEFT, indexes.left),
+            right = sideSnapshot(BlindSpotSide.RIGHT, indexes.right),
+            rear = sideSnapshot(BlindSpotSide.REAR, indexes.rear),
         ).normalized()
     }
 
@@ -121,6 +131,14 @@ class BlindSpotPreferences @Inject constructor(
 
     fun setBsdOnly(value: Boolean) = prefs.edit().putBoolean(KEY_BSD_ONLY, value).apply()
 
+    fun setBsdAutoPopup(value: Boolean) = prefs.edit()
+        .putBoolean(KEY_BSD_AUTO_POPUP, value)
+        .apply()
+
+    fun setBsdAutoCooldownSeconds(value: Int) = prefs.edit()
+        .putInt(KEY_BSD_AUTO_COOLDOWN_SECONDS, normalizeBsdAutoCooldownSeconds(value))
+        .apply()
+
     fun setSharpTurnEnabled(value: Boolean) = prefs.edit()
         .putBoolean(KEY_SHARP_TURN_ENABLED, value)
         .apply()
@@ -132,13 +150,30 @@ class BlindSpotPreferences @Inject constructor(
         )
         .apply()
 
-    fun setPreviewIndexes(left: Int, right: Int) {
+    fun setRearStreamEnabled(value: Boolean) = prefs.edit()
+        .putBoolean(KEY_REAR_STREAM_ENABLED, value)
+        .apply()
+
+    fun toggleRearStream(): Boolean {
+        val enabled = !prefs.getBoolean(KEY_REAR_STREAM_ENABLED, false)
+        prefs.edit()
+            .putBoolean(KEY_REAR_STREAM_ENABLED, enabled)
+            .apply {
+                if (enabled) putBoolean(KEY_ENABLED, true)
+            }
+            .apply()
+        return enabled
+    }
+
+    fun setPreviewIndexes(left: Int, right: Int, rear: Int) {
         val safeLeft = left.coerceIn(MIN_PREVIEW_INDEX, MAX_PREVIEW_INDEX)
         val safeRight = right.coerceIn(MIN_PREVIEW_INDEX, MAX_PREVIEW_INDEX)
-        if (safeLeft == safeRight) return
+        val safeRear = rear.coerceIn(MIN_PREVIEW_INDEX, MAX_PREVIEW_INDEX)
+        if (setOf(safeLeft, safeRight, safeRear).size != 3) return
         prefs.edit()
             .putInt(key(BlindSpotSide.LEFT, FIELD_PREVIEW_INDEX), safeLeft)
             .putInt(key(BlindSpotSide.RIGHT, FIELD_PREVIEW_INDEX), safeRight)
+            .putInt(key(BlindSpotSide.REAR, FIELD_PREVIEW_INDEX), safeRear)
             .apply()
     }
 
@@ -269,16 +304,24 @@ class BlindSpotPreferences @Inject constructor(
         const val KEY_MAX_SPEED_KMH = "max_speed_kmh"
         const val KEY_BSD_GLOW = "bsd_glow"
         const val KEY_BSD_ONLY = "bsd_only"
+        const val KEY_BSD_AUTO_POPUP = "bsd_auto_popup"
+        const val KEY_BSD_AUTO_COOLDOWN_SECONDS = "bsd_auto_cooldown_seconds"
         const val KEY_SHARP_TURN_ENABLED = "sharp_turn_enabled"
         const val KEY_SHARP_TURN_ANGLE_DEG = "sharp_turn_angle_deg"
+        const val KEY_REAR_STREAM_ENABLED = "rear_stream_enabled"
 
         const val DEFAULT_MIN_SPEED_KMH = 10
         const val DEFAULT_MAX_SPEED_KMH = 300
         const val DEFAULT_SHARP_TURN_ANGLE_DEG = 180
+        const val DEFAULT_BSD_AUTO_COOLDOWN_SECONDS = 10
         const val DEFAULT_LEFT_PREVIEW_INDEX = 2
         const val DEFAULT_RIGHT_PREVIEW_INDEX = 3
+        const val REAR_PREVIEW_INDEX = 1
         const val MIN_SPEED_KMH = 0
         const val MAX_SPEED_KMH = 300
+        const val MIN_BSD_AUTO_COOLDOWN_SECONDS = 1
+        const val MAX_BSD_AUTO_COOLDOWN_SECONDS = 60
+        const val BSD_AUTO_COOLDOWN_STEP_SECONDS = 1
         const val MIN_SHARP_TURN_ANGLE_DEG = 30
         const val MAX_SHARP_TURN_ANGLE_DEG = 780
         const val MIN_WINDOW_PCT = 20
@@ -293,6 +336,16 @@ class BlindSpotPreferences @Inject constructor(
         const val MIN_PREVIEW_INDEX = 0
         const val MAX_PREVIEW_INDEX = 7
         const val POSITION_SCALE = 1_000
+
+        fun normalizeBsdAutoCooldownSeconds(value: Int): Int {
+            val clamped = value.coerceIn(
+                MIN_BSD_AUTO_COOLDOWN_SECONDS,
+                MAX_BSD_AUTO_COOLDOWN_SECONDS,
+            )
+            return MIN_BSD_AUTO_COOLDOWN_SECONDS +
+                (clamped - MIN_BSD_AUTO_COOLDOWN_SECONDS) /
+                BSD_AUTO_COOLDOWN_STEP_SECONDS * BSD_AUTO_COOLDOWN_STEP_SECONDS
+        }
 
         private const val FIELD_PREVIEW_INDEX = "preview_index"
         private const val FIELD_TARGET = "target"
@@ -338,6 +391,16 @@ class BlindSpotPreferences @Inject constructor(
                 yPct = POSITION_SCALE / 2,
                 calibration = defaultCalibration(side),
             )
+            BlindSpotSide.REAR -> BlindSpotSideConfig(
+                side = side,
+                previewIndex = REAR_PREVIEW_INDEX,
+                target = BlindSpotDisplayTarget.CENTER,
+                widthPct = 50,
+                heightPct = 35,
+                xPct = POSITION_SCALE / 2,
+                yPct = 0,
+                calibration = defaultCalibration(side),
+            )
             BlindSpotSide.NONE -> error("A visible side is required")
         }
 
@@ -345,11 +408,11 @@ class BlindSpotPreferences @Inject constructor(
             val raw = when (side) {
                 BlindSpotSide.LEFT -> BlindSpotCrop(7, 19, 64, 61)
                 BlindSpotSide.RIGHT -> BlindSpotCrop(29, 19, 64, 61)
-                BlindSpotSide.NONE -> BlindSpotCrop(0, 0, 100, 100)
+                BlindSpotSide.REAR, BlindSpotSide.NONE -> BlindSpotCrop(0, 0, 100, 100)
             }
             val corrected = when (side) {
                 BlindSpotSide.LEFT, BlindSpotSide.RIGHT -> BlindSpotCrop(18, 19, 64, 61)
-                BlindSpotSide.NONE -> raw
+                BlindSpotSide.REAR, BlindSpotSide.NONE -> raw
             }
             return BlindSpotCalibration(
                 cropLeftPct = raw.leftPct,
@@ -363,13 +426,17 @@ class BlindSpotPreferences @Inject constructor(
                 rotationDegrees = when (side) {
                     BlindSpotSide.LEFT -> -30
                     BlindSpotSide.RIGHT -> 30
-                    BlindSpotSide.NONE -> 0
+                    BlindSpotSide.REAR, BlindSpotSide.NONE -> 0
                 },
                 mirrorHorizontally = side != BlindSpotSide.NONE,
                 scaleMode = BlindSpotScaleMode.FILL,
-                dewarpEnabled = true,
+                dewarpEnabled = side != BlindSpotSide.REAR,
                 dewarpFovDegrees = DEFAULT_DEWARP_FOV_DEGREES,
-                dewarpProjection = BlindSpotDewarpProjection.CYLINDRICAL,
+                dewarpProjection = if (side == BlindSpotSide.REAR) {
+                    BlindSpotDewarpProjection.RECTILINEAR
+                } else {
+                    BlindSpotDewarpProjection.CYLINDRICAL
+                },
                 dewarpCenterXPct = 50,
                 dewarpCenterYPct = 50,
             )
@@ -392,6 +459,23 @@ class BlindSpotPreferences @Inject constructor(
 
         private inline fun <reified T : Enum<T>> enumValue(raw: String?, fallback: T): T =
             enumValues<T>().firstOrNull { it.name == raw } ?: fallback
+
+        private fun normalizedPreviewIndexes(left: Int, right: Int, rear: Int): PreviewIndexes {
+            val used = linkedSetOf<Int>()
+            fun unique(value: Int, fallback: Int): Int {
+                if (used.add(value)) return value
+                val replacement = sequenceOf(fallback) +
+                    (MIN_PREVIEW_INDEX..MAX_PREVIEW_INDEX).asSequence()
+                return replacement.first(used::add)
+            }
+            return PreviewIndexes(
+                left = unique(left, DEFAULT_LEFT_PREVIEW_INDEX),
+                right = unique(right, DEFAULT_RIGHT_PREVIEW_INDEX),
+                rear = unique(rear, REAR_PREVIEW_INDEX),
+            )
+        }
+
+        private data class PreviewIndexes(val left: Int, val right: Int, val rear: Int)
     }
 }
 
@@ -401,14 +485,19 @@ data class BlindSpotPreferenceSnapshot(
     val maxSpeedKmh: Int,
     val bsdGlow: Boolean,
     val bsdOnly: Boolean,
+    val bsdAutoPopup: Boolean,
+    val bsdAutoCooldownSeconds: Int,
     val sharpTurnEnabled: Boolean,
     val sharpTurnAngleDeg: Int,
+    val rearStreamEnabled: Boolean,
     val left: BlindSpotSideConfig,
     val right: BlindSpotSideConfig,
+    val rear: BlindSpotSideConfig,
 ) {
     fun side(side: BlindSpotSide): BlindSpotSideConfig = when (side) {
         BlindSpotSide.LEFT -> left
         BlindSpotSide.RIGHT -> right
+        BlindSpotSide.REAR -> rear
         BlindSpotSide.NONE -> error("A visible side is required")
     }
 
@@ -425,7 +514,12 @@ internal fun blindSpotDisplayGeometry(
     return config.copy(
         widthPct = minOf(config.widthPct, 45),
         heightPct = minOf(config.heightPct, 50),
-        xPct = if (config.side == BlindSpotSide.LEFT) 0 else BlindSpotPreferences.POSITION_SCALE,
+        xPct = when (config.side) {
+            BlindSpotSide.LEFT -> 0
+            BlindSpotSide.RIGHT -> BlindSpotPreferences.POSITION_SCALE
+            BlindSpotSide.REAR -> BlindSpotPreferences.POSITION_SCALE / 2
+            BlindSpotSide.NONE -> config.xPct
+        },
         yPct = BlindSpotPreferences.POSITION_SCALE / 2,
     )
 }

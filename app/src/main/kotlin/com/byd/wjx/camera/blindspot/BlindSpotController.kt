@@ -19,8 +19,10 @@ import android.view.Gravity
 import android.view.Surface
 import android.view.TextureView
 import android.view.View
+import android.view.ViewOutlineProvider
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.TextView
 import com.byd.wjx.cluster.ClusterContainerCoordinator
 import com.byd.wjx.cluster.ClusterDisplayResolver
 import com.byd.wjx.cluster.ClusterFrameUi7
@@ -56,6 +58,8 @@ class BlindSpotController @Inject constructor(
     private val appContext = context.applicationContext
     private val camera = AvmCameraAdapter()
     private val telemetry = BlindSpotTelemetryGate()
+    private val bsdSignalFilter = BlindSpotBsdSignalFilter()
+    private val autoPopupGate = BlindSpotAutoPopupGate()
     private val signalProfile = BlindSpotVehicleProfileResolver().resolve()
     private val clusterContainer = ClusterContainerCoordinator.get(appContext)
     private val clusterFrame = ClusterFrameUi7.get(appContext)
@@ -65,11 +69,19 @@ class BlindSpotController @Inject constructor(
     @Volatile private var factoryCameraActive = false
     private var fastLoop: Job? = null
     private var factoryCameraJob: Job? = null
+    private var calibrationPreviewJob: Job? = null
     private var cameraThread: ExecutorCoroutineDispatcher? = null
     private val windows = linkedMapOf<BlindSpotSide, PreviewWindow>()
     private var shownSides = emptySet<BlindSpotSide>()
     private var shownAt = 0L
     private var lastRequestedSides = emptySet<BlindSpotSide>()
+    private var lastRequestedSource = BlindSpotTriggerSource.NONE
+    private var lastBsdRawState: BlindSpotBsdRawState? = null
+    private var lastBsdFilteredState: BlindSpotBsdFilteredState? = null
+    private var lastRadarSides = emptySet<BlindSpotSide>()
+    private var lastRadarEligible: Boolean? = null
+    private var lastRadarSuppressed: Boolean? = null
+    private var lastAutoPopupEnabled: Boolean? = null
     private var cameraAttemptInFlight = false
     private var cameraOpen = false
     private var clusterLayerHeld = false
@@ -77,8 +89,9 @@ class BlindSpotController @Inject constructor(
     private var windowsAttachedAt = 0L
     private var coolingSince = 0L
     private var retryAt = 0L
-    private var appliedPreviewIndexes: Pair<Int, Int>? = null
-    private var appliedTargets: Pair<BlindSpotDisplayTarget, BlindSpotDisplayTarget>? = null
+    private var appliedPreviewIndexes: Map<BlindSpotSide, Int>? = null
+    private var appliedTargets: Map<BlindSpotSide, BlindSpotDisplayTarget>? = null
+    private var appliedCalibrationSide = BlindSpotSide.NONE
     private var tearingDown = false
     private var observedClusterOverlayEpoch = ClusterOverlayEpoch.current()
     private val pendingDetach = mutableListOf<PreviewWindow>()
@@ -107,8 +120,18 @@ class BlindSpotController @Inject constructor(
                 }
             }
         }
-        if (!signalProfile.verified) {
-            WjxFileLogger.w(TAG, "unverified vehicle signal profile: ${signalProfile.id}")
+        calibrationPreviewJob?.cancel()
+        calibrationPreviewJob = ownScope.launch {
+            BlindSpotRuntimeState.calibrationPreviewUpdate.collect { update ->
+                val viewport = BlindSpotRuntimeState.calibrationViewport.value
+                if (
+                    update != null &&
+                    viewport.active &&
+                    viewport.side == update.config.side
+                ) {
+                    windows[update.config.side]?.updateCalibration(update.config.calibration)
+                }
+            }
         }
         WjxFileLogger.i(TAG, "runtime started")
     }
@@ -117,6 +140,8 @@ class BlindSpotController @Inject constructor(
         running = false
         factoryCameraJob?.cancel()
         factoryCameraJob = null
+        calibrationPreviewJob?.cancel()
+        calibrationPreviewJob = null
         factoryCameraActive = false
         ownScope.launch {
             fastLoop?.cancel()
@@ -148,17 +173,22 @@ class BlindSpotController @Inject constructor(
             }
             return
         }
-        val manualSide = BlindSpotRuntimeState.manualPreview.value
-        val manualArmed = manualSide != BlindSpotSide.NONE &&
-            data.gear in MANUAL_PREVIEW_GEARS &&
-            (data.speed ?: Int.MAX_VALUE) <= MANUAL_PREVIEW_MAX_SPEED_KMH
+        val calibrationViewport = BlindSpotRuntimeState.calibrationViewport.value
+        val manualSide = calibrationViewport.side.takeIf { calibrationViewport.active }
+            ?: BlindSpotRuntimeState.manualPreview.value
+        val manualArmed = blindSpotManualPreviewAllowed(
+            side = manualSide,
+            gear = data.gear,
+            speedKmh = data.speed?.toFloat(),
+        )
+        val rearArmed = rearStreamArmed(snapshot.rearStreamEnabled, data.gear)
         val armed = blindSpotArmed(
             snapshot.enabled && accessAllowed,
             data.gear,
             data.speed,
             snapshot.minSpeedKmh,
             snapshot.maxSpeedKmh,
-        ) || snapshot.enabled && accessAllowed && manualArmed
+        ) || snapshot.enabled && accessAllowed && (manualArmed || rearArmed)
         ownScope.launch {
             if (!running) return@launch
             if (armed) startFastLoop() else stopFastLoop("disarmed")
@@ -180,13 +210,19 @@ class BlindSpotController @Inject constructor(
     private fun stopFastLoop(reason: String) {
         fastLoop?.cancel()
         fastLoop = null
+        resetRadarState()
         if (anythingUp()) ownScope.launch { teardownNow(reason) }
     }
 
     private suspend fun tick() {
         retryPendingDetach()
-        val prefs = preferences.snapshot()
+        val prefs = blindSpotSnapshotWithCalibrationDraft(
+            snapshot = preferences.snapshot(),
+            viewport = BlindSpotRuntimeState.calibrationViewport.value,
+            draft = BlindSpotRuntimeState.calibrationPreviewUpdate.value?.config,
+        )
         if (!prefs.enabled || !running) {
+            resetRadarState()
             BlindSpotRuntimeState.publish(BlindSpotStatusCode.DISABLED)
             teardownNow("feature disabled")
             fastLoop?.cancel()
@@ -194,6 +230,7 @@ class BlindSpotController @Inject constructor(
             return
         }
         if (factoryCameraActive) {
+            resetRadarState()
             BlindSpotRuntimeState.publish(BlindSpotStatusCode.FACTORY_CAMERA_ACTIVE)
             if (anythingUp()) teardownNow("factory camera active")
             return
@@ -210,8 +247,13 @@ class BlindSpotController @Inject constructor(
             observedClusterOverlayEpoch = overlayEpoch
         }
 
+        val bsdRequested = prefs.bsdGlow || prefs.bsdOnly || prefs.bsdAutoPopup
         val reads = helper.readBatch(
-            if (prefs.bsdGlow || prefs.bsdOnly) signalProfile.readsWithBsd else signalProfile.coreReads,
+            if (bsdRequested) {
+                signalProfile.readsWithBsd
+            } else {
+                signalProfile.coreReads
+            },
         )
         val now = SystemClock.elapsedRealtime()
         val sample = reads?.let {
@@ -223,7 +265,13 @@ class BlindSpotController @Inject constructor(
             )
         }
         val state = telemetry.onSample(sample, now)
-        if (state.mustClose) {
+        val telemetryUnavailable = if (prefs.rearStreamEnabled) {
+            state.rearMustClose
+        } else {
+            state.turnMustClose
+        }
+        if (telemetryUnavailable) {
+            resetRadarState()
             BlindSpotRuntimeState.publish(BlindSpotStatusCode.TELEMETRY_UNAVAILABLE)
             if (anythingUp()) teardownNow("vehicle telemetry unavailable")
             return
@@ -231,15 +279,31 @@ class BlindSpotController @Inject constructor(
 
         val currentGear = sample?.gear
         if (currentGear == null) {
+            resetRadarState()
             BlindSpotRuntimeState.publish(BlindSpotStatusCode.TELEMETRY_UNAVAILABLE, "gear")
             if (anythingUp()) teardownNow("gear unavailable")
             return
         }
         val gearIsReverse = currentGear == BLIND_SPOT_GEAR_REVERSE
         if (gearIsReverse) {
+            resetRadarState()
             BlindSpotRuntimeState.publish(BlindSpotStatusCode.REVERSE_GUARD)
             if (anythingUp()) teardownNow("reverse gear")
             return
+        }
+        val rawBsdState = BlindSpotBsdRawState(
+            leftRaw = reads.intAt(INDEX_BSD_LEFT),
+            rightRaw = reads.intAt(INDEX_BSD_RIGHT),
+        )
+        val filteredBsdState = if (bsdRequested) {
+            bsdSignalFilter.update(
+                blindSpotBsdActive(rawBsdState.leftRaw),
+                blindSpotBsdActive(rawBsdState.rightRaw),
+                now,
+            )
+        } else {
+            bsdSignalFilter.reset()
+            BlindSpotBsdFilteredState(null, null)
         }
         val decision = decideBlindSpot(
             BlindSpotInput(
@@ -247,26 +311,63 @@ class BlindSpotController @Inject constructor(
                 speedKmh = sample?.speedKmh,
                 steeringAngleDeg = sample?.steeringAngleDeg,
                 gearIsReverse = false,
-                gearIsForward = currentGear == BLIND_SPOT_GEAR_DRIVE,
                 minSpeedKmh = prefs.minSpeedKmh,
                 maxSpeedKmh = prefs.maxSpeedKmh,
                 telemetryAgeMs = state.ageMs,
                 bsdOnly = prefs.bsdOnly,
-                leftBsdActive = reads.bsdActiveAt(INDEX_BSD_LEFT),
-                rightBsdActive = reads.bsdActiveAt(INDEX_BSD_RIGHT),
+                leftBsdActive = filteredBsdState.leftActive,
+                rightBsdActive = filteredBsdState.rightActive,
                 sharpTurnEnabled = prefs.sharpTurnEnabled,
                 sharpTurnAngleDeg = prefs.sharpTurnAngleDeg,
             ),
         )
-        val manualSide = BlindSpotRuntimeState.manualPreview.value
-        val manualAllowed = manualSide != BlindSpotSide.NONE &&
-            currentGear in MANUAL_PREVIEW_GEARS &&
-            (sample.speedKmh ?: Float.MAX_VALUE) <= MANUAL_PREVIEW_MAX_SPEED_KMH
-        val requestedSides = if (manualAllowed) setOf(manualSide) else decision.show
-        val cameraWarm = manualAllowed || decision.cameraWarm
-        if (requestedSides != lastRequestedSides) {
+        val calibrationViewport = BlindSpotRuntimeState.calibrationViewport.value
+        val manualSide = calibrationViewport.side.takeIf { calibrationViewport.active }
+            ?: BlindSpotRuntimeState.manualPreview.value
+        val manualAllowed = blindSpotManualPreviewAllowed(
+            side = manualSide,
+            gear = currentGear,
+            speedKmh = sample.speedKmh,
+        )
+        val radarSuppressed = manualAllowed || decision.show.isNotEmpty()
+        val radarEligible = blindSpotAutoPopupEligible(
+            gear = currentGear,
+            speedKmh = sample.speedKmh,
+            minSpeedKmh = prefs.minSpeedKmh,
+            maxSpeedKmh = prefs.maxSpeedKmh,
+            telemetryAgeMs = state.ageMs,
+        )
+        val radarSides = autoPopupGate.update(
+            enabled = prefs.bsdAutoPopup,
+            eligible = radarEligible,
+            leftActive = filteredBsdState.leftActive,
+            rightActive = filteredBsdState.rightActive,
+            suppressed = radarSuppressed,
+            cooldownMs = prefs.bsdAutoCooldownSeconds * 1_000L,
+            now = now,
+        )
+        val request = blindSpotRequest(
+            turnSides = decision.show,
+            radarSides = radarSides,
+            rearStreamEnabled = prefs.rearStreamEnabled,
+            manualSide = manualSide.takeIf { manualAllowed } ?: BlindSpotSide.NONE,
+        )
+        val requestedSides = request.sides
+        logRadarDecision(
+            raw = rawBsdState,
+            filtered = filteredBsdState,
+            radarSides = radarSides,
+            request = request,
+            now = now,
+            autoPopupEnabled = prefs.bsdAutoPopup,
+            eligible = radarEligible,
+            suppressed = radarSuppressed,
+        )
+        val cameraWarm = requestedSides.isNotEmpty() || manualAllowed || decision.cameraWarm
+        if (requestedSides != lastRequestedSides || request.source != lastRequestedSource) {
             if (requestedSides.isNotEmpty()) retryAt = 0L
             lastRequestedSides = requestedSides
+            lastRequestedSource = request.source
         }
         if (cameraWarm) {
             coolingSince = 0L
@@ -276,27 +377,54 @@ class BlindSpotController @Inject constructor(
             if (now - coolingSince >= COOL_DOWN_MS && anythingUp()) teardownNow("camera cooled down")
         }
         applyWindowSettings(prefs)
-        applyShow(if (cameraOpen) requestedSides else emptySet())
+        applyShow(
+            if (cameraOpen) requestedSides else emptySet(),
+            if (cameraOpen) request.source else BlindSpotTriggerSource.NONE,
+        )
+        autoPopupGate.onDisplayed(radarSides.intersect(shownSides))
         if (prefs.bsdGlow) {
             windows[BlindSpotSide.LEFT]?.setGlow(
-                BlindSpotSide.LEFT in shownSides && reads.bsdActiveAt(INDEX_BSD_LEFT) == true,
+                BlindSpotSide.LEFT in shownSides && filteredBsdState.leftActive == true,
             )
             windows[BlindSpotSide.RIGHT]?.setGlow(
-                BlindSpotSide.RIGHT in shownSides && reads.bsdActiveAt(INDEX_BSD_RIGHT) == true,
+                BlindSpotSide.RIGHT in shownSides && filteredBsdState.rightActive == true,
             )
         }
     }
 
     private suspend fun ensureWarm(now: Long, prefs: BlindSpotPreferenceSnapshot) {
         if (now < retryAt) return
-        val requestedIndexes = prefs.left.previewIndex to prefs.right.previewIndex
-        val requestedTargets = prefs.left.target to prefs.right.target
+        val requestedCalibrationSide = BlindSpotRuntimeState.calibrationViewport.value
+            .takeIf(BlindSpotCalibrationViewport::active)
+            ?.side
+            ?: BlindSpotSide.NONE
+        val requiredSides = buildSet {
+            add(BlindSpotSide.LEFT)
+            add(BlindSpotSide.RIGHT)
+            if (
+                prefs.rearStreamEnabled ||
+                requestedCalibrationSide == BlindSpotSide.REAR ||
+                BlindSpotRuntimeState.manualPreview.value == BlindSpotSide.REAR
+            ) {
+                add(BlindSpotSide.REAR)
+            }
+        }
+        val requestedIndexes = requiredSides.associateWith { prefs.side(it).previewIndex }
+        val requestedTargets = requiredSides.associateWith { prefs.side(it).target }
         if (cameraOpen && appliedPreviewIndexes != requestedIndexes) {
             teardownNow("camera preview indexes changed")
             return
         }
+        if (windows.isNotEmpty() && windows.keys != requiredSides) {
+            teardownNow("camera window set changed")
+            return
+        }
         if (windows.isNotEmpty() && appliedTargets != requestedTargets) {
             teardownNow("display targets changed")
+            return
+        }
+        if (windows.isNotEmpty() && appliedCalibrationSide != requestedCalibrationSide) {
+            teardownNow("calibration display changed")
             return
         }
         if (windows.values.any(PreviewWindow::fellBackFromCluster) && resolveClusterDisplay() != null) {
@@ -304,7 +432,7 @@ class BlindSpotController @Inject constructor(
             return
         }
         if (windows.isEmpty()) {
-            if (attachWindows(prefs)) {
+            if (attachWindows(prefs, requiredSides)) {
                 windowsAttachedAt = now
             } else {
                 windowsAttachedAt = 0L
@@ -368,7 +496,10 @@ class BlindSpotController @Inject constructor(
         }
     }
 
-    private suspend fun attachWindows(prefs: BlindSpotPreferenceSnapshot): Boolean {
+    private suspend fun attachWindows(
+        prefs: BlindSpotPreferenceSnapshot,
+        requiredSides: Set<BlindSpotSide>,
+    ): Boolean {
         if (appContext.checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             BlindSpotRuntimeState.publish(BlindSpotStatusCode.CAMERA_PERMISSION_REQUIRED)
             WjxFileLogger.w(TAG, "CAMERA permission missing")
@@ -383,12 +514,16 @@ class BlindSpotController @Inject constructor(
 
         observedClusterOverlayEpoch = ClusterOverlayEpoch.current()
         val clusterDisplay = resolveClusterDisplay()
+        val calibrationViewport = BlindSpotRuntimeState.calibrationViewport.value
         val created = linkedMapOf<BlindSpotSide, PreviewWindow>()
         var attachFailed = false
-        listOf(BlindSpotSide.LEFT, BlindSpotSide.RIGHT).forEach { side ->
+        requiredSides.forEach { side ->
             val config = prefs.side(side)
-            val useCluster = config.target == BlindSpotDisplayTarget.CLUSTER && clusterDisplay != null
-            val fellBackFromCluster = config.target == BlindSpotDisplayTarget.CLUSTER && !useCluster
+            val calibrationActive = calibrationViewport.active && calibrationViewport.side == side
+            val useCluster = !calibrationActive &&
+                config.target == BlindSpotDisplayTarget.CLUSTER && clusterDisplay != null
+            val fellBackFromCluster = !calibrationActive &&
+                config.target == BlindSpotDisplayTarget.CLUSTER && !useCluster
             val displayContext = if (useCluster) {
                 appContext.createDisplayContext(checkNotNull(clusterDisplay))
             } else {
@@ -397,8 +532,21 @@ class BlindSpotController @Inject constructor(
             val display = if (useCluster) clusterDisplay else defaultDisplay()
             val metrics = realMetrics(display)
             val geometry = blindSpotDisplayGeometry(config, useCluster)
-            val rect = BlindSpotPreferences.windowRect(metrics.widthPixels, metrics.heightPixels, geometry)
-            val targetLabel = if (useCluster) "instrument" else "center"
+            val rect = if (calibrationActive) {
+                Rect(
+                    calibrationViewport.left,
+                    calibrationViewport.top,
+                    calibrationViewport.left + calibrationViewport.width,
+                    calibrationViewport.top + calibrationViewport.height,
+                )
+            } else {
+                BlindSpotPreferences.windowRect(metrics.widthPixels, metrics.heightPixels, geometry)
+            }
+            val targetLabel = when {
+                calibrationActive -> "calibration"
+                useCluster -> "instrument"
+                else -> "center"
+            }
             val window = PreviewWindow(
                 "$targetLabel-${side.name.lowercase()}",
                 side,
@@ -406,6 +554,7 @@ class BlindSpotController @Inject constructor(
                 fellBackFromCluster,
             )
             window.updateCalibration(config.calibration)
+            window.setCalibrationMode(calibrationActive, calibrationViewport.editingCrop)
             if (window.attach(displayContext, previewParams(rect), offscreenX(rect.width()))) {
                 created[side] = window
                 if (fellBackFromCluster) {
@@ -415,25 +564,42 @@ class BlindSpotController @Inject constructor(
                 attachFailed = true
             }
         }
-        if (attachFailed || created.size != REQUIRED_WINDOW_COUNT) {
+        if (attachFailed || created.size != requiredSides.size) {
             created.values.forEach(::releaseWindow)
-            BlindSpotRuntimeState.publish(BlindSpotStatusCode.CAMERA_UNAVAILABLE, "overlay pair")
-            WjxFileLogger.w(TAG, "overlay pair attach failed count=${created.size}")
+            BlindSpotRuntimeState.publish(BlindSpotStatusCode.CAMERA_UNAVAILABLE, "camera overlays")
+            WjxFileLogger.w(
+                TAG,
+                "camera overlays attach failed count=${created.size}/${requiredSides.size}",
+            )
             return false
         }
         windows.putAll(created)
-        appliedTargets = prefs.left.target to prefs.right.target
+        appliedTargets = requiredSides.associateWith { prefs.side(it).target }
+        appliedCalibrationSide = calibrationViewport.side.takeIf { calibrationViewport.active }
+            ?: BlindSpotSide.NONE
         return true
     }
 
     private fun applyWindowSettings(prefs: BlindSpotPreferenceSnapshot) {
+        val calibrationViewport = BlindSpotRuntimeState.calibrationViewport.value
         windows.forEach { (side, window) ->
             val config = prefs.side(side)
             val display = if (window.usesCluster) resolveClusterDisplay() else defaultDisplay()
             val metrics = realMetrics(display)
             val geometry = blindSpotDisplayGeometry(config, window.usesCluster)
-            val rect = BlindSpotPreferences.windowRect(metrics.widthPixels, metrics.heightPixels, geometry)
+            val calibrationActive = calibrationViewport.active && calibrationViewport.side == side
+            val rect = if (calibrationActive) {
+                Rect(
+                    calibrationViewport.left,
+                    calibrationViewport.top,
+                    calibrationViewport.left + calibrationViewport.width,
+                    calibrationViewport.top + calibrationViewport.height,
+                )
+            } else {
+                BlindSpotPreferences.windowRect(metrics.widthPixels, metrics.heightPixels, geometry)
+            }
             window.setGeometry(rect, offscreenX(rect.width()))
+            window.setCalibrationMode(calibrationActive, calibrationViewport.editingCrop)
             window.updateCalibration(config.calibration)
         }
     }
@@ -443,11 +609,12 @@ class BlindSpotController @Inject constructor(
         rect.height(),
         WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
         OVERLAY_FLAGS,
-        PixelFormat.OPAQUE,
+        PixelFormat.TRANSLUCENT,
     ).apply {
         gravity = Gravity.TOP or Gravity.START
         x = rect.left
         y = rect.top
+        alpha = 0f
     }
 
     private fun resolveClusterDisplay(): Display? {
@@ -464,7 +631,7 @@ class BlindSpotController @Inject constructor(
         return DisplayMetrics().also(display::getRealMetrics)
     }
 
-    private suspend fun applyShow(sides: Set<BlindSpotSide>) {
+    private suspend fun applyShow(sides: Set<BlindSpotSide>, source: BlindSpotTriggerSource) {
         val requested = sides.filterTo(linkedSetOf()) { it != BlindSpotSide.NONE && windows.containsKey(it) }
         if (requested == shownSides) return
         var acquiredForShow = false
@@ -506,15 +673,20 @@ class BlindSpotController @Inject constructor(
         }
         shownSides = requested
         if (requested.isNotEmpty()) shownAt = SystemClock.elapsedRealtime()
-        WjxFileLogger.i(TAG, "show $previous -> $requested")
+        WjxFileLogger.i(TAG, "show $previous -> $requested source=${source.name.lowercase()}")
         windows.forEach { (side, window) -> if (side !in requested) window.setGlow(false) }
         if (!needsCluster && clusterLayerHeld) releaseInstrumentLayer()
         when (requested) {
             setOf(BlindSpotSide.LEFT) -> BlindSpotRuntimeState.publish(BlindSpotStatusCode.SHOWING_LEFT)
             setOf(BlindSpotSide.RIGHT) -> BlindSpotRuntimeState.publish(BlindSpotStatusCode.SHOWING_RIGHT)
+            setOf(BlindSpotSide.REAR) -> BlindSpotRuntimeState.publish(BlindSpotStatusCode.SHOWING_REAR)
             setOf(BlindSpotSide.LEFT, BlindSpotSide.RIGHT) ->
                 BlindSpotRuntimeState.publish(BlindSpotStatusCode.SHOWING_BOTH)
-            else -> BlindSpotRuntimeState.publish(BlindSpotStatusCode.READY, signalProfile.id)
+            else -> if (requested.isNotEmpty()) {
+                BlindSpotRuntimeState.publish(BlindSpotStatusCode.SHOWING_MULTIPLE)
+            } else {
+                BlindSpotRuntimeState.publish(BlindSpotStatusCode.READY, signalProfile.id)
+            }
         }
     }
 
@@ -563,9 +735,11 @@ class BlindSpotController @Inject constructor(
         } finally {
             shownSides = emptySet()
             lastRequestedSides = emptySet()
+            lastRequestedSource = BlindSpotTriggerSource.NONE
             windowsAttachedAt = 0L
             appliedPreviewIndexes = null
             appliedTargets = null
+            appliedCalibrationSide = BlindSpotSide.NONE
             coolingSince = 0L
             tearingDown = false
         }
@@ -591,6 +765,56 @@ class BlindSpotController @Inject constructor(
             Thread(runnable, "wjx-blind-spot-camera")
         }.asCoroutineDispatcher().also { cameraThread = it }
 
+    private fun resetRadarState() {
+        bsdSignalFilter.reset()
+        autoPopupGate.reset()
+        lastBsdRawState = null
+        lastBsdFilteredState = null
+        lastRadarSides = emptySet()
+        lastRadarEligible = null
+        lastRadarSuppressed = null
+        lastAutoPopupEnabled = null
+        lastRequestedSource = BlindSpotTriggerSource.NONE
+    }
+
+    private fun logRadarDecision(
+        raw: BlindSpotBsdRawState,
+        filtered: BlindSpotBsdFilteredState,
+        radarSides: Set<BlindSpotSide>,
+        request: BlindSpotRequest,
+        now: Long,
+        autoPopupEnabled: Boolean,
+        eligible: Boolean,
+        suppressed: Boolean,
+    ) {
+        if (
+            raw == lastBsdRawState &&
+            filtered == lastBsdFilteredState &&
+            radarSides == lastRadarSides &&
+            eligible == lastRadarEligible &&
+            suppressed == lastRadarSuppressed &&
+            autoPopupEnabled == lastAutoPopupEnabled &&
+            request.source == lastRequestedSource
+        ) {
+            return
+        }
+        lastBsdRawState = raw
+        lastBsdFilteredState = filtered
+        lastRadarSides = radarSides
+        lastRadarEligible = eligible
+        lastRadarSuppressed = suppressed
+        lastAutoPopupEnabled = autoPopupEnabled
+        WjxFileLogger.i(
+            TAG,
+            "bsd raw=${raw.leftRaw}/${raw.rightRaw} " +
+                "stable=${filtered.leftActive}/${filtered.rightActive} " +
+                "auto=$autoPopupEnabled eligible=$eligible suppressed=$suppressed " +
+                "radar=$radarSides source=${request.source.name.lowercase()} " +
+                "cooldownMs=${autoPopupGate.cooldownRemainingMs(BlindSpotSide.LEFT, now)}/" +
+                autoPopupGate.cooldownRemainingMs(BlindSpotSide.RIGHT, now),
+        )
+    }
+
     private inner class PreviewWindow(
         private val label: String,
         private val side: BlindSpotSide,
@@ -602,14 +826,21 @@ class BlindSpotController @Inject constructor(
         private var container: View? = null
         private var textureView: TextureView? = null
         private var glow: View? = null
+        private var titleView: TextView? = null
+        private var cropOverlay: BlindSpotCropOverlayView? = null
         private var glowAnimator: ValueAnimator? = null
         private var frames = 0
+        private var frameRateStartedAt = 0L
+        private var frameRateFrames = 0
         private var shownX = 0
         private var hiddenX = 0
         private var shown = false
         private var sourceWidth = AvmCameraAdapter.DEFAULT_PREVIEW_WIDTH.toFloat()
         private var sourceHeight = AvmCameraAdapter.DEFAULT_PREVIEW_HEIGHT.toFloat()
         private var calibration = BlindSpotPreferences.defaultCalibration()
+        private var calibrationActive = false
+        private var editingCrop = false
+        private var dewarpMappingActive = false
         private var gpuRenderer: BlindSpotGpuDewarpRenderer? = null
         private var rendererStartupEpoch = 0L
         private var rendererStartupInFlight = false
@@ -633,13 +864,61 @@ class BlindSpotController @Inject constructor(
                 background = GradientDrawable().apply {
                     setStroke((GLOW_STROKE_DP * context.resources.displayMetrics.density).roundToInt(), GLOW_COLOR)
                     setColor(Color.TRANSPARENT)
+                    cornerRadius = WINDOW_CORNER_DP * context.resources.displayMetrics.density
                 }
                 visibility = View.GONE
             }
+            val cropEditor = BlindSpotCropOverlayView(context) { crop, committed ->
+                val corrected = dewarpMappingActive
+                val nextCalibration = calibration.withCrop(corrected, crop)
+                calibration = nextCalibration
+                BlindSpotRuntimeState.publishCalibrationCropEdit(side, corrected, crop, committed)
+            }.apply {
+                contentDescription = "拖动裁剪框，拖动四角调整大小"
+                setCrop(calibration.crop(dewarpMappingActive))
+                visibility = if (calibrationActive && editingCrop) View.VISIBLE else View.GONE
+            }
+            val title = TextView(context).apply {
+                text = when (side) {
+                    BlindSpotSide.LEFT -> "左后"
+                    BlindSpotSide.RIGHT -> "右后"
+                    BlindSpotSide.REAR -> "后流媒体"
+                    BlindSpotSide.NONE -> ""
+                }
+                setTextColor(Color.WHITE)
+                textSize = TITLE_TEXT_SP
+                includeFontPadding = false
+                gravity = Gravity.CENTER
+                val horizontal = (TITLE_HORIZONTAL_PADDING_DP * resources.displayMetrics.density).roundToInt()
+                val vertical = (TITLE_VERTICAL_PADDING_DP * resources.displayMetrics.density).roundToInt()
+                setPadding(horizontal, vertical, horizontal, vertical)
+                background = GradientDrawable().apply {
+                    setColor(TITLE_BACKGROUND_COLOR)
+                    cornerRadius = TITLE_CORNER_DP * resources.displayMetrics.density
+                }
+                visibility = if (calibrationActive) View.GONE else View.VISIBLE
+            }
             val frame = FrameLayout(context).apply {
-                setBackgroundColor(Color.BLACK)
+                background = GradientDrawable().apply {
+                    setColor(Color.BLACK)
+                    cornerRadius = WINDOW_CORNER_DP * resources.displayMetrics.density
+                }
+                outlineProvider = ViewOutlineProvider.BACKGROUND
+                clipToOutline = true
                 addView(texture, FrameLayout.LayoutParams(-1, -1))
                 addView(border, FrameLayout.LayoutParams(-1, -1))
+                addView(cropEditor, FrameLayout.LayoutParams(-1, -1))
+                addView(
+                    title,
+                    FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        Gravity.TOP or Gravity.CENTER_HORIZONTAL,
+                    ).apply {
+                        topMargin = (TITLE_TOP_MARGIN_DP * resources.displayMetrics.density).roundToInt()
+                    },
+                )
+                alpha = 0f
             }
             shownX = layoutParams.x
             hiddenX = offscreenX
@@ -651,6 +930,8 @@ class BlindSpotController @Inject constructor(
             container = frame
             textureView = texture
             glow = border
+            titleView = title
+            cropOverlay = cropEditor
             WjxFileLogger.i(TAG, "$label window attached")
             true
         } catch (error: Throwable) {
@@ -661,25 +942,33 @@ class BlindSpotController @Inject constructor(
         fun setShown(value: Boolean): Boolean {
             val view = container ?: return true
             val layoutParams = params ?: return true
-            if (shown == value) return true
-            if (value) view.visibility = View.VISIBLE
+            if (shown == value) {
+                view.alpha = if (value) 1f else 0f
+                gpuRenderer?.setRenderingEnabled(value)
+                return true
+            }
             val previousX = layoutParams.x
+            val previousAlpha = layoutParams.alpha
             layoutParams.x = if (value) shownX else hiddenX
+            layoutParams.alpha = if (value) 1f else 0f
             return runCatching { windowManager?.updateViewLayout(view, layoutParams) }
                 .onSuccess {
                     shown = value
+                    view.alpha = if (value) 1f else 0f
                     gpuRenderer?.setRenderingEnabled(value)
                 }
                 .onFailure {
                     layoutParams.x = previousX
-                    if (value) view.visibility = View.INVISIBLE
+                    layoutParams.alpha = previousAlpha
+                    view.alpha = if (shown) 1f else 0f
+                    gpuRenderer?.setRenderingEnabled(shown)
                 }
                 .isSuccess
         }
 
         fun forceHide() {
             setShown(false)
-            container?.visibility = View.INVISIBLE
+            container?.alpha = 0f
             gpuRenderer?.setRenderingEnabled(false)
             shown = false
         }
@@ -696,14 +985,15 @@ class BlindSpotController @Inject constructor(
             layoutParams.height = rect.height()
             layoutParams.y = rect.top
             layoutParams.x = if (shown) shownX else hiddenX
+            layoutParams.alpha = if (shown) 1f else 0f
             return runCatching { windowManager?.updateViewLayout(view, layoutParams) }
                 .onFailure {
                     shownX = previousShownX
                     hiddenX = previousHiddenX
                     layoutParams.x = previous.left
                     layoutParams.y = previous.top
-                    layoutParams.width = previous.right
-                    layoutParams.height = previous.bottom
+                    layoutParams.width = previous.width()
+                    layoutParams.height = previous.height()
                 }
                 .isSuccess
         }
@@ -741,6 +1031,20 @@ class BlindSpotController @Inject constructor(
             calibration = value
             val view = textureView ?: return
             gpuRenderer?.update(value, view.width, view.height)
+            cropOverlay?.setCrop(value.crop(dewarpMappingActive))
+            applyTransform(view.width, view.height)
+        }
+
+        fun setCalibrationMode(active: Boolean, editCrop: Boolean) {
+            if (calibrationActive == active && editingCrop == editCrop) return
+            calibrationActive = active
+            editingCrop = editCrop
+            cropOverlay?.apply {
+                visibility = if (active && editCrop) View.VISIBLE else View.GONE
+                setCrop(calibration.crop(dewarpMappingActive))
+            }
+            titleView?.visibility = if (active) View.GONE else View.VISIBLE
+            val view = textureView ?: return
             applyTransform(view.width, view.height)
         }
 
@@ -759,9 +1063,13 @@ class BlindSpotController @Inject constructor(
             surface = null
             textureView = null
             glow = null
+            titleView = null
+            cropOverlay = null
             params = null
             windowManager = null
             frames = 0
+            frameRateStartedAt = 0L
+            frameRateFrames = 0
             lastFrameAt = 0L
             shown = false
             return true
@@ -771,6 +1079,7 @@ class BlindSpotController @Inject constructor(
             val startupEpoch = ++rendererStartupEpoch
             rendererStartupInFlight = true
             gpuRenderer = null
+            dewarpMappingActive = false
             surface = null
             frames = 0
             lastFrameAt = 0L
@@ -790,10 +1099,12 @@ class BlindSpotController @Inject constructor(
                                     applyTransform(view.width, view.height)
                                 }
                             },
-                            onMappingApplied = {
+                            onMappingApplied = { active ->
                                 ownScope.launch {
                                     if (startupEpoch != rendererStartupEpoch) return@launch
+                                    dewarpMappingActive = active
                                     val view = textureView ?: return@launch
+                                    cropOverlay?.setCrop(calibration.crop(dewarpMappingActive))
                                     applyTransform(view.width, view.height)
                                 }
                             },
@@ -845,6 +1156,7 @@ class BlindSpotController @Inject constructor(
             rendererStartupInFlight = false
             val renderer = gpuRenderer
             gpuRenderer = null
+            dewarpMappingActive = false
             if (renderer != null) renderer.release() else surface?.release()
             surface = null
             ownScope.launch {
@@ -855,18 +1167,39 @@ class BlindSpotController @Inject constructor(
 
         override fun onSurfaceTextureUpdated(texture: SurfaceTexture) {
             if (frames < 2) frames++
-            lastFrameAt = SystemClock.elapsedRealtime()
+            val now = SystemClock.elapsedRealtime()
+            lastFrameAt = now
+            if (!shown) return
+            if (frameRateStartedAt == 0L) frameRateStartedAt = now
+            frameRateFrames++
+            val elapsed = now - frameRateStartedAt
+            if (elapsed >= FRAME_RATE_LOG_INTERVAL_MS) {
+                val fps = frameRateFrames * 1_000f / elapsed
+                WjxFileLogger.i(
+                    TAG,
+                    "$label fps=${"%.1f".format(java.util.Locale.US, fps)} " +
+                        "source=${sourceWidth.roundToInt()}x${sourceHeight.roundToInt()} " +
+                        "output=${textureView?.width ?: 0}x${textureView?.height ?: 0}",
+                )
+                frameRateStartedAt = now
+                frameRateFrames = 0
+            }
         }
 
         private fun applyTransform(width: Int, height: Int) {
             val view = textureView ?: return
-            val corrected = gpuRenderer?.isDewarpActive == true
+            val corrected = dewarpMappingActive
+            val displayCalibration = blindSpotPreviewCalibration(
+                calibration = calibration,
+                editingCrop = calibrationActive && editingCrop,
+                corrected = corrected,
+            )
             val values = blindSpotTransformValues(
                 width,
                 height,
                 if (corrected) width.toFloat() else sourceWidth,
                 if (corrected) height.toFloat() else sourceHeight,
-                calibration,
+                displayCalibration,
                 corrected,
             ) ?: return
             view.setTransform(Matrix().apply { setValues(values) })
@@ -888,12 +1221,17 @@ class BlindSpotController @Inject constructor(
         const val RETRY_DELAY_MS = 3_000L
         const val GLOW_HALF_PERIOD_MS = 800L
         const val GLOW_MIN_ALPHA = 0.35f
+        const val FRAME_RATE_LOG_INTERVAL_MS = 5_000L
         const val GLOW_STROKE_DP = 10f
         const val GLOW_COLOR = 0xFFFF7A00.toInt()
+        const val WINDOW_CORNER_DP = 10f
+        const val TITLE_TEXT_SP = 13f
+        const val TITLE_HORIZONTAL_PADDING_DP = 8f
+        const val TITLE_VERTICAL_PADDING_DP = 3f
+        const val TITLE_TOP_MARGIN_DP = 6f
+        const val TITLE_CORNER_DP = 6f
+        const val TITLE_BACKGROUND_COLOR = 0x66000000
         const val OFFSCREEN_MARGIN_PX = 100
-        const val REQUIRED_WINDOW_COUNT = 2
-        val MANUAL_PREVIEW_GEARS = setOf(1, 3)
-        const val MANUAL_PREVIEW_MAX_SPEED_KMH = 1
         const val OVERLAY_FLAGS = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
             WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED

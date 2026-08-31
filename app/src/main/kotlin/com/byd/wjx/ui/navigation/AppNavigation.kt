@@ -42,6 +42,7 @@ import com.byd.wjx.ui.map.MapScreen
 import com.byd.wjx.ui.pro.ProAppScaffold
 import com.byd.wjx.ui.pro.ProNavItem
 import com.byd.wjx.ui.settings.SettingsScreen
+import com.byd.wjx.ui.settings.BlindSpotSettingsScreen
 import com.byd.wjx.ui.settings.UpdateDialog
 import com.byd.wjx.ui.settings.UpdateState
 import com.byd.wjx.ui.sound.SoundScreen
@@ -173,6 +174,8 @@ fun AppNavigation(
     ProAppScaffold(
             navItems = navItems,
             selectedRoute = destination.section.route,
+            showNavigation = destination != AppDestination.BLIND_SPOT_SETTINGS,
+            showStatusBar = destination != AppDestination.BLIND_SPOT_SETTINGS,
             animateBackground = destination == AppDestination.HOME,
             onNavigate = { route ->
                 val target = AppDestination.rootForRoute(route)
@@ -229,6 +232,12 @@ fun AppNavigation(
                         AppDestination.AUTOMATION -> AutomationScreen()
                         AppDestination.SETTINGS -> SettingsScreen(
                             initialCategory = settingsInitialCategory,
+                            onOpenBlindSpot = {
+                                destinationRoute = AppDestination.BLIND_SPOT_SETTINGS.route
+                            },
+                        )
+                        AppDestination.BLIND_SPOT_SETTINGS -> BlindSpotSettingsScreen(
+                            onBack = { destinationRoute = AppDestination.SETTINGS.route },
                         )
                     }
                 }

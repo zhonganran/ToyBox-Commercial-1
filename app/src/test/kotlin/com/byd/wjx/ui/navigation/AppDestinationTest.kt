@@ -18,7 +18,9 @@ class AppDestinationTest {
     fun `detail destinations retain their navigation section`() {
         assertEquals(Screen.Home, AppDestination.TRIP_MAP.section)
         assertEquals(Screen.Home, AppDestination.CHARGES.section)
+        assertEquals(Screen.Settings, AppDestination.BLIND_SPOT_SETTINGS.section)
         assertTrue(AppDestination.TRIP_MAP.isDetail)
+        assertTrue(AppDestination.BLIND_SPOT_SETTINGS.isDetail)
         assertFalse(AppDestination.SETTINGS.isDetail)
     }
 
