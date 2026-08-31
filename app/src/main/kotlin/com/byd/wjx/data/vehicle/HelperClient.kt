@@ -83,4 +83,6 @@ interface HelperClient {
     suspend fun execShell(command: String): String? = null
     /** Applies BYD's privileged lock-sound playback route state in the helper process. */
     suspend fun setLockSoundPlaybackState(enabled: Boolean): Boolean = false
+    /** Powers BYD's instrument-cluster Android compositor for a cluster camera surface. */
+    suspend fun setClusterContainerMode(enabled: Boolean): Boolean = false
 }

@@ -2,6 +2,7 @@ package com.byd.wjx.service.runtime
 
 import com.byd.wjx.activation.ActivationManager
 import com.byd.wjx.activation.PremiumFeature
+import com.byd.wjx.camera.blindspot.BlindSpotController
 import com.byd.wjx.clustercard.ClusterCardRuntime
 import com.byd.wjx.data.automation.NetworkAvailableMonitor
 import com.byd.wjx.data.remote.DiParsData
@@ -20,6 +21,7 @@ class TrackingFeatureRuntimes @Inject constructor(
     private val steeringWheel: SteeringWheelRuntimeCoordinator,
     private val networkMonitor: NetworkAvailableMonitor,
     private val camera: CameraRuntimeCoordinator,
+    private val blindSpot: BlindSpotController,
     private val desktopCard: DesktopQuickCardRuntime,
     private val clusterCard: ClusterCardRuntime,
     private val lyrics: LyricRuntime,
@@ -43,6 +45,7 @@ class TrackingFeatureRuntimes @Inject constructor(
     fun startAfterPolling(scope: CoroutineScope) {
         if (visualRuntimesStarted) return
         camera.start(scope)
+        blindSpot.start(camera.active)
         desktopCard.start(scope)
         clusterCard.start(scope)
         lyrics.start(camera.active)
@@ -76,6 +79,10 @@ class TrackingFeatureRuntimes @Inject constructor(
     }
 
     suspend fun onActionData(data: DiParsData) {
+        blindSpot.onPollSnapshot(
+            data,
+            accessAllowed = activationManager.canUse(PremiumFeature.CLUSTER_PROJECTION),
+        )
         runCatching { ipixelFa.onVehicleData(data) }
             .onFailure { WjxFileLogger.e(TAG, "FA LED linkage tick failed: ${it.message}", it) }
         runCatching { mafu.onVehicleData(data) }
@@ -87,6 +94,7 @@ class TrackingFeatureRuntimes @Inject constructor(
         lyrics.stop()
         clusterCard.stop()
         desktopCard.stop()
+        blindSpot.stop()
         stopLedRuntimes()
         camera.stop()
         steeringWheel.stop()

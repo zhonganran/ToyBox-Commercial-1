@@ -3,19 +3,23 @@ package com.byd.wjx.lyrics
 import android.content.Context
 import android.graphics.PixelFormat
 import android.graphics.Point
-import android.hardware.display.DisplayManager
 import android.os.SystemClock
 import android.view.Display
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
+import com.byd.wjx.cluster.ClusterContainerCoordinator
+import com.byd.wjx.cluster.ClusterDisplayResolver
+import com.byd.wjx.cluster.ClusterOverlayEpoch
+import com.byd.wjx.data.vehicle.HelperClient
 import com.byd.wjx.log.WjxFileLogger
 import kotlin.math.roundToInt
 
 class ClusterLyricOverlayController(
     private val context: Context,
     private val settings: LyricSettings,
+    private val helper: HelperClient,
 ) {
     private val appContext = context.applicationContext
     private var displayContext: Context? = null
@@ -59,6 +63,7 @@ class ClusterLyricOverlayController(
     fun hide() {
         val view = container ?: return
         runCatching { wm?.removeView(view) }
+            .onSuccess { ClusterOverlayEpoch.markChanged() }
             .onFailure { WjxFileLogger.w(TAG, "remove failed: ${it.message}") }
         container = null
         lyricView = null
@@ -66,6 +71,11 @@ class ClusterLyricOverlayController(
         wm = null
         displayContext = null
         displayId = -1
+        ClusterContainerCoordinator.get(appContext).request(
+            helper,
+            ClusterContainerCoordinator.Owner.CLUSTER_LYRICS,
+            false,
+        )
     }
 
     fun refreshPosition() {
@@ -105,10 +115,16 @@ class ClusterLyricOverlayController(
         }
         runCatching {
             windowManager.addView(view, lp)
+            ClusterOverlayEpoch.markChanged()
             container = view
             lyricView = lyric
             params = lp
             displayId = display.displayId
+            ClusterContainerCoordinator.get(appContext).request(
+                helper,
+                ClusterContainerCoordinator.Owner.CLUSTER_LYRICS,
+                true,
+            )
             WjxFileLogger.i(TAG, "cluster lyric overlay shown display=${display.displayId} ${clusterWidth}x$clusterHeight")
         }.onFailure {
             WjxFileLogger.w(TAG, "show failed: ${it.message}", it)
@@ -165,11 +181,7 @@ class ClusterLyricOverlayController(
         displayContext?.resources?.displayMetrics?.scaledDensity ?: appContext.resources.displayMetrics.scaledDensity
 
     private fun resolveClusterDisplay(): Display? {
-        val dm = appContext.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
-        val projectionDisplays = dm.displays.filter { it.name.contains("XDJAScreenProjection", ignoreCase = true) }
-        val display = projectionDisplays.firstOrNull { it.name.endsWith("_1") }
-            ?: projectionDisplays.firstOrNull()
-            ?: dm.getDisplay(DEFAULT_CLUSTER_DISPLAY_ID)
+        val display = ClusterDisplayResolver.resolve(appContext)
         if (display != null) {
             val point = Point()
             @Suppress("DEPRECATION")
@@ -186,7 +198,6 @@ class ClusterLyricOverlayController(
 
     companion object {
         private const val TAG = "ClusterLyricOverlay"
-        private const val DEFAULT_CLUSTER_DISPLAY_ID = 2
         private const val DISPLAY_CHECK_INTERVAL_MS = 2_000L
         private const val CLUSTER_FLAGS =
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or

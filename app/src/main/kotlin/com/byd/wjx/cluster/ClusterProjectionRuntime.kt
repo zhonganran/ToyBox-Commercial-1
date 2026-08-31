@@ -98,6 +98,7 @@ internal class ClusterProjectionRuntime(
             displayGateway.release(oldDisplay.id, oldDisplay.owner, helper)
         }
         overlayController.remove(oldOverlay)
+        activateInstrumentLayer(context, helper)
         WjxFileLogger.i(
             TAG,
             "resize: swapped to ${projectionPlan.geo.width}x${projectionPlan.geo.height} " +
@@ -190,6 +191,7 @@ internal class ClusterProjectionRuntime(
                 )
                 projectedPackage = null
             }
+            activateInstrumentLayer(context, helper)
             true
         } catch (error: Exception) {
             WjxFileLogger.e(TAG, "projection threw: ${error.message}", error)
@@ -290,6 +292,7 @@ internal class ClusterProjectionRuntime(
     }
 
     private suspend fun hideOverlay(context: Context, helper: HelperClient) {
+        ClusterFrameUi7.get(context).restore(helper, ClusterFrameUi7.Owner.PROJECTION)
         val active = displayHandle
         if (active != null) {
             if (displayGateway.release(active.id, active.owner, helper)) {
@@ -303,6 +306,24 @@ internal class ClusterProjectionRuntime(
             }
         }
         overlayController.removeCurrent()
+        ClusterContainerCoordinator.get(context).setOwner(
+            helper,
+            ClusterContainerCoordinator.Owner.PROJECTION,
+            false,
+        )
+    }
+
+    private suspend fun activateInstrumentLayer(context: Context, helper: HelperClient) {
+        val powered = ClusterContainerCoordinator.get(context).setOwner(
+            helper,
+            ClusterContainerCoordinator.Owner.PROJECTION,
+            true,
+        )
+        if (powered) {
+            ClusterFrameUi7.get(context).apply(helper, ClusterFrameUi7.Owner.PROJECTION)
+        } else {
+            WjxFileLogger.w(TAG, "projection active but cluster compositor power-up was not confirmed")
+        }
     }
 
     private fun clearLastDisplayId(context: Context) {

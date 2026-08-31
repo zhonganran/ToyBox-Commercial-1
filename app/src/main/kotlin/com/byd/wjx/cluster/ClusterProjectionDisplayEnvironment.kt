@@ -14,13 +14,7 @@ internal class ClusterProjectionDisplayEnvironment {
     private var clusterDensityDpi: Int = DEFAULT_CLUSTER_DENSITY_DPI
 
     fun resolveClusterDisplay(context: Context): Display? {
-        val displayManager = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
-        val projectionDisplays = displayManager.displays.filter {
-            it.name.contains(CLUSTER_DISPLAY_NAME, ignoreCase = true)
-        }
-        val match = projectionDisplays.firstOrNull { it.name.endsWith("_1") }
-            ?: projectionDisplays.firstOrNull()
-            ?: displayManager.getDisplay(DEFAULT_CLUSTER_DISPLAY_ID)
+        val match = ClusterDisplayResolver.resolve(context, allowLegacyId = true)
         if (match != null) updateClusterMetrics(match)
         return match
     }
@@ -104,8 +98,6 @@ internal class ClusterProjectionDisplayEnvironment {
 
     private companion object {
         const val TAG = "ClusterProjection"
-        const val CLUSTER_DISPLAY_NAME = "XDJAScreenProjection"
-        const val DEFAULT_CLUSTER_DISPLAY_ID = 2
         const val DEFAULT_CLUSTER_WIDTH = 1280
         const val DEFAULT_CLUSTER_HEIGHT = 480
         const val DEFAULT_CLUSTER_DENSITY_DPI = 320

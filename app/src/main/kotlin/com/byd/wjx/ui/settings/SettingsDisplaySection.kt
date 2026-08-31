@@ -27,4 +27,5 @@ internal fun DisplaySection(state: SettingsUiState, viewModel: SettingsViewModel
         preferences = projectionPreferences,
         state = projectionState,
     )
+    BlindSpotSettingsSection(activationAllowed = activationAllowed)
 }

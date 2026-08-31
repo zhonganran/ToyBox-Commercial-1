@@ -23,6 +23,7 @@ class BackupPreferencesRegistryTest {
             "key_shortcuts",
             "lyric_display_controls",
             "sound_library",
+            "blind_spot",
         ).forEach { expected -> assertTrue("missing $expected", expected in files) }
     }
 
@@ -32,6 +33,8 @@ class BackupPreferencesRegistryTest {
             "wjx_range_prefs",
             "wjx_seat_channel",
             "wjx_dashcam_folder",
+            com.byd.wjx.cluster.ClusterContainerCoordinator.PREFS_NAME,
+            com.byd.wjx.cluster.ClusterFrameUi7.PREFS_NAME,
             BackupRestoreNoticeStore.PREFS_NAME,
         ).forEach { expected ->
             assertTrue("must remain device-local: $expected", expected in BackupPreferencesRegistry.DEVICE_LOCAL_FILES)

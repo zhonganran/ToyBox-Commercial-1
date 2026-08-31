@@ -21,6 +21,17 @@ data class PreferenceFilePolicy(
 object BackupPreferencesRegistry {
     val FILE_POLICIES: List<PreferenceFilePolicy> = listOf(
         PreferenceFilePolicy("cluster_projection", "ClusterProjectionPreferences", PreferenceBackupPolicy.USER_CONFIGURATION),
+        PreferenceFilePolicy("blind_spot", "BlindSpotPreferences", PreferenceBackupPolicy.USER_CONFIGURATION),
+        PreferenceFilePolicy(
+            com.byd.wjx.cluster.ClusterContainerCoordinator.PREFS_NAME,
+            "ClusterContainerCoordinator",
+            PreferenceBackupPolicy.DEVICE_LOCAL,
+        ),
+        PreferenceFilePolicy(
+            com.byd.wjx.cluster.ClusterFrameUi7.PREFS_NAME,
+            "ClusterFrameUi7",
+            PreferenceBackupPolicy.DEVICE_LOCAL,
+        ),
         PreferenceFilePolicy("update_prefs", "UpdateChecker", PreferenceBackupPolicy.USER_CONFIGURATION),
         PreferenceFilePolicy("wjx_range_prefs", "SocInterpolatorPrefsImpl", PreferenceBackupPolicy.DEVICE_LOCAL),
         PreferenceFilePolicy("wjx_lyrics", "LyricSettings", PreferenceBackupPolicy.USER_CONFIGURATION),

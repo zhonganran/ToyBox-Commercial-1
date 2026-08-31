@@ -87,6 +87,7 @@ internal class ClusterProjectionOverlayController {
             )
             windowManager.addView(container, overlayParams)
             currentHandle = handle
+            ClusterOverlayEpoch.markChanged()
         }
         return ready.await()
     }
@@ -110,6 +111,7 @@ internal class ClusterProjectionOverlayController {
                 val windowManager = handle.view.context
                     .getSystemService(Context.WINDOW_SERVICE) as WindowManager
                 windowManager.removeView(handle.view)
+                ClusterOverlayEpoch.markChanged()
             } catch (error: Exception) {
                 intentionalRemovals.remove(handle.view)
                 WjxFileLogger.w(TAG, "removeView failed: ${error.message}")

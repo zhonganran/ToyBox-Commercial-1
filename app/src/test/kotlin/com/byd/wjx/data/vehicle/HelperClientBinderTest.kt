@@ -237,6 +237,28 @@ class HelperClientBinderTest {
         assertEquals(listOf(1, 0), values)
     }
 
+    @Test
+    fun `cluster container state uses dedicated privileged transaction`() = runBlocking {
+        val values = mutableListOf<Int>()
+        val binder = object : FakeIBinder() {
+            override fun transact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
+                assertEquals(HelperBinderProtocol.TX_SET_CLUSTER_CONTAINER_MODE, code)
+                data.setDataPosition(0)
+                data.enforceInterface(HelperBinderProtocol.DESCRIPTOR)
+                values += data.readInt()
+                reply!!.writeInt(0)
+                reply.writeInt(0)
+                reply.setDataPosition(0)
+                return true
+            }
+        }
+        val client = clientWith(binder)
+
+        assertTrue(client.setClusterContainerMode(true))
+        assertTrue(client.setClusterContainerMode(false))
+        assertEquals(listOf(1, 0), values)
+    }
+
     /** TC-6: transact returning false yields null for read and false for write */
     @Test
     fun `transact returning false yields null for read and false for write`() = runBlocking {

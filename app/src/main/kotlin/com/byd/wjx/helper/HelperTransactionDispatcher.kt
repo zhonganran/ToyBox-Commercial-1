@@ -27,6 +27,7 @@ internal fun helperTransactionGroup(code: Int): HelperTransactionGroup? = when (
     HelperBinderProtocol.TX_GRANT_OVERLAY_PERMISSION,
     HelperBinderProtocol.TX_LAUNCH_AND_FORCE,
     HelperBinderProtocol.TX_ENABLE_ACCESSIBILITY,
+    HelperBinderProtocol.TX_SET_CLUSTER_CONTAINER_MODE,
     -> HelperTransactionGroup.PROJECTION
 
     HelperBinderProtocol.TX_READ_VEHICLE_VIN,

@@ -9,10 +9,13 @@ import com.byd.wjx.data.automation.AutomationEngine
 import com.byd.wjx.data.charging.ChargingCatchUpCoordinator
 import com.byd.wjx.data.repository.TrackingStateStore
 import com.byd.wjx.data.repository.VehicleStateRepository
+import com.byd.wjx.data.vehicle.HelperClient
 import com.byd.wjx.domain.calculator.DrivingMetricsCoordinator
 import com.byd.wjx.domain.tracker.DriveSessionCoordinator
 import com.byd.wjx.domain.tracker.TripTracker
 import com.byd.wjx.log.WjxFileLogger
+import com.byd.wjx.cluster.ClusterContainerCoordinator
+import com.byd.wjx.cluster.ClusterFrameUi7
 import com.byd.wjx.service.runtime.TrackingFeatureRuntimes
 import com.byd.wjx.service.runtime.TrackingLocationCoordinator
 import com.byd.wjx.service.runtime.TrackingNotificationController
@@ -39,6 +42,7 @@ class TrackingService : Service() {
     @Inject lateinit var sharedAdaptiveLoop: com.byd.wjx.data.loop.SharedAdaptiveLoop
     @Inject lateinit var tripRecorder: com.byd.wjx.data.trips.TripRecorder
     @Inject lateinit var helperBootstrap: com.byd.wjx.data.vehicle.HelperBootstrap
+    @Inject lateinit var helperClient: HelperClient
     @Inject lateinit var trackingStateStore: TrackingStateStore
     @Inject lateinit var vehicleStateRepository: VehicleStateRepository
     @Inject lateinit var driveSessionCoordinator: DriveSessionCoordinator
@@ -96,6 +100,10 @@ class TrackingService : Service() {
         serviceScope.launch {
             try {
                 val ok = helperBootstrap.ensureVehicleReadsReady()
+                if (ok) {
+                    ClusterFrameUi7.get(this@TrackingService).recoverStale(helperClient)
+                    ClusterContainerCoordinator.get(this@TrackingService).recoverStale(helperClient)
+                }
                 helperReadiness.complete(ok)
                 WjxFileLogger.i(TAG, "HelperBootstrap.ensureVehicleReadsReady=$ok")
                 ChainLog.append(this@TrackingService, "Helper daemon: ${if (ok) "alive" else "unreachable"}")

@@ -46,7 +46,7 @@ class LyricRuntime @Inject constructor(
     private val settings = LyricSettings(appContext)
     private val repository = LyricRepository(okHttpClient)
     private val desktopOverlay = DesktopLyricOverlayController(appContext, settings)
-    private val clusterOverlay = ClusterLyricOverlayController(appContext, settings)
+    private val clusterOverlay = ClusterLyricOverlayController(appContext, settings, helperClient)
     private val poller = MusicPlaybackPoller(adb)
     private val homePackages by lazy { resolveHomePackages() }
     private var scope: CoroutineScope? = null

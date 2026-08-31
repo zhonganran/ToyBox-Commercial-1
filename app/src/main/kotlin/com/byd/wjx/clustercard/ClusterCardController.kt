@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.res.Resources
 import android.graphics.PixelFormat
 import android.graphics.Point
-import android.hardware.display.DisplayManager
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -13,6 +12,10 @@ import android.view.Display
 import android.view.Gravity
 import android.view.WindowManager
 import com.byd.wjx.data.remote.DiParsData
+import com.byd.wjx.data.vehicle.HelperClient
+import com.byd.wjx.cluster.ClusterContainerCoordinator
+import com.byd.wjx.cluster.ClusterDisplayResolver
+import com.byd.wjx.cluster.ClusterOverlayEpoch
 import com.byd.wjx.log.WjxFileLogger
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -27,6 +30,7 @@ import kotlin.math.roundToInt
 class ClusterCardController @Inject constructor(
     @ApplicationContext context: Context,
     private val dayNightSignalReader: ClusterCardDayNightSignalReader,
+    private val helper: HelperClient,
 ) {
     private val appContext = context.applicationContext
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -150,11 +154,17 @@ class ClusterCardController @Inject constructor(
         }
         return runCatching {
             wm.addView(view, lp)
+            ClusterOverlayEpoch.markChanged()
             window.displayContext = ctx
             window.windowManager = wm
             window.cardView = view
             window.params = lp
             window.displayId = display.displayId
+            ClusterContainerCoordinator.get(appContext).request(
+                helper,
+                ClusterContainerCoordinator.Owner.CLUSTER_CARD,
+                true,
+            )
             WjxFileLogger.i(
                 TAG,
                 "${slot.label} shown display=${display.displayId} size=${lp.width}x${lp.height} metrics=${config.metricIds.joinToString()}",
@@ -185,9 +195,17 @@ class ClusterCardController @Inject constructor(
         val view = window.cardView
         if (view != null) {
             runCatching { window.windowManager?.removeView(view) }
+                .onSuccess { ClusterOverlayEpoch.markChanged() }
                 .onFailure { WjxFileLogger.w(TAG, "${slot.label} remove failed: ${it.message}") }
         }
         window.clear()
+        if (windows.values.none { it.cardView != null }) {
+            ClusterContainerCoordinator.get(appContext).request(
+                helper,
+                ClusterContainerCoordinator.Owner.CLUSTER_CARD,
+                false,
+            )
+        }
     }
 
     private fun hideAllInternal() {
@@ -216,13 +234,7 @@ class ClusterCardController @Inject constructor(
     }
 
     private fun resolveClusterDisplay(): Display? {
-        val displayManager = appContext.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
-        val projectionDisplays = displayManager.displays.filter {
-            it.name.contains(CLUSTER_DISPLAY_NAME, ignoreCase = true)
-        }
-        val display = projectionDisplays.firstOrNull { it.name.endsWith("_1") }
-            ?: projectionDisplays.firstOrNull()
-            ?: displayManager.getDisplay(DEFAULT_CLUSTER_DISPLAY_ID)
+        val display = ClusterDisplayResolver.resolve(appContext)
         if (display != null) {
             val size = Point()
             @Suppress("DEPRECATION")
@@ -261,8 +273,6 @@ class ClusterCardController @Inject constructor(
 
     private companion object {
         const val TAG = "ClusterCard"
-        const val CLUSTER_DISPLAY_NAME = "XDJAScreenProjection"
-        const val DEFAULT_CLUSTER_DISPLAY_ID = 2
         const val MINIMUM_WINDOW_HEIGHT_DP = 28f
         const val MISSING_DISPLAY_LOG_INTERVAL_MS = 30_000L
         const val DAY_NIGHT_REFRESH_INTERVAL_MS = 1_000L

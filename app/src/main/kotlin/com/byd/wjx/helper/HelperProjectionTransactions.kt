@@ -68,8 +68,51 @@ internal fun HelperDaemonRuntime.handleProjectionTransaction(
         (if (enableAccessibilityService()) 0 else -1) to 0
     }
 
+    HelperBinderProtocol.TX_SET_CLUSTER_CONTAINER_MODE -> twoIntReply(reply) {
+        val enabled = data.readInt() != 0
+        (if (setClusterContainerMode(enabled)) 0 else -1) to 0
+    }
+
     else -> error("projection transaction routed incorrectly: $code")
 }
+
+/**
+ * Controls BYD's cluster compositor through the only three commands used by the camera flow.
+ * DiLink generations expose the service under two names, so the second name is a narrow fallback.
+ */
+internal fun setClusterContainerMode(
+    enabled: Boolean,
+    call: (Int) -> Boolean = ::autoContainerCall,
+    pause: (Long) -> Unit = Thread::sleep,
+): Boolean {
+    if (enabled) return call(AUTO_CONTAINER_ENABLE)
+    val detached = call(AUTO_CONTAINER_DETACH)
+    pause(AUTO_CONTAINER_DETACH_DELAY_MS)
+    return call(AUTO_CONTAINER_DISABLE) && detached
+}
+
+internal fun autoContainerCall(
+    command: Int,
+    exec: (String, String) -> Int = { script, arg -> shExec(script, arg).code },
+): Boolean {
+    require(command in AUTO_CONTAINER_COMMANDS) { "auto_container command $command is not allowed" }
+    if (exec(AUTO_CONTAINER_SERVICE_CALL, command.toString()) == 0) return true
+    return exec(AUTO_CONTAINER_FALLBACK_SERVICE_CALL, command.toString()) == 0
+}
+
+private const val AUTO_CONTAINER_ENABLE = 16
+private const val AUTO_CONTAINER_DETACH = 18
+private const val AUTO_CONTAINER_DISABLE = 0
+private const val AUTO_CONTAINER_DETACH_DELAY_MS = 1_000L
+private val AUTO_CONTAINER_COMMANDS = setOf(
+    AUTO_CONTAINER_ENABLE,
+    AUTO_CONTAINER_DETACH,
+    AUTO_CONTAINER_DISABLE,
+)
+private const val AUTO_CONTAINER_SERVICE_CALL =
+    "service call auto_container 2 i32 1000 i32 \"\$1\" s16 \"\""
+private const val AUTO_CONTAINER_FALLBACK_SERVICE_CALL =
+    "service call AutoContainer 2 i32 1000 i32 \"\$1\" s16 \"\""
 
 private fun HelperDaemonRuntime.handleCreateVirtualDisplay(data: Parcel, reply: Parcel?): Boolean {
     var surface: Surface? = null

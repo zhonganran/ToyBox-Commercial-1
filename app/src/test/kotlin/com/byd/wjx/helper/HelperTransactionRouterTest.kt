@@ -28,6 +28,7 @@ class HelperTransactionRouterTest {
                 HelperBinderProtocol.TX_GRANT_OVERLAY_PERMISSION,
                 HelperBinderProtocol.TX_LAUNCH_AND_FORCE,
                 HelperBinderProtocol.TX_ENABLE_ACCESSIBILITY,
+                HelperBinderProtocol.TX_SET_CLUSTER_CONTAINER_MODE,
             ),
             HelperTransactionGroup.SYSTEM to listOf(
                 HelperBinderProtocol.TX_READ_VEHICLE_VIN,

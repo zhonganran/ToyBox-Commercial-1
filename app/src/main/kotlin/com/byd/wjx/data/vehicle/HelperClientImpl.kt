@@ -230,6 +230,14 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
             data.writeInt(if (enabled) 1 else 0)
         }
 
+    override suspend fun setClusterContainerMode(enabled: Boolean): Boolean =
+        statusOk(
+            HelperBinderProtocol.TX_SET_CLUSTER_CONTAINER_MODE,
+            timeoutMs = CLUSTER_CONTAINER_TIMEOUT_MS,
+        ) { data ->
+            data.writeInt(if (enabled) 1 else 0)
+        }
+
     /** (status,value) reply; true iff status == 0. Shared by the boolean projection ops. */
     private suspend fun statusOk(
         code: Int,
@@ -302,5 +310,6 @@ open class HelperClientImpl @Inject constructor() : HelperClient {
         private const val BATCH_TIMEOUT_MAX_MS = 15000L
         private const val FORCE_TIMEOUT_MS = 15000L
         private const val DEV_SHELL_TIMEOUT_MS = 620000L
+        private const val CLUSTER_CONTAINER_TIMEOUT_MS = 5_000L
     }
 }

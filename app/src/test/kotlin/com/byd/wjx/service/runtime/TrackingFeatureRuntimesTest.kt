@@ -2,6 +2,7 @@ package com.byd.wjx.service.runtime
 
 import com.byd.wjx.activation.ActivationManager
 import com.byd.wjx.activation.PremiumFeature
+import com.byd.wjx.camera.blindspot.BlindSpotController
 import com.byd.wjx.clustercard.ClusterCardRuntime
 import com.byd.wjx.data.automation.NetworkAvailableMonitor
 import com.byd.wjx.desktopcard.DesktopQuickCardRuntime
@@ -31,10 +32,12 @@ class TrackingFeatureRuntimesTest {
         verify(exactly = 1) { fixture.steering.start(any()) }
         verify(exactly = 1) { fixture.network.start() }
         verify(exactly = 1) { fixture.camera.start(any()) }
+        verify(exactly = 1) { fixture.blindSpot.start(fixture.cameraActive) }
         verify(exactly = 1) { fixture.desktop.start(any()) }
         verify(exactly = 1) { fixture.cluster.start(any()) }
         verify(exactly = 1) { fixture.lyrics.start(fixture.cameraActive) }
         verify(exactly = 1) { fixture.lyrics.stop() }
+        verify(exactly = 1) { fixture.blindSpot.stop() }
         verify(exactly = 1) { fixture.network.stop() }
     }
 
@@ -94,6 +97,7 @@ class TrackingFeatureRuntimesTest {
         val steering = mockk<SteeringWheelRuntimeCoordinator>(relaxed = true)
         val network = mockk<NetworkAvailableMonitor>(relaxed = true)
         val camera = mockk<CameraRuntimeCoordinator>(relaxed = true)
+        val blindSpot = mockk<BlindSpotController>(relaxed = true)
         val cameraActive = MutableStateFlow(false)
         every { camera.active } returns cameraActive
         val desktop = mockk<DesktopQuickCardRuntime>(relaxed = true)
@@ -103,12 +107,15 @@ class TrackingFeatureRuntimesTest {
         val mafu = mockk<MafuRuntimeCoordinator>(relaxed = true)
         val activation = mockk<ActivationManager>()
         val allowed = MutableStateFlow(ledAllowed)
-        every { activation.canUse(PremiumFeature.LED_LINKAGE) } answers { allowed.value }
+        every { activation.canUse(any()) } answers {
+            if (invocation.args.first() == PremiumFeature.LED_LINKAGE) allowed.value else true
+        }
         return Fixture(
             runtimes = TrackingFeatureRuntimes(
                 steeringWheel = steering,
                 networkMonitor = network,
                 camera = camera,
+                blindSpot = blindSpot,
                 desktopCard = desktop,
                 clusterCard = cluster,
                 lyrics = lyrics,
@@ -119,6 +126,7 @@ class TrackingFeatureRuntimesTest {
             steering = steering,
             network = network,
             camera = camera,
+            blindSpot = blindSpot,
             cameraActive = cameraActive,
             desktop = desktop,
             cluster = cluster,
@@ -134,6 +142,7 @@ class TrackingFeatureRuntimesTest {
         val steering: SteeringWheelRuntimeCoordinator,
         val network: NetworkAvailableMonitor,
         val camera: CameraRuntimeCoordinator,
+        val blindSpot: BlindSpotController,
         val cameraActive: MutableStateFlow<Boolean>,
         val desktop: DesktopQuickCardRuntime,
         val cluster: ClusterCardRuntime,
